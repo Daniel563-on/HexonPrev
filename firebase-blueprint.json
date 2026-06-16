@@ -1,0 +1,230 @@
+{
+  "entities": {
+    "Asset": {
+      "title": "Ativo de Manutenção",
+      "description": "Equipamento cadastrado para controle de manutenção preventiva",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo gerado pelo Firebase" },
+        "code": { "type": "string", "description": "Código de identificação único (para QR Code)" },
+        "name": { "type": "string", "description": "Nome descritivo do ativo" },
+        "sector": { "type": "string", "description": "Setor operacional (ex: HVAC, Elétrica, Hidráulica, Civil)" },
+        "location": { "type": "string", "description": "Localização física do equipamento" },
+        "model": { "type": "string", "description": "Modelo do fabricante" },
+        "serialNumber": { "type": "string", "description": "Número de série" },
+        "installationDate": { "type": "string", "description": "Data de instalação no formato ISO ou data" },
+        "status": { "type": "string", "description": "Status operacional do ativo" }
+      },
+      "required": ["id", "code", "name", "sector", "location", "status"]
+    },
+    "ServiceOrder": {
+      "title": "Ordem de Serviço",
+      "description": "Ficha de trabalho para manutenção preventiva de um ativo específico ou de vistorias",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo da OS" },
+        "assetId": { "type": "string", "description": "ID de referência do ativo relacionado" },
+        "assetName": { "type": "string", "description": "Nome do ativo relacionado no momento da criação" },
+        "assetCode": { "type": "string", "description": "Código do ativo relacionado" },
+        "sector": { "type": "string", "description": "Setor da OS (derivado do ativo)" },
+        "title": { "type": "string", "description": "Título resumido do serviço" },
+        "description": { "type": "string", "description": "Descrição detalhada do escopo" },
+        "priority": { "type": "string", "description": "Nível de prioridade (Baixa, Média, Alta, Urgente)" },
+        "status": { "type": "string", "description": "Status da execução (Planejada, Em Execução, Concluída, Atrasada)" },
+        "scheduledDate": { "type": "string", "description": "Data planejada para realização" },
+        "assignedTechnician": { "type": "string", "description": "Técnico encarregado do serviço" },
+        "notes": { "type": "string", "description": "Anotações adicionais do técnico" },
+        "signature": { "type": "string", "description": "Assinatura digitalizada em formato Base64" },
+        "signedBy": { "type": "string", "description": "Nome de quem assinou" },
+        "signedAt": { "type": "string", "description": "Data da assinatura" },
+        "createdAt": { "type": "string", "description": "Data de criação da OS" },
+        "updatedAt": { "type": "string", "description": "Data de última atualização" }
+      },
+      "required": ["id", "assetName", "assetCode", "sector", "title", "priority", "status", "scheduledDate", "assignedTechnician"]
+    },
+    "MaintenanceLog": {
+      "title": "Histórico de Manutenção",
+      "description": "Registro de conclusão de atividades de manutenção de um equipamento",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do log de histórico" },
+        "assetId": { "type": "string", "description": "ID do ativo associado" },
+        "osId": { "type": "string", "description": "ID da ordem de serviço concluída" },
+        "osTitle": { "type": "string", "description": "Título da OS concluída" },
+        "date": { "type": "string", "description": "Data de conclusão da atividade" },
+        "technician": { "type": "string", "description": "Técnico responsável pelo serviço" },
+        "status": { "type": "string", "description": "Status de conclusão (ex: Concluída)" },
+        "notes": { "type": "string", "description": "Notas e considerações técnicas do log" },
+        "checklistCount": { "type": "integer", "description": "Número total de itens da checklist" },
+        "checkedCount": { "type": "integer", "description": "Número de itens checados positivamente" }
+      },
+      "required": ["id", "assetId", "osId", "osTitle", "date", "technician", "status", "checklistCount", "checkedCount"]
+    },
+    "MaintenanceTemplate": {
+      "title": "Modelo de Checklist",
+      "description": "Modelo de roteiro de inspeção predial ou preventiva",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do modelo" },
+        "name": { "type": "string", "description": "Nome descritivo do modelo" },
+        "type": { "type": "string", "description": "Tipo de plano de checklist (preventive, survey)" },
+        "targetSectorOrType": { "type": "string", "description": "Setor-alvo (ex: HVAC, Elétrica) ou Localidade" },
+        "periodicity": { "type": "string", "description": "Periodicidade planejada (ex: Mensal, Semanal, Trimestral)" },
+        "createdAt": { "type": "string", "description": "Data de criação do modelo" }
+      },
+      "required": ["id", "name", "type", "targetSectorOrType", "periodicity", "createdAt"]
+    },
+    "User": {
+      "title": "Usuário",
+      "description": "Dados do usuário cadastrado para controle de acesso baseados em perfil",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "UID ou Matrícula do usuário" },
+        "name": { "type": "string", "description": "Nome Completo" },
+        "matricula": { "type": "string", "description": "Matrícula exclusiva de login" },
+        "email": { "type": "string", "description": "Endereço de email funcional" },
+        "cargo": { "type": "string", "description": "Cargo ou função corporativa" },
+        "gerencia": { "type": "string", "description": "Gerência à qual o usuário está vinculado" },
+        "perfil": { "type": "string", "description": "Nível de acesso (Super Administrador, Administrador, Profissional)" },
+        "status": { "type": "string", "description": "Status no sistema (Ativo, Inativo)" },
+        "senha": { "type": "string", "description": "Senha de acesso descriptografada ou segura" }
+      },
+      "required": ["id", "name", "matricula", "email", "perfil", "status", "senha"]
+    },
+    "Profile": {
+      "title": "Perfil de Acesso",
+      "description": "Determina o nível de poder RBAC do usuário",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do perfil" },
+        "name": { "type": "string", "description": "Nome do perfil" },
+        "description": { "type": "string", "description": "Propósito ou escopo do perfil" }
+      },
+      "required": ["id", "name"]
+    },
+    "Permission": {
+      "title": "Permissão",
+      "description": "Permissões de ações e telas do sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "profileId": { "type": "string" },
+        "resource": { "type": "string" },
+        "action": { "type": "string" },
+        "allowed": { "type": "boolean" }
+      },
+      "required": ["id", "profileId", "resource", "action", "allowed"]
+    },
+    "Management": {
+      "title": "Gerência",
+      "description": "Área de atuação setorial ou administrativa do sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Unit": {
+      "title": "Unidade",
+      "description": "Unidades ou sub-sedes de atendimento físico",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "AccessLog": {
+      "title": "Log de Acesso",
+      "description": "Histórico de entradas e saídas de colaboradores do sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userMatricula": { "type": "string" },
+        "event": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "ipAddress": { "type": "string" }
+      },
+      "required": ["id", "userMatricula", "event", "timestamp"]
+    },
+    "AuditLog": {
+      "title": "Log de Auditoria",
+      "description": "Histórico de operações críticas realizadas nas coleções do sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userMatricula": { "type": "string" },
+        "action": { "type": "string" },
+        "target": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userMatricula", "action", "target", "timestamp"]
+    },
+    "Config": {
+      "title": "Configurações do Sistema",
+      "description": "Configurações estáticas ou voláteis do projeto, como matriz de permissões",
+      "type": "object",
+      "properties": {
+        "permissions": { "type": "object", "description": "Matriz de atribuição de permissões por perfil" }
+      }
+    }
+  },
+  "firestore": {
+    "config": {
+      "schema": "Config",
+      "description": "Coleção de parâmetros e privilégios específicos de configuração global"
+    },
+    "assets": {
+      "schema": "Asset",
+      "description": "Coleção global de todos os equipamentos cadastrados no sistema"
+    },
+    "serviceOrders": {
+      "schema": "ServiceOrder",
+      "description": "Coleção contendo as ordens de serviço preventivas emitidas contra os ativos"
+    },
+    "histories": {
+      "schema": "MaintenanceLog",
+      "description": "Registros históricos de conciliações e ordens concluídas nos ativos"
+    },
+    "templates": {
+      "schema": "MaintenanceTemplate",
+      "description": "Coleção dos modelos e templates de cronogramas e rotinas de atividades"
+    },
+    "users": {
+      "schema": "User",
+      "description": "Coleção de dados de perfil e autenticação de usuários baseada em matricula e perfis"
+    },
+    "profiles": {
+      "schema": "Profile",
+      "description": "Níveis hierárquicos e perfis cadastrados no corporativo"
+    },
+    "permissions": {
+      "schema": "Permission",
+      "description": "Controle granular das regras e permissões de acesso herdadas pelos perfis"
+    },
+    "managements": {
+      "schema": "Management",
+      "description": "Coleção das gerências setoriais autorizadas no sistema"
+    },
+    "units": {
+      "schema": "Unit",
+      "description": "Coleção das unidades de engenharia cadastrados na aplicação"
+    },
+    "accessLogs": {
+      "schema": "AccessLog",
+      "description": "Logs detalhados de logins e logouts de acesso e tentativas"
+    },
+    "auditLogs": {
+      "schema": "AuditLog",
+      "description": "Trilha de auditoria das modificações críticas efetuadas pelos administradores"
+    }
+  }
+}

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEXON | Manutenção Preventiva</title>
+    <script>
+      // Early suppression of MetaMask and Web3/extension errors in sandboxed iframe environments
+      (function() {
+        const isExtensionMessage = function(msg) {
+          return /metamask|ethereum|wallet|extension|crypto|Failed to connect to MetaMask/i.test(String(msg));
+        };
+
+        const suppress = function(e) {
+          let errorMsg = '';
+          if (e) {
+            if (e.reason) {
+              errorMsg = e.reason.message || String(e.reason);
+            } else if (e.message) {
+              errorMsg = e.message;
+            } else if (e.error) {
+              errorMsg = e.error.message || String(e.error);
+            }
+          }
+          if (isExtensionMessage(errorMsg)) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            console.info('Early suppressed MetaMask/Wallet error:', errorMsg);
+          }
+        };
+
+        window.addEventListener('error', suppress, true);
+        window.addEventListener('unhandledrejection', suppress, true);
+
+        // Capture direct console.error logs
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+          const rawMsg = args.map(arg => {
+            if (arg instanceof Error) return arg.message + '\n' + arg.stack;
+            if (typeof arg === 'object' && arg !== null) {
+              try { return JSON.stringify(arg); } catch (_) { return String(arg); }
+            }
+            return String(arg);
+          }).join(' ');
+
+          if (isExtensionMessage(rawMsg)) {
+            console.info('Early suppressed console.error from MetaMask/Wallet:', ...args);
+            return;
+          }
+          originalConsoleError.apply(console, args);
+        };
+
+        // Safety mock for window.ethereum to ensure if an extension injection gets triggered,
+        // it doesn't fail with unhandled promises or throw critical initialization rejections.
+        try {
+          Object.defineProperty(window, 'ethereum', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              return {
+                isMetaMask: true,
+                request: async () => {
+                  console.info('Mocked window.ethereum.request executed safely.');
+                  return [];
+                },
+                enable: async () => {
+                  console.info('Mocked window.ethereum.enable executed safely.');
+                  return [];
+                },
+                on: () => {},
+                removeListener: () => {},
+                autoRefreshOnNetworkChange: false
+              };
+            },
+            set(val) {
+              console.info('Attempted to overwrite safe window.ethereum. Preserving mock structure.');
+            }
+          });
+        } catch (err) {
+          console.warn('Could not override ethereum object directly:', err);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-headline: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Custom transitions and utility animations */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Dark theme overrides */
+html.dark, html.dark body, html.dark main, html.dark .bg-\[\#f8f9ff\] {
+  background-color: #060d17 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/95,
+html.dark header {
+  background-color: #0d1926/95 !important;
+  background-color: #0d1926 !important;
+}
+
+html.dark .bg-white\/95 {
+  background-color: rgba(13, 25, 38, 0.95) !important;
+}
+
+html.dark .text-\[\#0b1c30\],
+html.dark .text-slate-800,
+html.dark .text-gray-900,
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4,
+html.dark h5,
+html.dark h6 {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-gray-500,
+html.dark .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+html.dark .border-gray-200,
+html.dark .border-gray-100,
+html.dark .border-slate-200 {
+  border-color: #1e293b !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #0a111a !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+html.dark .bg-gray-50,
+html.dark .bg-gray-50\/50,
+html.dark th,
+html.dark .bg-slate-50 {
+  background-color: #0f1c2c !important;
+}
+
+html.dark .bg-gray-100 {
+  background-color: #1a2536 !important;
+}
+
+html.dark .hover\:bg-gray-50:hover {
+  background-color: #162436 !important;
+}
+
+html.dark .hover\:bg-gray-100:hover {
+  background-color: #1e2f47 !important;
+}
+
+html.dark select option {
+  background-color: #0d1926 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Material Symbols configuration matching the mockup image layouts */
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'liga';
+  vertical-align: middle;
+}
