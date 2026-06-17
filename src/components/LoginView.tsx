@@ -148,18 +148,9 @@ export default function LoginView({ onLoginSuccess, darkMode }: LoginViewProps) 
 
             {/* Field 2: Password */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="senha-input" className="block text-[10px] font-bold uppercase tracking-widest text-white">
-                  Senha de Acesso
-                </label>
-                <button
-                  type="button"
-                  onClick={() => alert('Para redefinir sua senha, por favor encaminhe um chamado para o suporte de TI ou procure o Administrador.')}
-                  className="text-[9px] font-extrabold uppercase tracking-widest text-[#5c6dfd] hover:underline hover:text-indigo-400 transition-colors cursor-pointer"
-                >
-                  Esqueci a Senha
-                </button>
-              </div>
+              <label htmlFor="senha-input" className="block text-[10px] font-bold uppercase tracking-widest text-white">
+                Senha de Acesso
+              </label>
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 flex items-center justify-center">
                   <Lock className="w-4 h-4 text-slate-450" />

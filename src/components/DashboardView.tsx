@@ -106,21 +106,18 @@ export default function DashboardView({
     }
     return 'all';
   });
-  const [activeTab, setActiveTab] = useState<'indicadores' | 'ciclos' | 'backlog'>('indicadores');
   const [renderCharts, setRenderCharts] = useState<boolean>(false);
 
   const [chart1Ref, chart1Size] = useContainerSize(280);
   const [chart2Ref, chart2Size] = useContainerSize(200);
 
   useEffect(() => {
-    if (activeTab === 'indicadores') {
-      setRenderCharts(false);
-      const timer = setTimeout(() => {
-        setRenderCharts(true);
-      }, 200);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTab, selectedGerencia]);
+    setRenderCharts(false);
+    const timer = setTimeout(() => {
+      setRenderCharts(true);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [selectedGerencia]);
 
   useEffect(() => {
     let active = true;
@@ -308,9 +305,6 @@ export default function DashboardView({
     rate: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 100
   })).sort((a, b) => b.total - a.total).slice(0, 8);
 
-  // Overdue non-performed preventives needing urgent attention
-  const expiredNotExecutedList = filteredOrders.filter(o => o.status === 'Não Executada').slice(0, 5);
-
   // Build upcoming 7 days smart calendar representation
   const getNext7DaysCalendar = () => {
     const days: { dateStr: string; label: string; count: number; completed: number }[] = [];
@@ -386,47 +380,8 @@ export default function DashboardView({
         <div className="absolute top-0 right-1/4 w-32 h-64 bg-white/5 skew-x-12 pointer-events-none"></div>
       </div>
 
-      {/* THREE VIEW SWITCH TABS */}
-      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-fit gap-1">
-        <button
-          onClick={() => setActiveTab('indicadores')}
-          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
-            activeTab === 'indicadores'
-              ? 'bg-white text-[#0b1c30] shadow-sm'
-              : 'text-slate-500 hover:text-[#0b1c30]'
-          }`}
-        >
-          <Sliders className="w-4 h-4" />
-          Indicadores Globais
-        </button>
-        <button
-          onClick={() => setActiveTab('ciclos')}
-          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
-            activeTab === 'ciclos'
-              ? 'bg-white text-[#0b1c30] shadow-sm'
-              : 'text-slate-500 hover:text-[#0b1c30]'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          Tabela de Ciclos Ativos
-        </button>
-        <button
-          onClick={() => setActiveTab('backlog')}
-          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
-            activeTab === 'backlog'
-              ? 'bg-white text-[#0b1c30] shadow-sm'
-              : 'text-slate-500 hover:text-[#0b1c30]'
-          }`}
-        >
-          <AlertTriangle className="w-4 h-4" />
-          Atrasos e Fora do Ciclo ({expiredCount})
-        </button>
-      </div>
-
-      {activeTab === 'indicadores' && (
-        <>
-          {/* THE BENTO METRIC GRID */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* THE BENTO METRIC GRID */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
             {/* Card 1: EFICIÊNCIA OPERACIONAL */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-[#3525cd]/40 transition-all flex flex-col justify-between">
@@ -790,179 +745,6 @@ export default function DashboardView({
               })}
             </div>
           </section>
-        </>
-      )}
-
-      {activeTab === 'ciclos' && (
-        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-          <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 pb-4 mb-4">
-            <div>
-              <h3 className="text-sm font-black text-[#0b1c30] uppercase tracking-wide flex items-center gap-1.5">
-                <Database className="w-5 h-5 text-blue-600" />
-                Matriz de Status de Ciclos Preventivos por Ativo
-              </h3>
-              <p className="text-xs text-slate-500">Última conclusão de Ordem e Próxima data de abertura prevista sob guarda do motor de agendamentos.</p>
-            </div>
-            
-            <button 
-              onClick={onNavigateToAssets}
-              className="bg-slate-50 border border-slate-200 text-[#0b1c30] font-black hover:bg-slate-100 text-xs px-4 py-2 rounded-lg cursor-pointer"
-            >
-              Criar ou Importar Ativos
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            {assets.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 font-bold italic text-xs">
-                Nenhum ativo cadastrado para auditar ciclos preventivos.
-              </div>
-            ) : (
-              <table className="w-full text-left text-[11px] border-collapse">
-                <thead className="bg-slate-100/80 text-slate-600 font-black uppercase tracking-wider border-b border-slate-200">
-                  <tr>
-                    <th className="px-5 py-3 w-40">Ativo / Patrimônio</th>
-                    <th className="px-5 py-3 min-w-[150px]">Ativo Nome</th>
-                    <th className="px-5 py-3">Periodicidade Mensal</th>
-                    <th className="px-5 py-3">Periodicidade Semestral</th>
-                    <th className="px-5 py-3">Periodicidade Anual</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700 font-semibold">
-                  {assets.map((asset) => {
-                    const cycles = getAssetCycles(asset, orders);
-                    const listPeriodicities = asset.periodicities || [];
-
-                    return (
-                      <tr key={asset.id} className="hover:bg-slate-50/50">
-                        <td className="px-5 py-3">
-                          <code className="bg-indigo-50/50 text-[#3525cd] text-[10px] font-black px-2 py-0.5 rounded border border-indigo-100/50">
-                            {asset.code}
-                          </code>
-                          <span className="block text-[9px] text-slate-350 font-bold mt-1 uppercase truncate max-w-[160px]" title={asset.location}>
-                            {asset.location}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="font-extrabold text-slate-800 truncate max-w-[200px]" title={asset.name}>{asset.name}</div>
-                          <span className="text-[9.5px] italic text-slate-450">{asset.specs.tipo || asset.specs.TIPO || 'Equipamento'}</span>
-                        </td>
-                        
-                        {/* Mensal */}
-                        <td className="px-5 py-3">
-                          {listPeriodicities.includes('Mensal') ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${
-                                  cycles['Mensal']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
-                                }`} />
-                                <span className={`text-[9.5px] font-extrabold ${cycles['Mensal']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
-                                  {cycles['Mensal']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
-                                </span>
-                              </div>
-                              <span className="block text-[9px] text-slate-400">Última: {cycles['Mensal']?.lastExecution ? formatDateBR(cycles['Mensal']?.lastExecution) : 'Nenhuma'}</span>
-                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Mensal']?.nextGenerationPrevista)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
-                          )}
-                        </td>
-
-                        {/* Semestral */}
-                        <td className="px-5 py-3">
-                          {listPeriodicities.includes('Semestral') ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${
-                                  cycles['Semestral']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
-                                }`} />
-                                <span className={`text-[9.5px] font-extrabold ${cycles['Semestral']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
-                                  {cycles['Semestral']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
-                                </span>
-                              </div>
-                              <span className="block text-[9px] text-slate-400">Última: {cycles['Semestral']?.lastExecution ? formatDateBR(cycles['Semestral']?.lastExecution) : 'Nenhuma'}</span>
-                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Semestral']?.nextGenerationPrevista)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
-                          )}
-                        </td>
-
-                        {/* Anual */}
-                        <td className="px-5 py-3">
-                          {listPeriodicities.includes('Anual') ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${
-                                  cycles['Anual']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
-                                }`} />
-                                <span className={`text-[9.5px] font-extrabold ${cycles['Anual']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
-                                  {cycles['Anual']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
-                                </span>
-                              </div>
-                              <span className="block text-[9px] text-slate-400">Última: {cycles['Anual']?.lastExecution ? formatDateBR(cycles['Anual']?.lastExecution) : 'Nenhuma'}</span>
-                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Anual']?.nextGenerationPrevista)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
-                          )}
-                        </td>
-
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-      )}
-
-      {activeTab === 'backlog' && (
-        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-          <div className="flex items-center gap-2 mb-4">
-            <AlertCircle className="w-5 h-5 text-rose-600 animate-pulse" />
-            <div>
-              <h3 className="text-sm font-black text-rose-800 uppercase tracking-wide">Relatório de Atividades com Ciclo Vencido / Atrasado</h3>
-              <p className="text-xs text-rose-600">Essas atividades foram programadas e não foram finalizadas dentro do período de vencimento do ciclo (Não Executadas).</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
-            {expiredNotExecutedList.length === 0 ? (
-              <div className="col-span-full py-8 text-center text-slate-400 italic text-xs font-bold">
-                Parabéns! Sua gerência não possui nenhuma preventiva registrada como Não Executada / Fora do ciclo no momento.
-              </div>
-            ) : (
-              expiredNotExecutedList.map(os => (
-                <div 
-                  key={os.id} 
-                  onClick={() => onNavigateToOS(os.id)} 
-                  className="bg-rose-50/30 border border-rose-250 hover:border-rose-400 p-4 rounded-xl cursor-pointer shadow-3xs transition-all flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <code className="text-xs font-bold text-rose-600">#{os.id}</code>
-                      <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded uppercase">
-                        Não Executada
-                      </span>
-                    </div>
-                    <h4 className="text-xs font-extrabold text-slate-800 leading-snug line-clamp-2">{os.title}</h4>
-                    <p className="text-[10.5px] text-slate-500 line-clamp-2">{os.description}</p>
-                  </div>
-                  
-                  <div className="mt-4 pt-3 border-t border-rose-100 flex justify-between items-center text-[9px] font-bold text-slate-450">
-                    <span>Técnico: {os.assignedTechnician || 'Indefinido'}</span>
-                    <span className="font-mono text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded">
-                      Previso: {formatDateBR(os.scheduledDate)}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-      )}
 
       {/* FOOTER BAR WITH INTEGRITY GUARANTEE */}
       <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-450 uppercase tracking-wider">
