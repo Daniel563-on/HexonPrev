@@ -8,7 +8,7 @@ import TemplatesView from './components/TemplatesView';
 import SolicitationsView from './components/SolicitationsView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
-import { ServiceOrder, HexonUser, SystemPermission } from './types';
+import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
   dbGetServiceOrders, 
   signInHexonAnonymously, 
@@ -281,14 +281,13 @@ export default function App() {
     if (userProfile.perfil === 'Profissional') {
       filtered = filtered.filter(o => 
         o.assignedTechnician === userProfile.name && 
-        (userProfile.gerencia === 'Todas' || o.sector === userProfile.gerencia)
+        isSectorInGerencia(o.sector, userProfile.gerencia)
       );
     } 
     // 2. Administrator can only see orders from her/his specific gerência (sector)
     else if (userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
       filtered = filtered.filter(o => {
-        // Match sector or fallback if general asset is linked
-        return o.sector === userProfile.gerencia;
+        return isSectorInGerencia(o.sector, userProfile.gerencia);
       });
     }
     
@@ -396,6 +395,7 @@ export default function App() {
               onNavigateToAssets={() => setCurrentTab('assets')}
               onNovaOS={handleNovaOSClick}
               onNavigateToSolicitations={() => setCurrentTab('solicitations')}
+              userProfile={userProfile}
             />
           )}
 
@@ -433,6 +433,8 @@ export default function App() {
               orders={filteredOrders}
               onNavigateToOS={handleNavigateToOS}
               onReload={loadServiceOrders}
+              userProfile={userProfile}
+              userHasActionPermission={userHasActionPermission}
             />
           )}
 

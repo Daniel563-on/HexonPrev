@@ -32,7 +32,7 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
-import { MaintenanceTemplate, ChecklistTemplateItem, TemplateChangeLog, Asset, formatDateBR, Management } from '../types';
+import { MaintenanceTemplate, ChecklistTemplateItem, TemplateChangeLog, Asset, formatDateBR, Management, ServiceOrder, getSectorGerencia } from '../types';
 import { 
   dbGetTemplates, 
   dbSaveTemplate, 
@@ -41,8 +41,139 @@ import {
   dbGetAssets,
   getDatabaseMode,
   AutoGenFilter,
-  dbGetManagements
+  dbGetManagements,
+  dbGetServiceOrders
 } from '../db/firebase';
+
+function getYearWeekLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const tempDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = tempDate.getUTCDay() || 7;
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((tempDate.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+  return `${tempDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function getQuarterLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const q = Math.floor(d.getMonth() / 3) + 1;
+  return `${d.getFullYear()}-Q${q}`;
+}
+
+function getSemesterLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const s = Math.floor(d.getMonth() / 6) + 1;
+  return `${d.getFullYear()}-S${s}`;
+}
+
+export function isSamePeriod(dateAStr: string, dateBStr: string, periodicity: string): boolean {
+  if (!dateAStr || !dateBStr) return false;
+  const p = periodicity || '';
+  if (p === 'Semanal') {
+    return getYearWeekLocal(dateAStr) === getYearWeekLocal(dateBStr);
+  }
+  if (p === 'Mensal') {
+    return dateAStr.slice(0, 7) === dateBStr.slice(0, 7);
+  }
+  if (p === 'Trimestral') {
+    return getQuarterLocal(dateAStr) === getQuarterLocal(dateBStr);
+  }
+  if (p === 'Semestral') {
+    return getSemesterLocal(dateAStr) === getSemesterLocal(dateBStr);
+  }
+  if (p === 'Anual') {
+    return dateAStr.slice(0, 4) === dateBStr.slice(0, 4);
+  }
+  return dateAStr === dateBStr;
+}
+
+export function alignPeriodDates(baseDateStr: string, periodicity: string): { startDate: string; endDate: string; scheduledDate: string } {
+  if (!baseDateStr) {
+    const today = new Date().toISOString().slice(0, 10);
+    return { startDate: today, endDate: today, scheduledDate: today };
+  }
+  const d = new Date(baseDateStr + 'T12:00:00');
+  const y = d.getFullYear();
+  
+  const formatDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  if (periodicity === 'Semanal') {
+    const day = d.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diffToMonday);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    
+    return {
+      startDate: formatDateString(monday),
+      endDate: formatDateString(friday),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Mensal') {
+    const m = d.getMonth();
+    const firstDay = new Date(y, m, 1);
+    const lastDay = new Date(y, m + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Trimestral') {
+    const m = d.getMonth();
+    const quarter = Math.floor(m / 3);
+    const qStartMonth = quarter * 3;
+    const qEndMonth = qStartMonth + 2;
+    
+    const firstDay = new Date(y, qStartMonth, 1);
+    const lastDay = new Date(y, qEndMonth + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Semestral') {
+    const m = d.getMonth();
+    const semester = Math.floor(m / 6);
+    const sStartMonth = semester * 6;
+    const sEndMonth = sStartMonth + 5;
+    
+    const firstDay = new Date(y, sStartMonth, 1);
+    const lastDay = new Date(y, sEndMonth + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Anual') {
+    const firstDay = new Date(y, 0, 1);
+    const lastDay = new Date(y, 11, 31);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  }
+  
+  return {
+    startDate: baseDateStr,
+    endDate: baseDateStr,
+    scheduledDate: baseDateStr
+  };
+}
 
 interface TemplatesViewProps {
   onTemplatesUpdated?: () => void;
@@ -86,6 +217,14 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationSummaryMsg, setGenerationSummaryMsg] = useState<string | null>(null);
+
+  // Calendar and safeguards states
+  const [existingOrders, setExistingOrders] = useState<ServiceOrder[]>([]);
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
+  const [selectedDayDate, setSelectedDayDate] = useState<string | null>(() => new Date().toISOString().slice(0, 10));
+  const [calendarSectorFilter, setCalendarSectorFilter] = useState<string>('all');
 
   const addFilterRow = () => {
     setFilterRows([
@@ -137,6 +276,10 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   // Custom Changelog reason when saving modifications
   const [changelogReason, setChangelogReason] = useState('');
   const [templateToDeleteId, setTemplateToDeleteId] = useState<string | null>(null);
+  const [isEditingTargetSector, setIsEditingTargetSector] = useState(false);
+  const [editingTargetSectorValue, setEditingTargetSectorValue] = useState('');
+  const [isEditingPeriodicity, setIsEditingPeriodicity] = useState(false);
+  const [editingPeriodicityValue, setEditingPeriodicityValue] = useState('');
 
   // Database mode / logged user details
   const dbMode = getDatabaseMode();
@@ -249,14 +392,16 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
 
   // Load backend configurations
   const loadData = async () => {
-    const [tList, aList, mList] = await Promise.all([
+    const [tList, aList, mList, oList] = await Promise.all([
       dbGetTemplates(),
       dbGetAssets(),
-      dbGetManagements()
+      dbGetManagements(),
+      dbGetServiceOrders()
     ]);
     setTemplates(tList);
     setAssets(aList);
     setManagements(mList);
+    setExistingOrders(oList);
     
     // Automatically select the first template if none is currently selected
     if (tList.length > 0 && !selectedTemplate) {
@@ -336,6 +481,60 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     await loadData();
     setSelectedTemplate(newTemplate);
     
+    if (onTemplatesUpdated) onTemplatesUpdated();
+  };
+
+  // Update template target sector
+  const handleUpdateTemplateSector = async (newSector: string) => {
+    if (!selectedTemplate || !newSector.trim()) return;
+
+    const newVersion = (selectedTemplate.version || 1) + 1;
+    const historyEntry: TemplateChangeLog = {
+      version: newVersion,
+      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      changeDescription: `Setor Alvo alterado de "${selectedTemplate.targetSectorOrType}" para "${newSector.trim()}".`,
+      user: currentUserLabel
+    };
+
+    const updatedTemplate = {
+      ...selectedTemplate,
+      version: newVersion,
+      targetSectorOrType: newSector.trim(),
+      history: [historyEntry, ...(selectedTemplate.history || [])]
+    };
+
+    setSelectedTemplate(updatedTemplate);
+    await dbSaveTemplate(updatedTemplate);
+    setTemplates(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
+    setIsEditingTargetSector(false);
+
+    if (onTemplatesUpdated) onTemplatesUpdated();
+  };
+
+  // Update template periodicity
+  const handleUpdateTemplatePeriodicity = async (newPeriodicity: string) => {
+    if (!selectedTemplate || !newPeriodicity.trim()) return;
+
+    const newVersion = (selectedTemplate.version || 1) + 1;
+    const historyEntry: TemplateChangeLog = {
+      version: newVersion,
+      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      changeDescription: `Periodicidade alterada de "${selectedTemplate.periodicity}" para "${newPeriodicity.trim()}".`,
+      user: currentUserLabel
+    };
+
+    const updatedTemplate = {
+      ...selectedTemplate,
+      version: newVersion,
+      periodicity: newPeriodicity.trim(),
+      history: [historyEntry, ...(selectedTemplate.history || [])]
+    };
+
+    setSelectedTemplate(updatedTemplate);
+    await dbSaveTemplate(updatedTemplate);
+    setTemplates(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
+    setIsEditingPeriodicity(false);
+
     if (onTemplatesUpdated) onTemplatesUpdated();
   };
 
@@ -581,6 +780,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         `Sucesso! Foram programadas e inseridas no banco de dados ${added} novas ordens de serviço preventivas/inspeções com base no lote de ${filterRows.length} linhas de filtros configurados.`
       );
       
+      await loadData();
       if (onTemplatesUpdated) onTemplatesUpdated();
     } catch (err: any) {
       console.error(err);
@@ -604,6 +804,9 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
       startDate: string;
       endDate: string;
       type: 'preventive' | 'survey';
+      management?: string;
+      comarca?: string;
+      alreadyExists?: boolean;
     }[] = [];
 
     let idCounter = 1;
@@ -632,20 +835,29 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             let i = 0;
             const limit = 100;
             while (i < limit) {
-              const scheduledDate = row.startDate;
-              const pStartDate = row.startDate;
-              const pEndDate = row.endDate;
+              const dates = alignPeriodDates(row.startDate, 'Semanal');
+              const title = `${t.name} - ${comarca}`;
+
+              // Duplication check in existing database orders
+              const alreadyExists = existingOrders.some((o) => {
+                if (!o.isSurvey || o.surveyLocation !== comarca) return false;
+                if (o.title !== title) return false;
+                return isSamePeriod(o.scheduledDate, dates.scheduledDate, 'Semanal');
+              });
 
               previewList.push({
                 id: idCounter++,
                 assetName: 'S/V - Vistoria Periódica',
                 assetCode: 'PE-VISTORIA',
-                title: `${t.name} - ${comarca}`,
-                scheduledDate: scheduledDate,
-                startDate: pStartDate,
-                endDate: pEndDate,
+                title: title,
+                scheduledDate: dates.scheduledDate,
+                startDate: dates.startDate,
+                endDate: dates.endDate,
                 periodicity: 'Semanal',
-                type: 'survey'
+                type: 'survey',
+                management: t.targetSectorOrType || 'Comarcas',
+                comarca: comarca,
+                alreadyExists: alreadyExists
               });
 
               i = limit; // Only generate 1 instance per selected period
@@ -683,30 +895,36 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             );
 
             for (const periodicity of commonPeriodicities) {
-              // Determine sequential offset per periodicity as requested (semanal = 7, mensal = 30, semestral = 180, anual = 365)
-              let offsetMultiplier = 30;
-              if (periodicity === 'Semanal') offsetMultiplier = 7;
-              else if (periodicity === 'Mensal') offsetMultiplier = 30;
-              else if (periodicity === 'Semestral') offsetMultiplier = 180;
-              else if (periodicity === 'Anual') offsetMultiplier = 365;
-
               let i = 0;
               const limit = 100;
               while (i < limit) {
-                const scheduledDate = row.startDate;
-                const pStartDate = row.startDate;
-                const pEndDate = row.endDate;
+                const dates = alignPeriodDates(row.startDate, periodicity);
+                const title = `Preventiva ${periodicity} - ${asset.name}`;
+
+                // Duplication check in existing database orders
+                const alreadyExists = existingOrders.some((o) => {
+                  if (o.isSurvey) return false;
+                  if (o.assetId !== asset.id) return false;
+                  
+                  const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
+                  if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
+
+                  return isSamePeriod(o.scheduledDate, dates.scheduledDate, periodicity);
+                });
 
                 previewList.push({
                   id: idCounter++,
                   assetName: asset.name,
                   assetCode: asset.code,
-                  title: `Preventiva ${periodicity} - ${asset.name}`,
-                  scheduledDate: scheduledDate,
-                  startDate: pStartDate,
-                  endDate: pEndDate,
+                  title: title,
+                  scheduledDate: dates.scheduledDate,
+                  startDate: dates.startDate,
+                  endDate: dates.endDate,
                   periodicity: periodicity,
-                  type: 'preventive'
+                  type: 'preventive',
+                  management: asset.sector || t.targetSectorOrType || 'Mecânica/Refrigeração',
+                  comarca: asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral',
+                  alreadyExists: alreadyExists
                 });
 
                 i = limit; // Only generate 1 instance per selected period
@@ -721,6 +939,89 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   };
 
   const simulationRecords = calculateDryRunSimulation();
+
+  // Check for duplicate rows in filterRows
+  const duplicateRowMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (let i = 0; i < filterRows.length; i++) {
+      const r1 = filterRows[i];
+      const isDup = filterRows.some((r2, idx) => {
+        if (idx === i) return false;
+        return (
+          r1.templateId === r2.templateId &&
+          r1.comarca === r2.comarca &&
+          r1.sector === r2.sector &&
+          r1.startDate === r2.startDate &&
+          r1.endDate === r2.endDate
+        );
+      });
+      if (isDup) {
+        map[r1.id] = true;
+      }
+    }
+    return map;
+  }, [filterRows]);
+
+  const hasDuplicateRuleError = useMemo(() => {
+    return Object.values(duplicateRowMap).some(v => v);
+  }, [duplicateRowMap]);
+
+  const removeDuplicateFilters = () => {
+    const seen = new Set<string>();
+    const uniqueRows = filterRows.filter(r => {
+      const key = `${r.templateId}-${r.comarca}-${r.sector}-${r.startDate}-${r.endDate}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    setFilterRows(uniqueRows);
+  };
+
+  // Month navigation helpers
+  const handlePrevMonth = () => {
+    setCalendarMonth(prev => {
+      if (prev === 0) {
+        setCalendarYear(y => y - 1);
+        return 11;
+      }
+      return prev - 1;
+    });
+  };
+
+  const handleNextMonth = () => {
+    setCalendarMonth(prev => {
+      if (prev === 11) {
+        setCalendarYear(y => y + 1);
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
+
+  // Generate calendar days
+  const calendarDays = useMemo(() => {
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay();
+
+    const days: (Date | null)[] = [];
+    // Pad previous empty days
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push(null);
+    }
+    // Days of the month
+    for (let d = 1; d <= daysInMonth; d++) {
+      days.push(new Date(calendarYear, calendarMonth, d));
+    }
+    return days;
+  }, [calendarMonth, calendarYear]);
+
+  // Translate date to standard "YYYY-MM-DD" local format
+  const getDayISOStr = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-sans text-slate-900 pb-12">
@@ -923,9 +1224,85 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       </span>
                     </div>
 
-                    <div className="p-3 bg-white rounded-xl border border-gray-200">
-                      <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Setor Alvo</span>
-                      <span className="text-xs font-black text-slate-800">{selectedTemplate.targetSectorOrType}</span>
+                     <div className="p-3 bg-white rounded-xl border border-gray-200 transition-all hover:bg-slate-50/50 relative group">
+                      <div className="flex justify-between items-start">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase block mb-1">Setor Alvo</span>
+                        {!isEditingTargetSector && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingTargetSector(true);
+                              setEditingTargetSectorValue(selectedTemplate.targetSectorOrType);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            Editar
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditingTargetSector ? (
+                        <div className="mt-1 space-y-2">
+                          <select
+                            value={editingTargetSectorValue}
+                            onChange={(e) => setEditingTargetSectorValue(e.target.value)}
+                            className="w-full text-xs py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-bold text-slate-800 cursor-pointer"
+                          >
+                            <option value="">Selecione a Gerência/Setor...</option>
+                            {managementsList.map((sector) => (
+                              <option key={sector} value={sector}>
+                                {sector}
+                              </option>
+                            ))}
+                            {!managementsList.includes(selectedTemplate.targetSectorOrType) && selectedTemplate.targetSectorOrType && (
+                              <option value={selectedTemplate.targetSectorOrType}>
+                                {selectedTemplate.targetSectorOrType} (Atual)
+                              </option>
+                            )}
+                          </select>
+
+                          {/* Text input to allow other custom names */}
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={editingTargetSectorValue}
+                              onChange={(e) => setEditingTargetSectorValue(e.target.value)}
+                              placeholder="Nome de outro setor..."
+                              className="w-full text-[10px] py-1 px-1.5 bg-slate-50 border border-gray-200 rounded-lg text-slate-800 uppercase font-bold"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateTemplateSector(editingTargetSectorValue)}
+                              className="text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 py-1 px-2.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingTargetSector(false)}
+                              className="text-[10px] font-black text-slate-500 hover:bg-slate-100 py-1 px-2 rounded-lg transition-all cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                            {selectedTemplate.targetSectorOrType}
+                          </span>
+                          {selectedTemplate.type === 'survey' && (
+                            <span className="text-[8px] text-slate-450 block leading-tight font-medium">
+                              Vistoria sem vínculo. Altere o Setor Alvo para encaminhar para outra gerência.
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {selectedTemplate.type === 'preventive' && (
@@ -947,9 +1324,95 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       </div>
                     )}
 
-                    <div className="p-3 bg-white rounded-xl border border-gray-200">
-                      <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Periodicidade Agendada</span>
-                      <span className="text-xs font-black text-slate-800">{selectedTemplate.periodicity}</span>
+                    <div className="p-3 bg-white rounded-xl border border-gray-200 transition-all hover:bg-slate-50/50 relative group">
+                      <div className="flex justify-between items-start">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase block mb-1">Periodicidade Agendada</span>
+                        {!isEditingPeriodicity && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingPeriodicity(true);
+                              setEditingPeriodicityValue(selectedTemplate.periodicity);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            Editar
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditingPeriodicity ? (
+                        <div className="mt-1 space-y-2">
+                          {/* Option Checkboxes */}
+                          <div className="flex flex-wrap gap-2.5 p-2 bg-slate-50 rounded-lg border border-slate-150 animate-fadeIn">
+                            {['Semanal', 'Mensal', 'Semestral', 'Anual'].map((p) => {
+                              // Split by comma and trim to see if checked
+                              const currentSelectedList = editingPeriodicityValue.split(',').map(x => x.trim()).filter(Boolean);
+                              const isChecked = currentSelectedList.includes(p);
+                              return (
+                                <label key={p} className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      let newList;
+                                      if (isChecked) {
+                                        newList = currentSelectedList.filter(x => x !== p);
+                                      } else {
+                                        newList = [...currentSelectedList, p];
+                                      }
+                                      // Sort in standard order if possible
+                                      const order = ['Semanal', 'Mensal', 'Semestral', 'Anual'];
+                                      newList.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+                                      setEditingPeriodicityValue(newList.join(', '));
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                  />
+                                  {p}
+                                </label>
+                              );
+                            })}
+                          </div>
+
+                          {/* Manual Input Override */}
+                          <div className="space-y-1">
+                            <span className="text-[8px] font-extrabold text-slate-400 uppercase block">Edição Direta/Customizada</span>
+                            <input
+                              type="text"
+                              value={editingPeriodicityValue}
+                              onChange={(e) => setEditingPeriodicityValue(e.target.value)}
+                              placeholder="Outra periodicidade (ex: Trimestral, Bimensal)..."
+                              className="w-full text-[10px] py-1 px-1.5 bg-slate-50 border border-gray-250 rounded-lg text-slate-800 font-bold"
+                            />
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateTemplatePeriodicity(editingPeriodicityValue)}
+                              className="text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 py-1 px-2.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingPeriodicity(false)}
+                              className="text-[10px] font-black text-slate-500 hover:bg-slate-100 py-1 px-2 rounded-lg transition-all cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <span className="text-xs font-black text-slate-800">
+                            {selectedTemplate.periodicity}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1245,29 +1708,56 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
               </div>
 
               <div className="space-y-3">
-                {filterRows.map((row, index) => (
-                  <div key={row.id} className="relative bg-white rounded-xl border border-gray-200 p-4 shadow-2xs space-y-4 md:space-y-0 md:flex md:items-end md:gap-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-1 text-left">
-                      
-                      {/* Modelo de Checklist Filter */}
-                      <div>
-                        <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Filtro #{index + 1} - Modelo
-                        </label>
-                        <select
-                          value={row.templateId}
-                          onChange={(e) => updateFilterRow(row.id, 'templateId', e.target.value)}
-                          className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
-                        >
-                          <option value="all">Todos os Modelos ({templates.length})</option>
-                          {templates.map(t => (
-                            <option key={t.id} value={t.id}>
-                              [{t.type === 'preventive' ? 'PREV' : 'VIST'}] {t.name}
+                {filterRows.map((row, index) => {
+                  const filteredTemplatesForSelect = templates.filter(t => {
+                    if (row.sector === 'all') return true;
+                    const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
+                    const rowSector = row.sector.toLowerCase().trim();
+                    return tSector === rowSector || t.id === row.templateId;
+                  });
+
+                  const isDuplicated = duplicateRowMap[row.id];
+                  return (
+                    <div 
+                      key={row.id} 
+                      className={`relative bg-white rounded-xl border p-4 shadow-2xs space-y-4 md:space-y-0 md:flex md:items-end md:gap-3 transition-all duration-200 ${
+                        isDuplicated 
+                          ? 'border-rose-400 bg-rose-50/70 shadow-rose-100 ring-4 ring-rose-500/10' 
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      {isDuplicated && (
+                        <div className="absolute -top-2.5 left-4 bg-rose-600 text-white text-[8px] font-black tracking-widest uppercase px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 animate-pulse z-10">
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          Regra de Filtro Repetida Detectada (Conflito de Lote)
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-1 text-left">
+                        
+                        {/* Modelo de Checklist Filter */}
+                        <div>
+                          <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Filtro #{index + 1} - Modelo
+                          </label>
+                          <select
+                            value={row.templateId}
+                            onChange={(e) => updateFilterRow(row.id, 'templateId', e.target.value)}
+                            className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
+                          >
+                            <option value="all">
+                              {row.sector === 'all' 
+                                ? `Todos os Modelos (${templates.length})` 
+                                : `Filtrados p/ Gerência (${filteredTemplatesForSelect.length})`
+                              }
                             </option>
-                          ))}
-                        </select>
-                      </div>
+                            {filteredTemplatesForSelect.map(t => (
+                              <option key={t.id} value={t.id}>
+                                [{t.type === 'preventive' ? 'PREV' : 'VIST'}] {t.name} {t.targetSectorOrType ? `(${t.targetSectorOrType})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
                       {/* Comarca Filter */}
                       <div>
@@ -1357,7 +1847,8 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       )}
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
 
               {/* Add row button */}
@@ -1373,27 +1864,109 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
               </div>
             </div>
 
-            {/* Live simulation banner */}
-            <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="space-y-1 w-full md:w-auto text-left">
-                <div className="flex items-center gap-1.5 text-emerald-900">
-                  <Sparkles className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span className="font-extrabold text-xs">Simulação Operacional de Cadastro Realizada</span>
-                </div>
-                <p className="text-[11px] text-emerald-800 leading-normal max-w-2xl">
-                  Considerando {assets.length} ativos e {templates.length} modelos atuais, o motor de agendamentos agendará um lote completo com <strong className="text-slate-900 font-black">{simulationRecords.length} ordens de serviço planejadas</strong> na nuvem para o intervalo selecionado!
-                </p>
-              </div>
+            {/* Live simulation banner with duplicates validation safeguard */}
+            {(() => {
+              const countNew = simulationRecords.filter((s) => !s.alreadyExists).length;
+              const countExists = simulationRecords.filter((s) => s.alreadyExists).length;
+              const isDuplicateSafe = !hasDuplicateRuleError;
 
-              <button
-                onClick={() => handleExecuteGeneration()}
-                disabled={isGenerating}
-                className="w-full md:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 shrink-0 shadow-md active:scale-95 whitespace-nowrap h-[44px]"
-              >
-                <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                {isGenerating ? 'PROCESSANDO OS NO BANCO...' : 'GERAR CRONOGRAMA EM LOTE'}
-              </button>
-            </div>
+              return (
+                <div className={`rounded-2xl p-5 border flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-200 ${
+                  hasDuplicateRuleError 
+                    ? 'bg-rose-50 border-rose-200 ring-4 ring-rose-500/10' 
+                    : countNew === 0
+                      ? 'bg-amber-50 border-amber-200 ring-4 ring-amber-500/5'
+                      : 'bg-emerald-50 border-emerald-100'
+                }`}>
+                  <div className="space-y-1 w-full md:w-auto text-left flex-1">
+                    <div className="flex items-center gap-1.5">
+                      {hasDuplicateRuleError ? (
+                        <>
+                          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 animate-pulse" />
+                          <span className="font-extrabold text-xs text-rose-900 uppercase tracking-wider">Aviso de Regra Redundante ou Duplicada</span>
+                        </>
+                      ) : countNew === 0 ? (
+                        <>
+                          <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0" />
+                          <span className="font-extrabold text-xs text-amber-950 uppercase tracking-wider">Cronograma Totalmente Preenchido</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-5 h-5 text-emerald-600 shrink-0" />
+                          <span className="font-extrabold text-xs text-emerald-900 uppercase tracking-wider">Simulação Operacional de Cadastro Realizada</span>
+                        </>
+                      )}
+                    </div>
+                    
+                    {hasDuplicateRuleError ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] text-rose-800 leading-normal max-w-2xl">
+                          Existem filtros idênticos ou redundantes com exatamente as mesmas regras de modelo, comarca, gerência e datas na grade acima. O motor de agendamentos impede o processamento com regras repetidas para evitar OS redundantes no banco de dados.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={removeDuplicateFilters}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Corrigir Agora: Remover Filtros Repetidos
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-slate-600 leading-normal max-w-2xl">
+                          Análise de cobertura para {assets.length} ativos e {templates.length} modelos de conformidade:
+                        </p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <span className="text-[10px] bg-emerald-600 text-white font-black px-2.5 py-1 rounded-md shadow-3xs uppercase tracking-wider">
+                            🆕 {countNew} Novas Programações a Agendar
+                          </span>
+                          {countExists > 0 && (
+                            <span className="text-[10px] bg-slate-500 text-white font-black px-2.5 py-1 rounded-md shadow-3xs border border-slate-600/30 uppercase tracking-wider">
+                              ✔️ {countExists} Já Programadas (Bloqueadas para evitar duplicidades)
+                            </span>
+                          )}
+                        </div>
+                        {countNew === 0 && (
+                          <p className="text-[10.5px] text-amber-800 font-extrabold pt-1">
+                            ⚠️ Bloqueio Preventivo: Todas as programações deste lote já existem no banco de dados para os respectivos períodos de recorrência.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => handleExecuteGeneration()}
+                    disabled={isGenerating || hasDuplicateRuleError || countNew === 0}
+                    className={`w-full md:w-auto px-6 py-3 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 shadow-md active:scale-95 whitespace-nowrap h-[44px] ${
+                      hasDuplicateRuleError 
+                        ? 'bg-rose-400 border border-rose-505 cursor-not-allowed opacity-[0.65]' 
+                        : countNew === 0
+                          ? 'bg-slate-400 border border-slate-450 cursor-not-allowed opacity-[0.8]'
+                          : 'bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50'
+                    }`}
+                    title={
+                      hasDuplicateRuleError 
+                        ? "Não é possível salvar com regras repetidas na grade" 
+                        : countNew === 0 
+                          ? "Não há novas programações pendentes para agendar neste período"
+                          : "Processar geração de preventivas hoje"
+                    }
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                    {isGenerating 
+                      ? 'PROCESSANDO OS NO BANCO...' 
+                      : hasDuplicateRuleError 
+                        ? '🚫 BLOQUEADO: REMOVA DUPLICADOS' 
+                        : countNew === 0
+                          ? '✔️ CRONOGRAMA EM DIA'
+                          : 'GERAR CRONOGRAMA EM LOTE'
+                    }
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* Response alert box */}
             {generationSummaryMsg && (
@@ -1407,67 +1980,101 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             )}
           </div>
 
-          {/* SIMULATION PREVIEW CARDS GRID */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-              Visualização Prévia do Lote de Programações ({simulationRecords.length} Atividades do Planejamento)
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {simulationRecords.length === 0 ? (
-                <div className="md:col-span-3 p-12 text-center text-slate-400 bg-white border border-dashed rounded-2xl">
-                  Selecione um período ou adicione modelos compatíveis com os ativos para que o mapa de preventivas não fique em branco.
-                </div>
-              ) : (
-                simulationRecords.slice(0, 15).map((sim, index) => (
-                  <div key={index} className="bg-white rounded-xl border border-gray-200 p-4 relative overflow-hidden shadow-xs text-left">
-                    <span className={`absolute top-0 right-0 px-2 py-0.5 text-[8px] font-black rounded-bl ${
-                      sim.type === 'preventive' ? 'bg-blue-50 text-blue-700 border-l border-b border-blue-100' : 'bg-purple-50 text-purple-700 border-l border-b border-purple-100'
-                    }`}>
-                      {sim.type === 'preventive' ? 'ATIVO' : 'VISTORIA'}
-                    </span>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-[9px] font-extrabold">
-                        <span className="font-extrabold text-[#3525cd] bg-indigo-50 px-2 py-0.5 rounded">ID: #{sim.id}</span>
-                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px]">
-                          Intervalo: {sim.periodicity}
-                        </span>
-                      </div>
-
-                      <h4 className="text-xs font-black text-[#0b1c30] line-clamp-1">{sim.title}</h4>
-                      
-                      {/* Execution Window */}
-                      <div className="grid grid-cols-2 gap-1.5 py-1 text-[9px] font-extrabold">
-                        <div className="bg-emerald-50 text-emerald-800 p-1.5 rounded border border-emerald-100/50 flex flex-col">
-                          <span className="text-[7.5px] uppercase text-emerald-600">Data de início</span>
-                          <span>{formatDateBR(sim.startDate)}</span>
-                        </div>
-                        <div className="bg-rose-50 text-rose-800 p-1.5 rounded border border-rose-100/50 flex flex-col">
-                          <span className="text-[7.5px] uppercase text-rose-600">Data final</span>
-                          <span>{formatDateBR(sim.endDate)}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1.5 border-t border-slate-50 text-[10px] text-slate-500 font-semibold">
-                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-black">
-                          {sim.assetCode}
-                        </span>
-                        <span className="line-clamp-1">
-                          {sim.assetName}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+          {/* VISUAL LAYOUT & SIMULATION PREVIEW */}
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-2xl border border-gray-200 text-left">
+              <span className="text-xs font-black text-[#0b1c30] uppercase tracking-wide flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-indigo-500" />
+                Visualização Prévia do Lote de Programações ({simulationRecords.length})
+              </span>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Veja a listagem das atividades preventivas e vistorias que serão geradas para o lote selecionado.
+              </p>
             </div>
 
-            {simulationRecords.length > 15 && (
-              <div className="text-center py-2 text-[11px] text-slate-500 font-bold">
-                Exibindo as primeiras 15 de {simulationRecords.length} atividades pré-calculadas no planejamento.
+            {/* DETAILED CARD GRID/LIST MODE (ORIGINAL PREVIEW) */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {simulationRecords.length === 0 ? (
+                  <div className="md:col-span-3 p-12 text-center text-slate-400 bg-white border border-dashed rounded-2xl">
+                    Selecione um período ou adicione modelos compatíveis com os ativos para que o mapa de preventivas não fique em branco.
+                  </div>
+                ) : (
+                  simulationRecords.slice(0, 15).map((sim, index) => (
+                    <div key={index} className={`bg-white rounded-xl border p-4 relative overflow-hidden shadow-xs text-left transition-all ${
+                      sim.alreadyExists 
+                        ? 'border-dashed border-slate-300 bg-slate-50/50 opacity-70' 
+                        : 'border-gray-200'
+                    }`}>
+                      <span className={`absolute top-0 right-0 px-2 py-0.5 text-[8px] font-black rounded-bl ${
+                        sim.alreadyExists
+                          ? 'bg-slate-200 text-slate-600 border-l border-b border-slate-300'
+                          : sim.type === 'preventive' 
+                            ? 'bg-blue-50 text-blue-700 border-l border-b border-blue-100' 
+                            : 'bg-purple-50 text-purple-700 border-l border-b border-purple-100'
+                      }`}>
+                        {sim.alreadyExists ? 'JÁ EXISTE' : sim.type === 'preventive' ? 'ATIVO' : 'VISTORIA'}
+                      </span>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[9px] font-extrabold gap-1">
+                          <span className="font-extrabold text-[#3525cd] bg-indigo-50 px-2 py-0.5 rounded shrink-0">ID: #{sim.id}</span>
+                          {sim.alreadyExists ? (
+                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-bold border border-slate-200 truncate">
+                              EXECUTANDO ✔️
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[8px] font-bold border border-emerald-200 truncate">
+                              NOVO 🆕
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[8px] shrink-0">
+                            {sim.periodicity}
+                          </span>
+                        </div>
+
+                        <h4 className={`text-xs font-black line-clamp-1 ${sim.alreadyExists ? 'text-slate-400 line-through italic' : 'text-[#0b1c30]'}`}>{sim.title}</h4>
+                        
+                        {/* Execution Window */}
+                        <div className="grid grid-cols-2 gap-1.5 py-1 text-[9px] font-extrabold">
+                          <div className={`p-1.5 rounded border flex flex-col ${
+                            sim.alreadyExists 
+                              ? 'bg-slate-100 text-slate-400 border-slate-200' 
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-100/50'
+                          }`}>
+                            <span className={`text-[7.5px] uppercase ${sim.alreadyExists ? 'text-slate-400' : 'text-emerald-600'}`}>Data de início</span>
+                            <span>{formatDateBR(sim.startDate)}</span>
+                          </div>
+                          <div className={`p-1.5 rounded border flex flex-col ${
+                            sim.alreadyExists 
+                              ? 'bg-slate-100 text-slate-400 border-slate-200' 
+                              : 'bg-rose-50 text-rose-800 border-rose-100/50'
+                          }`}>
+                            <span className={`text-[7.5px] uppercase ${sim.alreadyExists ? 'text-slate-400' : 'text-rose-600'}`}>Data final</span>
+                            <span>{formatDateBR(sim.endDate)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1.5 border-t border-slate-50 text-[10px] text-slate-500 font-semibold">
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-black shrink-0">
+                            {sim.assetCode}
+                          </span>
+                          <span className="line-clamp-1">
+                            {sim.assetName}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
+
+              {simulationRecords.length > 15 && (
+                <div className="text-center py-2 text-[11px] text-slate-500 font-bold">
+                  Exibindo as primeiras 15 de {simulationRecords.length} atividades pré-calculadas no planejamento.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* REGULATORY CORNER INFO */}

@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   TrendingUp,
   AlertTriangle,
   CheckCircle2,
   Hourglass,
-  FileSpreadsheet,
   Activity,
   History,
   ChevronRight,
@@ -15,10 +14,72 @@ import {
   Building2,
   Calendar,
   AlertCircle,
-  Database
+  Database,
+  Layers,
+  MapPin,
+  TrendingDown,
+  CheckCircle,
+  Sliders,
+  CalendarDays
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR } from '../types';
-import { dbGetAssets, getDatabaseMode } from '../db/firebase';
+import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../types';
+import { dbGetAssets, getAssetCycles } from '../db/firebase';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area
+} from 'recharts';
+
+function useContainerSize(defaultHeight: number) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: defaultHeight });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const element = containerRef.current;
+
+    const updateSize = () => {
+      if (element.offsetWidth > 0) {
+        setSize({
+          width: element.offsetWidth,
+          height: element.offsetHeight || defaultHeight,
+        });
+      }
+    };
+
+    updateSize();
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const rect = entries[0].contentRect;
+      const w = rect.width || element.offsetWidth;
+      const h = rect.height || element.offsetHeight || defaultHeight;
+      if (w > 0) {
+        setSize({ width: w, height: h });
+      }
+    });
+
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [defaultHeight]);
+
+  return [containerRef, size] as const;
+}
 
 interface DashboardViewProps {
   orders: ServiceOrder[];
@@ -26,17 +87,40 @@ interface DashboardViewProps {
   onNavigateToAssets: () => void;
   onNovaOS: () => void;
   onNavigateToSolicitations?: () => void;
+  userProfile?: HexonUser | null;
 }
 
-export default function DashboardView({ 
-  orders, 
-  onNavigateToOS, 
-  onNavigateToAssets, 
+export default function DashboardView({
+  orders,
+  onNavigateToOS,
+  onNavigateToAssets,
   onNovaOS,
-  onNavigateToSolicitations 
+  onNavigateToSolicitations,
+  userProfile
 }: DashboardViewProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loadingAssets, setLoadingAssets] = useState<boolean>(true);
+  const [selectedGerencia, setSelectedGerencia] = useState<string>(() => {
+    if (userProfile && userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
+      return userProfile.gerencia;
+    }
+    return 'all';
+  });
+  const [activeTab, setActiveTab] = useState<'indicadores' | 'ciclos' | 'backlog'>('indicadores');
+  const [renderCharts, setRenderCharts] = useState<boolean>(false);
+
+  const [chart1Ref, chart1Size] = useContainerSize(280);
+  const [chart2Ref, chart2Size] = useContainerSize(200);
+
+  useEffect(() => {
+    if (activeTab === 'indicadores') {
+      setRenderCharts(false);
+      const timer = setTimeout(() => {
+        setRenderCharts(true);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, selectedGerencia]);
 
   useEffect(() => {
     let active = true;
@@ -54,7 +138,18 @@ export default function DashboardView({
     };
   }, []);
 
-  // Helper to determine the comarca of an order
+  // Map operational sector to exact Hexon management profiles (GMMR, GMEE, GMC)
+  const getOrderGerencia = (os: ServiceOrder) => {
+    const sec = (os.sector || '').toUpperCase();
+    if (sec.includes('HVAC') || sec.includes('MEC') || sec.includes('REFR') || sec.includes('AR')) {
+      return 'GMMR'; // Mecânica / Refrigeração
+    }
+    if (sec.includes('ELET') || sec.includes('SUBST') || sec.includes('FORÇA')) {
+      return 'GMEE'; // Elétrica / Eletrônica
+    }
+    return 'GMC'; // Civil / Hidráulica / Predial / Geral
+  };
+
   const getOrderComarca = (os: ServiceOrder) => {
     if (os.isSurvey && os.surveyLocation) {
       return os.surveyLocation;
@@ -65,444 +160,812 @@ export default function DashboardView({
         return asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral';
       }
     }
-    if (os.description && os.description.includes('Comarca:')) {
-      const match = os.description.match(/Comarca:\s*([^.]+)/);
-      if (match) return match[1].trim();
-    }
     return 'Geral';
   };
 
-  // Helper to determine the CRAAI of an order
-  const getOrderCRAAI = (os: ServiceOrder) => {
+  const getAssetType = (os: ServiceOrder) => {
+    if (os.isSurvey) return 'Vistoria Predial';
     if (os.assetId && assets.length > 0) {
       const asset = assets.find(a => a.id === os.assetId);
       if (asset) {
-        return asset.specs?.CRAAI || asset.specs?.craai || os.sector || 'Geral';
+        return asset.specs?.TIPO || asset.specs?.tipo || asset.sector || 'Equipamento';
       }
     }
     return os.sector || 'Geral';
   };
 
-  // Live Count Metrics
-  const totalOrdersCount = orders.length;
-  const countPlanejadas = orders.filter(o => o.status === 'Planejada').length;
-  const countEmExecucao = orders.filter(o => o.status === 'Em Execução').length;
-  const countConcluidas = orders.filter(o => o.status === 'Concluída').length;
-  const countNaoExecutadas = orders.filter(o => o.status === 'Não Executada').length;
+  // Filter orders according to user selection
+  const filteredOrders = orders.filter(os => {
+    if (selectedGerencia !== 'all') {
+      return getOrderGerencia(os) === selectedGerencia;
+    }
+    return true;
+  });
 
-  // Real compliance efficiency calculation
-  const executionRate = totalOrdersCount > 0 
-    ? Math.round((countConcluidas / totalOrdersCount) * 100) 
-    : 100;
+  // Calculate stats metrics
+  const totalCount = filteredOrders.length;
+  const completedCount = filteredOrders.filter(o => o.status === 'Concluída').length;
+  const expiredCount = filteredOrders.filter(o => o.status === 'Não Executada').length;
+  const backlogCount = filteredOrders.filter(o => o.status === 'Novo' || o.status === 'Planejada' || o.status === 'Em Execução').length;
 
-  // Grouping preventives by Comarca dynamically (relevante e verdadeiro)
-  const comarcaStats = Object.entries(
-    orders.reduce((acc, os) => {
-      const c = getOrderComarca(os);
+  // 1. Eficiência (Executadas ÷ Previstas)
+  // Let's count "Previstas" as total service orders in the system that were scheduled
+  const efficiencyRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 100;
+
+  // 2. Eficácia (Executadas dentro do prazo ÷ Executadas)
+  // Inside deadline means signedAt (or completed date) <= scheduledDate or endDate. Let's assume on-time if not overdue.
+  const completedOnTime = filteredOrders.filter(o => {
+    if (o.status !== 'Concluída') return false;
+    // Fallback: If no signedAt, we assume on-time as it concluded successfully, or compare timestamps
+    if (o.signedAt && o.endDate) {
+      return o.signedAt.slice(0, 10) <= o.endDate;
+    }
+    return true; // default on time
+  }).length;
+
+  const efficacyRate = completedCount > 0 ? Math.round((completedOnTime / completedCount) * 100) : 100;
+
+  // 3. Índice por Gerência (GMMR, GMEE, GMC)
+  const gerenciaStats = ['GMMR', 'GMEE', 'GMC'].map(g => {
+    const ordersG = orders.filter(o => getOrderGerencia(o) === g);
+    const totalG = ordersG.length;
+    const completedG = ordersG.filter(o => o.status === 'Concluída').length;
+    const rateG = totalG > 0 ? Math.round((completedG / totalG) * 100) : 100;
+    return { name: g, total: totalG, completed: completedG, rate: rateG };
+  });
+
+  // 4. Índice por Periodicidade (Mensal, Semestral, Anual, Semanal)
+  const periodicityStats = ['Semanal', 'Mensal', 'Semestral', 'Anual'].map(p => {
+    const ordersP = filteredOrders.filter(o => o.periodicity === p || o.title.includes(p));
+    const totalP = ordersP.length;
+    const completedP = ordersP.filter(o => o.status === 'Concluída').length;
+    const rateP = totalP > 0 ? Math.round((completedP / totalP) * 100) : 100;
+    return { name: p, total: totalP, completed: completedP, rate: rateP };
+  });
+
+  // 5. Evolution over recent months (Simulating real latest 12 months)
+  const getMonthlyEvolutionData = () => {
+    // Generate dates dynamically representing the last 12 months
+    const monthsData: { [key: string]: { total: number; completed: number; expired: number } } = {};
+    const monthsList: string[] = [];
+    
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+      monthsData[label] = { total: 0, completed: 0, expired: 0 };
+      monthsList.push(label);
+    }
+
+    filteredOrders.forEach(o => {
+      const date = new Date(o.scheduledDate + 'T12:00:00');
+      const label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+      if (monthsData[label]) {
+        monthsData[label].total++;
+        if (o.status === 'Concluída') {
+          monthsData[label].completed++;
+        } else if (o.status === 'Não Executada') {
+          monthsData[label].expired++;
+        }
+      }
+    });
+
+    return monthsList.map(m => ({
+      month: m.toUpperCase(),
+      Previstas: monthsData[m].total,
+      Concluídas: monthsData[m].completed,
+      Atrasadas: monthsData[m].expired
+    }));
+  };
+
+  const evolutionData = getMonthlyEvolutionData();
+
+  // 6. Index by comarca
+  const comarcaList = Object.entries(
+    filteredOrders.reduce((acc, o) => {
+      const c = getOrderComarca(o);
       if (!acc[c]) acc[c] = { total: 0, completed: 0 };
       acc[c].total++;
-      if (os.status === 'Concluída') acc[c].completed++;
+      if (o.status === 'Concluída') acc[c].completed++;
       return acc;
     }, {} as Record<string, { total: number; completed: number }>)
-  ).map(([name, stats]) => ({
+  ).map(([name, stat]) => ({
     name,
-    total: stats.total,
-    completed: stats.completed,
-    rate: stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0,
-  })).sort((a, b) => b.total - a.total);
+    total: stat.total,
+    completed: stat.completed,
+    rate: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 100
+  })).sort((a, b) => b.total - a.total).slice(0, 10);
 
-  // Grouping preventives by CRAAI dynamically
-  const craaiStats = Object.entries(
-    orders.reduce((acc, os) => {
-      const c = getOrderCRAAI(os);
-      if (!acc[c]) acc[c] = { total: 0, completed: 0 };
-      acc[c].total++;
-      if (os.status === 'Concluída') acc[c].completed++;
-      return acc;
-    }, {} as Record<string, { total: number; completed: number }>)
-  ).map(([name, stats]) => ({
-    name,
-    total: stats.total,
-    completed: stats.completed,
-    rate: stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0,
-  })).sort((a, b) => b.total - a.total);
-
-  // Grouping and listing Technician analytics 
-  const techStats = Object.entries(
-    orders.reduce((acc, os) => {
-      const t = os.assignedTechnician || 'Não designado';
+  // 7. Index by Technician
+  const techList = Object.entries(
+    filteredOrders.reduce((acc, o) => {
+      const t = o.assignedTechnician || 'Pendente de Atribuição';
       if (!acc[t]) acc[t] = { total: 0, completed: 0 };
       acc[t].total++;
-      if (os.status === 'Concluída') acc[t].completed++;
+      if (o.status === 'Concluída') acc[t].completed++;
       return acc;
     }, {} as Record<string, { total: number; completed: number }>)
-  ).map(([name, stats]) => ({
+  ).map(([name, stat]) => ({
     name,
-    total: stats.total,
-    completed: stats.completed,
-    rate: stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0,
-  })).sort((a, b) => b.total - a.total);
+    total: stat.total,
+    completed: stat.completed,
+    rate: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 100
+  })).sort((a, b) => b.total - a.total).slice(0, 8);
 
-  // Upcoming preventives (next actions)
-  const upcomingPreventives = [...orders]
-    .filter(o => o.status === 'Planejada' || o.status === 'Em Execução')
-    .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime())
-    .slice(0, 5);
+  // 8. Index by Asset Type
+  const assetTypeList = Object.entries(
+    filteredOrders.reduce((acc, o) => {
+      const type = getAssetType(o);
+      if (!acc[type]) acc[type] = { total: 0, completed: 0 };
+      acc[type].total++;
+      if (o.status === 'Concluída') acc[type].completed++;
+      return acc;
+    }, {} as Record<string, { total: number; completed: number }>)
+  ).map(([name, stat]) => ({
+    name,
+    total: stat.total,
+    completed: stat.completed,
+    rate: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 100
+  })).sort((a, b) => b.total - a.total).slice(0, 8);
 
-  // Critical alerts: Não Executadas (flagged red)
-  const criticalAlerts = orders.filter(o => o.status === 'Não Executada');
+  // Overdue non-performed preventives needing urgent attention
+  const expiredNotExecutedList = filteredOrders.filter(o => o.status === 'Não Executada').slice(0, 5);
+
+  // Build upcoming 7 days smart calendar representation
+  const getNext7DaysCalendar = () => {
+    const days: { dateStr: string; label: string; count: number; completed: number }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const label = d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' });
+      
+      const dayOrders = filteredOrders.filter(o => o.scheduledDate === dateStr);
+      const count = dayOrders.length;
+      const completed = dayOrders.filter(o => o.status === 'Concluída').length;
+      
+      days.push({ dateStr, label, count, completed });
+    }
+    return days;
+  };
+
+  const next7Days = getNext7DaysCalendar();
 
   return (
-    <div className="space-y-6 font-sans">
-      {/* Hero Header Section */}
-      <section className="bg-white rounded-xl p-6 md:p-7 border border-slate-200 shadow-sm relative overflow-hidden transition-all duration-200 hover:shadow-md flex items-center justify-between">
-        <div className="relative z-10 max-w-4xl border-l-4 border-[#3525cd] pl-4 md:pl-5">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3525cd] animate-pulse"></span>
-            <span className="text-[10px] font-black text-[#3525cd] tracking-widest uppercase">
-              Métricas Operacionais das Preventivas
-            </span>
-          </div>
-          <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-snug">
-            Painel de Controle — <span className="text-[#3525cd]">Indicadores de Campo</span>
+    <div className="space-y-6 font-sans text-slate-800 pb-12">
+      
+      {/* PROFESSIONAL TITLE BAR */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-gradient-to-r from-[#0d1e32] to-[#1a365d] p-6 rounded-2xl text-white shadow-md relative overflow-hidden">
+        <div className="relative z-10 space-y-1">
+          <span className="bg-blue-500/30 text-blue-300 font-extrabold text-[9px] uppercase tracking-widest px-2.5 py-1 rounded-full border border-blue-500/20">
+            Painel Executivo Real-Time
+          </span>
+          <h1 className="text-2xl font-black tracking-tight mt-1 flex items-center gap-2">
+            <Activity className="w-6 h-6 text-emerald-400 animate-pulse" />
+            Hexon Ciclo Completo de Manutenção
           </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-            Consulte o desempenho, cobertura de comarcas, distribuição de carga por CRAAI e o andamento das manutenções programadas em tempo real.
+          <p className="text-slate-300 text-xs max-w-2xl leading-relaxed">
+            Indicadores gerenciais de eficiência, eficácia e backlog para vistorias e contratos preventivos dos ativos de engenharia.
           </p>
         </div>
 
-        <div className="hidden lg:flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-lg py-2 px-3.5 mr-6 relative z-10 shrink-0">
-          <Activity className="w-4 h-4 text-[#3525cd] animate-pulse" />
-          <div className="text-right">
-            <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Registros de OS</span>
-            <span className="font-mono text-xs font-black text-slate-700">{totalOrdersCount} preventivas</span>
-          </div>
-        </div>
-
-        {/* Backdrop Visual Accent */}
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-[#3525cd]/5 to-transparent pointer-events-none md:block hidden"></div>
-      </section>
-
-      {/* Real-time Metric Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Metric 1: Total planejado */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200/80 shadow-3xs hover:shadow-2xs transition-all flex flex-col justify-between">
-          <div className="flex justify-between items-start">
+        {/* Global Filter or Access Restriction Capsule */}
+        {userProfile?.perfil === 'Profissional' ? (
+          <div className="relative z-10 mt-4 md:mt-0 bg-blue-500/20 backdrop-blur-md p-2.5 px-3.5 rounded-xl border border-blue-500/30 flex items-center gap-2.5 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse shrink-0"></span>
             <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Planejadas</p>
-              <h3 className="text-2xl font-black text-slate-800">{countPlanejadas}</h3>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              <Calendar className="w-4.5 h-4.5" />
+              <p className="font-extrabold text-[#93c5fd] leading-none uppercase tracking-wider text-[9px]">Dashboard Exclusivo</p>
+              <p className="font-black text-white text-xs mt-1">{userProfile.name}</p>
             </div>
           </div>
-          <p className="text-[9px] text-slate-500 mt-3 pt-2 border-t border-slate-100 font-bold">Aguardando calendário</p>
-        </div>
-
-        {/* Metric 2: Em execução */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200/80 shadow-3xs hover:shadow-2xs transition-all flex flex-col justify-between">
-          <div className="flex justify-between items-start">
+        ) : userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas' ? (
+          <div className="relative z-10 mt-4 md:mt-0 bg-emerald-500/20 backdrop-blur-md p-2.5 px-3.5 rounded-xl border border-emerald-500/30 flex items-center gap-2.5 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
             <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Em Execução</p>
-              <h3 className="text-2xl font-black text-amber-600">{countEmExecucao}</h3>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Clock className="w-4.5 h-4.5" />
+              <p className="font-extrabold text-[#6ee7b7] leading-none uppercase tracking-wider text-[9px]">Gerência Exclusiva</p>
+              <p className="font-black text-white text-xs mt-1">{userProfile.gerencia}</p>
             </div>
           </div>
-          <p className="text-[9px] text-slate-500 mt-3 pt-2 border-t border-slate-100 font-bold">Equipes ativas no campo</p>
-        </div>
+        ) : (
+          <div className="relative z-10 mt-4 md:mt-0 bg-white/10 backdrop-blur-md p-1 px-2 rounded-xl border border-white/20 flex items-center gap-2 text-xs">
+            <span className="font-extrabold text-slate-200">Filtrar por Gerência:</span>
+            <select 
+              value={selectedGerencia} 
+              onChange={(e) => setSelectedGerencia(e.target.value)}
+              className="bg-[#122844] font-black border-none text-white rounded px-2.5 py-1 focus:ring-1 focus:ring-blue-400 text-xs"
+            >
+              <option value="all">Todas Gerências (Total)</option>
+              <option value="GMMR">GMMR (Mecânica e Refrigeração)</option>
+              <option value="GMEE">GMEE (Eletricidade e Substações)</option>
+              <option value="GMC">GMC (Predial / Civil)</option>
+            </select>
+          </div>
+        )}
 
-        {/* Metric 3: Concluídas */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200/80 shadow-3xs hover:shadow-2xs transition-all flex flex-col justify-between">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Concluídas</p>
-              <h3 className="text-2xl font-black text-emerald-600">{countConcluidas}</h3>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <p className="text-[9px] text-emerald-600 mt-3 pt-2 border-t border-slate-100 font-extrabold flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5" />
-            SLA de execução OK
-          </p>
-        </div>
+        {/* Diagonal Visual Light Accent */}
+        <div className="absolute top-0 right-1/4 w-32 h-64 bg-white/5 skew-x-12 pointer-events-none"></div>
+      </div>
 
-        {/* Metric 4: Não Executadas (Criticas) */}
-        <div className={`rounded-xl p-4 border shadow-3xs hover:shadow-2xs transition-all flex flex-col justify-between ${
-          countNaoExecutadas > 0 
-            ? 'bg-rose-50/50 border-rose-200 text-rose-900' 
-            : 'bg-white border-slate-200/80 text-slate-400'
-        }`}>
-          <div className="flex justify-between items-start">
-            <div>
-              <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${countNaoExecutadas > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Não Executadas</p>
-              <h3 className={`text-2xl font-black ${countNaoExecutadas > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{countNaoExecutadas}</h3>
-            </div>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-              countNaoExecutadas > 0 ? 'bg-rose-100 text-rose-600 animate-pulse' : 'bg-slate-100 text-slate-450'
-            }`}>
-              <Flag className="w-4.5 h-4.5 fill-current" />
-            </div>
-          </div>
-          <p className={`text-[9.5px] mt-3 pt-2 border-t font-black uppercase tracking-wider ${
-            countNaoExecutadas > 0 
-              ? 'border-rose-150 text-rose-600' 
-              : 'border-slate-100 text-slate-400'
-          }`}>
-            {countNaoExecutadas > 0 ? '⚠️ Atenção solicitada' : 'Sem pendências expostas'}
-          </p>
-        </div>
+      {/* THREE VIEW SWITCH TABS */}
+      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-fit gap-1">
+        <button
+          onClick={() => setActiveTab('indicadores')}
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
+            activeTab === 'indicadores'
+              ? 'bg-white text-[#0b1c30] shadow-sm'
+              : 'text-slate-500 hover:text-[#0b1c30]'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          Indicadores Globais
+        </button>
+        <button
+          onClick={() => setActiveTab('ciclos')}
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
+            activeTab === 'ciclos'
+              ? 'bg-white text-[#0b1c30] shadow-sm'
+              : 'text-slate-500 hover:text-[#0b1c30]'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Tabela de Ciclos Ativos
+        </button>
+        <button
+          onClick={() => setActiveTab('backlog')}
+          className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer uppercase ${
+            activeTab === 'backlog'
+              ? 'bg-white text-[#0b1c30] shadow-sm'
+              : 'text-slate-500 hover:text-[#0b1c30]'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4" />
+          Atrasos e Fora do Ciclo ({expiredCount})
+        </button>
+      </div>
 
-        {/* Metric 5: Eficiência */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200/80 shadow-3xs hover:shadow-2xs transition-all flex flex-col justify-between">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Aproveitamento</p>
-              <h3 className="text-2xl font-black text-slate-800">
-                {executionRate}%
-              </h3>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-              <Activity className="w-4.5 h-4.5" />
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-100">
-            <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-              <div className="bg-indigo-600 h-full rounded-full transition-all duration-300" style={{ width: `${executionRate}%` }}></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Critical Alerts Banner Section if any are "Não Executadas" */}
-      {criticalAlerts.length > 0 && (
-        <section className="bg-rose-50 border border-rose-150 rounded-xl p-5 shadow-xs">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            <div>
-              <h3 className="text-sm font-black text-rose-800 uppercase tracking-wide">Atenção: Preventivas Pendentes de Execução ({criticalAlerts.length})</h3>
-              <p className="text-[11px] text-rose-600">As seguintes preventivas atingiram o tempo limite ou foram registradas como Não Executadas. Reavaliar imediatamente.</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {criticalAlerts.map(os => (
-              <div key={os.id} onClick={onNavigateToOS} className="bg-white border border-rose-200 rounded-lg p-3 cursor-pointer hover:border-rose-450 transition-colors shadow-3xs flex flex-col justify-between">
-                <div>
-                  <div className="flex justify-between items-start gap-2 mb-1.5">
-                    <span className="font-mono text-xs text-rose-600 font-bold">#{os.id}</span>
-                    <span className="bg-rose-100 text-rose-700 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
-                      <Flag className="w-2 h-2 fill-current" /> Não Executada
-                    </span>
+      {activeTab === 'indicadores' && (
+        <>
+          {/* THE BENTO METRIC GRID */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Card 1: EFICIÊNCIA OPERACIONAL */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-[#3525cd]/40 transition-all flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="p-2.5 rounded-xl bg-blue-50 text-[#3525cd]">
+                    <CheckCircle className="w-5 h-5" />
                   </div>
-                  <h4 className="text-[11.5px] font-extrabold text-slate-800 line-clamp-2 leading-snug mb-2">{os.title}</h4>
+                  <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    SLA Meta: 90%
+                  </span>
                 </div>
-                <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-[9px] font-bold text-slate-500">
-                  <span className="truncate max-w-[120px]" title={os.assignedTechnician}>Téc: {os.assignedTechnician}</span>
-                  <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.2 rounded font-mono text-slate-600">{formatDateBR(os.scheduledDate)}</span>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Eficiência</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-3xl font-black text-slate-800 tracking-tight">{efficiencyRate}%</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">concluídas</span>
+                  </div>
                 </div>
               </div>
-            ))}
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Calculado por <strong className="text-slate-700">Concluídas ({completedCount})</strong> sobre o total de <strong className="text-slate-700">Previstas ({totalCount})</strong>.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-blue-600 h-full rounded-full" style={{ width: `${efficiencyRate}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: EFICÁCIA (No Prazo) */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    SLA Prazo
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Eficácia</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-3xl font-black text-emerald-600 tracking-tight">{efficacyRate}%</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">no prazo</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Quantidade de intervenções finalizadas <strong className="text-emerald-600 font-extrabold">antes do término do período previsto</strong>.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${efficacyRate}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: BACKLOG */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-amber-500/40 transition-all flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600">
+                    <Hourglass className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    backlogCount > 40 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {backlogCount > 40 ? 'Sobrecarga' : 'Backlog Sob Controle'}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Backlog Ativo</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-3xl font-black text-slate-800 tracking-tight">{backlogCount}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">ordens em aberto</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Preventivas e vistorias pendentes aguardando ou em fase de execução técnica por profissionais.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-amber-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (backlogCount/totalCount)*100 : 0}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: NÃO EXECUTADAS */}
+            <div className={`rounded-2xl p-5 shadow-xs relative overflow-hidden transition-all flex flex-col justify-between ${
+              expiredCount > 0
+                ? 'bg-rose-50 border border-rose-200 text-rose-900 group hover:border-rose-400'
+                : 'bg-white border border-slate-200 text-slate-400 hover:border-slate-300'
+            }`}>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className={`p-2.5 rounded-xl ${expiredCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    expiredCount > 0 ? 'bg-rose-200 text-rose-800' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    Ciclo Fechado
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Não Executadas</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className={`text-3xl font-black tracking-tight ${expiredCount > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{expiredCount}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">ciclos falhados</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Ciclos que viraram de mês/período e foram travados no banco automático como <strong className="text-rose-600">Não Executada</strong>.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (expiredCount/totalCount)*100 : 0}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+          </section>
+
+          {/* VISUAL CHARTS ROW - MASTER CONTAINER */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Chart 1: Evolução Mensal dos Últimos 12 Meses (Recharts Area/Line) */}
+            <div className="lg:col-span-8 bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+              <div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-blue-600" />
+                  Evolução Mensal (Últimos 12 Meses)
+                </h3>
+                <p className="text-[11px] text-slate-450">Histórico real de preventivas Geradas, Finalizadas e Não Executadas.</p>
+              </div>
+
+              <div ref={chart1Ref} className="h-[280px] w-full mt-6 min-w-0 min-h-0 relative">
+                {chart1Size.width > 0 ? (
+                  <AreaChart width={chart1Size.width} height={chart1Size.height} data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorPrevistas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3525cd" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#3525cd" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorConcluidas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="month" tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
+                    <YAxis tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
+                    <Tooltip contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700, paddingTop: 10 }} />
+                    <Area type="monotone" dataKey="Previstas" stroke="#3525cd" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPrevistas)" />
+                    <Area type="monotone" dataKey="Concluídas" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorConcluidas)" />
+                    <Area type="monotone" dataKey="Atrasadas" stroke="#f43f5e" strokeWidth={1.5} dot />
+                  </AreaChart>
+                ) : (
+                  <div className="w-full h-full bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center p-6 space-y-3 animate-pulse">
+                    <svg className="w-8 h-8 text-slate-350 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.003 9.003 0 1020.945 13H11V3.055z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                    </svg>
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Carregando Histórico Evolutivo...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Índice por Gerência (BMMR vs. BMEE vs. GMC) */}
+            <div className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
+              <div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  Métricas de Gerências Hexon
+                </h3>
+                <p className="text-[11px] text-slate-450">Visibilidade de performance por diretoria operacional.</p>
+              </div>
+
+              <div ref={chart2Ref} className="h-[200px] w-full mt-4 min-w-0 min-h-0 relative">
+                {chart2Size.width > 0 ? (
+                  <BarChart width={chart2Size.width} height={chart2Size.height} data={gerenciaStats} layout="vertical" margin={{ left: -15, right: 10, top: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fontWeight: 900 }} stroke="#1e293b" />
+                    <Tooltip contentStyle={{ fontSize: 11, fontWeight: 700 }} formatter={(v) => [`${v}%`, 'Eficiência']} />
+                    <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
+                      {gerenciaStats.map((entry, index) => {
+                        const colors = ['#3525cd', '#10b981', '#f59e0b'];
+                        return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                ) : (
+                  <div className="w-full h-full bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center p-4 space-y-2 animate-pulse">
+                    <svg className="w-7 h-7 text-slate-350 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
+                    </svg>
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Calculando Eficiência...</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-2 mt-4 text-[11px]">
+                {gerenciaStats.map((g) => (
+                  <div key={g.name} className="flex justify-between items-center">
+                    <span className="font-extrabold text-slate-700">{g.name}</span>
+                    <span className="font-mono text-slate-500">{g.completed}/{g.total} OS concluídas ({g.rate}%)</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* BRIGADE DETAILS ROW: COMARCAS, TÉCNICOS, ATIVOS & PERIODICIDADE */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            
+            {/* List 1: Comarcas */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+              <h4 className="text-xs font-black text-[#0b1c30] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                Índice por Comarca Top 10
+              </h4>
+              <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                {comarcaList.map((c, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[10.5px] font-bold text-slate-700">
+                      <span className="truncate max-w-[120px] uppercase font-mono text-[9px] text-indigo-650 bg-indigo-50 px-1 rounded">{c.name}</span>
+                      <span className="font-mono text-slate-500 font-extrabold">{c.completed}/{c.total} OS ({c.rate}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                      <div className="bg-[#3525cd] h-full rounded-full" style={{ width: `${c.rate}%` }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* List 2: Técnicos */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+              <h4 className="text-xs font-black text-[#0b1c30] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                <User className="w-4 h-4 text-blue-600" />
+                Eficiência por Técnico
+              </h4>
+              <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                {techList.map((t, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[10.5px] font-bold text-slate-700">
+                      <span className="truncate max-w-[140px]" title={t.name}>{t.name}</span>
+                      <span className="font-mono text-slate-500 font-extrabold">{t.completed}/{t.total} ({t.rate}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${t.rate}%` }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* List 3: Tipos de Ativo */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+              <h4 className="text-xs font-black text-[#0b1c30] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                <Wrench className="w-4 h-4 text-blue-600" />
+                Por Tipo de Ativo
+              </h4>
+              <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                {assetTypeList.map((a, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[10.5px] font-bold text-slate-700">
+                      <span className="truncate max-w-[130px] font-mono text-[9.5px] text-slate-600">{a.name}</span>
+                      <span className="font-mono text-slate-500 font-extrabold">{a.completed}/{a.total} ({a.rate}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                      <div className="bg-amber-500 h-full rounded-full" style={{ width: `${a.rate}%` }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* List 4: Periodicidade Indices */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-black text-[#0b1c30] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  Por Periodicidade
+                </h4>
+                <div className="space-y-4">
+                  {periodicityStats.map((p, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between items-baseline text-[10px] font-black text-slate-700">
+                        <span>{p.name.toUpperCase()}</span>
+                        <span className="font-mono text-slate-500">{p.completed}/{p.total} OS ({p.rate}%)</span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="bg-indigo-650 h-full rounded-full animate-pulse" style={{ width: `${p.rate}%` }}></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Weekly inspections information banner */}
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-[10px] mt-4 text-blue-700 leading-relaxed font-bold">
+                As vistorias semanais sem ativo são controladas automaticamente de forma que semanas falhas gerem pendências imediatas no histórico de comarcas.
+              </div>
+            </div>
+
+          </div>
+
+          {/* DYNAMIC WEEKLY PREPARATIVE MATRIX */}
+          <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <CalendarDays className="w-5 h-5 text-indigo-600" />
+              Cronograma Inteligente e Capacidade Próximos 7 Dias
+            </h3>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3.5">
+              {next7Days.map((day) => {
+                const occupancyPercent = day.count > 0 ? Math.round((day.completed / day.count) * 100) : 0;
+                const isOverloaded = day.count >= 8;
+                return (
+                  <div 
+                    key={day.dateStr} 
+                    className={`p-3.5 rounded-xl border flex flex-col text-center justify-between min-h-[110px] transition-all hover:bg-slate-50 ${
+                      isOverloaded 
+                        ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-3xs' 
+                        : (day.count > 0 ? 'bg-indigo-50/20 border-indigo-100' : 'bg-white border-slate-150')
+                    }`}
+                  >
+                    <div>
+                      <span className="block text-[11px] font-black uppercase text-slate-600">{day.label}</span>
+                      <span className="block text-[8.5px] font-mono text-slate-400 mt-0.5">{day.dateStr}</span>
+                    </div>
+
+                    <div className="my-2.5">
+                      <span className="block text-xl font-black text-slate-800">{day.count}</span>
+                      <span className="block text-[9px] font-bold text-slate-400">Atividades</span>
+                    </div>
+
+                    <div>
+                      {day.count > 0 ? (
+                        <div className="space-y-1">
+                          <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
+                            <div className="bg-blue-600 h-full rounded-full" style={{ width: `${occupancyPercent}%` }}></div>
+                          </div>
+                          <span className="text-[8.5px] font-extrabold text-slate-500 uppercase">{day.completed}/{day.count} Feitas</span>
+                        </div>
+                      ) : (
+                        <span className="text-[8.5px] font-black text-slate-350 uppercase">Sem Carga</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'ciclos' && (
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+          <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 pb-4 mb-4">
+            <div>
+              <h3 className="text-sm font-black text-[#0b1c30] uppercase tracking-wide flex items-center gap-1.5">
+                <Database className="w-5 h-5 text-blue-600" />
+                Matriz de Status de Ciclos Preventivos por Ativo
+              </h3>
+              <p className="text-xs text-slate-500">Última conclusão de Ordem e Próxima data de abertura prevista sob guarda do motor de agendamentos.</p>
+            </div>
+            
+            <button 
+              onClick={onNavigateToAssets}
+              className="bg-slate-50 border border-slate-200 text-[#0b1c30] font-black hover:bg-slate-100 text-xs px-4 py-2 rounded-lg cursor-pointer"
+            >
+              Criar ou Importar Ativos
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            {assets.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 font-bold italic text-xs">
+                Nenhum ativo cadastrado para auditar ciclos preventivos.
+              </div>
+            ) : (
+              <table className="w-full text-left text-[11px] border-collapse">
+                <thead className="bg-slate-100/80 text-slate-600 font-black uppercase tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="px-5 py-3 w-40">Ativo / Patrimônio</th>
+                    <th className="px-5 py-3 min-w-[150px]">Ativo Nome</th>
+                    <th className="px-5 py-3">Periodicidade Mensal</th>
+                    <th className="px-5 py-3">Periodicidade Semestral</th>
+                    <th className="px-5 py-3">Periodicidade Anual</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-semibold">
+                  {assets.map((asset) => {
+                    const cycles = getAssetCycles(asset, orders);
+                    const listPeriodicities = asset.periodicities || [];
+
+                    return (
+                      <tr key={asset.id} className="hover:bg-slate-50/50">
+                        <td className="px-5 py-3">
+                          <code className="bg-indigo-50/50 text-[#3525cd] text-[10px] font-black px-2 py-0.5 rounded border border-indigo-100/50">
+                            {asset.code}
+                          </code>
+                          <span className="block text-[9px] text-slate-350 font-bold mt-1 uppercase truncate max-w-[160px]" title={asset.location}>
+                            {asset.location}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="font-extrabold text-slate-800 truncate max-w-[200px]" title={asset.name}>{asset.name}</div>
+                          <span className="text-[9.5px] italic text-slate-450">{asset.specs.tipo || asset.specs.TIPO || 'Equipamento'}</span>
+                        </td>
+                        
+                        {/* Mensal */}
+                        <td className="px-5 py-3">
+                          {listPeriodicities.includes('Mensal') ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  cycles['Mensal']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
+                                }`} />
+                                <span className={`text-[9.5px] font-extrabold ${cycles['Mensal']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
+                                  {cycles['Mensal']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
+                                </span>
+                              </div>
+                              <span className="block text-[9px] text-slate-400">Última: {cycles['Mensal']?.lastExecution ? formatDateBR(cycles['Mensal']?.lastExecution) : 'Nenhuma'}</span>
+                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Mensal']?.nextGenerationPrevista)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
+                          )}
+                        </td>
+
+                        {/* Semestral */}
+                        <td className="px-5 py-3">
+                          {listPeriodicities.includes('Semestral') ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  cycles['Semestral']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
+                                }`} />
+                                <span className={`text-[9.5px] font-extrabold ${cycles['Semestral']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
+                                  {cycles['Semestral']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
+                                </span>
+                              </div>
+                              <span className="block text-[9px] text-slate-400">Última: {cycles['Semestral']?.lastExecution ? formatDateBR(cycles['Semestral']?.lastExecution) : 'Nenhuma'}</span>
+                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Semestral']?.nextGenerationPrevista)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
+                          )}
+                        </td>
+
+                        {/* Anual */}
+                        <td className="px-5 py-3">
+                          {listPeriodicities.includes('Anual') ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  cycles['Anual']?.status === 'Atrasado' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
+                                }`} />
+                                <span className={`text-[9.5px] font-extrabold ${cycles['Anual']?.status === 'Atrasado' ? 'text-rose-600' : 'text-slate-600'}`}>
+                                  {cycles['Anual']?.status === 'Atrasado' ? 'ATRASADO' : 'EM DIA'}
+                                </span>
+                              </div>
+                              <span className="block text-[9px] text-slate-400">Última: {cycles['Anual']?.lastExecution ? formatDateBR(cycles['Anual']?.lastExecution) : 'Nenhuma'}</span>
+                              <span className="block text-[9px] text-indigo-700 font-extrabold">Próxima: {formatDateBR(cycles['Anual']?.nextGenerationPrevista)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 font-bold italic text-[10px]">—</span>
+                          )}
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </section>
       )}
 
-      {/* Main Grid: Data Distribution and Upcoming List */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Dynamic Regional Distributions (CRAAI e COMARCA) */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200/80 shadow-3xs flex flex-col justify-between min-h-[380px]">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Building2 className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Distribuição por Comarca</h3>
+      {activeTab === 'backlog' && (
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="w-5 h-5 text-rose-600 animate-pulse" />
+            <div>
+              <h3 className="text-sm font-black text-rose-800 uppercase tracking-wide">Relatório de Atividades com Ciclo Vencido / Atrasado</h3>
+              <p className="text-xs text-rose-600">Essas atividades foram programadas e não foram finalizadas dentro do período de vencimento do ciclo (Não Executadas).</p>
             </div>
-            <p className="text-[11px] text-slate-400">Total acumulado e taxa de conformidade real por comarca.</p>
+          </div>
 
-            <div className="mt-4 space-y-4 max-h-[280px] overflow-y-auto pr-1">
-              {loadingAssets ? (
-                <div className="text-xs text-slate-400 italic py-6">Carregando comarcas...</div>
-              ) : comarcaStats.length === 0 ? (
-                <div className="text-xs text-slate-450 italic py-6">Sem preventivas regionalizadas.</div>
-              ) : (
-                comarcaStats.map((item, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex justify-between items-baseline text-[10.5px] font-bold text-slate-700">
-                      <span className="truncate max-w-[180px] uppercase font-mono text-[9px] text-[#3525cd] bg-indigo-50/50 px-1 rounded">{item.name}</span>
-                      <span className="font-mono text-slate-450">{item.completed}/{item.total} OS ({item.rate}%)</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
+            {expiredNotExecutedList.length === 0 ? (
+              <div className="col-span-full py-8 text-center text-slate-400 italic text-xs font-bold">
+                Parabéns! Sua gerência não possui nenhuma preventiva registrada como Não Executada / Fora do ciclo no momento.
+              </div>
+            ) : (
+              expiredNotExecutedList.map(os => (
+                <div 
+                  key={os.id} 
+                  onClick={() => onNavigateToOS(os.id)} 
+                  className="bg-rose-50/30 border border-rose-250 hover:border-rose-400 p-4 rounded-xl cursor-pointer shadow-3xs transition-all flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <code className="text-xs font-bold text-rose-600">#{os.id}</code>
+                      <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded uppercase">
+                        Não Executada
+                      </span>
                     </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${
-                          item.rate >= 90 ? 'bg-emerald-500' : item.rate >= 50 ? 'bg-indigo-600' : 'bg-amber-500'
-                        }`} 
-                        style={{ width: `${item.rate}%` }}
-                      ></div>
-                    </div>
+                    <h4 className="text-xs font-extrabold text-slate-800 leading-snug line-clamp-2">{os.title}</h4>
+                    <p className="text-[10.5px] text-slate-500 line-clamp-2">{os.description}</p>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Dynamic Sector Distribution (CRAAI) */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200/80 shadow-3xs flex flex-col justify-between min-h-[380px]">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Wrench className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Distribuição por CRAAI</h3>
-            </div>
-            <p className="text-[11px] text-slate-400">Total de preventivas planejadas e porcentagem concluída.</p>
-
-            <div className="mt-4 space-y-4 max-h-[280px] overflow-y-auto pr-1">
-              {loadingAssets ? (
-                <div className="text-xs text-slate-400 italic py-6">Carregando setores CRAAI...</div>
-              ) : craaiStats.length === 0 ? (
-                <div className="text-xs text-slate-450 italic py-6">Sem preventivas atribuídas por CRAAI.</div>
-              ) : (
-                craaiStats.map((item, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex justify-between items-baseline text-[10.5px] font-bold text-slate-700">
-                      <span className="truncate max-w-[170px] uppercase">{item.name}</span>
-                      <span className="font-mono text-slate-500">{item.completed}/{item.total} OS</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div className="bg-[#3525cd] h-full rounded-full" style={{ width: `${item.total > 0 ? (item.completed/item.total)*100 : 0}%` }}></div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Dynamic Tech Performance List */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200/80 shadow-3xs flex flex-col justify-between min-h-[380px]">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <User className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Equipe e Técnicos</h3>
-            </div>
-            <p className="text-[11px] text-slate-400">Atividades preventivas concluídas por técnico habilitado.</p>
-
-            <div className="mt-4 space-y-3.5 max-h-[280px] overflow-y-auto pr-1">
-              {techStats.length === 0 ? (
-                <div className="text-xs text-slate-450 italic py-6">Sem estatísticas de técnicos.</div>
-              ) : (
-                techStats.map((tech, idx) => {
-                  const initials = tech.name.split(' ').map(n => n[0]).join('').slice(0, 2);
-                  return (
-                    <div key={idx} className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 text-[#3525cd] font-black text-[10px] flex items-center justify-center shrink-0 uppercase">
-                        {initials || '?'}
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex justify-between items-baseline text-[10px] font-extrabold text-slate-700">
-                          <span className="truncate pr-1 block">{tech.name}</span>
-                          <span className="font-mono text-slate-500 shrink-0">{tech.completed}/{tech.total} conclusos</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                          <div className="bg-emerald-550 h-full rounded-full" style={{ width: `${tech.rate}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Upcoming Activities and Calendar Timeline */}
-      <section className="bg-white rounded-xl border border-slate-200/80 shadow-3xs overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200/60 bg-slate-50/50 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-500" />
-            <h4 className="font-black text-slate-800 text-xs uppercase tracking-wider">CRONOGRAMA DE PREVENTIVAS ATIVAS / PLANEJADAS</h4>
-          </div>
-          <button 
-            onClick={onNavigateToOS}
-            className="text-[10.5px] font-black text-[#3525cd] hover:underline flex items-center gap-1 cursor-pointer uppercase tracking-wider"
-          >
-            Ver Todas
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          {upcomingPreventives.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 font-bold italic text-xs">
-              Nenhuma preventiva programada pendente de execução no momento.
-            </div>
-          ) : (
-            <table className="w-full text-left text-[11px] border-collapse">
-              <thead className="bg-slate-50 text-slate-450 font-black uppercase tracking-wider border-b border-slate-150">
-                <tr>
-                  <th className="px-5 py-3.5 w-20">ID</th>
-                  <th className="px-5 py-3.5 min-w-[200px]">Serviço / Ativo</th>
-                  <th className="px-5 py-3.5">CRAAI / Comarca</th>
-                  <th className="px-5 py-3.5">Técnico</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5 w-28">Previsão</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                {upcomingPreventives.map((os) => {
-                  const isCompleted = os.status === 'Concluída';
-                  const isInProgress = os.status === 'Em Execução';
                   
-                  return (
-                    <tr key={os.id} onClick={onNavigateToOS} className="hover:bg-indigo-50/10 cursor-pointer transition-colors">
-                      <td className="px-5 py-3 font-mono text-[#3525cd] font-extrabold">#{os.id}</td>
-                      <td className="px-5 py-3">
-                        <div className="font-extrabold text-slate-800 line-clamp-1">{os.title}</div>
-                        <div className="text-[10px] text-slate-400 font-medium truncate max-w-sm mt-0.5">
-                          {os.assetCode} • {os.assetName}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className="text-[9.5px] font-black uppercase text-indigo-650 bg-indigo-55/40 border border-indigo-100 px-1.5 py-0.2 rounded">
-                            {getOrderCRAAI(os)}
-                          </span>
-                          <span className="text-[9.5px] font-extrabold uppercase text-slate-600 bg-slate-50 border border-slate-150 px-1.5 py-0.2 rounded truncate max-w-[124px]">
-                            {getOrderComarca(os)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className="text-slate-800 font-extrabold">{os.assignedTechnician}</span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                          isInProgress
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
-                            : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                        }`}>
-                          <span className={`w-1 h-1 rounded-full ${isInProgress ? 'bg-amber-500' : 'bg-indigo-500'}`} />
-                          {os.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-slate-500 font-mono text-[9.5px]">
-                        {formatDateBR(os.scheduledDate)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </section>
+                  <div className="mt-4 pt-3 border-t border-rose-100 flex justify-between items-center text-[9px] font-bold text-slate-450">
+                    <span>Técnico: {os.assignedTechnician || 'Indefinido'}</span>
+                    <span className="font-mono text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded">
+                      Previso: {formatDateBR(os.scheduledDate)}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      )}
 
-      {/* Bottom Footer Attribution */}
-      <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+      {/* FOOTER BAR WITH INTEGRITY GUARANTEE */}
+      <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-450 uppercase tracking-wider">
         <p>Hexon Preventivas • Módulo de Inteligência Operacional</p>
         <p className="mt-1 sm:mt-0">© 2026 MPMG • Todas as informações são reais e integradas ao banco</p>
       </footer>

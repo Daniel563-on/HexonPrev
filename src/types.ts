@@ -40,7 +40,7 @@ export interface Asset {
   status: 'Operando' | 'Em Manutenção' | 'Parado';
   createdAt: string;
   updatedAt?: string;
-  periodicities?: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[];
+  periodicities?: ('Semanal' | 'Quinzenal' | 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[];
   qrCode?: string; // Base64 data URL
 }
 
@@ -250,6 +250,23 @@ export interface RolePermissions {
   permissions: {
     [key: string]: SystemPermission;
   };
+}
+
+export function getSectorGerencia(sector: string): string {
+  if (!sector) return 'GMC';
+  const sec = sector.toUpperCase();
+  if (sec.includes('HVAC') || sec.includes('MEC') || sec.includes('REFR') || sec.includes('AR') || sec.includes('GMMR')) {
+    return 'GMMR'; // Mecânica / Refrigeração
+  }
+  if (sec.includes('ELET') || sec.includes('SUBST') || sec.includes('FORÇA') || sec.includes('GMEE') || sec.includes('ELETRÔNICA')) {
+    return 'GMEE'; // Elétrica / Eletrônica
+  }
+  return 'GMC'; // Civil / Hidráulica / Predial / Geral / Outros (GMC)
+}
+
+export function isSectorInGerencia(sector: string, gerencia: string): boolean {
+  if (!gerencia || gerencia === 'Todas') return true;
+  return getSectorGerencia(sector) === gerencia;
 }
 
 

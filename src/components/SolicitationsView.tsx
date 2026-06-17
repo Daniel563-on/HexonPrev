@@ -20,7 +20,7 @@ import {
   RefreshCw,
   FileText
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR } from '../types';
+import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../types';
 import { dbSaveServiceOrder, dbGetAssets } from '../db/firebase';
 
 export interface Solicitation {
@@ -35,6 +35,8 @@ interface SolicitationsViewProps {
   orders: ServiceOrder[];
   onNavigateToOS: (osId?: string) => void;
   onReload?: () => void;
+  userProfile?: HexonUser | null;
+  userHasActionPermission?: (actionId: string) => boolean;
 }
 
 export function getSolicitations(orders: ServiceOrder[]): Solicitation[] {
@@ -87,12 +89,27 @@ export function getSolicitations(orders: ServiceOrder[]): Solicitation[] {
   return solicitations;
 }
 
-export default function SolicitationsView({ orders, onNavigateToOS, onReload }: SolicitationsViewProps) {
+export default function SolicitationsView({ 
+  orders, 
+  onNavigateToOS, 
+  onReload,
+  userProfile,
+  userHasActionPermission
+}: SolicitationsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedSolicitation, setSelectedSolicitation] = useState<Solicitation | null>(null);
   const [isCreatingOS, setIsCreatingOS] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
+
+  const hasManagePermission = (): boolean => {
+    if (!userProfile) return true; // Fail-open fallback
+    if (userProfile.perfil === 'Super Administrador') return true;
+    if (userHasActionPermission) {
+      return userHasActionPermission('manage_solicitations');
+    }
+    return userProfile.perfil === 'Administrador';
+  };
 
   useEffect(() => {
     let active = true;
@@ -501,27 +518,39 @@ export default function SolicitationsView({ orders, onNavigateToOS, onReload }: 
                 {/* Interaction & Decisions Footer row */}
                 <div className="mt-2.5 pt-2.5 border-t border-gray-150">
                   {sol.status === 'Pendente' && (
-                    <div className="space-y-2">
-                      <p className="text-[9.5px] text-slate-455 font-bold uppercase tracking-wider text-center">
-                        Deseja registrar o chamado corretivo para as falhas acima?
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleUpdateStatus(sol, 'Resolvido')}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10.5px] py-1.5 px-3 rounded-lg shadow-3xs cursor-pointer hover:shadow-2xs transition-all active:scale-98 text-center flex items-center justify-center gap-1 uppercase tracking-wider"
-                        >
-                          <Check className="w-3.5 h-3.5 font-black shrink-0" />
-                          Abrir Chamado
-                        </button>
-                        <button
-                          onClick={() => handleUpdateStatus(sol, 'Cancelado')}
-                          className="flex-1 bg-slate-100 hover:bg-rose-50 text-slate-650 hover:text-rose-700 border border-slate-250 hover:border-rose-200 font-black text-[10.5px] py-1.5 px-3 rounded-lg cursor-pointer transition-all active:scale-98 text-center flex items-center justify-center gap-1 uppercase tracking-wider"
-                        >
-                          <XCircle className="w-3.5 h-3.5 shrink-0" />
-                          Cancelar
-                        </button>
+                    hasManagePermission() ? (
+                      <div className="space-y-2">
+                        <p className="text-[9.5px] text-slate-455 font-bold uppercase tracking-wider text-center">
+                          Deseja registrar o chamado corretivo para as falhas acima?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleUpdateStatus(sol, 'Resolvido')}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10.5px] py-1.5 px-3 rounded-lg shadow-3xs cursor-pointer hover:shadow-2xs transition-all active:scale-98 text-center flex items-center justify-center gap-1 uppercase tracking-wider"
+                          >
+                            <Check className="w-3.5 h-3.5 font-black shrink-0" />
+                            Abrir Chamado
+                          </button>
+                          <button
+                            onClick={() => handleUpdateStatus(sol, 'Cancelado')}
+                            className="flex-1 bg-slate-100 hover:bg-rose-50 text-slate-650 hover:text-rose-700 border border-slate-250 hover:border-rose-200 font-black text-[10.5px] py-1.5 px-3 rounded-lg cursor-pointer transition-all active:scale-98 text-center flex items-center justify-center gap-1 uppercase tracking-wider"
+                          >
+                            <XCircle className="w-3.5 h-3.5 shrink-0" />
+                            Cancelar
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="space-y-2 py-2 bg-slate-50/50 border border-slate-200/55 rounded-lg px-3">
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider text-center flex items-center justify-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-500" />
+                          Aguardando decisão técnica da gerência
+                        </p>
+                        <p className="text-[9px] text-slate-400 font-bold text-center leading-relaxed">
+                          Técnicos profissionais podem acompanhar o status em tempo real. A abertura ou encerramento deste fluxo é facultada unicamente à gerência e administradores.
+                        </p>
+                      </div>
+                    )
                   )}
 
                   {sol.status === 'Resolvido' && (
@@ -530,12 +559,14 @@ export default function SolicitationsView({ orders, onNavigateToOS, onReload }: 
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 font-black shrink-0" />
                         Chamado registrado com sucesso na fila de solicitações!
                       </p>
-                      <button
-                        onClick={() => handleUpdateStatus(sol, 'Pendente')}
-                        className="text-[9px] font-black text-slate-500 hover:text-slate-800 uppercase tracking-wider cursor-pointer hover:underline flex items-center gap-1 shrink-0"
-                      >
-                        <RefreshCw className="w-3 h-3" /> Reabrir Chamado
-                      </button>
+                      {hasManagePermission() && (
+                        <button
+                          onClick={() => handleUpdateStatus(sol, 'Pendente')}
+                          className="text-[9px] font-black text-slate-500 hover:text-slate-800 uppercase tracking-wider cursor-pointer hover:underline flex items-center gap-1 shrink-0"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Reabrir Chamado
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -545,12 +576,14 @@ export default function SolicitationsView({ orders, onNavigateToOS, onReload }: 
                         <XCircle className="w-4 h-4 text-slate-500 shrink-0" />
                         Esta solicitação/chamado foi cancelado ou desconsiderado.
                       </p>
-                      <button
-                        onClick={() => handleUpdateStatus(sol, 'Pendente')}
-                        className="text-[9px] font-black text-indigo-600 hover:text-[#3525cd] uppercase tracking-wider cursor-pointer hover:underline flex items-center gap-1 shrink-0"
-                      >
-                        <RefreshCw className="w-3 h-3" /> Reabrir Chamado
-                      </button>
+                      {hasManagePermission() && (
+                        <button
+                          onClick={() => handleUpdateStatus(sol, 'Pendente')}
+                          className="text-[9px] font-black text-indigo-600 hover:text-[#3525cd] uppercase tracking-wider cursor-pointer hover:underline flex items-center gap-1 shrink-0"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Reabrir Chamado
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

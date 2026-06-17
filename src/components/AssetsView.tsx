@@ -6,6 +6,7 @@ import {
   Activity, 
   MapPin, 
   Calendar, 
+  CalendarCheck,
   Info, 
   CheckSquare, 
   PlusCircle, 
@@ -84,6 +85,30 @@ export default function AssetsView({
   const [importProgress, setImportProgress] = useState(0);
   const [totalToImport, setTotalToImport] = useState(0);
   const [importTargetSector, setImportTargetSector] = useState<string>('Refrigeração');
+
+  // Custom rules mappings for spreadsheet TIPO to Periodicities map
+  const [periodicityRules, setPeriodicityRules] = useState<Array<{ keyword: string; selectPeriodicities: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] }>>(() => {
+    try {
+      const saved = localStorage.getItem('hexon_periodicity_rules');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Failed to load periodicity rules:', e);
+    }
+    return [
+      { keyword: 'ACJ', selectPeriodicities: ['Mensal', 'Semestral'] },
+      { keyword: 'QUADRO ELÉTRICO', selectPeriodicities: ['Mensal', 'Trimestral', 'Anual'] },
+      { keyword: 'AR CONDICIONADO', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
+      { keyword: 'CHILLER', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
+      { keyword: 'BOMBA', selectPeriodicities: ['Mensal', 'Semestral'] },
+      { keyword: 'EXTINTOR', selectPeriodicities: ['Mensal', 'Anual'] },
+      { keyword: 'PREDIAL', selectPeriodicities: ['Semestral', 'Anual'] },
+      { keyword: 'CIVIL', selectPeriodicities: ['Semestral', 'Anual'] },
+    ];
+  });
+  const [newRuleKeyword, setNewRuleKeyword] = useState('');
+  const [newRulePeriodicities, setNewRulePeriodicities] = useState<('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[]>(['Mensal']);
 
   // Form states for Editing Asset
   const [showEditModal, setShowEditModal] = useState(false);
@@ -468,9 +493,23 @@ export default function AssetsView({
       const parsedAssets: Asset[] = [];
       const nowString = new Date().toISOString();
 
-      // Core helper function to extract periodicities from TIPO keyword
+      // Core helper function to extract periodicities from TIPO keyword using dynamic mapping rules
       const getPeriodicitiesFromTipo = (tipoVal: string): ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] => {
         const t = (tipoVal || '').toLowerCase().trim();
+
+        // 1. Check custom user rules mappings first (case-insensitive keyword matching)
+        if (periodicityRules && periodicityRules.length > 0) {
+          const match = periodicityRules.find(r => {
+            const kw = r.keyword.toLowerCase().trim();
+            // Match any of: keyword is equal, or type column value contains keyword, or keyword contains type column value
+            return t === kw || t.includes(kw) || kw.includes(t);
+          });
+          if (match && match.selectPeriodicities.length > 0) {
+            return match.selectPeriodicities;
+          }
+        }
+
+        // 2. Generic default parsing based on containing terms
         const result: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] = [];
         if (t.includes('mensal') || t.includes('mensais') || t.includes('mês') || t.includes('mes')) {
           result.push('Mensal');
@@ -488,12 +527,15 @@ export default function AssetsView({
           return result;
         }
 
-        // Keywords matching for technical schedule automatic implementation
+        // 3. Fallback keywords matching for technical schedule automatic implementation
+        if (t.includes('acj')) {
+          return ['Mensal', 'Semestral'];
+        }
         if (t.includes('arcondicionado') || t.includes('ar condicionado') || t.includes('chiller') || t.includes('split') || t.includes('clima') || t.includes('fancoil') || t.includes('fan coil') || t.includes('hvac') || t.includes('refrigeração') || t.includes('refrigeracao')) {
           return ['Mensal', 'Semestral', 'Anual']; // PMOC standard
         }
-        if (t.includes('quadro') || t.includes('elétr') || t.includes('disjuntor') || t.includes('gerador') || t.includes('nobreak') || t.includes('subestação') || t.includes('transformador')) {
-          return ['Trimestral', 'Semestral', 'Anual']; // Electrical standard
+        if (t.includes('quadro') || t.includes('eléct') || t.includes('elétr') || t.includes('disjuntor') || t.includes('gerador') || t.includes('nobreak') || t.includes('subestação') || t.includes('transformador')) {
+          return ['Mensal', 'Trimestral', 'Anual']; // Electrical standard updated as requested
         }
         if (t.includes('bomba') || t.includes('hidráu') || t.includes('caixa') || t.includes('reservatório') || t.includes('cisterna')) {
           return ['Mensal', 'Semestral']; // Plumbing standard
@@ -2084,20 +2126,38 @@ export default function AssetsView({
                       const val = e.target.value;
                       setDynamicFormValues({ ...dynamicFormValues, TIPO: val });
                       
-                      // Auto calculate corresponding periodic checkboxes under TIPO keyword mapping
+                      const t = val.toLowerCase().trim();
+                      
+                      // Check custom rules first
+                      if (periodicityRules && periodicityRules.length > 0) {
+                        const match = periodicityRules.find(r => {
+                          const kw = r.keyword.toLowerCase().trim();
+                          return t === kw || t.includes(kw) || kw.includes(t);
+                        });
+                        if (match && match.selectPeriodicities.length > 0) {
+                          setNewAssetPeriodicities(match.selectPeriodicities);
+                          return;
+                        }
+                      }
+
+                      // Auto calculate corresponding periodic checkboxes under fallback keyword mapping
                       const lower = val.toLowerCase();
                       const detected: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] = [];
-                      if (lower.includes('mensal') || lower.includes('ar') || lower.includes('chiller') || lower.includes('clima')) {
-                        detected.push('Mensal');
-                      }
-                      if (lower.includes('trimestral') || lower.includes('bomba') || lower.includes('hidro')) {
-                        detected.push('Trimestral');
-                      }
-                      if (lower.includes('semestral') || lower.includes('gerador') || lower.includes('subestação')) {
-                        detected.push('Semestral');
-                      }
-                      if (lower.includes('anual') || lower.includes('civil') || lower.includes('extintor')) {
-                        detected.push('Anual');
+                      if (lower.includes('acj')) {
+                        detected.push('Mensal', 'Semestral');
+                      } else {
+                        if (lower.includes('mensal') || lower.includes('ar') || lower.includes('chiller') || lower.includes('clima')) {
+                          detected.push('Mensal');
+                        }
+                        if (lower.includes('trimestral') || lower.includes('bomba') || lower.includes('hidro')) {
+                          detected.push('Trimestral');
+                        }
+                        if (lower.includes('semestral') || lower.includes('gerador') || lower.includes('subestação')) {
+                          detected.push('Semestral');
+                        }
+                        if (lower.includes('anual') || lower.includes('civil') || lower.includes('extintor')) {
+                          detected.push('Anual');
+                        }
                       }
                       if (detected.length > 0) {
                         setNewAssetPeriodicities(detected);
@@ -2639,42 +2699,158 @@ export default function AssetsView({
                         </div>
                       </div>
 
-                      {/* Right side display: Smart Preview Table */}
+                      {/* Right side display: Dynamic Periodicity Rules & Info */}
                       <div className="lg:col-span-3 space-y-4">
-                        <span className="text-[9px] font-black tracking-wider text-gray-400 uppercase block">Pré-visualização Inteligente (Primeiras 3 Linhas)</span>
-                        
-                        <div className="border border-gray-150 rounded-xl overflow-hidden bg-gray-50 text-[11px]">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="bg-gray-100 border-b border-gray-200 text-slate-700 font-bold">
-                                <th className="p-2.5">Código Mapeado</th>
-                                <th className="p-2.5">Ativo Mapeado</th>
-                                <th className="p-2.5">Setor</th>
-                                <th className="p-2.5">Localização</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-150 bg-white">
-                              {importRows.slice(0, 3).map((row, idx) => {
-                                const codeVal = columnMappings['code'] ? row[columnMappings['code']] : '';
-                                const nameVal = columnMappings['name'] ? row[columnMappings['name']] : '';
-                                const sectorVal = columnMappings['sector'] ? row[columnMappings['sector']] : 'Mecânica/Refrigeração';
-                                const locVal = columnMappings['location'] ? row[columnMappings['location']] : 'Geral';
+                        {/* Dynamic Periodicity Mapping Rules list */}
+                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-xs">
+                          <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                            <div className="flex items-center gap-1.5">
+                              <CalendarCheck className="w-4 h-4 text-indigo-600" />
+                              <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">Regras de Periodicidade por TIPO</span>
+                            </div>
+                            <span className="text-[9.5px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold">Associador Dinâmico</span>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                            Defina quais periodicidades de preventiva serão vinculadas ao ativo baseando-se nas palavras-chave da coluna <strong>TIPO</strong> de sua planilha (ex: <strong>ACJ</strong> &rarr; Mensal, Semestral):
+                          </p>
+
+                          {/* Interactive Rules Mapping Table */}
+                          <div className="bg-white border border-slate-250 rounded-xl max-h-[140px] overflow-y-auto divide-y divide-slate-150 p-2 space-y-1.5">
+                            {periodicityRules && periodicityRules.length > 0 ? (
+                              periodicityRules.map((rule, idx) => (
+                                <div key={idx} className="flex justify-between items-center pt-2 first:pt-0">
+                                  <div className="space-y-0.5">
+                                    <span className="text-[10px] font-bold text-[#0c1322] bg-slate-100 px-1.5 py-0.5 rounded mr-1 shadow-2xs font-mono uppercase">
+                                      {rule.keyword}
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {rule.selectPeriodicities.map((p) => (
+                                        <span key={p} className="text-[8px] font-bold px-1 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded">
+                                          {p}
+                                        </span>
+                                      ))}
+                                      {rule.selectPeriodicities.length === 0 && (
+                                        <span className="text-[8px] font-bold italic text-red-500">Nenhuma selecionada</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    {/* Quick toggles */}
+                                    <div className="flex gap-1">
+                                      {['Mensal', 'Trimestral', 'Semestral', 'Anual'].map((p) => {
+                                        const isChecked = rule.selectPeriodicities.includes(p as any);
+                                        return (
+                                          <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = [...periodicityRules];
+                                              const updatedList = isChecked 
+                                                ? rule.selectPeriodicities.filter(x => x !== p)
+                                                : [...rule.selectPeriodicities, p as any];
+                                              
+                                              // Order standard
+                                              const order = ['Mensal', 'Trimestral', 'Semestral', 'Anual'];
+                                              updatedList.sort((a,b) => order.indexOf(a) - order.indexOf(b));
+                                              
+                                              updated[idx] = { ...rule, selectPeriodicities: updatedList };
+                                              setPeriodicityRules(updated);
+                                              localStorage.setItem('hexon_periodicity_rules', JSON.stringify(updated));
+                                            }}
+                                            className={`text-[8.5px] px-1 py-0.5 rounded font-black border transition-all cursor-pointer ${
+                                              isChecked 
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-3xs' 
+                                                : 'bg-white text-slate-400 hover:text-slate-700 border-slate-200'
+                                            }`}
+                                          >
+                                            {p.slice(0, 3)}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Action deleter */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = periodicityRules.filter((_, rNo) => rNo !== idx);
+                                        setPeriodicityRules(updated);
+                                        localStorage.setItem('hexon_periodicity_rules', JSON.stringify(updated));
+                                      }}
+                                      className="p-1 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-all"
+                                      title="Remover Regra de Validação"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-xs text-slate-400 italic">
+                                Nenhuma regra customizada cadastrada.
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Add Custom User Rule Inputs */}
+                          <div className="bg-indigo-50/40 p-2.5 rounded-lg border border-indigo-100 flex flex-wrap gap-2 items-center">
+                            <input
+                              type="text"
+                              placeholder="ex: ACJ, CHILLER, ELETR"
+                              value={newRuleKeyword}
+                              onChange={(e) => setNewRuleKeyword(e.target.value)}
+                              className="text-[10px] py-1 px-2 border border-slate-300 rounded focus:outline-none placeholder:text-slate-400 font-bold text-slate-800 uppercase flex-1 min-w-[120px]"
+                            />
+
+                            <div className="flex gap-1.5 shrink-0">
+                              {['Mensal', 'Trimestral', 'Semestral', 'Anual'].map((p) => {
+                                const isChecked = newRulePeriodicities.includes(p as any);
                                 return (
-                                  <tr key={idx} className="text-slate-600 hover:bg-slate-50">
-                                    <td className="p-2.5 font-bold font-mono text-[#3525cd]">{String(codeVal || '<VAZIO>')}</td>
-                                    <td className="p-2.5 max-w-[150px] truncate font-bold text-[#0b1c30]">{String(nameVal || '<VAZIO>')}</td>
-                                    <td className="p-2.5">{String(sectorVal || 'Mecânica/Refrigeração')}</td>
-                                    <td className="p-2.5 max-w-[120px] truncate">{String(locVal || 'Geral')}</td>
-                                  </tr>
+                                  <label key={p} className="flex items-center gap-0.5 text-[9px] font-black cursor-pointer text-[#0b1c30]">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setNewRulePeriodicities(newRulePeriodicities.filter(x => x !== p));
+                                        } else {
+                                          setNewRulePeriodicities([...newRulePeriodicities, p as any]);
+                                        }
+                                      }}
+                                      className="w-3 h-3 rounded text-indigo-600 border-gray-300 cursor-pointer"
+                                    />
+                                    {p.slice(0, 3)}
+                                  </label>
                                 );
                               })}
-                            </tbody>
-                          </table>
-                          {importRows.length > 3 && (
-                            <div className="p-3 text-center bg-gray-50 text-[10px] text-gray-400 font-medium border-t border-gray-200">
-                              + {importRows.length - 3} ativos adicionais serão processados em lote.
                             </div>
-                          )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!newRuleKeyword.trim()) return;
+                                const cleanedKeyword = newRuleKeyword.trim().toUpperCase();
+                                
+                                if (periodicityRules.some(r => r.keyword.toUpperCase() === cleanedKeyword)) {
+                                  alert('Essa palavra-chave já possui uma regra associada.');
+                                  return;
+                                }
+
+                                const updated = [...periodicityRules, {
+                                  keyword: cleanedKeyword,
+                                  selectPeriodicities: [...newRulePeriodicities]
+                                }];
+                                setPeriodicityRules(updated);
+                                setNewRuleKeyword('');
+                                localStorage.setItem('hexon_periodicity_rules', JSON.stringify(updated));
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[9.5px] py-1 px-3 rounded uppercase transition-colors shrink-0 cursor-pointer shadow-2xs"
+                            >
+                              Adicionar
+                            </button>
+                          </div>
                         </div>
 
                         {/* Tips notification */}
@@ -2690,7 +2866,7 @@ export default function AssetsView({
                           <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                           <div className="text-[10px]">
                             <strong className="font-bold">Ciclo Preventivo Automático Ativado: </strong> 
-                            O sistema lerá as periodicidades da planilha (mensal, trimestral etc.) e agendará tarefas em lote para cada equipamento automaticamente.
+                            O sistema lerá as periodicidades dadas pelas regras de mapeamento do tipo de ativo e agendará tarefas em lote para cada equipamento automaticamente.
                           </div>
                         </div>
                       </div>

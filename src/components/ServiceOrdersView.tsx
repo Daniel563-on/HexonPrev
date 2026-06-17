@@ -23,7 +23,7 @@ import {
   ChevronRight,
   Flag
 } from 'lucide-react';
-import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser } from '../types';
+import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia } from '../types';
 import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers } from '../db/firebase';
 import SignatureCanvas from './SignatureCanvas';
 
@@ -80,6 +80,7 @@ export default function ServiceOrdersView({
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<boolean>(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+  const [deplanConfirmOrderId, setDeplanConfirmOrderId] = useState<string | null>(null);
 
   // Reset pagination to page 1 whenever search, filters, or orders list changes
   useEffect(() => {
@@ -515,6 +516,12 @@ export default function ServiceOrdersView({
       photoEvidence: null
     };
 
+    // Validate technician daily availability
+    if (osScheduledDate && osTechnician) {
+      const proceed = checkTechAssignment(osTechnician, osScheduledDate, newServiceOrder);
+      if (!proceed) return;
+    }
+
     try {
       await dbSaveServiceOrder(newServiceOrder);
       alert(`Ordem de serviço #${newOSId} registrada e planejada com checklist de ${checklistItems.length} itens!`);
@@ -775,7 +782,7 @@ export default function ServiceOrdersView({
     const month = currentCalendarDate.getMonth();
     const pad = (n: number) => String(n).padStart(2, '0');
     const dateStr = `${year}-${pad(month + 1)}-${pad(dayNum)}`;
-    return orders.filter(os => os.scheduledDate && os.scheduledDate.startsWith(dateStr));
+    return orders.filter(os => os.scheduledDate && os.scheduledDate.startsWith(dateStr) && os.status !== 'Novo');
   };
 
   const availableProfessionals = users.filter(u => 
@@ -820,6 +827,72 @@ export default function ServiceOrdersView({
       }
       return true;
     });
+  };
+
+  const validateTechnicianAssignment = (techName: string, dateStr: string, currentOS: ServiceOrder): { isValid: boolean; warnings: string[]; errors: string[] } => {
+    if (!techName) return { isValid: true, warnings: [], errors: [] };
+    
+    const warnings: string[] = [];
+    const errors: string[] = [];
+
+    // Filter orders for this technician on this specific date
+    const techDayOrders = orders.filter(o => 
+      o.assignedTechnician === techName && 
+      o.scheduledDate === dateStr &&
+      o.id !== currentOS.id
+    );
+
+    // 1. Quantidade máxima de OS por dia
+    const maxOSPerDay = 5;
+    if (techDayOrders.length >= maxOSPerDay) {
+      errors.push(`Veto por limite diário: O profissional ${techName} já possui ${techDayOrders.length} ordens agendadas para o dia ${formatDateBR(dateStr)} (limite máximo é de ${maxOSPerDay} por dia).`);
+    }
+
+    // 2. Sobrecarga diária
+    const getOSDuration = (osObj: ServiceOrder) => {
+      const p = osObj.priority || 'Média';
+      if (p === 'Baixa') return 1.5;
+      if (p === 'Média') return 2.0;
+      if (p === 'Alta') return 3.0;
+      return 4.0; // Urgente
+    };
+
+    const currentDuration = getOSDuration(currentOS);
+    const existingDuration = techDayOrders.reduce((sum, o) => sum + getOSDuration(o), 0);
+    const totalDuration = existingDuration + currentDuration;
+
+    if (totalDuration > 8.0) {
+      warnings.push(`Sobrecarga diária estimada: Esta atribuição elevará a carga do técnico ${techName} no dia para ${totalDuration} horas (limite ergonômico recomendado é de 8h).`);
+    }
+
+    // 3. Conflitos de agenda e deslocamento entre diferentes comarcas
+    const currentComarca = getOrderComarca(currentOS);
+    const activeComarcas = Array.from(new Set(
+      techDayOrders.map(o => getOrderComarca(o)).filter(c => c && c !== 'Geral')
+    ));
+    const hasConflitoComarca = activeComarcas.some(c => c !== currentComarca);
+
+    if (hasConflitoComarca) {
+      warnings.push(`Conflito de agendamento geográfico: O técnico ${techName} já possui ordens na comarca de "${activeComarcas.join(', ')}", enquanto esta ordem pertence à comarca "${currentComarca}".`);
+    }
+
+    return {
+      isValid: errors.length === 0,
+      warnings,
+      errors
+    };
+  };
+
+  const checkTechAssignment = (techName: string, dateStr: string, os: ServiceOrder): boolean => {
+    const checkObj = validateTechnicianAssignment(techName, dateStr, os);
+    if (!checkObj.isValid) {
+      alert(`⚠️ IMPOSSÍVEL ATRIBUIR TÉCNICO:\n\n${checkObj.errors.join('\n')}`);
+      return false;
+    }
+    if (checkObj.warnings.length > 0) {
+      return window.confirm(`⚠️ ADVERTÊNCIA DE ALOCAÇÃO:\n\n${checkObj.warnings.join('\n')}\n\nDeseja ignorar os avisos de sobrecarga/conflito e programar mesmo assim?`);
+    }
+    return true;
   };
 
   const activeLinkedAsset = selectedOrder ? assets.find(a => a.id === selectedOrder.assetId) : null;
@@ -1022,10 +1095,10 @@ export default function ServiceOrdersView({
                 <h3 className="text-[10px] font-black text-slate-450 uppercase tracking-widest mb-3">
                   Estatísticas de Programação ({monthNames[currentCalendarDate.getMonth()]})
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-center">
-                  <div className="bg-indigo-50/40 rounded-xl p-3 border border-indigo-100/50">
-                    <p className="text-[9px] font-black text-slate-450 uppercase tracking-wider">Preventivas Planejadas</p>
-                    <p className="text-xl font-bold text-[#3525cd] mt-0.5">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-indigo-50/40 rounded-xl p-2.5 border border-indigo-100/50">
+                    <p className="text-[9px] font-black text-slate-450 uppercase tracking-wider leading-tight">Preventivas Planejadas</p>
+                    <p className="text-base font-bold text-[#3525cd] mt-0.5">
                       {orders.filter(os => {
                         if (!os.scheduledDate || os.status === 'Novo') return false;
                         const d = new Date(os.scheduledDate);
@@ -1033,11 +1106,21 @@ export default function ServiceOrdersView({
                       }).length}
                     </p>
                   </div>
-                  <div className="bg-yellow-50/40 rounded-xl p-3 border border-amber-100/30">
-                    <p className="text-[9px] font-black text-slate-450 uppercase tracking-wider">Aguardando Programação (Novas)</p>
-                    <p className="text-xl font-bold text-amber-700 mt-0.5">
+                  <div className="bg-emerald-50/40 rounded-xl p-2.5 border border-emerald-100/40">
+                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider leading-tight">Preventivas Concluídas</p>
+                    <p className="text-base font-bold text-emerald-700 mt-0.5">
+                      {orders.filter(os => {
+                        if (!os.scheduledDate || os.status !== 'Concluída') return false;
+                        const d = new Date(os.scheduledDate);
+                        return d.getMonth() === currentCalendarDate.getMonth() && d.getFullYear() === currentCalendarDate.getFullYear();
+                      }).length}
+                    </p>
+                  </div>
+                  <div className="bg-yellow-50/40 rounded-xl p-2.5 border border-amber-100/30">
+                    <p className="text-[9px] font-black text-slate-450 uppercase tracking-wider leading-tight">Aguardando Programação</p>
+                    <p className="text-base font-bold text-amber-700 mt-0.5">
                       {orders.filter(os => os.status === 'Novo' && 
-                        (userProfile?.perfil !== 'Administrador' || userProfile?.gerencia === 'Todas' || os.sector === userProfile?.gerencia)
+                        (userProfile?.perfil !== 'Administrador' || userProfile?.gerencia === 'Todas' || isSectorInGerencia(os.sector, userProfile?.gerencia))
                       ).length}
                     </p>
                   </div>
@@ -1053,7 +1136,7 @@ export default function ServiceOrdersView({
               // 1. Get already scheduled orders for this specific day
               const dayScheduledOrders = orders.filter(os => {
                 if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-                  if (os.sector !== userProfile.gerencia) return false;
+                  if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
                 }
                 return os.status !== 'Novo' && os.scheduledDate && os.scheduledDate.startsWith(selectedDateStr);
               });
@@ -1063,16 +1146,13 @@ export default function ServiceOrdersView({
                 if (os.status !== 'Novo') return false;
                 // Sector restrictions for managers
                 if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-                  return os.sector === userProfile.gerencia;
+                  return isSectorInGerencia(os.sector, userProfile.gerencia);
                 }
                 return true;
               });
 
               // Apply planning filters
               const filteredNewOrders = rawNewOrders.filter(os => {
-                // Priority filter
-                if (planPriority !== 'all' && os.priority !== planPriority) return false;
-
                 // Sector filter (for admins who can see all, e.g. Super Admin)
                 if (planSector !== 'all' && os.sector.toLowerCase().trim() !== planSector.toLowerCase().trim()) return false;
 
@@ -1092,7 +1172,9 @@ export default function ServiceOrdersView({
                   const matchDesc = (os.description || '').toLowerCase().includes(q);
                   const matchAsset = (os.assetCode || '').toLowerCase().includes(q) || (os.assetName || '').toLowerCase().includes(q);
                   const matchId = os.id.includes(q);
-                  if (!matchTitle && !matchDesc && !matchAsset && !matchId) return false;
+                  const matchCRAAI = getOrderCRAAI(os).toLowerCase().includes(q);
+                  const matchComarca = getOrderComarca(os).toLowerCase().includes(q);
+                  if (!matchTitle && !matchDesc && !matchAsset && !matchId && !matchCRAAI && !matchComarca) return false;
                 }
 
                 return true;
@@ -1162,29 +1244,16 @@ export default function ServiceOrdersView({
                           </p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {/* Search bar */}
-                            <div className="relative">
+                            <div className={`relative ${!(userProfile?.perfil === 'Super Administrador' || userProfile?.gerencia === 'Todas') ? 'md:col-span-2' : ''}`}>
                               <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" />
                               <input
                                 type="text"
-                                placeholder="Busca por termo, ID, ativo..."
+                                placeholder="Busca por termo, CRAAI, comarca, ID..."
                                 value={planSearch}
                                 onChange={(e) => setPlanSearch(e.target.value)}
                                 className="w-full text-xs pl-8 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800"
                               />
                             </div>
-
-                            {/* Priority selector */}
-                            <select
-                              value={planPriority}
-                              onChange={(e) => setPlanPriority(e.target.value)}
-                              className="text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700"
-                            >
-                              <option value="all">Prioridade: Todas</option>
-                              <option value="Urgente">Urgente</option>
-                              <option value="Alta">Alta</option>
-                              <option value="Média">Média</option>
-                              <option value="Baixa">Baixa</option>
-                            </select>
 
                             {/* Sector selector (Disabled if the manager is restricted) */}
                             {userProfile?.perfil === 'Super Administrador' || userProfile?.gerencia === 'Todas' ? (
@@ -1269,6 +1338,22 @@ export default function ServiceOrdersView({
                                     </p>
                                   </div>
 
+                                  {/* CRAAI / COMARCA Metadata */}
+                                  <div className="grid grid-cols-2 gap-2 bg-slate-55 bg-indigo-50/15 p-2 rounded-lg border border-indigo-100/50 text-[10px]">
+                                    <div>
+                                      <span className="text-slate-450 font-black uppercase text-[8px] tracking-wider block">CRAAI</span>
+                                      <span className="text-slate-800 font-bold uppercase tracking-wide text-[9.5px]" title={getOrderCRAAI(os)}>
+                                        {getOrderCRAAI(os)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-450 font-black uppercase text-[8px] tracking-wider block">Comarca</span>
+                                      <span className="text-slate-800 font-bold uppercase tracking-wide text-[9.5px] truncate block" title={getOrderComarca(os)}>
+                                        {getOrderComarca(os)}
+                                      </span>
+                                    </div>
+                                  </div>
+
                                   {/* Allowed Imposed Date Period details */}
                                   <div className="grid grid-cols-2 gap-2 text-[10px] bg-slate-50 p-2.5 rounded-lg border border-slate-150 uppercase tracking-widest text-[9.5px] font-black text-slate-500">
                                     <div>
@@ -1325,6 +1410,10 @@ export default function ServiceOrdersView({
                                       disabled={!isCompatible}
                                       onClick={async () => {
                                         if (!isCompatible) return;
+
+                                        // VALIDATE ALL RULES: Limit OS, overload, regional conflicts
+                                        const proceed = checkTechAssignment(assignedTechName, selectedDateStr, os);
+                                        if (!proceed) return;
 
                                         // Update order status, technician, and schedule date
                                         const updatedOS = { 
@@ -1400,6 +1489,22 @@ export default function ServiceOrdersView({
                                     <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{os.description}</p>
                                   </div>
 
+                                  {/* CRAAI / COMARCA Metadata */}
+                                  <div className="grid grid-cols-2 gap-2 bg-slate-55 bg-indigo-50/15 p-2 rounded-lg border border-indigo-100/50 text-[10px]">
+                                    <div>
+                                      <span className="text-slate-450 font-black uppercase text-[8px] tracking-wider block">CRAAI</span>
+                                      <span className="text-slate-800 font-bold uppercase tracking-wide text-[9.5px]" title={getOrderCRAAI(os)}>
+                                        {getOrderCRAAI(os)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-450 font-black uppercase text-[8px] tracking-wider block">Comarca</span>
+                                      <span className="text-slate-800 font-bold uppercase tracking-wide text-[9.5px] truncate block" title={getOrderComarca(os)}>
+                                        {getOrderComarca(os)}
+                                      </span>
+                                    </div>
+                                  </div>
+
                                   {/* Scheduled Date limits information */}
                                   <div className="text-[9.5px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between bg-slate-50 p-2 rounded">
                                     <span>
@@ -1423,6 +1528,10 @@ export default function ServiceOrdersView({
                                       value={os.assignedTechnician || ''}
                                       onChange={async (e) => {
                                         const newTech = e.target.value;
+                                        if (newTech) {
+                                          const proceed = checkTechAssignment(newTech, os.scheduledDate || '', os);
+                                          if (!proceed) return;
+                                        }
                                         const updatedOS = { ...os, assignedTechnician: newTech, updatedAt: new Date().toISOString() };
                                         await dbSaveServiceOrder(updatedOS);
                                         onReload();
@@ -1440,27 +1549,49 @@ export default function ServiceOrdersView({
 
                                   {/* Remake Scheduling Option (Returns OS to status === 'Novo' so it can be scheduled elsewhere) */}
                                   <div>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        const confirmDeplan = window.confirm("Você tem certeza que deseja remover esta preventiva da agenda? Ela será revertida para o status 'Novo' e poderá ser reprogramada em outra data.");
-                                        if (confirmDeplan) {
-                                          const updatedOS = {
-                                            ...os,
-                                            status: 'Novo' as const,
-                                            scheduledDate: '',
-                                            assignedTechnician: '',
-                                            updatedAt: new Date().toISOString()
-                                          };
-                                          await dbSaveServiceOrder(updatedOS);
-                                          onReload();
-                                        }
-                                      }}
-                                      className="w-full py-1.5 text-center border border-dashed border-rose-225 hover:bg-[#fff5f5] text-rose-600 rounded-lg text-[9px] font-black uppercase transition-colors tracking-widest cursor-pointer flex items-center justify-center gap-1"
-                                    >
-                                      <X className="w-3 h-3 text-rose-500" />
-                                      Remover da Agenda (Reverter para Novo)
-                                    </button>
+                                    {deplanConfirmOrderId === os.id ? (
+                                      <div className="flex flex-col gap-2 p-2 bg-rose-50 rounded-lg border border-rose-100 animate-fadeIn">
+                                        <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wide text-center">
+                                          Tem certeza que deseja remover da agenda?
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              const updatedOS = {
+                                                ...os,
+                                                status: 'Novo' as const,
+                                                scheduledDate: '',
+                                                assignedTechnician: '',
+                                                updatedAt: new Date().toISOString()
+                                              };
+                                              await dbSaveServiceOrder(updatedOS);
+                                              setDeplanConfirmOrderId(null);
+                                              onReload();
+                                            }}
+                                            className="flex-1 py-1.5 text-center bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[9px] font-black uppercase tracking-widest cursor-pointer transition-colors shadow-2xs"
+                                          >
+                                            Sim, Reverter
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setDeplanConfirmOrderId(null)}
+                                            className="flex-1 py-1.5 text-center bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-[9px] font-black uppercase tracking-widest cursor-pointer transition-colors"
+                                          >
+                                            Cancelar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeplanConfirmOrderId(os.id)}
+                                        className="w-full py-1.5 text-center border border-dashed border-rose-225 hover:bg-[#fff5f5] text-rose-600 rounded-lg text-[9px] font-black uppercase transition-colors tracking-widest cursor-pointer flex items-center justify-center gap-1"
+                                      >
+                                        <X className="w-3 h-3 text-rose-500" />
+                                        Remover da Agenda (Reverter para Novo)
+                                      </button>
+                                    )}
                                   </div>
 
                                 </div>

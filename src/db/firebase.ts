@@ -890,6 +890,213 @@ export interface AutoGenFilter {
   endDate: string;
 }
 
+// HELPERS FOR PREVENTIVE CYCLE MOTOR
+export function getYearWeek(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const tempDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = tempDate.getUTCDay() || 7;
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((tempDate.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+  return `${tempDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+export function getAssetCycles(asset: Asset, orders: ServiceOrder[]): {
+  [periodicity: string]: {
+    lastExecution: string | null;
+    nextGenerationPrevista: string | null;
+    status: 'Em Dia' | 'Atrasado' | 'Pendente de Planejamento';
+  }
+} {
+  const assetOrders = orders.filter((o) => o.assetId === asset.id);
+  const periodicities = asset.periodicities || ['Mensal', 'Semestral', 'Anual'];
+  const cycles: any = {};
+
+  for (const p of periodicities) {
+    // Last executed/completed
+    const completed = [...assetOrders]
+      .filter((o) => o.status === 'Concluída' && (o.periodicity === p || o.title.includes(p)))
+      .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate));
+
+    const lastExecDate = completed.length > 0 ? completed[0].scheduledDate : null;
+
+    // Find any planned/pending future OS
+    const planned = [...assetOrders]
+      .filter((o) => (o.status === 'Novo' || o.status === 'Planejada' || o.status === 'Em Execução') && (o.periodicity === p || o.title.includes(p)))
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
+
+    let nextPrevista: string | null = null;
+    let status: 'Em Dia' | 'Atrasado' | 'Pendente de Planejamento' = 'Pendente de Planejamento';
+
+    if (planned.length > 0) {
+      nextPrevista = planned[0].scheduledDate;
+      status = 'Em Dia';
+    } else {
+      // Calculate next recommended generation
+      const referenceDate = lastExecDate || asset.createdAt.slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const ref = new Date(referenceDate + 'T12:00:00');
+      
+      if (p === 'Semanal') {
+        ref.setDate(ref.getDate() + 7);
+      } else if (p === 'Mensal') {
+        ref.setMonth(ref.getMonth() + 1);
+      } else if (p === 'Semestral') {
+        ref.setMonth(ref.getMonth() + 6);
+      } else if (p === 'Anual') {
+        ref.setFullYear(ref.getFullYear() + 1);
+      }
+      nextPrevista = ref.toISOString().slice(0, 10);
+
+      // Check if overdue
+      const todayStr = new Date().toISOString().slice(0, 10);
+      if (nextPrevista < todayStr) {
+        status = 'Atrasado';
+      } else {
+        status = 'Em Dia';
+      }
+    }
+
+    cycles[p] = {
+      lastExecution: lastExecDate,
+      nextGenerationPrevista: nextPrevista,
+      status
+    };
+  }
+
+  return cycles;
+}
+
+function getYearWeekLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const tempDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = tempDate.getUTCDay() || 7;
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((tempDate.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+  return `${tempDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function getQuarterLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const q = Math.floor(d.getMonth() / 3) + 1;
+  return `${d.getFullYear()}-Q${q}`;
+}
+
+function getSemesterLocal(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  const s = Math.floor(d.getMonth() / 6) + 1;
+  return `${d.getFullYear()}-S${s}`;
+}
+
+function isSamePeriodLocal(dateAStr: string, dateBStr: string, periodicity: string): boolean {
+  if (!dateAStr || !dateBStr) return false;
+  const p = periodicity || '';
+  if (p === 'Semanal') {
+    return getYearWeekLocal(dateAStr) === getYearWeekLocal(dateBStr);
+  }
+  if (p === 'Mensal') {
+    return dateAStr.slice(0, 7) === dateBStr.slice(0, 7);
+  }
+  if (p === 'Trimestral') {
+    return getQuarterLocal(dateAStr) === getQuarterLocal(dateBStr);
+  }
+  if (p === 'Semestral') {
+    return getSemesterLocal(dateAStr) === getSemesterLocal(dateBStr);
+  }
+  if (p === 'Anual') {
+    return dateAStr.slice(0, 4) === dateBStr.slice(0, 4);
+  }
+  return dateAStr === dateBStr;
+}
+
+function alignPeriodDatesLocal(baseDateStr: string, periodicity: string): { startDate: string; endDate: string; scheduledDate: string } {
+  if (!baseDateStr) {
+    const today = new Date().toISOString().slice(0, 10);
+    return { startDate: today, endDate: today, scheduledDate: today };
+  }
+  const d = new Date(baseDateStr + 'T12:00:00');
+  const y = d.getFullYear();
+  
+  const formatDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  if (periodicity === 'Semanal') {
+    const day = d.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diffToMonday);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    
+    return {
+      startDate: formatDateString(monday),
+      endDate: formatDateString(friday),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Mensal') {
+    const m = d.getMonth();
+    const firstDay = new Date(y, m, 1);
+    const lastDay = new Date(y, m + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Trimestral') {
+    const m = d.getMonth();
+    const quarter = Math.floor(m / 3);
+    const qStartMonth = quarter * 3;
+    const qEndMonth = qStartMonth + 2;
+    
+    const firstDay = new Date(y, qStartMonth, 1);
+    const lastDay = new Date(y, qEndMonth + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Semestral') {
+    const m = d.getMonth();
+    const semester = Math.floor(m / 6);
+    const sStartMonth = semester * 6;
+    const sEndMonth = sStartMonth + 5;
+    
+    const firstDay = new Date(y, sStartMonth, 1);
+    const lastDay = new Date(y, sEndMonth + 1, 0);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  } else if (periodicity === 'Anual') {
+    const firstDay = new Date(y, 0, 1);
+    const lastDay = new Date(y, 11, 31);
+    
+    return {
+      startDate: formatDateString(firstDay),
+      endDate: formatDateString(lastDay),
+      scheduledDate: baseDateStr
+    };
+  }
+  
+  return {
+    startDate: baseDateStr,
+    endDate: baseDateStr,
+    scheduledDate: baseDateStr
+  };
+}
+
 let lastAutoGenTimestamp = 0;
 
 // AUTOMATED PREVENTIVE MAINTENANCE AND SURVEY GENERATOR
@@ -953,14 +1160,6 @@ export async function dbAutoGeneratePreventiveActivities(
     }
     const comarcaList = Array.from(comarcas).sort((a, b) => a.localeCompare(b));
 
-    // Determine technician assignees based on field
-    const getTechnicianForSector = (sector: string) => {
-      const s = sector.toLowerCase();
-      if (s.includes('mec') || s.includes('hvac') || s.includes('refrig')) return 'Marcos Silva (Mecânico)';
-      if (s.includes('elet') || s.includes('eletr')) return 'Alessandro Pereira (Eletricista)';
-      return 'Claudio Souza (Civil)';
-    };
-
     for (const filter of filters) {
       const { templateId, comarca: filterComarca, sector: filterSector, startDate: filterStartDate, endDate: filterEndDate } = filter;
 
@@ -988,9 +1187,10 @@ export async function dbAutoGeneratePreventiveActivities(
             let i = 0;
             const limit = 100; // safety brake to prevent infinite loops
             while (i < limit) {
-              const scheduledDate = filterStartDate;
-              const pStartDate = filterStartDate;
-              const pEndDate = filterEndDate;
+              const dates = alignPeriodDatesLocal(filterStartDate, 'Semanal');
+              const scheduledDate = dates.scheduledDate;
+              const pStartDate = dates.startDate;
+              const pEndDate = dates.endDate;
 
               // If the start of the scheduled period exceeds the target end date pool, stop generating further
               if (scheduledDate > filterEndDate) {
@@ -999,13 +1199,11 @@ export async function dbAutoGeneratePreventiveActivities(
 
               const title = `${t.name} - ${comarca}`;
 
-              // Avoid duplicate of this specific survey title on same scheduledDate
-              const alreadyExists = orders.some(
-                (o) => o.isSurvey &&
-                o.title === title &&
-                o.scheduledDate === scheduledDate &&
-                o.surveyLocation === comarca
-              );
+              // EXTREME SAFETY CODES: Enforce Duplication Prevention & Weekly Boundaries using unified helper
+              const alreadyExists = orders.some((o) => {
+                if (!o.isSurvey || o.surveyLocation !== comarca || o.title !== title) return false;
+                return isSamePeriodLocal(o.scheduledDate, scheduledDate, 'Semanal');
+              });
 
               if (!alreadyExists) {
                 const checklistItems: ChecklistItem[] = t.checklistItems
@@ -1091,74 +1289,77 @@ export async function dbAutoGeneratePreventiveActivities(
               tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
             );
 
-            for (const periodicity of commonPeriodicities) {
-              // Determine sequential offset per periodicity as requested (semanal = 7, mensal = 30, semestral = 180, anual = 365)
-              let offsetMultiplier = 30;
-              if ((periodicity as string) === 'Semanal') offsetMultiplier = 7;
-              else if ((periodicity as string) === 'Mensal') offsetMultiplier = 30;
-              else if ((periodicity as string) === 'Semestral') offsetMultiplier = 180;
-              else if ((periodicity as string) === 'Anual') offsetMultiplier = 365;
+            // Fetch this specific asset's order history to enforce intervals and block duplicates
+            const assetOrders = orders.filter((o) => o.assetId === asset.id);
 
+            for (const periodicity of commonPeriodicities) {
               let i = 0;
               const limit = 100; // safety brake to prevent infinite loops
               while (i < limit) {
-                const scheduledDate = filterStartDate;
-                const pStartDate = filterStartDate;
-                const pEndDate = filterEndDate;
+                const dates = alignPeriodDatesLocal(filterStartDate, periodicity);
+                const scheduledDate = dates.scheduledDate;
+                const pStartDate = dates.startDate;
+                const pEndDate = dates.endDate;
 
                 const title = `Preventiva ${periodicity} - ${asset.name}`;
 
-                // Prevent duplicating same preventive for same asset, title and scheduledDate
-                const alreadyExists = orders.some(
-                  (o) => o.assetId === asset.id &&
-                  o.title === title &&
-                  o.scheduledDate === scheduledDate
-                );
+                // --- MOTOR DE CICLO PREVENTIVO CONSTRAINTS (UNIFIED CALENDAR PERIOD CHECKS) ---
+                const alreadyExists = assetOrders.some((o) => {
+                  if (o.isSurvey) return false;
+                  const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
+                  if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
+                  return isSamePeriodLocal(o.scheduledDate, scheduledDate, periodicity);
+                });
 
-                if (!alreadyExists) {
-                  const checklistItems: ChecklistItem[] = t.checklistItems
-                     .filter((item) => item.isActive)
-                     .map((item, idx) => ({
-                      id: `ck_g_${Date.now()}_${idx}_${Math.floor(Math.random() * 1000)}`,
-                      task: item.task,
-                      checked: item.defaultChecked ?? false,
-                      checkedAt: null,
-                      observations: null,
-                      criticality: item.criticality || 'Média',
-                      autoCreateCorrective: item.autoCreateCorrective ?? false,
-                      observationRequired: item.observationRequired ?? false,
-                      responseType: item.responseType || 'three_states',
-                      naObservationRequired: item.naObservationRequired ?? false
-                    } as any));
-
-                  const newOS: ServiceOrder = {
-                    id: (Math.floor(Math.random() * 800000) + 100000).toString(),
-                    assetId: asset.id,
-                    assetName: asset.name,
-                    assetCode: asset.code,
-                    sector: filterSector !== 'all' ? filterSector : (asset.sector || 'Geral'),
-                    title: title,
-                    description: `Atividade preventiva automática programada (${periodicity}). Equipamento: ${asset.name} (${asset.code}). Relacionado ao modelo versionado V${t.version || 1}.`,
-                    priority: periodicity === 'Anual' ? 'Alta' : 'Média',
-                    status: 'Novo',
-                    scheduledDate: scheduledDate,
-                    startDate: pStartDate,
-                    endDate: pEndDate,
-                    assignedTechnician: '',
-                    checklist: checklistItems,
-                    notes: '',
-                    signature: null,
-                    signedBy: null,
-                    signedAt: null,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    photoEvidence: null
-                  };
-
-                  allNewOrders.push(newOS);
-                  orders.unshift(newOS);
-                  generatedCount++;
+                if (alreadyExists) {
+                  console.log(`[Motor] Bloqueio: Ciclo ${periodicity} já gerado para o ativo ${asset.code} no período correspondente a ${scheduledDate}`);
+                  i = limit;
+                  continue;
                 }
+
+                const checklistItems: ChecklistItem[] = t.checklistItems
+                  .filter((item) => item.isActive)
+                  .map((item, idx) => ({
+                    id: `ck_g_${Date.now()}_${idx}_${Math.floor(Math.random() * 1000)}`,
+                    task: item.task,
+                    checked: item.defaultChecked ?? false,
+                    checkedAt: null,
+                    observations: null,
+                    criticality: item.criticality || 'Média',
+                    autoCreateCorrective: item.autoCreateCorrective ?? false,
+                    observationRequired: item.observationRequired ?? false,
+                    responseType: item.responseType || 'three_states',
+                    naObservationRequired: item.naObservationRequired ?? false
+                  } as any));
+
+                const newOS: ServiceOrder = {
+                  id: (Math.floor(Math.random() * 800000) + 100000).toString(),
+                  assetId: asset.id,
+                  assetName: asset.name,
+                  assetCode: asset.code,
+                  sector: filterSector !== 'all' ? filterSector : (asset.sector || 'Geral'),
+                  title: title,
+                  description: `Atividade preventiva automática programada (${periodicity}). Equipamento: ${asset.name} (${asset.code}). Relacionado ao modelo versionado V${t.version || 1}.`,
+                  priority: periodicity === 'Anual' ? 'Alta' : 'Média',
+                  status: 'Novo',
+                  scheduledDate: scheduledDate,
+                  startDate: pStartDate,
+                  endDate: pEndDate,
+                  assignedTechnician: '',
+                  checklist: checklistItems,
+                  notes: '',
+                  signature: null,
+                  signedBy: null,
+                  signedAt: null,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  photoEvidence: null,
+                  periodicity: periodicity
+                };
+
+                allNewOrders.push(newOS);
+                orders.unshift(newOS);
+                generatedCount++;
 
                 i = limit; // Only generate 1 instance per selected period
               }
@@ -2052,6 +2253,13 @@ const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     description: 'Criar e editar roteiros e frequências de preventivas.',
     category: 'Ações',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
+  },
+  manage_solicitations: {
+    id: 'manage_solicitations',
+    name: 'Operar Chamados (Abrir/Cancelar)',
+    description: 'Permite que usuários confirmem, abram chamados corretivos ou cancelem solicitações de avarias.',
+    category: 'Ações',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   }
 };
 
@@ -2077,7 +2285,8 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && data.permissions) {
-          cachePermissions = data.permissions as { [key: string]: SystemPermission };
+          // Merge with default permissions to ensure newly added actions/Tabs are dynamically present even with older db states
+          cachePermissions = { ...DEFAULT_PERMISSIONS, ...(data.permissions as { [key: string]: SystemPermission }) };
           cachePermissionsFromFirebase = true;
           try {
             localStorage.setItem('hexon_permissions_matrix', JSON.stringify(cachePermissions));
@@ -2104,7 +2313,8 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
     }
   }
 
-  cachePermissions = localData || { ...DEFAULT_PERMISSIONS };
+  // Merge localData with DEFAULT_PERMISSIONS
+  cachePermissions = localData ? { ...DEFAULT_PERMISSIONS, ...localData } : { ...DEFAULT_PERMISSIONS };
   cachePermissionsFromFirebase = false;
   try {
     localStorage.setItem('hexon_permissions_matrix', JSON.stringify(cachePermissions));

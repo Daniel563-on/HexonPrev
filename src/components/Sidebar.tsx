@@ -1,6 +1,6 @@
 // Sidebar.tsx - Hexon OS Sidebar Navigation
 import { useState } from 'react';
-import { ServiceOrder, HexonUser } from '../types';
+import { ServiceOrder, HexonUser, isSectorInGerencia } from '../types';
 import { getSolicitations } from './SolicitationsView';
 
 interface SidebarProps {
@@ -32,7 +32,7 @@ export default function Sidebar({
       if (userProfile.perfil === 'Profissional') {
         list = list.filter(o => o.preventiveOS.assignedTechnician === userProfile.name);
       } else if (userProfile.perfil === 'Administrador' && userProfile.gerencia !== 'Todas') {
-        list = list.filter(o => o.preventiveOS.sector === userProfile.gerencia);
+        list = list.filter(o => isSectorInGerencia(o.preventiveOS.sector, userProfile.gerencia));
       }
     }
     return list.filter(s => s.status !== 'Resolvido').length;
