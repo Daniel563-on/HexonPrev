@@ -5,6 +5,19 @@ import './index.css';
 
 // Intercept and suppress noisy browser extension/MetaMask console errors in the iframe
 if (typeof window !== 'undefined') {
+  // Overriding standard window.alert with a quiet redirect to prevent blocking popups
+  (window as any).__onCustomAlert = (msg: string) => {
+    console.info('Silenced pop-up alert:', msg);
+  };
+  window.alert = function (msg: string | undefined) {
+    const text = msg ? String(msg) : '';
+    if ((window as any).__onCustomAlert) {
+      (window as any).__onCustomAlert(text);
+    } else {
+      console.info('Silenced pop-up alert:', text);
+    }
+  };
+
   // 1. Capture and suppress unhandled errors and rejections
   const suppressBrowserExtensionErrors = (e: any) => {
     let errorMsg = '';

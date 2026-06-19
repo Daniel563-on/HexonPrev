@@ -265,8 +265,31 @@ export function getSectorGerencia(sector: string): string {
 }
 
 export function isSectorInGerencia(sector: string, gerencia: string): boolean {
-  if (!gerencia || gerencia === 'Todas') return true;
-  return getSectorGerencia(sector) === gerencia;
+  if (!gerencia || gerencia === 'Todas' || gerencia === 'all') return true;
+  if (!sector) return false;
+
+  const s = sector.trim().toUpperCase();
+  const g = gerencia.trim().toUpperCase();
+
+  if (s === g) return true;
+
+  // GMMR / Refrigeração
+  const isGMMRSector = s.includes('HVAC') || s.includes('MEC') || s.includes('REFR') || s.includes('AR') || s.includes('GMMR');
+  const isGMMRGerencia = g.includes('HVAC') || g.includes('MEC') || g.includes('REFR') || g.includes('AR') || g.includes('GMMR') || g.includes('REFRIGERAÇÃO') || g.includes('REFRIGERACAO');
+  if (isGMMRSector && isGMMRGerencia) return true;
+
+  // GMEE / Elétrica
+  const isGMEESector = s.includes('ELET') || s.includes('SUBST') || s.includes('FORÇA') || s.includes('FORCA') || s.includes('GMEE') || s.includes('ELETRÔNICA') || s.includes('ELETRONICA');
+  const isGMEEGerencia = g.includes('ELET') || g.includes('SUBST') || g.includes('FORÇA') || g.includes('FORCA') || g.includes('GMEE') || g.includes('ELETRÔNICA') || g.includes('ELETRONICA') || g.includes('ELÉTRICA') || g.includes('ELETRICA');
+  if (isGMEESector && isGMEEGerencia) return true;
+
+  // GMC / Civil / Predial
+  const isGMCSector = s.includes('CIVIL') || s.includes('HIDR') || s.includes('PRED') || s.includes('GERAL') || s.includes('GMC');
+  const isGMCGerencia = g.includes('CIVIL') || g.includes('HIDR') || g.includes('PRED') || g.includes('GERAL') || g.includes('GMC');
+  if (isGMCSector && isGMCGerencia) return true;
+
+  // Custom gerências
+  return s.includes(g) || g.includes(s);
 }
 
 

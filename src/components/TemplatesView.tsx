@@ -263,7 +263,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateType, setNewTemplateType] = useState<'preventive' | 'survey'>('preventive');
-  const [newTemplateTargetSector, setNewTemplateTargetSector] = useState('Mecânica/Refrigeração');
+  const [newTemplateTargetSector, setNewTemplateTargetSector] = useState('Refrigeração');
   const [newTemplateAssetType, setNewTemplateAssetType] = useState(''); // E.g. "Chiller", "Ar Condicionado"
   const [newTemplatePeriodicity, setNewTemplatePeriodicity] = useState('Mensal');
   const [newTemplatePeriodicities, setNewTemplatePeriodicities] = useState<string[]>(['Mensal']);
@@ -334,7 +334,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     });
     // Add default fallbacks just in case
     if (sectors.size === 0) {
-      sectors.add('Mecânica/Refrigeração');
+      sectors.add('Refrigeração');
       sectors.add('Elétrica');
       sectors.add('Civil');
     }
@@ -379,11 +379,11 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         setNewTemplateTargetSector(matchedAsset.sector);
       } else {
         const activeMgmts = managements.filter(m => m.name !== 'Todas');
-        setNewTemplateTargetSector(activeMgmts[0]?.name || 'Mecânica/Refrigeração');
+        setNewTemplateTargetSector(activeMgmts[0]?.name || 'Refrigeração');
       }
     } else {
       const activeMgmts = managements.filter(m => m.name !== 'Todas');
-      setNewTemplateTargetSector(activeMgmts[0]?.name || 'Mecânica/Refrigeração');
+      setNewTemplateTargetSector(activeMgmts[0]?.name || 'Refrigeração');
     }
     
     setNewTemplatePeriodicities(['Mensal']);
@@ -922,7 +922,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                   endDate: dates.endDate,
                   periodicity: periodicity,
                   type: 'preventive',
-                  management: asset.sector || t.targetSectorOrType || 'Mecânica/Refrigeração',
+                  management: asset.sector || t.targetSectorOrType || 'Refrigeração',
                   comarca: asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral',
                   alreadyExists: alreadyExists
                 });
@@ -2150,11 +2150,11 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                             setNewTemplateTargetSector(matchedAsset.sector);
                           } else {
                             const activeMgmts = managements.filter(m => m.name !== 'Todas');
-                            setNewTemplateTargetSector(activeMgmts[0]?.name || 'Mecânica/Refrigeração');
+                            setNewTemplateTargetSector(activeMgmts[0]?.name || 'Refrigeração');
                           }
                         } else {
                           const activeMgmts = managements.filter(m => m.name !== 'Todas');
-                          setNewTemplateTargetSector(activeMgmts[0]?.name || 'Mecânica/Refrigeração');
+                          setNewTemplateTargetSector(activeMgmts[0]?.name || 'Refrigeração');
                         }
                         setNewTemplatePeriodicities(['Mensal']);
                       } else {

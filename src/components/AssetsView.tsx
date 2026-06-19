@@ -970,13 +970,14 @@ export default function AssetsView({
                 // Color codes visually based on sector
                 let accentBorder = 'border-l-indigo-400';
                 let sectorBg = 'bg-indigo-50 text-indigo-750';
-                if (asset.sector === 'Mecânica/Refrigeração' || asset.sector === 'HVAC') {
+                const s = (asset.sector || '').toUpperCase();
+                if (s.includes('REFR') || s.includes('HVAC') || s.includes('MEC') || s.includes('GMMR')) {
                   accentBorder = 'border-l-blue-500';
                   sectorBg = 'bg-blue-50 text-blue-700';
-                } else if (asset.sector === 'Elétrica/Eletrônica' || asset.sector === 'Elétrica') {
+                } else if (s.includes('ELET') || s.includes('SUBST') || s.includes('FOR') || s.includes('GMEE') || s.includes('ELETR')) {
                   accentBorder = 'border-l-emerald-500';
                   sectorBg = 'bg-emerald-50 text-emerald-700';
-                } else if (asset.sector === 'Civil' || asset.sector === 'Hidráulica') {
+                } else if (s.includes('CIVIL') || s.includes('HIDR') || s.includes('PRED') || s.includes('GMC')) {
                   accentBorder = 'border-l-amber-500';
                   sectorBg = 'bg-amber-50 text-amber-700';
                 }
@@ -1612,9 +1613,9 @@ export default function AssetsView({
                         ))
                       ) : (
                         <>
-                          <option value="Mecânica/Refrigeração">Mecânica / Refrigeração</option>
-                          <option value="Elétrica/Eletrônica">Elétrica / Eletrônica</option>
-                          <option value="Civil">Civil / Predial</option>
+                          <option value="Refrigeração">Refrigeração</option>
+                          <option value="Elétrica">Elétrica</option>
+                          <option value="Civil">Civil</option>
                         </>
                       )}
                     </select>
@@ -1861,8 +1862,8 @@ export default function AssetsView({
                     ))
                   ) : (
                     <>
-                      <option value="Mecânica/Refrigeração">Mecânica / Refrigeração</option>
-                      <option value="Elétrica/Eletrônica">Elétrica / Eletrônica</option>
+                      <option value="Refrigeração">Refrigeração</option>
+                      <option value="Elétrica">Elétrica</option>
                       <option value="Civil">Civil</option>
                     </>
                   )}
@@ -2047,8 +2048,8 @@ export default function AssetsView({
                         ))
                       ) : (
                         <>
-                          <option value="Mecânica/Refrigeração">Mecânica / Refrigeração</option>
-                          <option value="Elétrica/Eletrônica">Elétrica / Eletrônica</option>
+                          <option value="Refrigeração">Refrigeração</option>
+                          <option value="Elétrica">Elétrica</option>
                           <option value="Civil">Civil</option>
                         </>
                       )}
@@ -2498,8 +2499,8 @@ export default function AssetsView({
                               ))
                             ) : (
                               <>
-                                <option value="Mecânica/Refrigeração">Mecânica / Refrigeração</option>
-                                <option value="Elétrica/Eletrônica">Elétrica / Eletrônica</option>
+                                <option value="Refrigeração">Refrigeração</option>
+                                <option value="Elétrica">Elétrica</option>
                                 <option value="Civil">Civil</option>
                               </>
                             )}

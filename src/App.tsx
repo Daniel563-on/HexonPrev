@@ -8,6 +8,7 @@ import TemplatesView from './components/TemplatesView';
 import SolicitationsView from './components/SolicitationsView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
+import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
   dbGetServiceOrders, 
@@ -41,6 +42,55 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   
   const [dismissedQuotaWarning, setDismissedQuotaWarning] = useState<boolean>(false);
+
+  // Custom Toast Notifications State
+  interface Toast {
+    id: string;
+    message: string;
+    type: 'success' | 'warning' | 'info';
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    const handleAlert = (msg: string) => {
+      const id = 'toast_' + Math.random().toString(36).substring(2, 9);
+      let type: 'success' | 'warning' | 'info' = 'info';
+
+      const lower = msg.toLowerCase();
+      if (lower.includes('✅') || lower.includes('sucesso') || lower.includes('concluída') || lower.includes('salvas com sucesso')) {
+        type = 'success';
+      } else if (
+        lower.includes('⚠️') || 
+        lower.includes('erro') || 
+        lower.includes('restrito') || 
+        lower.includes('🚫') || 
+        lower.includes('impossível') || 
+        lower.includes('falta') ||
+        lower.includes('erro')
+      ) {
+        type = 'warning';
+      }
+
+      setToasts(prev => [...prev, { id, message: msg, type }]);
+
+      // Auto dismiss after 4.5 seconds
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 4500);
+    };
+
+    if (typeof window !== 'undefined') {
+      (window as any).__onCustomAlert = handleAlert;
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as any).__onCustomAlert = (msg: string) => {
+          console.info('Silenced pop-up alert:', msg);
+        };
+      }
+    };
+  }, []);
 
   // Live Accessibility Engines (Dark Theme & Font Sizing)
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -448,6 +498,37 @@ export default function App() {
         </div>
         
       </main>
+
+      {/* Floating Non-Blocking Toast Containers (Replaces Intrusive Pop-up Notifications) */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-lg transition-all duration-300 animate-in slide-in-from-right-5 ${
+              toast.type === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-100'
+                : toast.type === 'warning'
+                ? 'bg-amber-50 dark:bg-amber-950/90 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-100'
+                : 'bg-indigo-50 dark:bg-indigo-950/90 border-indigo-200 dark:border-indigo-800 text-indigo-950 dark:text-indigo-100'
+            }`}
+          >
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />}
+
+            <div className="flex-1 text-xs font-bold leading-relaxed whitespace-pre-line">
+              {toast.message}
+            </div>
+
+            <button
+              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              className="p-1 -mr-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-black/5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
