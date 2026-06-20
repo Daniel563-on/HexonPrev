@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Moon, Sun, LogOut, Menu, Type } from 'lucide-react';
+import { Bell, Moon, Sun, LogOut, Menu, Type, RefreshCw } from 'lucide-react';
 import { signOutHexon, getDatabaseMode } from '../db/firebase';
 import { HexonUser, ServiceOrder } from '../types';
 import AccessibilityPanel from './AccessibilityPanel';
@@ -38,6 +38,29 @@ export default function Navbar({
   orders
 }: NavbarProps) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncStatus('syncing');
+    try {
+      const { forceRefetchAllData } = await import('../db/firebase');
+      await forceRefetchAllData();
+      setSyncStatus('success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1600);
+    } catch (err) {
+      console.error('Failed to sync manually:', err);
+      setSyncStatus('error');
+      setTimeout(() => {
+        setIsSyncing(false);
+        setSyncStatus('idle');
+      }, 3000);
+    }
+  };
 
   // Get initials for profile picture
   const getInitials = (name: string) => {
@@ -74,19 +97,51 @@ export default function Navbar({
         {(() => {
           const dbMode = getDatabaseMode();
           return (
-            <div 
-              className={`flex items-center justify-center w-6 h-6 rounded-full animate-fade-in border ${
-                dbMode.isFirebase 
-                  ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
-                  : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40'
-              }`} 
-              title={dbMode.isFirebase ? "Conexão ativa e sincronizada em tempo real com o banco de dados do Firebase em nuvem" : "Operando em modo local temporário com armazenamento local"}
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 cursor-pointer ${
+                syncStatus === 'success'
+                  ? 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 font-extrabold shadow-sm shadow-emerald-200/50 dark:shadow-none'
+                  : syncStatus === 'error'
+                  ? 'bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400 font-extrabold shadow-sm'
+                  : dbMode.isFirebase
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/40 dark:text-emerald-400 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40'
+                  : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/40 dark:text-amber-400 hover:bg-amber-100/60 dark:hover:bg-amber-950/40'
+              }`}
+              title={
+                syncStatus === 'syncing'
+                  ? "Sincronizando dados com o servidor da nuvem..."
+                  : syncStatus === 'success'
+                  ? "Sincronização concluída!"
+                  : dbMode.isFirebase
+                  ? "Banco de dados sincronizado e em nuvem. Clique para forçar a sincronização e atualização de dados das tabelas."
+                  : "Operando em modo de dados local. Clique para tentar forçar a sincronização com o banco em nuvem."
+              }
             >
-              <span className="relative flex h-2.5 w-2.5">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dbMode.isFirebase ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dbMode.isFirebase ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              <span className="relative flex h-2 w-2">
+                {syncStatus !== 'syncing' && (
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    syncStatus === 'success' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-rose-400' : dbMode.isFirebase ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`}></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  syncStatus === 'success' ? 'bg-emerald-500' : syncStatus === 'error' ? 'bg-rose-500' : dbMode.isFirebase ? 'bg-emerald-500' : 'bg-amber-500'
+                }`}></span>
               </span>
-            </div>
+              <span className="hidden xs:inline truncate font-black tracking-wider">
+                {syncStatus === 'syncing'
+                  ? "Sincronizando"
+                  : syncStatus === 'success'
+                  ? "Sincronizado!"
+                  : syncStatus === 'error'
+                  ? "Erro"
+                  : dbMode.isFirebase
+                  ? "Nuvem Ok"
+                  : "Modo Local"}
+              </span>
+              <RefreshCw className={`w-3 h-3 text-current ${isSyncing ? 'animate-spin' : 'hover:scale-110'}`} />
+            </button>
           );
         })()}
         <div className="h-4 w-[1px] bg-gray-200 dark:bg-slate-700 hidden lg:block"></div>

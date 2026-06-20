@@ -175,12 +175,26 @@
       "properties": {
         "permissions": { "type": "object", "description": "Matriz de atribuição de permissões por perfil" }
       }
+    },
+    "PlanningDeadline": {
+      "title": "Prazo de Planejamento",
+      "description": "Prazo limite para planejamento de cada gerência setorial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID da gerência relacionada" },
+        "expiresAt": { "type": "string", "description": "Data limite no formato ISO string ou o marcador 'none'" }
+      },
+      "required": ["id", "expiresAt"]
     }
   },
   "firestore": {
     "config": {
       "schema": "Config",
       "description": "Coleção de parâmetros e privilégios específicos de configuração global"
+    },
+    "planningDeadlines": {
+      "schema": "PlanningDeadline",
+      "description": "Coleção contendo os prazos limites definidos para controle de planejamento das gerências"
     },
     "assets": {
       "schema": "Asset",

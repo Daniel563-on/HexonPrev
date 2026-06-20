@@ -21,10 +21,11 @@ import {
   orderBy,
   limit,
   getDocFromServer,
-  writeBatch
+  writeBatch,
+  onSnapshot
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Asset, ServiceOrder, MaintenanceLog, ChecklistItem, MaintenanceTemplate, HexonUser, Management, Unit, AccessLog, AuditLog, Profile, Permission, SystemPermission, RolePermissions } from '../types';
+import { Asset, ServiceOrder, MaintenanceLog, ChecklistItem, MaintenanceTemplate, HexonUser, Management, Unit, AccessLog, AuditLog, Profile, Permission, SystemPermission, RolePermissions, isSectorInGerencia } from '../types';
 
 // Operation types for custom Firestore error handling
 enum OperationType {
@@ -250,6 +251,53 @@ export async function signOutHexon(): Promise<void> {
   }
 }
 
+// Cache Expiration / Read Reduction Engine
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12-Hour Cache TTL to limit Firestore reads
+
+function isCacheValid(key: string): boolean {
+  try {
+    const rawTimestamps = localStorage.getItem('hexon_cache_timestamps');
+    if (!rawTimestamps) return false;
+    const timestamps = JSON.parse(rawTimestamps);
+    const lastFetch = timestamps[key];
+    if (!lastFetch) return false;
+    return (Date.now() - lastFetch) < CACHE_TTL_MS;
+  } catch (e) {
+    return false;
+  }
+}
+
+function updateCacheTimestamp(key: string) {
+  try {
+    const rawTimestamps = localStorage.getItem('hexon_cache_timestamps') || '{}';
+    const timestamps = JSON.parse(rawTimestamps);
+    timestamps[key] = Date.now();
+    localStorage.setItem('hexon_cache_timestamps', JSON.stringify(timestamps));
+  } catch (e) {
+    console.warn('Error writing cache timestamp:', e);
+  }
+}
+
+export async function forceRefetchAllData(): Promise<void> {
+  try {
+    localStorage.removeItem('hexon_cache_timestamps');
+  } catch (e) {
+    console.warn('Error clearing cache timestamps:', e);
+  }
+  clearAllCaches();
+  if (firebaseActive && dbInstance) {
+    await Promise.all([
+      dbGetPermissions().catch(() => ({})),
+      dbGetUsers().catch(() => []),
+      dbGetAssets().catch(() => []),
+      dbGetServiceOrders().catch(() => []),
+      dbGetTemplates().catch(() => []),
+      dbGetManagements().catch(() => []),
+      dbGetUnits().catch(() => [])
+    ]);
+  }
+}
+
 // React auth subscriber
 // Fast In-Memory Cache to speed up entire system (0ms operations after initial fetch)
 let cacheAssets: Asset[] | null = null;
@@ -346,24 +394,33 @@ export function subscribeToAuth(callback: (user: any) => void) {
 // Get all assets
 export async function dbGetAssets(): Promise<Asset[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+  
+  // Try retrieving from local storage fallback first
+  let localData: Asset[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_assets');
+    if (saved) {
+      localData = JSON.parse(saved).filter((item: any) => !isMockOrLegacyId(item.id));
+    }
+  } catch (e) {
+    console.warn('Error reading assets from local storage fallback:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheAssets !== null && (!hasUser || cacheAssetsFromFirebase)) {
     return [...cacheAssets];
   }
+  if (isCacheValid('assets') && localData && localData.length > 0) {
+    cacheAssets = localData;
+    cacheAssetsFromFirebase = true;
+    return [...cacheAssets];
+  }
+
   if (pendingAssetsPromise !== null) {
     return pendingAssetsPromise;
   }
 
   pendingAssetsPromise = (async () => {
-    let localData: Asset[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_assets');
-      if (saved) {
-        localData = JSON.parse(saved).filter((item: any) => !isMockOrLegacyId(item.id));
-      }
-    } catch (e) {
-      console.warn('Error reading assets from local storage fallback:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'assets';
       try {
@@ -376,6 +433,7 @@ export async function dbGetAssets(): Promise<Asset[]> {
         });
         cacheAssets = list;
         cacheAssetsFromFirebase = true;
+        updateCacheTimestamp('assets');
         try {
           localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
         } catch (lsErr) {
@@ -503,24 +561,33 @@ function processExpiredOrders(orders: ServiceOrder[]): ServiceOrder[] {
 // Get all service orders
 export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+
+  // Try retrieving from local storage fallback first
+  let localData: ServiceOrder[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_service_orders');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading service orders:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheServiceOrders !== null && (!hasUser || cacheServiceOrdersFromFirebase)) {
     return processExpiredOrders([...cacheServiceOrders]).sort((a, d) => Number(d.id) - Number(a.id));
   }
+  if (isCacheValid('serviceOrders') && localData && localData.length > 0) {
+    cacheServiceOrders = localData;
+    cacheServiceOrdersFromFirebase = true;
+    return processExpiredOrders([...cacheServiceOrders]).sort((a, d) => Number(d.id) - Number(a.id));
+  }
+
   if (pendingOrdersPromise !== null) {
     return pendingOrdersPromise;
   }
 
   pendingOrdersPromise = (async () => {
-    let localData: ServiceOrder[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_service_orders');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading service orders:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'serviceOrders';
       try {
@@ -533,6 +600,7 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
         });
         cacheServiceOrders = processExpiredOrders(list);
         cacheServiceOrdersFromFirebase = true;
+        updateCacheTimestamp('serviceOrders');
         try {
           localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
         } catch (lsErr) {
@@ -768,24 +836,33 @@ export async function dbAddHistoryLog(log: MaintenanceLog): Promise<void> {
 // GET ALL CHECKLIST/MAINTENANCE TEMPLATES
 export async function dbGetTemplates(): Promise<MaintenanceTemplate[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+
+  // Try retrieving from local storage fallback first
+  let localData: MaintenanceTemplate[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_templates');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading templates from local storage fallback:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheTemplates !== null && (!hasUser || cacheTemplatesFromFirebase)) {
     return [...cacheTemplates];
   }
+  if (isCacheValid('templates') && localData && localData.length > 0) {
+    cacheTemplates = localData;
+    cacheTemplatesFromFirebase = true;
+    return [...cacheTemplates];
+  }
+
   if (pendingTemplatesPromise !== null) {
     return pendingTemplatesPromise;
   }
 
   pendingTemplatesPromise = (async () => {
-    let localData: MaintenanceTemplate[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_templates');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading templates from local storage fallback:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'templates';
       try {
@@ -799,6 +876,7 @@ export async function dbGetTemplates(): Promise<MaintenanceTemplate[]> {
         });
         cacheTemplates = list;
         cacheTemplatesFromFirebase = true;
+        updateCacheTimestamp('templates');
         try {
           localStorage.setItem('hexon_templates', JSON.stringify(cacheTemplates));
         } catch (lsErr) {
@@ -1404,6 +1482,22 @@ export async function dbAutoGeneratePreventiveActivities(
       }
     }
 
+    // Set 7-day deadlines for all managements
+    if (allNewOrders.length > 0) {
+      try {
+        const mans = await dbGetManagements();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        for (const m of mans) {
+          await dbSavePlanningDeadline({
+            id: m.id,
+            expiresAt: expiresAt
+          });
+        }
+      } catch (err) {
+        console.warn('Could not auto set deadlines for generated preventives:', err);
+      }
+    }
+
   } catch (error) {
     console.error('Error generating automated activities:', error);
   }
@@ -1559,24 +1653,33 @@ async function bootstrapRBACCollectionsIfEmpty() {
 // GET USERS
 export async function dbGetUsers(): Promise<HexonUser[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+
+  // Try retrieving from local storage fallback first
+  let localData: HexonUser[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_users');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading users from local fallback:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheUsers !== null && (!hasUser || cacheUsersFromFirebase)) {
     return [...cacheUsers];
   }
+  if (isCacheValid('users') && localData && localData.length > 0) {
+    cacheUsers = localData;
+    cacheUsersFromFirebase = true;
+    return [...cacheUsers];
+  }
+
   if (pendingUsersPromise !== null) {
     return pendingUsersPromise;
   }
 
   pendingUsersPromise = (async () => {
-    let localData: HexonUser[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_users');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading users from local fallback:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'users';
       try {
@@ -1591,6 +1694,7 @@ export async function dbGetUsers(): Promise<HexonUser[]> {
         if (list.length > 0) {
           cacheUsers = list;
           cacheUsersFromFirebase = true;
+          updateCacheTimestamp('users');
           try {
             localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
           } catch (lsErr) {
@@ -1672,24 +1776,33 @@ export async function dbDeleteUser(userId: string): Promise<void> {
 // GET MANAGEMENTS (GERENCIAS)
 export async function dbGetManagements(): Promise<Management[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+
+  // Try retrieving from local storage fallback first
+  let localData: Management[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_managements');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading managements:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheManagements !== null && (!hasUser || cacheManagementsFromFirebase)) {
     return [...cacheManagements];
   }
+  if (isCacheValid('managements') && localData && localData.length > 0) {
+    cacheManagements = localData;
+    cacheManagementsFromFirebase = true;
+    return [...cacheManagements];
+  }
+
   if (pendingManagementsPromise !== null) {
     return pendingManagementsPromise;
   }
 
   pendingManagementsPromise = (async () => {
-    let localData: Management[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_managements');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading managements:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'managements';
       try {
@@ -1701,6 +1814,7 @@ export async function dbGetManagements(): Promise<Management[]> {
         if (list.length > 0) {
           cacheManagements = list;
           cacheManagementsFromFirebase = true;
+          updateCacheTimestamp('managements');
           try {
             localStorage.setItem('hexon_managements', JSON.stringify(cacheManagements));
           } catch (lsErr) {
@@ -1778,24 +1892,33 @@ export async function dbDeleteManagement(id: string): Promise<void> {
 // GET UNITS (UNIDADES)
 export async function dbGetUnits(): Promise<Unit[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+
+  // Try retrieving from local storage fallback first
+  let localData: Unit[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_units');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading units:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
   if (cacheUnits !== null && (!hasUser || cacheUnitsFromFirebase)) {
     return [...cacheUnits];
   }
+  if (isCacheValid('units') && localData && localData.length > 0) {
+    cacheUnits = localData;
+    cacheUnitsFromFirebase = true;
+    return [...cacheUnits];
+  }
+
   if (pendingUnitsPromise !== null) {
     return pendingUnitsPromise;
   }
 
   pendingUnitsPromise = (async () => {
-    let localData: Unit[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_units');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading units:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'units';
       try {
@@ -1807,6 +1930,7 @@ export async function dbGetUnits(): Promise<Unit[]> {
         if (list.length > 0) {
           cacheUnits = list;
           cacheUnitsFromFirebase = true;
+          updateCacheTimestamp('units');
           try {
             localStorage.setItem('hexon_units', JSON.stringify(cacheUnits));
           } catch (lsErr) {
@@ -2264,10 +2388,6 @@ const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
 };
 
 export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermission }> {
-  if (cachePermissions !== null && (!firebaseActive || !dbInstance || cachePermissionsFromFirebase)) {
-    return { ...cachePermissions };
-  }
-
   let localData: { [key: string]: SystemPermission } | null = null;
   try {
     const saved = localStorage.getItem('hexon_permissions_matrix');
@@ -2276,6 +2396,16 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
     }
   } catch (e) {
     console.warn('Error reading permissions from localStorage:', e);
+  }
+
+  // Check if in-memory cache OR local storage cache is valid
+  if (cachePermissions !== null && (!firebaseActive || !dbInstance || cachePermissionsFromFirebase)) {
+    return { ...cachePermissions };
+  }
+  if (isCacheValid('permissions') && localData) {
+    cachePermissions = { ...DEFAULT_PERMISSIONS, ...localData };
+    cachePermissionsFromFirebase = true;
+    return { ...cachePermissions };
   }
 
   if (firebaseActive && dbInstance) {
@@ -2288,6 +2418,7 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
           // Merge with default permissions to ensure newly added actions/Tabs are dynamically present even with older db states
           cachePermissions = { ...DEFAULT_PERMISSIONS, ...(data.permissions as { [key: string]: SystemPermission }) };
           cachePermissionsFromFirebase = true;
+          updateCacheTimestamp('permissions');
           try {
             localStorage.setItem('hexon_permissions_matrix', JSON.stringify(cachePermissions));
           } catch (lsErr) {
@@ -2300,6 +2431,7 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
         await setDoc(docRef, { permissions: DEFAULT_PERMISSIONS });
         cachePermissions = DEFAULT_PERMISSIONS;
         cachePermissionsFromFirebase = true;
+        updateCacheTimestamp('permissions');
         try {
           localStorage.setItem('hexon_permissions_matrix', JSON.stringify(cachePermissions));
         } catch (lsErr) {
@@ -2349,6 +2481,177 @@ export async function dbSavePermissions(permissions: { [key: string]: SystemPerm
       console.warn('Firestore write config/permissions failed:', err);
       checkQuotaException(err);
     }
+  }
+}
+
+export function subscribeToUserProfile(userId: string, callback: (user: HexonUser | null) => void): () => void {
+  if (firebaseActive && dbInstance) {
+    try {
+      const docRef = doc(dbInstance, 'users', userId);
+      return onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          callback({ id: docSnap.id, ...docSnap.data() } as HexonUser);
+        } else {
+          callback(null);
+        }
+      }, (error) => {
+        console.warn('Erro ao escutar dados em tempo real do perfil do usuário:', error);
+      });
+    } catch (err) {
+      console.warn('Falha ao abrir canal de escuta em tempo real do perfil:', err);
+    }
+  }
+  return () => {};
+}
+
+export interface PlanningDeadline {
+  id: string; // management ID (e.g., "GMMR", "GMEE", "GMC")
+  expiresAt: string; // ISO string representation of deadline
+}
+
+let cachePlanningDeadlines: PlanningDeadline[] | null = null;
+let cachePlanningDeadlinesFromFirebase = false;
+let pendingPlanningDeadlinesPromise: Promise<PlanningDeadline[]> | null = null;
+
+export async function dbGetPlanningDeadlines(): Promise<PlanningDeadline[]> {
+  const hasUser = !!(firebaseActive && dbInstance);
+  let localData: PlanningDeadline[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_planning_deadlines');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading planning deadlines:', e);
+  }
+
+  if (cachePlanningDeadlines !== null && (!hasUser || cachePlanningDeadlinesFromFirebase)) {
+    return [...cachePlanningDeadlines];
+  }
+  if (localData && localData.length > 0) {
+    cachePlanningDeadlines = localData;
+    cachePlanningDeadlinesFromFirebase = true;
+    return [...cachePlanningDeadlines];
+  }
+
+  if (pendingPlanningDeadlinesPromise !== null) {
+    return pendingPlanningDeadlinesPromise.then(list => [...list]);
+  }
+
+  pendingPlanningDeadlinesPromise = (async () => {
+    if (firebaseActive && dbInstance) {
+      const path = 'planningDeadlines';
+      try {
+        const snap = await getDocs(collection(dbInstance, path));
+        const list: PlanningDeadline[] = [];
+        snap.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as PlanningDeadline);
+        });
+        cachePlanningDeadlines = list;
+        cachePlanningDeadlinesFromFirebase = true;
+        try {
+          localStorage.setItem('hexon_planning_deadlines', JSON.stringify(cachePlanningDeadlines));
+        } catch (lsErr) {
+          console.warn('LocalStorage limit planningDeadlines:', lsErr);
+        }
+        pendingPlanningDeadlinesPromise = null;
+        return [...cachePlanningDeadlines];
+      } catch (err: any) {
+        console.warn('Firestore fetch planningDeadlines failed:', err);
+        checkQuotaException(err);
+      }
+    }
+
+    cachePlanningDeadlines = localData || [];
+    cachePlanningDeadlinesFromFirebase = false;
+    pendingPlanningDeadlinesPromise = null;
+    return [...cachePlanningDeadlines];
+  })();
+
+  return pendingPlanningDeadlinesPromise.then(list => [...list]);
+}
+
+export async function dbSavePlanningDeadline(deadline: PlanningDeadline): Promise<void> {
+  if (cachePlanningDeadlines === null) {
+    cachePlanningDeadlines = [];
+  }
+  const index = cachePlanningDeadlines.findIndex(d => d.id === deadline.id);
+  if (index >= 0) {
+    cachePlanningDeadlines[index] = deadline;
+  } else {
+    cachePlanningDeadlines.push(deadline);
+  }
+
+  try {
+    localStorage.setItem('hexon_planning_deadlines', JSON.stringify(cachePlanningDeadlines));
+  } catch (lsErr) {
+    console.warn('LocalStorage limit writing deadlines:', lsErr);
+  }
+
+  if (firebaseActive && dbInstance) {
+    try {
+      await setDoc(doc(dbInstance, 'planningDeadlines', deadline.id), cleanUndefined(deadline));
+    } catch (err: any) {
+      console.warn('Firestore write planningDeadlines failed:', err);
+      checkQuotaException(err);
+    }
+  }
+}
+
+export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
+  try {
+    const [deadlines, orders] = await Promise.all([
+      dbGetPlanningDeadlines(),
+      dbGetServiceOrders()
+    ]);
+
+    const now = new Date();
+    const expiredManagements = deadlines.filter(d => d.expiresAt && d.expiresAt !== 'none' && new Date(d.expiresAt) < now);
+
+    if (expiredManagements.length === 0) return;
+
+    const updatedOrders: ServiceOrder[] = [];
+    const nonUpdated: ServiceOrder[] = [];
+
+    for (const os of orders) {
+      if (os.status === 'Novo') {
+        const isExpired = expiredManagements.some(d => isSectorInGerencia(os.sector, d.id));
+        if (isExpired) {
+          updatedOrders.push({
+            ...os,
+            status: 'Não Executada',
+            updatedAt: new Date().toISOString()
+          });
+          continue;
+        }
+      }
+      nonUpdated.push(os);
+    }
+
+    if (updatedOrders.length > 0) {
+      console.log(`[Auto-Expiration] Transitioning ${updatedOrders.length} Novo orders to Não Executada due to deadline expiry!`);
+      // Update cache
+      cacheServiceOrders = [...nonUpdated, ...updatedOrders];
+      try {
+        localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
+      } catch (lsErr) {
+        console.warn('LocalStorage limit saving service orders:', lsErr);
+      }
+
+      if (firebaseActive && dbInstance) {
+        const batchSize = 100;
+        for (let i = 0; i < updatedOrders.length; i += batchSize) {
+          const chunk = updatedOrders.slice(i, i + batchSize);
+          const batch = writeBatch(dbInstance);
+          for (const order of chunk) {
+            batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(order));
+          }
+          await batch.commit();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Error checking and expiring planning orders:', err);
   }
 }
 

@@ -22,7 +22,13 @@ import {
   dbGetUserByEmail,
   dbGetUsers,
   dbAddAccessLog,
-  dbGetPermissions
+  dbGetPermissions,
+  subscribeToUserProfile,
+  dbSaveUser,
+  dbGetPlanningDeadlines,
+  dbSavePlanningDeadline,
+  dbCheckAndExpirePlanningOrders,
+  PlanningDeadline
 } from './db/firebase';
 
 export default function App() {
@@ -31,6 +37,16 @@ export default function App() {
   const [scannedAssetId, setScannedAssetId] = useState<string | null>(null);
   const [openCreateModalDirectly, setOpenCreateModalDirectly] = useState(false);
   const [highlightedOSId, setHighlightedOSId] = useState<string | null>(null);
+  
+  // 1. Same-Browser Duplicate Tab Protection states
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [tabId] = useState(() => 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9));
+  
+  // 2. Visible Tab Auto-Sync & Hibernation states
+  const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
+
+  // 3. Sessão Única states
+  const [sessionDisplaced, setSessionDisplaced] = useState<boolean>(false);
   
   // Custom User Profile State
   const [userProfile, setUserProfile] = useState<HexonUser | null>(null);
@@ -141,8 +157,132 @@ export default function App() {
   // Track and apply Font Size scale
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontScale * 14}px`;
-    localStorage.setItem('hexon-font-scale', fontScale.toString());
+    localStorage.setItem('hexon_font-scale', fontScale.toString());
   }, [fontScale]);
+
+  // =============== SECURITY & OPTIMIZATION ENGINES ===============
+  
+  // 1. Same-Browser Duplicate Tab Protection
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+
+    const channel = new BroadcastChannel('hexon_tabs_channel');
+
+    const handleMessage = (event: MessageEvent) => {
+      const { type, senderTabId } = event.data || {};
+      if (senderTabId === tabId) return;
+
+      if (type === 'HELO') {
+        // Another tab is saying hello, respond that we are active
+        channel.postMessage({ type: 'ALIVE', senderTabId: tabId });
+      } else if (type === 'ALIVE') {
+        // Someone responded! It means there was already an active tab before us.
+        setIsDuplicate(true);
+      } else if (type === 'HIJACK') {
+        // Another tab has taken over (hijacked) the active role!
+        setIsDuplicate(true);
+      }
+    };
+
+    channel.addEventListener('message', handleMessage);
+
+    // Broadcast our arrival
+    channel.postMessage({ type: 'HELO', senderTabId: tabId });
+
+    return () => {
+      channel.removeEventListener('message', handleMessage);
+      channel.close();
+    };
+  }, [tabId]);
+
+  const handleHijackedClaim = () => {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('hexon_tabs_channel');
+      channel.postMessage({ type: 'HIJACK', senderTabId: tabId });
+      channel.close();
+    }
+    setIsDuplicate(false);
+  };
+
+  // 2. Visible Tab Auto-Sync & Hibernation (Visibility API)
+  useEffect(() => {
+    if (!userProfile) return;
+
+    let intervalId: any = null;
+
+    const runSync = async () => {
+      console.log('Sincronização periódica em primeiro plano ativa...');
+      await loadServiceOrders();
+      await loadPermissions();
+      setLastSyncTime(Date.now());
+    };
+
+    const startTimer = () => {
+      if (intervalId) clearInterval(intervalId);
+      // Run auto-refresh every 5 minutes (300000ms)
+      intervalId = setInterval(runSync, 300000);
+    };
+
+    const stopTimer = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log('Aba do Hexon em segundo plano. Hibernando temporizadores de sincronia...');
+        stopTimer();
+      } else {
+        console.log('Aba do Hexon restaurada ao primeiro plano. Retomando temporizadores.');
+        startTimer();
+        
+        // If more than 5 minutes have passed since the last sync, trigger an immediate foreground sync
+        const elapsed = Date.now() - lastSyncTime;
+        if (elapsed >= 300000) {
+          runSync();
+        }
+      }
+    };
+
+    // Initialize timer on active profile
+    if (!document.hidden) {
+      startTimer();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userProfile, lastSyncTime]);
+
+  // 3. Real-time Single Session per Account Sync
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const { isFirebase } = getDatabaseMode();
+    if (!isFirebase) return;
+
+    const localSessionId = localStorage.getItem('hexon_current_session_id');
+    if (!localSessionId) return;
+
+    // Listen to changes in the active user's document
+    const unsubscribe = subscribeToUserProfile(userProfile.id, (dbUser) => {
+      if (!dbUser) return;
+      
+      // If a modern currentSessionId is specified, and it doesn't match our local ID, trigger displacement:
+      if (dbUser.currentSessionId && dbUser.currentSessionId !== localSessionId) {
+        console.warn(`Sessão deslocada! ID Remoto: ${dbUser.currentSessionId}, ID Local: ${localSessionId}`);
+        handleLogoutState();
+        setSessionDisplaced(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [userProfile]);
 
   const handleToggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -159,6 +299,7 @@ export default function App() {
   // Load and refresh lists from DB
   const loadServiceOrders = async () => {
     try {
+      await dbCheckAndExpirePlanningOrders();
       const list = await dbGetServiceOrders();
       setOrders(list);
     } catch (err) {
@@ -266,7 +407,11 @@ export default function App() {
             const users = await dbGetUsers();
             const foundUser = users.find(u => u.matricula === savedMatricula && u.status === 'Ativo');
             if (foundUser) {
-              setUserProfile(foundUser);
+              const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+              localStorage.setItem('hexon_current_session_id', sessionId);
+              const updatedUser = { ...foundUser, currentSessionId: sessionId };
+              await dbSaveUser(updatedUser);
+              setUserProfile(updatedUser);
               await dbAddAccessLog({
                 userMatricula: foundUser.matricula,
                 userName: foundUser.name,
@@ -294,12 +439,17 @@ export default function App() {
 
   const handleLogoutState = () => {
     localStorage.removeItem('hexon_remembered_matricula');
+    localStorage.removeItem('hexon_current_session_id');
     setUserProfile(null);
     setCurrentUser(null);
   };
 
   const handleLoginSuccess = async (profile: HexonUser) => {
-    setUserProfile(profile);
+    const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('hexon_current_session_id', sessionId);
+    const updatedUser = { ...profile, currentSessionId: sessionId };
+    await dbSaveUser(updatedUser);
+    setUserProfile(updatedUser);
     await loadPermissions();
     await loadServiceOrders();
   };
@@ -372,6 +522,89 @@ export default function App() {
   };
 
   const filteredOrders = getFilteredOrders();
+
+  // 1. Same-Browser Duplicate Tab Blocker Overlay
+  if (isDuplicate) {
+    return (
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'} font-sans`}>
+        <div className="max-w-md w-full bg-[#0b1329] border border-slate-800 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+          <div className="w-16 h-16 bg-amber-500/15 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-white tracking-tight uppercase">Abas Duplicadas Detectadas</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Detectamos que o <strong className="text-[#5c6dfd]">Hexon</strong> já está operando em outra aba aberta neste mesmo navegador.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#111c35] rounded-xl text-[11px] text-slate-350 text-left space-y-1.5 font-medium leading-relaxed border border-slate-800">
+            <p><strong className="text-amber-400">Proteção de Recursos:</strong> O Hexon suspende execuções redundantes para sincronizar dados sem leituras excessivas ou conflitos de formulário no mesmo navegador.</p>
+            <p>Escolha como deseja prosseguir com segurança:</p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleHijackedClaim}
+              className="flex-1 px-4 py-3 bg-[#5c6dfd] hover:bg-[#4859eb] text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-md"
+            >
+              Usar nesta aba
+            </button>
+            <button
+              onClick={() => {
+                window.close();
+                // Fallback if window.close() is blocked by browser rules
+                alert("Você já possui outra aba ativa. Pode simplesmente mudar de aba ou fechá-la manualmente.");
+              }}
+              className="flex-1 px-4 py-3 border border-slate-750 hover:bg-slate-900 text-slate-350 rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer"
+            >
+              Fechar esta aba
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Different-Device Displaced Session Overlay
+  if (sessionDisplaced) {
+    return (
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'} font-sans`}>
+        <div className="max-w-md w-full bg-[#0b1329] border border-slate-800 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+          <div className="w-16 h-16 bg-rose-500/15 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-pulse">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-white tracking-tight uppercase">Sessão Expirada</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Seu perfil de acesso no Hexon foi conectado recentemente de outro navegador ou dispositivo.
+            </p>
+          </div>
+
+          <div className="p-4 bg-[#111c35] rounded-xl text-[11px] text-slate-350 text-left space-y-1.5 font-medium leading-relaxed border border-slate-800">
+            <p><strong className="text-rose-400">Segurança Corporativa:</strong> Para conformidade de auditoria e rastreabilidade nas assinaturas de preventivas, apenas uma conexão ativa por usuário é permitida ao mesmo tempo.</p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={() => {
+                setSessionDisplaced(false);
+              }}
+              className="w-full px-5 py-3.5 bg-[#5c6dfd] hover:bg-[#4859eb] text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-md"
+            >
+              Entrar Novamente
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Rendering Session Initializing loader (Sleek minimalist panel)
   if (sessionChecking) {

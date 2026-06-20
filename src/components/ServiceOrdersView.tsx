@@ -25,7 +25,7 @@ import {
   Flag
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia } from '../types';
-import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers } from '../db/firebase';
+import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
 import SignatureCanvas from './SignatureCanvas';
 
 interface ServiceOrdersViewProps {
@@ -49,6 +49,75 @@ export default function ServiceOrdersView({
 }: ServiceOrdersViewProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [deadlines, setDeadlines] = useState<PlanningDeadline[]>([]);
+  const [customDates, setCustomDates] = useState<Record<string, string>>({});
+  const [hasDismissedTemp, setHasDismissedTemp] = useState(false);
+  const [showDeadlineWarnPopup, setShowDeadlineWarnPopup] = useState(false);
+  const [warnPopupManagement, setWarnPopupManagement] = useState<string>('');
+  const [warnPopupTimeText, setWarnPopupTimeText] = useState<string>('');
+
+  function getCountdownText(expiresAt: string): { text: string; hoursLeft: number; isExpired: boolean } {
+    if (!expiresAt || expiresAt === 'none' || expiresAt === '') {
+      return { text: 'Sem prazo definido', hoursLeft: 9999, isExpired: false };
+    }
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    if (diff <= 0) {
+      return { text: 'Prazo Expirado (Acesso Bloqueado)', hoursLeft: 0, isExpired: true };
+    }
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    let textStr = '';
+    if (days > 0) textStr += `${days} ${days === 1 ? 'dia' : 'dias'} `;
+    textStr += `${hours}h ${minutes}m`;
+    return { text: textStr, hoursLeft: diff / (1000 * 60 * 60), isExpired: false };
+  }
+
+  const loadDeadlines = () => {
+    dbGetPlanningDeadlines().then((list) => {
+      setDeadlines([...list]);
+    });
+  };
+
+  useEffect(() => {
+    loadDeadlines();
+  }, [orders]);
+
+  // Handle countdown updates & alerts
+  useEffect(() => {
+    if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
+      const runCheck = () => {
+        dbGetPlanningDeadlines().then((list) => {
+          setDeadlines([...list]);
+          const deadline = list.find(d => d.id === userProfile.gerencia);
+          if (deadline && deadline.expiresAt) {
+            const { isExpired, hoursLeft, text } = getCountdownText(deadline.expiresAt);
+            if (!isExpired && hoursLeft <= 24) {
+              if (!hasDismissedTemp) {
+                setWarnPopupManagement(userProfile.gerencia);
+                setWarnPopupTimeText(text);
+                setShowDeadlineWarnPopup(true);
+              }
+            } else {
+              // If deadline is reset to >24h, we can allow showing again next time it hits limit
+              setHasDismissedTemp(false);
+              setShowDeadlineWarnPopup(false);
+            }
+          } else {
+            // No custom deadline is defined, hide any warning alerts
+            setShowDeadlineWarnPopup(false);
+            setHasDismissedTemp(false);
+          }
+        });
+      };
+      
+      runCheck();
+      const interval = setInterval(runCheck, 10000); // Check every 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [userProfile, hasDismissedTemp]);
+
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -903,6 +972,178 @@ export default function ServiceOrdersView({
 
   return (
     <div className="space-y-6 font-sans">
+      {/* Informação / Alerta de Prazo Crítico Central Popup */}
+      {showDeadlineWarnPopup && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xl max-w-md w-full animate-in zoom-in duration-200 text-left">
+            <div className="flex items-center gap-3 text-amber-600 mb-4">
+              <div className="bg-amber-105 p-3 rounded-full">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">⚠️ ALERTA DE PRAZO CRÍTICO</h3>
+                <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-extrabold uppercase mt-1 inline-block">Gerência {warnPopupManagement}</span>
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Prezado Administrador, o prazo restrito para agendamento e alocação do atual lote de preventivas se encerrará em menos de 24 horas!
+            </p>
+            
+            <div className="my-5 p-3.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between font-mono">
+              <span className="text-[11px] font-black uppercase text-slate-655">Tempo Restante:</span>
+              <span className="text-xs font-black uppercase text-amber-850 animate-pulse">{warnPopupTimeText}</span>
+            </div>
+            
+            <p className="text-[10px] text-slate-400 italic leading-relaxed">
+              *Nota: Após o encerramento do prazo, todas as preventivas/vistorias com status "Novo" que não forem agendadas serão automaticamente cadastradas como "Não Executada", e o acesso a este calendário será bloqueado.
+            </p>
+            
+            <div className="pt-6 border-t border-slate-150 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setHasDismissedTemp(true);
+                  setShowDeadlineWarnPopup(false);
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 bg-[#3525cd] hover:bg-[#281bbb] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95 cursor-pointer h-[40px] flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4 text-white" />
+                Estou Ciente do Prazo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Countdowns / Status Bar for Administrator */}
+      {userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (() => {
+        const deadline = deadlines.find(d => d.id === userProfile.gerencia);
+        if (!deadline || !deadline.expiresAt) return null;
+        const { isExpired, text, hoursLeft } = getCountdownText(deadline.expiresAt);
+        return (
+          <div className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+            isExpired 
+              ? 'bg-rose-50 border-rose-200 text-rose-900 animate-pulse' 
+              : hoursLeft <= 24 
+                ? 'bg-amber-50 border-amber-200 text-amber-900 animate-pulse' 
+                : 'bg-emerald-50 border-emerald-100 text-emerald-950'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <div className={`p-2 rounded-lg ${isExpired ? 'bg-rose-105 text-rose-700' : hoursLeft <= 24 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                <Clock className="w-5 h-5 animate-spin" style={{ animationDuration: isExpired ? '0s' : hoursLeft <= 24 ? '3s' : '10s' }} />
+              </div>
+              <div className="text-left">
+                <h4 className="text-[10.5px] font-black uppercase tracking-wider">
+                  Tempo Limite para Planejamento de Preventivas ({userProfile.gerencia})
+                </h4>
+                <p className="text-[11px] opacity-80 mt-0.5 leading-relaxed font-semibold">
+                  {isExpired 
+                    ? 'Acesso ao planejamento suspenso devido a expiração do prazo de 7 dias.' 
+                    : 'A gerência precisa lançar e atribuir todas as preventivas de campo no calendário antes do fim deste prazo.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white/60 backdrop-blur-xs px-4 py-2 rounded-lg shadow-3xs border border-white/50 self-end md:self-auto">
+              <span className="text-[10px] font-black uppercase tracking-wider opacity-60">Tempo Restante:</span>
+              <span className={`text-xs font-mono font-black uppercase ${isExpired ? 'text-rose-600' : hoursLeft <= 24 ? 'text-amber-600' : 'text-[#3525cd]'}`}>
+                {text}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Super Admin Deadline Control Center */}
+      {userProfile?.perfil === 'Super Administrador' && (
+        <div className="bg-slate-50 border border-slate-205 rounded-xl p-5 text-left">
+          <div className="flex items-center gap-2 mb-4">
+            <ClipboardList className="w-5 h-5 text-indigo-750" />
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">⚙️ Painel de Controle de Prazos das Gerências</h3>
+              <p className="text-[10px] text-slate-400 font-bold">Como Super Administrador, você define a data e horário limite para o planejamento das preventivas de cada gerência.</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {['GMC', 'GMMR', 'GMEE'].map(mId => {
+              const dlObj = deadlines.find(d => d.id === mId);
+              const { text, isExpired, hoursLeft } = dlObj ? getCountdownText(dlObj.expiresAt) : { text: 'Nenhum prazo definido', isExpired: false, hoursLeft: 999 };
+              const hasValidDeadline = dlObj && dlObj.expiresAt && dlObj.expiresAt !== 'none';
+              
+              return (
+                <div key={mId} className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-3xs flex flex-col justify-between hover:shadow-2xs transition-shadow">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-black text-slate-800 tracking-wider">Gerência {mId}</span>
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                        !hasValidDeadline
+                          ? 'bg-slate-100 text-slate-500'
+                          : isExpired 
+                            ? 'bg-rose-100 text-rose-700' 
+                            : hoursLeft <= 24 
+                              ? 'bg-amber-100 text-amber-700 animate-pulse' 
+                              : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {!hasValidDeadline ? 'Sem Prazo' : isExpired ? 'Expirado' : hoursLeft <= 24 ? 'Crítico (<24h)' : 'Liberado'}
+                      </span>
+                    </div>
+                    
+                    <p className="text-[11px] font-mono text-slate-400 mt-1">
+                      Limite Atual: <span className="font-extrabold text-slate-700">{hasValidDeadline ? new Date(dlObj.expiresAt).toLocaleString('pt-BR') : 'Sem prazo definido'}</span>
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-655 mt-1.5 flex items-center gap-1">
+                      ⏳ Restam: <strong className="text-[#3525cd] font-black">{hasValidDeadline ? text : 'Sem prazo definido'}</strong>
+                    </p>
+
+                    {/* Custom DateTime Selection Input for the Super Admin */}
+                    <div className="mt-4 pt-3.5 border-t border-dashed border-slate-150">
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">
+                        Definir Prazo Limite:
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="datetime-local"
+                          value={customDates[mId] || ''}
+                          onChange={(e) => setCustomDates(prev => ({ ...prev, [mId]: e.target.value }))}
+                          className="text-[11px] font-semibold border border-slate-200 rounded-lg px-2.5 py-1 bg-slate-50 focus:bg-white text-slate-800 flex-1 outline-none focus:border-[#3525cd] focus:ring-1 focus:ring-[#3525cd]/20 h-[34px] w-full"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const val = customDates[mId];
+                            if (!val) {
+                              alert('Selecione uma data e hora válidas antes de confirmar.');
+                              return;
+                            }
+                            const isoString = new Date(val).toISOString();
+                            // Update React state immediately for snappy UX
+                            setDeadlines(prev => {
+                              const existing = prev.find(d => d.id === mId);
+                              if (existing) {
+                                return prev.map(d => d.id === mId ? { ...d, expiresAt: isoString } : d);
+                              } else {
+                                return [...prev, { id: mId, expiresAt: isoString }];
+                              }
+                            });
+                            await dbSavePlanningDeadline({ id: mId, expiresAt: isoString });
+                            alert(`Prazo da gerência ${mId} definido com sucesso para ${new Date(isoString).toLocaleString('pt-BR')}!`);
+                            onReload();
+                            loadDeadlines();
+                          }}
+                          className="px-6 bg-[#3525cd] hover:bg-[#281bbb] active:scale-98 text-white text-[10.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center shadow-3xs h-[34px] shrink-0 w-full sm:w-auto"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {/* SECTION: Page Hero Header */}
       <section className="bg-white rounded-xl p-6 md:p-7 border border-slate-200 shadow-sm relative overflow-hidden transition-all duration-200 hover:shadow-md flex items-center justify-between">
@@ -962,8 +1203,41 @@ export default function ServiceOrdersView({
         </div>
       )}
 
-      {subTab === 'planejamento' && userProfile?.perfil !== 'Profissional' ? (
-        <div className="space-y-6 animate-fadeIn">
+      {subTab === 'planejamento' && userProfile?.perfil !== 'Profissional' ? (() => {
+        // Evaluate if planning is expired for this specific administrator's gerência
+        let isPlanningExpired = false;
+        if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
+          const dlObj = deadlines.find(d => d.id === userProfile.gerencia);
+          if (dlObj) {
+            const countdownHelper = getCountdownText(dlObj.expiresAt);
+            isPlanningExpired = countdownHelper.isExpired;
+          }
+        }
+
+        if (isPlanningExpired) {
+          return (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center max-w-2xl mx-auto my-12 shadow-sm animate-fadeIn">
+              <div className="w-16 h-16 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-2">
+                Acesso Bloqueado: Prazo de Programação Expirado
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-lg mx-auto">
+                O prazo de 7 dias úteis/corridos concedido à sua gerência (<strong className="text-slate-800">{userProfile?.gerencia}</strong>) para planejamento e alocação das ordens preventivas no calendário expirou.
+              </p>
+              <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-4 my-6 text-[11px] text-rose-800 font-bold max-w-md mx-auto leading-relaxed">
+                Todas as preventivas/vistorias que aguardavam programação foram finalizadas automaticamente como "Não Executada".
+              </div>
+              <p className="text-[11.5px] text-slate-400 font-semibold">
+                Caso necessite de mais tempo para realizar alterações, solicite ao <strong className="text-slate-705">Super Administrador</strong> a extensão do prazo limite e ajuste do cronograma.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-6 animate-fadeIn">
           {/* Top Informative Banner with dynamic instructions */}
           <div className="bg-[#3525cd]/5 border border-[#3525cd]/15 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -1746,7 +2020,7 @@ export default function ServiceOrdersView({
             })()}
           </div>
         </div>
-      ) : (
+      ); })() : (
         <>
           {/* SECTION: Smart Search & Filtros Inteligentes */}
           <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">

@@ -184,6 +184,7 @@ export interface HexonUser {
   perfil: 'Super Administrador' | 'Administrador' | 'Profissional';
   status: 'Ativo' | 'Inativo';
   senha?: string; // Senha para login via credenciais
+  currentSessionId?: string; // ID de sessão único do dispositivo ativo
 }
 
 export interface Profile {
