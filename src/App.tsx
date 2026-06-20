@@ -8,6 +8,7 @@ import TemplatesView from './components/TemplatesView';
 import SolicitationsView from './components/SolicitationsView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
+import AccessibilityPanel from './components/AccessibilityPanel';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
@@ -99,6 +100,12 @@ export default function App() {
   const [fontScale, setFontScale] = useState<number>(() => {
     return parseFloat(localStorage.getItem('hexon-font-scale') || '1');
   });
+  const [highContrast, setHighContrast] = useState<boolean>(() => {
+    return localStorage.getItem('hexon-high-contrast') === 'true';
+  });
+  const [daltonism, setDaltonism] = useState<string>(() => {
+    return localStorage.getItem('hexon-daltonism') || 'none';
+  });
 
   // Track and apply Theme updates
   useEffect(() => {
@@ -110,6 +117,26 @@ export default function App() {
       localStorage.setItem('hexon-dark-mode', 'false');
     }
   }, [darkMode]);
+
+  // Track and apply High Contrast updates
+  useEffect(() => {
+    if (highContrast) {
+      document.documentElement.classList.add('high-contrast');
+      localStorage.setItem('hexon-high-contrast', 'true');
+    } else {
+      document.documentElement.classList.remove('high-contrast');
+      localStorage.setItem('hexon-high-contrast', 'false');
+    }
+  }, [highContrast]);
+
+  // Track and apply Daltonism updates
+  useEffect(() => {
+    document.documentElement.classList.remove('daltonism-protanopia', 'daltonism-deuteranopia', 'daltonism-tritanopia');
+    if (daltonism && daltonism !== 'none') {
+      document.documentElement.classList.add(`daltonism-${daltonism}`);
+    }
+    localStorage.setItem('hexon-daltonism', daltonism);
+  }, [daltonism]);
 
   // Track and apply Font Size scale
   useEffect(() => {
@@ -406,7 +433,13 @@ export default function App() {
           darkMode={darkMode}
           onToggleDarkMode={handleToggleDarkMode}
           fontScale={fontScale}
-          onToggleFontScale={handleToggleFontScale}
+          setFontScale={setFontScale}
+          highContrast={highContrast}
+          setHighContrast={setHighContrast}
+          daltonism={daltonism}
+          setDaltonism={setDaltonism}
+          currentTab={currentTab}
+          orders={orders}
         />
 
         {/* COMPARTIMENTALIZED SCROLLABLE SUBVIEW PANEL */}

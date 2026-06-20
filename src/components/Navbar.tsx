@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Bell, Moon, Sun, LogOut, Menu, Type } from 'lucide-react';
 import { signOutHexon, getDatabaseMode } from '../db/firebase';
-import { HexonUser } from '../types';
+import { HexonUser, ServiceOrder } from '../types';
+import AccessibilityPanel from './AccessibilityPanel';
 
 interface NavbarProps {
   tabTitle: string;
@@ -11,7 +12,13 @@ interface NavbarProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   fontScale: number;
-  onToggleFontScale: () => void;
+  setFontScale: React.Dispatch<React.SetStateAction<number>>;
+  highContrast: boolean;
+  setHighContrast: React.Dispatch<React.SetStateAction<boolean>>;
+  daltonism: string;
+  setDaltonism: (val: string) => void;
+  currentTab: string;
+  orders: ServiceOrder[];
 }
 
 export default function Navbar({ 
@@ -22,7 +29,13 @@ export default function Navbar({
   darkMode,
   onToggleDarkMode,
   fontScale,
-  onToggleFontScale
+  setFontScale,
+  highContrast,
+  setHighContrast,
+  daltonism,
+  setDaltonism,
+  currentTab,
+  orders
 }: NavbarProps) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -96,14 +109,7 @@ export default function Navbar({
       <div className="flex items-center gap-2 sm:gap-6">
 
         <div className="flex items-center gap-1.5 sm:gap-3">
-          {/* Notifications Button */}
-          <button 
-            onClick={() => alert(`SISTEMA EM PERFEITO ACORDO TÉCNICO\nNível de Acesso: ${displayPerfil}\nCargo: ${displayCargo}\nGerência: ${userProfile?.gerencia || 'Todas'}`)}
-            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800/60 text-gray-600 dark:text-gray-300 transition-all border border-gray-100 dark:border-slate-800/60 hover:scale-105 active:scale-95 cursor-pointer"
-            title="Avisos"
-          >
-            <Bell className="w-5 h-5 hover:rotate-12 transition-transform" />
-          </button>
+
 
           {/* Dynamic Dark Mode Toggle */}
           <button 
@@ -116,19 +122,17 @@ export default function Navbar({
             {darkMode ? <Sun className="w-5 h-5 text-amber-500 rotate-45 hover:rotate-90 transition-transform duration-300" /> : <Moon className="w-5 h-5 -rotate-12 hover:rotate-0 transition-transform duration-300" />}
           </button>
 
-          {/* Dynamic Font Size Control Toggle */}
-          <button 
-            onClick={onToggleFontScale}
-            className={`w-10 h-10 flex flex-col items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800/60 transition-all border relative hover:scale-105 active:scale-95 cursor-pointer ${
-              fontScale > 1 ? 'bg-indigo-500/10 text-[#3525cd] dark:text-[#c3c0ff] border-[#3525cd]/20' : 'text-gray-600 dark:text-gray-300 border-gray-100 dark:border-slate-800/60'
-            }`}
-            title="Aumentar Tamanho da Letra (Clique para ajustar)"
-          >
-            <Type className="w-5 h-5" />
-            <span className="absolute -top-1 -right-1 bg-[#3525cd] text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-gray-900 select-none">
-              {fontScale === 1 ? '1x' : fontScale === 1.15 ? '2x' : '3x'}
-            </span>
-          </button>
+          {/* Integrated Accessibility Button and Flyout dropdown */}
+          <AccessibilityPanel
+            fontScale={fontScale}
+            setFontScale={setFontScale}
+            highContrast={highContrast}
+            setHighContrast={setHighContrast}
+            daltonism={daltonism}
+            setDaltonism={setDaltonism}
+            currentTab={currentTab}
+            orders={orders}
+          />
 
           <div className="h-8 w-[1px] bg-gray-200 dark:bg-slate-700 mx-1"></div>
 

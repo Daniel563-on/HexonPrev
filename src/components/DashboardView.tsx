@@ -125,7 +125,7 @@ export default function DashboardView({
     return base;
   }, [orders, userProfile]);
 
-  const [chart1Ref, chart1Size] = useContainerSize(280);
+  const [chart1Ref, chart1Size] = useContainerSize(320);
   const [chart2Ref, chart2Size] = useContainerSize(200);
   const [chart3Ref, chart3Size] = useContainerSize(240);
   const [chart4Ref, chart4Size] = useContainerSize(240);
@@ -344,22 +344,44 @@ export default function DashboardView({
     return { realizado, eficiente, eficaz };
   };
 
+  const getEnquadramentoStatus = (o: ServiceOrder) => {
+    const currentDateStr = '2026-06-19';
+    if (o.status === 'Concluída') {
+      const execDate = o.signedAt ? o.signedAt.slice(0, 10) : '';
+      if (!execDate) return 'Não Realizada';
+      
+      const start = o.startDate || '';
+      const end = o.endDate || '';
+      const metSuperAdminRange = start && end ? (execDate >= start && execDate <= end) : true;
+      if (!metSuperAdminRange) return 'Não Realizada';
+
+      const metAdminScheduledDay = o.scheduledDate ? (execDate === o.scheduledDate) : true;
+      if (metAdminScheduledDay) return 'Concluída no Prazo';
+      return 'Concluídas em Atraso';
+    }
+    
+    if (o.status === 'Não Executada') return 'Não Realizada';
+    
+    const end = o.endDate || '';
+    if (end && end < currentDateStr) return 'Não Realizada';
+    
+    return 'Nova';
+  };
+
   const totalCount = filteredByMonthOrders.length;
   
-  const auditedList = filteredByMonthOrders.map(o => ({
+  const classifiedList = filteredByMonthOrders.map(o => ({
     o,
-    metrics: getOrderAuditMetrics(o)
+    statusEnquadramento: getEnquadramentoStatus(o)
   }));
 
-  const realizadoCount = auditedList.filter(item => item.metrics.realizado).length; // Realizadas no Prazo/Range
-  const eficienteCount = auditedList.filter(item => item.metrics.eficiente).length; // Eficientes
-  const eficazCount = auditedList.filter(item => item.metrics.eficaz).length;       // Eficazes
+  const novaCount = classifiedList.filter(item => item.statusEnquadramento === 'Nova').length;
+  const concluidaNoPrazoCount = classifiedList.filter(item => item.statusEnquadramento === 'Concluída no Prazo').length;
+  const concluidaEmAtrasoCount = classifiedList.filter(item => item.statusEnquadramento === 'Concluídas em Atraso').length;
+  const naoRealizadaCount = classifiedList.filter(item => item.statusEnquadramento === 'Não Realizada').length;
 
-  // Incomplete or completed late = Não Realizadas em Tempo
-  const uncompletedOrLateCount = totalCount - realizadoCount; 
-
-  const expiredCount = filteredByMonthOrders.filter(o => o.status === 'Não Executada').length;
-  const backlogCount = filteredByMonthOrders.filter(o => o.status === 'Novo' || o.status === 'Planejada' || o.status === 'Em Execução').length;
+  const realizadoCount = concluidaNoPrazoCount + concluidaEmAtrasoCount;
+  const eficazCount = concluidaNoPrazoCount;
 
   // 1. Eficiência Rate (Realizadas/Eficientes ÷ Previstas)
   const efficiencyRate = totalCount > 0 ? Math.round((realizadoCount / totalCount) * 100) : 100;
@@ -420,7 +442,7 @@ export default function DashboardView({
 
   // 5. Evolution over recent months (Unfiltered by selected month to maintain "evolução mensal", but shifted according to chosen month)
   const getMonthlyEvolutionData = () => {
-    const monthsData: { [key: string]: { total: number; completed: number; expired: number } } = {};
+    const monthsData: { [key: string]: { total: number; completedOnTime: number; completedLate: number; uncompleted: number } } = {};
     const monthsList: string[] = [];
     
     let referenceDate = new Date();
@@ -437,7 +459,7 @@ export default function DashboardView({
       const d = new Date(referenceDate);
       d.setMonth(referenceDate.getMonth() - i);
       const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
-      monthsData[label] = { total: 0, completed: 0, expired: 0 };
+      monthsData[label] = { total: 0, completedOnTime: 0, completedLate: 0, uncompleted: 0 };
       monthsList.push(label);
     }
 
@@ -446,21 +468,27 @@ export default function DashboardView({
       const label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
       if (monthsData[label]) {
         monthsData[label].total++;
-        const audit = getOrderAuditMetrics(o);
-        if (audit.realizado) {
-          monthsData[label].completed++;
-        } else if (o.status === 'Não Executada' || o.status === 'Atrasada' || (o.status === 'Concluída' && !audit.realizado)) {
-          monthsData[label].expired++;
+        const statusEq = getEnquadramentoStatus(o);
+        if (statusEq === 'Concluída no Prazo') {
+          monthsData[label].completedOnTime++;
+        } else if (statusEq === 'Concluídas em Atraso') {
+          monthsData[label].completedLate++;
+        } else {
+          monthsData[label].uncompleted++;
         }
       }
     });
 
-    return monthsList.map(m => ({
-      month: m.toUpperCase(),
-      Previstas: monthsData[m].total,
-      Concluídas: monthsData[m].completed,
-      Atrasadas: monthsData[m].expired
-    }));
+    return monthsList.map(m => {
+      const total = monthsData[m].total;
+      return {
+        month: m.toUpperCase(),
+        Previstas: total,
+        'Concluídas no Prazo': total > 0 ? Math.round((monthsData[m].completedOnTime / total) * 100) : 0,
+        'Concluídas em Atraso': total > 0 ? Math.round((monthsData[m].completedLate / total) * 100) : 0,
+        'Não Realizadas': total > 0 ? Math.round((monthsData[m].uncompleted / total) * 100) : 0
+      };
+    });
   };
 
   const evolutionData = getMonthlyEvolutionData();
@@ -695,7 +723,7 @@ export default function DashboardView({
             Hexon Ciclo Completo de Manutenção
           </h1>
           <p className="text-slate-300 text-xs max-w-2xl leading-relaxed">
-            Indicadores gerenciais de eficiência, eficácia e backlog para vistorias e contratos preventivos dos ativos de engenharia.
+            Indicadores gerenciais de eficiência, eficácia e enquadramento real de preventivas para vistorias e contratos dos ativos de engenharia.
           </p>
         </div>
 
@@ -845,7 +873,7 @@ export default function DashboardView({
               </div>
             </div>
 
-            {/* Card 3: BACKLOG */}
+            {/* Card 3: PREVENTIVAS NOVAS */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-amber-500/40 transition-all flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
@@ -853,60 +881,59 @@ export default function DashboardView({
                     <Hourglass className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
                   </div>
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                     backlogCount > 40 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                     novaCount > 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
                   }`}>
-                    {backlogCount > 40 ? 'Sobrecarga' : 'Backlog Sob Controle'}
+                    {novaCount > 40 ? 'Demanda Alta' : 'Sob Controle'}
                   </span>
                 </div>
                 <div>
-                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Backlog Ativo</h3>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Nova</h3>
                   <div className="flex items-baseline gap-1.5 mt-1">
-                    <span className="text-3xl font-black text-slate-800 tracking-tight">{backlogCount}</span>
-                    <span className="text-[10px] font-extrabold text-slate-500">ordens em aberto</span>
+                    <span className="text-3xl font-black text-slate-800 tracking-tight">{novaCount}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">atividades em aberto</span>
                   </div>
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100">
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Preventivas e vistorias pendentes aguardando ou em fase de execução técnica por profissionais.
+                  Preventivas ativas geradas pelo sistema pendentes de conclusão e ainda dentro da janela de range do Super Admin.
                 </p>
                 <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-                  <div className="bg-amber-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (backlogCount/totalCount)*100 : 0}%` }}></div>
+                  <div className="bg-amber-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (novaCount/totalCount)*100 : 0}%` }}></div>
                 </div>
               </div>
             </div>
 
-            {/* Card 4: NÃO REALIZADAS NO TEMPO */}
+            {/* Card 4: NÃO REALIZADAS */}
             <div className={`rounded-2xl p-5 shadow-xs relative overflow-hidden transition-all flex flex-col justify-between ${
-              uncompletedOrLateCount > 0
+              naoRealizadaCount > 0
                 ? 'bg-rose-50 border border-rose-200 text-rose-900 group hover:border-rose-400'
                 : 'bg-white border border-slate-200 text-slate-400 hover:border-slate-300'
             }`}>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <div className={`p-2.5 rounded-xl ${uncompletedOrLateCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                  <div className={`p-2.5 rounded-xl ${naoRealizadaCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
                     <AlertCircle className="w-5 h-5" />
                   </div>
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                    uncompletedOrLateCount > 0 ? 'bg-rose-250 text-rose-800' : 'bg-slate-110 text-slate-500'
+                    naoRealizadaCount > 0 ? 'bg-rose-250 text-rose-800' : 'bg-slate-110 text-slate-500'
                   }`}>
-                    Fora do SLA
+                    Não Eficiente
                   </span>
                 </div>
                 <div>
-                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Não Realizadas</h3>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Não Realizada</h3>
                   <div className="flex items-baseline gap-1.5 mt-1">
-                    <span className={`text-3xl font-black tracking-tight ${uncompletedOrLateCount > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{uncompletedOrLateCount}</span>
-                    <span className="text-[10px] font-extrabold text-slate-500">não eficientes</span>
+                    <span className={`text-3xl font-black tracking-tight ${naoRealizadaCount > 0 ? 'text-rose-600' : 'text-slate-850'}`}>{naoRealizadaCount}</span>
                   </div>
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100">
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Preventivas não finalizadas ou concluídas <strong className="text-rose-600">fora do prazo limitador</strong> definido pelo Super Admin.
+                  Preventivas não finalizadas de forma tempestiva, ultrapassando o prazo limitador das datas definidas pelo Super Admin.
                 </p>
                 <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-                  <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (uncompletedOrLateCount/totalCount)*100 : 0}%` }}></div>
+                  <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (naoRealizadaCount/totalCount)*100 : 0}%` }}></div>
                 </div>
               </div>
             </div>
@@ -923,10 +950,10 @@ export default function DashboardView({
                   <TrendingUp className="w-4 h-4 text-blue-600" />
                   Evolução Mensal (Últimos 12 Meses)
                 </h3>
-                <p className="text-[11px] text-slate-450">Histórico real de preventivas Geradas, Finalizadas e Não Executadas.</p>
+                <p className="text-[11px] text-slate-450">Histórico de preventivas Previstas (Qtd. absoluta) vs Concluídas no Prazo, Concluídas em Atraso e Não Realizadas (% do total).</p>
               </div>
 
-              <div ref={chart1Ref} className="h-[280px] w-full mt-6 min-w-0 min-h-0 relative">
+              <div ref={chart1Ref} className="h-[320px] w-full mt-6 min-w-0 min-h-0 relative">
                 {chart1Size.width > 0 ? (
                   <AreaChart width={chart1Size.width} height={chart1Size.height} data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
@@ -934,19 +961,36 @@ export default function DashboardView({
                         <stop offset="5%" stopColor="#3525cd" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#3525cd" stopOpacity={0}/>
                       </linearGradient>
-                      <linearGradient id="colorConcluidas" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="colorConcluidasNoPrazo" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorConcluidasEmAtraso" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorNaoRealizadas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="month" tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
                     <YAxis tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700, paddingTop: 10 }} />
+                    <Tooltip 
+                      contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0' }} 
+                      formatter={(val: any, name: string) => {
+                        if (name === 'Previstas') {
+                          return [val, 'Previstas (Qtd)'];
+                        }
+                        return [`${val}%`, name];
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 9, fontWeight: 700, paddingTop: 12 }} iconSize={8} iconType="circle" />
                     <Area type="monotone" dataKey="Previstas" stroke="#3525cd" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPrevistas)" />
-                    <Area type="monotone" dataKey="Concluídas" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorConcluidas)" />
-                    <Area type="monotone" dataKey="Atrasadas" stroke="#f43f5e" strokeWidth={1.5} dot />
+                    <Area type="monotone" dataKey="Concluídas no Prazo" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorConcluidasNoPrazo)" />
+                    <Area type="monotone" dataKey="Concluídas em Atraso" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorConcluidasEmAtraso)" />
+                    <Area type="monotone" dataKey="Não Realizadas" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorNaoRealizadas)" />
                   </AreaChart>
                 ) : (
                   <div className="w-full h-full bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center p-6 space-y-3 animate-pulse">

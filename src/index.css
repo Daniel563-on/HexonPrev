@@ -114,3 +114,95 @@ html.dark select option {
   font-feature-settings: 'liga';
   vertical-align: middle;
 }
+
+/* Accessibility: High Contrast Mode */
+html.high-contrast,
+html.high-contrast body,
+html.high-contrast main,
+html.high-contrast header,
+html.high-contrast div,
+html.high-contrast section,
+html.high-contrast nav,
+html.high-contrast article,
+html.high-contrast aside {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+  background-image: none !important;
+}
+
+html.high-contrast h1,
+html.high-contrast h1 *,
+html.high-contrast h2,
+html.high-contrast h2 *,
+html.high-contrast h3,
+html.high-contrast h3 *,
+html.high-contrast h4,
+html.high-contrast h4 *,
+html.high-contrast h5,
+html.high-contrast h6,
+html.high-contrast strong,
+html.high-contrast strong *,
+html.high-contrast a,
+html.high-contrast a *,
+html.high-contrast li,
+html.high-contrast p,
+html.high-contrast span,
+html.high-contrast select,
+html.high-contrast label,
+html.high-contrast table,
+html.high-contrast th,
+html.high-contrast td {
+  color: #ffff00 !important;
+}
+
+html.high-contrast td *,
+html.high-contrast th * {
+  color: #ffff00 !important;
+}
+
+html.high-contrast button,
+html.high-contrast select,
+html.high-contrast input,
+html.high-contrast textarea {
+  background-color: #000000 !important;
+  color: #ffff00 !important;
+  border: 2px solid #ffff00 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+html.high-contrast button:hover,
+html.high-contrast select:hover,
+html.high-contrast input:focus {
+  background-color: #ffff00 !important;
+  color: #000000 !important;
+}
+
+html.high-contrast button * {
+  color: inherit !important;
+}
+
+html.high-contrast svg,
+html.high-contrast svg * {
+  stroke: #ffff00 !important;
+}
+
+html.high-contrast .recharts-cartesian-grid-horizontal line,
+html.high-contrast .recharts-cartesian-grid-vertical line {
+  stroke: #ffffff !important;
+  stroke-dasharray: 2 2 !important;
+}
+
+/* Colorblind Filters */
+.daltonism-protanopia {
+  filter: url('#protanopia-filter') !important;
+}
+
+.daltonism-deuteranopia {
+  filter: url('#deuteranopia-filter') !important;
+}
+
+.daltonism-tritanopia {
+  filter: url('#tritanopia-filter') !important;
+}
