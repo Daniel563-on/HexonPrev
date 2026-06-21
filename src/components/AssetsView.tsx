@@ -670,53 +670,95 @@ export default function AssetsView({
         // Determine periodicities from TIPO keyword automatically
         const pArray = getPeriodicitiesFromTipo(rawTipo);
 
-        // Generate ID based on selected target sector
-        const formattedSectorName = importTargetSector.toLowerCase().replace('/', '_');
-        const uniqueId = `as_${formattedSectorName}_${Date.now().toString().slice(-4)}_${Math.random().toString(36).substring(2, 6)}`;
-        
-        // Generate QR code base64 completely offline
-        let qrCodeB64 = '';
-        try {
-          qrCodeB64 = await QRCode.toDataURL(`HEXON_PREVENTIVA_ASSET_ID_${uniqueId}`);
-        } catch (e) {
-          console.warn('QR code generation failed on import row:', rawCode);
-        }
+        const rawCodeUpper = rawCode.toUpperCase();
+        const existing = assets.find(a => a.code === rawCodeUpper);
 
-        // Prepare specs mapping standard properties as well as user specific fields for total consistency
-        const assetSpecs: any = {
-          manufacturer: rawMarca,
-          model: rawModelo,
-          serialNumber: rawSerie,
-          installationDate: rawDataAquisicao.split('T')[0],
+        if (existing) {
+          // Asset with this patrimônio already exists.
+          // We modify only its cadastral information, keeping the original ID, QR code, and creation date
+          // to fully preserve the active maintenance history.
+          const assetSpecs: any = {
+            ...existing.specs,
+            manufacturer: rawMarca,
+            model: rawModelo,
+            serialNumber: rawSerie,
+            installationDate: rawDataAquisicao.split('T')[0],
+            
+            // Overwrite specific fields with new spreadsheet info:
+            CRAAI: rawCRAAI,
+            COMARCA: rawComarca,
+            MATERIAL: rawName,
+            TIPO: rawTipo,
+            MARCA: rawMarca,
+            MODELO: rawModelo,
+            'Nº DE SÉRIE': rawSerie,
+            STATUS: rawStatus,
+            'DATA DE AQUISIÇÃO': rawDataAquisicao,
+            'VALOR DE AQUISIÇÃO': rawValorAquisicao,
+            'VALOR LÍQUIDO': rawValorLiquido
+          };
+
+          const updatedAsset: Asset = {
+            ...existing,
+            name: rawName,
+            sector: importTargetSector,
+            location: rawLocation,
+            status: rawStatus,
+            specs: assetSpecs,
+            periodicities: pArray.length > 0 ? pArray : existing.periodicities,
+            updatedAt: nowString
+          };
+
+          parsedAssets.push(updatedAsset);
+        } else {
+          // Generate ID based on selected target sector for a new asset
+          const formattedSectorName = importTargetSector.toLowerCase().replace('/', '_');
+          const uniqueId = `as_${formattedSectorName}_${Date.now().toString().slice(-4)}_${Math.random().toString(36).substring(2, 6)}`;
           
-          // User exact spreadsheet columns saved in specs:
-          CRAAI: rawCRAAI,
-          COMARCA: rawComarca,
-          MATERIAL: rawName,
-          TIPO: rawTipo,
-          MARCA: rawMarca,
-          MODELO: rawModelo,
-          'Nº DE SÉRIE': rawSerie,
-          STATUS: rawStatus,
-          'DATA DE AQUISIÇÃO': rawDataAquisicao,
-          'VALOR DE AQUISIÇÃO': rawValorAquisicao,
-          'VALOR LÍQUIDO': rawValorLiquido
-        };
+          // Generate QR code base64 completely offline
+          let qrCodeB64 = '';
+          try {
+            qrCodeB64 = await QRCode.toDataURL(`HEXON_PREVENTIVA_ASSET_ID_${uniqueId}`);
+          } catch (e) {
+            console.warn('QR code generation failed on import row:', rawCode);
+          }
 
-        const newAsset: Asset = {
-          id: uniqueId,
-          code: rawCode.toUpperCase(),
-          name: rawName,
-          sector: importTargetSector,
-          location: rawLocation,
-          status: rawStatus,
-          specs: assetSpecs,
-          createdAt: nowString,
-          periodicities: pArray,
-          qrCode: qrCodeB64 || undefined
-        };
+          // Prepare specs mapping standard properties as well as user specific fields for total consistency
+          const assetSpecs: any = {
+            manufacturer: rawMarca,
+            model: rawModelo,
+            serialNumber: rawSerie,
+            installationDate: rawDataAquisicao.split('T')[0],
+            
+            // User exact spreadsheet columns saved in specs:
+            CRAAI: rawCRAAI,
+            COMARCA: rawComarca,
+            MATERIAL: rawName,
+            TIPO: rawTipo,
+            MARCA: rawMarca,
+            MODELO: rawModelo,
+            'Nº DE SÉRIE': rawSerie,
+            STATUS: rawStatus,
+            'DATA DE AQUISIÇÃO': rawDataAquisicao,
+            'VALOR DE AQUISIÇÃO': rawValorAquisicao,
+            'VALOR LÍQUIDO': rawValorLiquido
+          };
 
-        parsedAssets.push(newAsset);
+          const newAsset: Asset = {
+            id: uniqueId,
+            code: rawCodeUpper,
+            name: rawName,
+            sector: importTargetSector,
+            location: rawLocation,
+            status: rawStatus,
+            specs: assetSpecs,
+            createdAt: nowString,
+            periodicities: pArray,
+            qrCode: qrCodeB64 || undefined
+          };
+
+          parsedAssets.push(newAsset);
+        }
       }
 
       if (parsedAssets.length === 0) {
@@ -822,7 +864,7 @@ export default function AssetsView({
             <Cpu className="w-5 h-5 text-indigo-300" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className={`text-[10px] font-extrabold uppercase tracking-widest block truncate ${selectedSector === 'Todos' ? 'text-gray-300' : 'text-gray-400'}`}>Total do Inventário</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-widest block truncate ${selectedSector === 'Todos' ? 'text-gray-300' : 'text-gray-400'}`}>Total de Ativos</span>
             <span className="text-2xl font-black block mt-0.5">{assets.length} <span className="text-xs font-normal opacity-70">ativos</span></span>
           </div>
         </div>
@@ -904,15 +946,7 @@ export default function AssetsView({
             Planilha Excel
           </button>
 
-          <button
-            onClick={() => setShowScanSimulator(true)}
-            className="p-2 px-3 bg-indigo-50 border border-indigo-150 text-[#3525cd] rounded-xl hover:bg-indigo-100 transition-colors flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-xs"
-            title="Simulador de Scanner"
-          >
-            <Scan className="w-4 h-4" />
-            Escanear QR
-          </button>
-          
+
           <button
             onClick={() => {
               if (userHasActionPermission && !userHasActionPermission('create_asset')) {
@@ -1082,6 +1116,16 @@ export default function AssetsView({
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
                       {selectedAsset.location}
                     </p>
+                    
+                    {/* CRAAI / COMARCA visual block at the top */}
+                    <div className="flex flex-wrap gap-2 mt-2 pt-1">
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                        <span className="font-extrabold uppercase">CRAAI:</span> {selectedAsset.specs.CRAAI || selectedAsset.specs.craai || 'Não informado'}
+                      </span>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-150 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                        <span className="font-extrabold uppercase">Comarca:</span> {selectedAsset.specs.COMARCA || selectedAsset.specs.comarca || 'Não informado'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 pt-2">
@@ -1242,6 +1286,10 @@ export default function AssetsView({
                       'Número de Série',
                       'numero de serie',
                       'Série',
+                      'CRAAI',
+                      'COMARCA',
+                      'craai',
+                      'comarca'
                     ];
                     // Case insensitive and accents sanitized equality check to prevent duplicates or leaked fields
                     const isExcluded = excludedKeys.some(
