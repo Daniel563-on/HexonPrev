@@ -23,10 +23,12 @@ import {
   AlertCircle,
   Loader2,
   Edit,
-  Trash2
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
+import CameraQrScanner from './CameraQrScanner';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management } from '../types';
 import { dbGetAssets, dbGetAssetHistory, dbSaveAsset, dbSaveAssetsBulk, dbAutoGeneratePreventiveActivities, dbDeleteAsset, dbDeleteAssetsBySector, dbGetManagements } from '../db/firebase';
 
@@ -55,6 +57,7 @@ export default function AssetsView({
   const [managements, setManagements] = useState<Management[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScanSimulator, setShowScanSimulator] = useState(false);
+  const [scannerTab, setScannerTab] = useState<'camera' | 'manual'>('camera');
   const [simulatedScanCode, setSimulatedScanCode] = useState('');
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
 
@@ -184,12 +187,45 @@ export default function AssetsView({
     }
 
     setAssets(filteredList);
-    
-    // Auto-select first asset if none is selected
-    if (filteredList.length > 0 && !selectedAsset) {
-      setSelectedAsset(filteredList[0]);
-    }
   };
+
+  // Dynamic reactive automatic selection when filters change or assets load
+  const selectedAssetId = selectedAsset?.id || null;
+  useEffect(() => {
+    const activeSearch = searchQuery.trim() !== '';
+    const activeSector = selectedSector !== 'Todos';
+
+    if (!activeSearch && !activeSector) {
+      // If no filter/search is active, never show asset details screen by default
+      if (selectedAsset !== null) {
+        setSelectedAsset(null);
+      }
+    } else {
+      // Find matches across assets
+      const matches = assets.filter((asset) => {
+        const matchesSearch = !activeSearch ||
+          asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          asset.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          asset.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (asset.specs?.COMARCA || asset.specs?.comarca || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesSector = !activeSector || asset.sector === selectedSector;
+        return matchesSearch && matchesSector;
+      });
+
+      if (matches.length > 0) {
+        // If the current selected asset still matches the filters, keep it
+        const stillMatches = matches.some(m => m.id === selectedAssetId);
+        if (!stillMatches) {
+          // Auto select first match
+          setSelectedAsset(matches[0]);
+        }
+      } else {
+        if (selectedAsset !== null) {
+          setSelectedAsset(null);
+        }
+      }
+    }
+  }, [searchQuery, selectedSector, assets, selectedAssetId]);
 
   useEffect(() => {
     loadAssetsData();
@@ -725,26 +761,34 @@ export default function AssetsView({
     }
   };
 
-  // Simulated QR scanner action
-  const handleSimulateScan = () => {
-    if (!simulatedScanCode.trim()) {
-      alert('Selecione ou insira um código de ativo para scan.');
+  // Unified QR scanner and simulator action
+  const handleQrCodeDetected = (decodedText: string) => {
+    if (!decodedText || !decodedText.trim()) {
+      alert('Código inválido ou em branco.');
       return;
     }
 
+    const normalized = decodedText.trim();
+    const cleanValue = normalized.replace('HEXON_PREVENTIVA_ASSET_ID_', '');
+
     const match = assets.find(
-      (a) => a.code.toLowerCase() === simulatedScanCode.toLowerCase() || a.id === simulatedScanCode
+      (a) => a.id === cleanValue || 
+             a.code.toLowerCase() === cleanValue.toLowerCase() || 
+             a.id === normalized || 
+             a.code.toLowerCase() === normalized.toLowerCase()
     );
 
     if (match) {
+      setSelectedSector('Todos');
+      setSearchQuery(match.code);
       setSelectedAsset(match);
       onSelectScannedAsset(match.id);
       setShowScanSimulator(false);
       setSimulatedScanCode('');
       setMobileView('detail');
-      alert(`🔍 QR CODE VALIDADO!\nEquipamento: ${match.name}\nExibindo ficha técnica e histórico.`);
+      alert(`🔍 QR CODE ENCONTRADO!\nEquipamento: ${match.name}\nAtivo: [${match.code}]`);
     } else {
-      alert('Código QR não correspondente no cadastro Hexon.');
+      alert(`O QR Code escaneado "${decodedText}" não corresponde a nenhum equipamento cadastrado no momento.`);
     }
   };
 
@@ -763,7 +807,11 @@ export default function AssetsView({
         {/* Card Total */}
         <div 
           id="summary-card-total" 
-          onClick={() => setSelectedSector('Todos')}
+          onClick={() => {
+            setSelectedSector('Todos');
+            setSearchQuery('');
+            setSelectedAsset(null);
+          }}
           className={`p-4 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center gap-4 ${
             selectedSector === 'Todos' 
               ? 'bg-[#0b1c30] text-white border-slate-800 shadow-md scale-102 ring-1 ring-indigo-500' 
@@ -881,159 +929,111 @@ export default function AssetsView({
         </div>
       </div>
 
-      {/* 2. MAIN LAYOUT GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* 2. MAIN LAYOUT: INTELLIGENT SEARCH & SELECTIVE DETAIL */}
+      <div className="space-y-6">
         
-        {/* LEFT COLUMN: Assets Catalog List */}
-        <div id="assets-catalog-column" className={`lg:col-span-1 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[calc(100vh-18rem)] min-h-[500px] overflow-hidden ${
-          mobileView === 'list' ? 'flex' : 'hidden lg:flex'
-        }`}>
-          {/* Header toolbar */}
-          <div className="p-4 border-b border-gray-100 space-y-3 shrink-0">
-            <div className="flex items-center justify-between gap-1">
-              <h3 className="font-extrabold text-[#0b1c30] text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0">
-                <Cpu className="w-4 h-4 text-[#3525cd]" />
-                Catálogo de Ativos
-              </h3>
-            </div>
-
-            {/* Search bar & Sector filter */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar ativo, código ou local..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full text-xs py-2 bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 text-gray-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
+        {/* Pesquisa Inteligente de Ativos Box */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-indigo-50 text-[#3525cd] rounded-xl shrink-0">
+                <Search className="w-4 h-4" />
               </div>
-
-              <div className="flex items-center gap-1.5 text-xs bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                <span className="text-[9px] text-gray-400 uppercase font-extrabold tracking-wide shrink-0">Filtrar Setor:</span>
-                <select
-                  value={selectedSector}
-                  onChange={(e) => setSelectedSector(e.target.value)}
-                  className="w-full text-[11px] py-0.5 px-2 bg-white border border-gray-200 rounded-sm focus:outline-none font-bold text-slate-700"
-                >
-                  <option value="Todos">Todos os Setores</option>
-                  {managements.filter(m => m.name !== 'Todas').map((m) => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Dynamic Asset Card stack */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/20">
-            {assets.length === 0 ? (
-              <div className="p-6 text-center space-y-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-[#3525cd]">
-                  <FileSpreadsheet className="w-6 h-6" />
-                </div>
-                <h4 className="font-bold text-sm text-[#0b1c30]">Nenhum ativo cadastrado</h4>
-                <p className="text-xs text-gray-500 leading-normal">
-                  Alimente seu banco de dados enviando uma planilha Excel ou cadastrando um ativo manualmente.
+              <div>
+                <h3 className="font-extrabold text-[#0b1c30] text-sm uppercase tracking-wider">
+                  Pesquisa Inteligente de Ativos
+                </h3>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  Busca rápida por código de ativo, fabricante, modelo, número de série ou localização.
                 </p>
-                <div className="pt-2 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImportStep(1);
-                      setShowImportModal(true);
-                    }}
-                    className="w-full py-2 bg-[#3525cd] text-white rounded-lg text-xs font-bold hover:bg-opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Carregar Planilha .XLSX
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(true)}
-                    className="w-full py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Cadastrar Manualmente
-                  </button>
-                </div>
               </div>
-            ) : filteredAssets.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-xs font-semibold">
-                Nenhum ativo correspondente para "{searchQuery}".
-              </div>
-            ) : (
-              filteredAssets.map((asset) => {
-                const isSelected = selectedAsset?.id === asset.id;
-                
-                // Color codes visually based on sector
-                let accentBorder = 'border-l-indigo-400';
-                let sectorBg = 'bg-indigo-50 text-indigo-750';
-                const s = (asset.sector || '').toUpperCase();
-                if (s.includes('REFR') || s.includes('HVAC') || s.includes('MEC') || s.includes('GMMR')) {
-                  accentBorder = 'border-l-blue-500';
-                  sectorBg = 'bg-blue-50 text-blue-700';
-                } else if (s.includes('ELET') || s.includes('SUBST') || s.includes('FOR') || s.includes('GMEE') || s.includes('ELETR')) {
-                  accentBorder = 'border-l-emerald-500';
-                  sectorBg = 'bg-emerald-50 text-emerald-700';
-                } else if (s.includes('CIVIL') || s.includes('HIDR') || s.includes('PRED') || s.includes('GMC')) {
-                  accentBorder = 'border-l-amber-500';
-                  sectorBg = 'bg-amber-50 text-amber-700';
-                }
+            </div>
 
-                return (
-                  <div
-                    key={asset.id}
-                    onClick={() => {
-                      setSelectedAsset(asset);
-                      setMobileView('detail');
-                    }}
-                    className={`p-4.5 rounded-xl border-y border-r border-l-4 transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden group ${accentBorder} ${
-                      isSelected
-                        ? 'bg-indigo-50/10 border-indigo-200 shadow-md ring-1 ring-[#3525cd]/15'
-                        : 'bg-white border-gray-100 shadow-xs hover:border-gray-200 hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="min-w-0">
-                        <span className="text-[9px] font-mono font-bold text-gray-400 block mb-1 tracking-wider uppercase">
-                          {asset.code}
-                        </span>
-                        <h4 className="font-extrabold text-xs text-[#0b1c30] group-hover:text-[#3525cd] transition-colors leading-snug break-words">
-                          {asset.name}
-                        </h4>
-                      </div>
-
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded whitespace-nowrap overflow-hidden shrink-0 ${sectorBg}`}>
-                        {asset.sector}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-start mt-4 pt-3 border-t border-gray-100 text-[11px] text-gray-400 gap-3">
-                      <span className="flex items-start gap-1 font-bold text-slate-600 min-w-0 flex-1">
-                        <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
-                        <span className="break-words leading-tight" title="Comarca">
-                          {asset.specs?.COMARCA || asset.specs?.comarca || asset.location.split(' - ')[0]}
-                        </span>
-                      </span>
-
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider shrink-0 shadow-xs mt-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        {asset.status || 'Operando'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
+            {/* Clear Filters Indicator */}
+            {(selectedSector !== 'Todos' || searchQuery.trim() !== '') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSector('Todos');
+                  setSearchQuery('');
+                  setSelectedAsset(null);
+                }}
+                className="text-[10px] font-black text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 transition-colors uppercase tracking-wider flex items-center gap-1 cursor-pointer w-full sm:w-auto justify-center"
+              >
+                Limpar Filtros e Busca
+              </button>
             )}
           </div>
-      </div>
 
-      {/* RIGHT TWO COLUMNS: Info Panel (Technical sheet + QR Code + Maintenance history) */}
-      <div className={`lg:col-span-2 space-y-6 h-[calc(100vh-13rem)] overflow-y-auto pr-1 ${
-        mobileView === 'detail' ? 'block' : 'hidden lg:block'
-      }`}>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="w-5 h-5 absolute left-4 top-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Digite o código (ex: GMC-01), nome do equipamento, número de série ou local..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                }}
+                className="w-full text-xs pl-12 pr-4 h-11 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3525cd]/15 focus:border-[#3525cd] font-semibold text-slate-800 placeholder-slate-400 transition-all"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowScanSimulator(true)}
+              className="px-4 bg-indigo-50 border border-indigo-200 text-[#3525cd] hover:bg-indigo-100 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs hover:shadow-sm cursor-pointer shrink-0 transition-all"
+              title="Escanear QR Code de Ativo para Filtro"
+            >
+              <QrCode className="w-5 h-5" />
+              <span className="hidden sm:inline">Escanear QR</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedSector !== 'Todos' && (
+              <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100/50 py-1.5 px-3.5 rounded-lg w-fit font-bold shadow-3xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                Gerência Filtrada: <strong className="font-extrabold text-[#3525cd]">{selectedSector}</strong>
+              </div>
+            )}
+
+            {(searchQuery.trim() !== '' || selectedSector !== 'Todos') && filteredAssets.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 border border-slate-200 py-1 px-3 rounded-lg w-fit font-bold">
+                <Sparkles className="w-3.5 h-3.5 text-[#3525cd]" />
+                Filtros ativos: <strong className="font-black text-[#0b1c30]">{filteredAssets.length}</strong> ativos encontrados
+              </div>
+            )}
+          </div>
+
+          {(searchQuery.trim() !== '' || selectedSector !== 'Todos') && filteredAssets.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
+              <label htmlFor="asset-select-dropdown" className="text-[11px] font-black uppercase text-slate-500 shrink-0">
+                Visualizar Equipamento ({filteredAssets.length}):
+              </label>
+              <select
+                id="asset-select-dropdown"
+                value={selectedAsset?.id || ''}
+                onChange={(e) => {
+                  const found = assets.find(a => a.id === e.target.value);
+                  if (found) {
+                    setSelectedAsset(found);
+                    setMobileView('detail');
+                  }
+                }}
+                className="w-full text-xs font-bold py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-[#3525cd]"
+              >
+                {filteredAssets.map(a => (
+                  <option key={a.id} value={a.id}>
+                    [{a.code}] {a.name} ({a.sector} - {a.location.split(' - ')[0]})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* BOTTOM SECTION: Full detailed tech sheet of the filtered asset */}
+        <div className="space-y-6">
         
         {selectedAsset ? (
           <>
@@ -1481,7 +1481,7 @@ export default function AssetsView({
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400 font-sans shadow-sm">
             <Cpu className="w-12 h-12 text-indigo-300 mx-auto mb-4 animate-bounce" />
             <p className="text-sm font-bold text-[#0b1c30]">Nenhum Ativo Selecionado</p>
-            <p className="text-xs mt-1">Por favor, escolha um item no catálogo ao lado para visualizar a Ficha Técnica e o Histórico de manutenção.</p>
+            <p className="text-xs mt-1">Por favor, utilize a Pesquisa Inteligente acima ou selecione uma Gerência no topo do painel para carregar a Ficha Técnica e o Histórico de manutenção do bem.</p>
           </div>
         )}
       </div>
@@ -1489,71 +1489,119 @@ export default function AssetsView({
 
       {/* SCAN SIMULATOR DRAWER / MODAL POPUP */}
       {showScanSimulator && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans text-left">
           <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border border-gray-200">
             <div className="flex items-center gap-2 mb-4 justify-between border-b pb-3">
               <h3 className="font-extrabold text-[#0b1c30] text-sm flex items-center gap-2">
                 <Scan className="w-4 h-4 text-[#3525cd]" />
-                Simulador de Leitor de QR Code
+                Buscar Ativo via QR Code
               </h3>
               <button 
-                onClick={() => setShowScanSimulator(false)}
+                onClick={() => {
+                  setShowScanSimulator(false);
+                  setSimulatedScanCode('');
+                }}
                 className="text-gray-400 hover:text-rose-600 font-extrabold text-sm"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-gray-500 leading-relaxed mb-4">
-              Cada equipamento possui uma plaqueta física com QR Code único. Escolha um dos ativos cadastrados no menu abaixo para simular o escaneamento físico com o leitor:
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
-                  Selecione o Ativo Físicos para Ler
-                </label>
-                <select
-                  value={simulatedScanCode}
-                  onChange={(e) => setSimulatedScanCode(e.target.value)}
-                  className="w-full py-2 px-3 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none"
-                >
-                  <option value="">Selecione um item cadastrado...</option>
-                  {assets.map((ast) => (
-                    <option key={ast.id} value={ast.code}>
-                      [{ast.code}] {ast.name} ({ast.sector})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* simulated webcam viewfinder box */}
-              <div className="border border-dashed border-indigo-200 bg-indigo-50/10 rounded-lg h-36 flex flex-col items-center justify-center p-3 relative overflow-hidden">
-                <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 h-0.5 bg-rose-500 shadow-md animate-bounce"></div>
-                <QrCode className="w-12 h-12 text-indigo-400 opacity-60" />
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-2">
-                  Escaner Ativo...
-                </span>
-              </div>
-
-              <div className="flex gap-2 justify-end text-xs pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowScanSimulator(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 font-bold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSimulateScan}
-                  disabled={!simulatedScanCode}
-                  className="px-4 py-2 bg-[#3525cd] text-white rounded-lg font-bold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  Simular QR Match
-                </button>
-              </div>
+            {/* TAB TOGGLES FOR REAL CAMERA OR SIMULATOR */}
+            <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+              <button
+                type="button"
+                onClick={() => setScannerTab('camera')}
+                className={`flex-1 text-center py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                  scannerTab === 'camera'
+                    ? 'bg-white text-[#3525cd] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Câmera ao Vivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setScannerTab('manual')}
+                className={`flex-1 text-center py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                  scannerTab === 'manual'
+                    ? 'bg-white text-[#3525cd] shadow-xs'
+                    : 'text-slate-550 hover:text-slate-800'
+                }`}
+              >
+                Simulador Manual
+              </button>
             </div>
+
+            {scannerTab === 'camera' ? (
+              <div className="py-2">
+                <CameraQrScanner 
+                  onScanSuccess={handleQrCodeDetected}
+                  onClose={() => setScannerTab('manual')}
+                />
+                <p className="text-[10px] text-gray-405 text-center mt-3 font-semibold leading-relaxed">
+                  Dica: Para ler, aponte a câmera traseira do seu celular para o QR Code impresso no equipamento.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed font-semibold">
+                  Cada equipamento possui uma plaqueta física com QR Code único. Escolha um dos ativos cadastrados no menu ou digite para simular a leitura do código do bem:
+                </p>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Selecione o Ativo Cadastrado
+                  </label>
+                  <select
+                    value={simulatedScanCode}
+                    onChange={(e) => setSimulatedScanCode(e.target.value)}
+                    className="w-full py-2 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-[#3525cd] font-bold"
+                  >
+                    <option value="">Selecione um item cadastrado...</option>
+                    {assets.map((ast) => (
+                      <option key={ast.id} value={ast.code}>
+                        [{ast.code}] {ast.name} ({ast.sector})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Ou digite o Patrimônio / Código manualmente
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="EX: 168548 ou GMC-01"
+                    value={simulatedScanCode}
+                    onChange={(e) => setSimulatedScanCode(e.target.value)}
+                    className="w-full py-2 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-[#3525cd] font-bold placeholder-slate-400"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end text-xs pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowScanSimulator(false);
+                      setSimulatedScanCode('');
+                    }}
+                    className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-black uppercase text-[10px] tracking-wider"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQrCodeDetected(simulatedScanCode)}
+                    disabled={!simulatedScanCode}
+                    className="px-4 py-2 bg-[#3525cd] text-white rounded-lg font-black hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer uppercase text-[10px] tracking-wider transition-colors"
+                  >
+                    Simular QR Match
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

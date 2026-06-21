@@ -22,11 +22,13 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
-  Flag
+  Flag,
+  QrCode
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia } from '../types';
 import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
 import SignatureCanvas from './SignatureCanvas';
+import CameraQrScanner from './CameraQrScanner';
 
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
@@ -121,11 +123,15 @@ export default function ServiceOrdersView({
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [failedItemIds, setFailedItemIds] = useState<string[]>([]);
 
   // Smart Filter States
   const [smartSearch, setSmartSearch] = useState('');
+  const [showPreventiveScanSimulator, setShowPreventiveScanSimulator] = useState(false);
+  const [preventiveScannerTab, setPreventiveScannerTab] = useState<'camera' | 'manual'>('camera');
+  const [simulatedPreventiveScanCode, setSimulatedPreventiveScanCode] = useState('');
   const [selectedComarca, setSelectedComarca] = useState('Todas');
   const [selectedPatrimonio, setSelectedPatrimonio] = useState('Todos');
   const [selectedStatus, setSelectedStatus] = useState('Todos');
@@ -903,56 +909,11 @@ export default function ServiceOrdersView({
   };
 
   const validateTechnicianAssignment = (techName: string, dateStr: string, currentOS: ServiceOrder): { isValid: boolean; warnings: string[]; errors: string[] } => {
-    if (!techName) return { isValid: true, warnings: [], errors: [] };
-    
-    const warnings: string[] = [];
-    const errors: string[] = [];
-
-    // Filter orders for this technician on this specific date
-    const techDayOrders = orders.filter(o => 
-      o.assignedTechnician === techName && 
-      o.scheduledDate === dateStr &&
-      o.id !== currentOS.id
-    );
-
-    // 1. Quantidade máxima de OS por dia
-    const maxOSPerDay = 5;
-    if (techDayOrders.length >= maxOSPerDay) {
-      errors.push(`Veto por limite diário: O profissional ${techName} já possui ${techDayOrders.length} ordens agendadas para o dia ${formatDateBR(dateStr)} (limite máximo é de ${maxOSPerDay} por dia).`);
-    }
-
-    // 2. Sobrecarga diária
-    const getOSDuration = (osObj: ServiceOrder) => {
-      const p = osObj.priority || 'Média';
-      if (p === 'Baixa') return 1.5;
-      if (p === 'Média') return 2.0;
-      if (p === 'Alta') return 3.0;
-      return 4.0; // Urgente
-    };
-
-    const currentDuration = getOSDuration(currentOS);
-    const existingDuration = techDayOrders.reduce((sum, o) => sum + getOSDuration(o), 0);
-    const totalDuration = existingDuration + currentDuration;
-
-    if (totalDuration > 8.0) {
-      warnings.push(`Sobrecarga diária estimada: Esta atribuição elevará a carga do técnico ${techName} no dia para ${totalDuration} horas (limite ergonômico recomendado é de 8h).`);
-    }
-
-    // 3. Conflitos de agenda e deslocamento entre diferentes comarcas
-    const currentComarca = getOrderComarca(currentOS);
-    const activeComarcas = Array.from(new Set(
-      techDayOrders.map(o => getOrderComarca(o)).filter(c => c && c !== 'Geral')
-    ));
-    const hasConflitoComarca = activeComarcas.some(c => c !== currentComarca);
-
-    if (hasConflitoComarca) {
-      warnings.push(`Conflito de agendamento geográfico: O técnico ${techName} já possui ordens na comarca de "${activeComarcas.join(', ')}", enquanto esta ordem pertence à comarca "${currentComarca}".`);
-    }
-
+    // Limits have been disabled as per user request (no maximum, unlimited daily allocations allowed)
     return {
-      isValid: errors.length === 0,
-      warnings,
-      errors
+      isValid: true,
+      warnings: [],
+      errors: []
     };
   };
 
@@ -1647,36 +1608,8 @@ export default function ServiceOrdersView({
                                 <button
                                   type="button"
                                   disabled={isBulkScheduling}
-                                  onClick={async () => {
-                                    const confirmText = bulkAssignTech
-                                      ? `Deseja agendar as ${filteredNewOrders.length} preventivas filtradas para o dia ${selectedCalendarDay}/${currentCalendarDate.getMonth() + 1}?\n\nTécnico que será atribuído a todas: ${bulkAssignTech}`
-                                      : `Deseja agendar as ${filteredNewOrders.length} preventivas filtradas para o dia ${selectedCalendarDay}/${currentCalendarDate.getMonth() + 1}?\n\nOs técnicos serão atribuídos automaticamente de acordo com as regras de cada atividade.`;
-                                    if (!window.confirm(confirmText)) return;
-
-                                    setIsBulkScheduling(true);
-                                    try {
-                                      // Iterate through all filteredNewOrders
-                                      for (const os of filteredNewOrders) {
-                                        // Assign tech: priority to bulkAssignTech, then individual selected tech, then fallback
-                                        const matchedTechs = getAvailableProfessionalsForOS(os);
-                                        const defaultTech = bulkAssignTech || planAssignedTechs[os.id] || matchedTechs[0]?.name || users.find(u => u.perfil === 'Profissional')?.name || 'Daniel Torres';
-                                        
-                                        const updatedOS = {
-                                          ...os,
-                                          status: 'Planejada' as const,
-                                          scheduledDate: selectedDateStr,
-                                          assignedTechnician: defaultTech,
-                                          updatedAt: new Date().toISOString()
-                                        };
-                                        await dbSaveServiceOrder(updatedOS);
-                                      }
-                                      
-                                      onReload();
-                                    } catch (err) {
-                                      alert(`Erro ao realizar agendamento em lote: ${err}`);
-                                    } finally {
-                                      setIsBulkScheduling(false);
-                                    }
+                                  onClick={() => {
+                                    setShowBulkConfirmModal(true);
                                   }}
                                   className={`w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer h-[36px] ${
                                     isBulkScheduling ? 'opacity-70 cursor-not-allowed' : ''
@@ -1695,6 +1628,83 @@ export default function ServiceOrdersView({
                                   )}
                                 </button>
                               </div>
+
+                              {/* Custom Confirmation Modal for Bulk Actions */}
+                              {showBulkConfirmModal && (
+                                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans text-left">
+                                  <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xl max-w-md w-full animate-in zoom-in duration-150">
+                                    <div className="flex items-center gap-3 text-emerald-600 mb-4 pb-3 border-b border-slate-100">
+                                      <div className="bg-emerald-50 p-2 rounded-full border border-emerald-100">
+                                        <CheckSquare className="w-6 h-6 text-emerald-600" />
+                                      </div>
+                                      <div>
+                                        <h2 className="text-xs font-black uppercase tracking-wider text-slate-800">Confirmar Programação em Lote</h2>
+                                        <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wide">Agendamento de Preventivas</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-3 mb-6 text-xs text-slate-650 font-semibold leading-relaxed">
+                                      <p>
+                                        Deseja agendar as <strong className="text-[#3525cd]">{filteredNewOrders.length}</strong> preventivas filtradas para o dia <strong className="text-[#3525cd]">{selectedCalendarDay}/{currentCalendarDate.getMonth() + 1}</strong>?
+                                      </p>
+                                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-[11px]">
+                                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block mb-1">Candidato(s) Designado(s)</span>
+                                        {bulkAssignTech ? (
+                                          <p className="font-bold text-slate-800">
+                                            👤 Técnico fixo: <span className="text-[#3525cd]">{bulkAssignTech}</span>
+                                          </p>
+                                        ) : (
+                                          <p className="font-bold text-slate-650">
+                                            ⚙️ Automático / Conforme a especialidade do profissional técnico e as regras de cada atividade cadastrada.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2.5 justify-end text-xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowBulkConfirmModal(false)}
+                                        className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-55 font-black uppercase text-[10px] tracking-wider cursor-pointer"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isBulkScheduling}
+                                        onClick={async () => {
+                                          setIsBulkScheduling(true);
+                                          setShowBulkConfirmModal(false);
+                                          try {
+                                            for (const os of filteredNewOrders) {
+                                              const matchedTechs = getAvailableProfessionalsForOS(os);
+                                              const defaultTech = bulkAssignTech || planAssignedTechs[os.id] || matchedTechs[0]?.name || users.find(u => u.perfil === 'Profissional')?.name || 'Daniel Torres';
+                                              
+                                              const updatedOS = {
+                                                ...os,
+                                                status: 'Planejada' as const,
+                                                scheduledDate: selectedDateStr,
+                                                assignedTechnician: defaultTech,
+                                                updatedAt: new Date().toISOString()
+                                              };
+                                              await dbSaveServiceOrder(updatedOS);
+                                            }
+                                            onReload();
+                                            alert(`⚡ SUCESSO!\nAs ${filteredNewOrders.length} preventivas foram agendadas para o dia ${selectedCalendarDay}/${currentCalendarDate.getMonth() + 1} com sucesso.`);
+                                          } catch (err) {
+                                            alert(`Erro ao realizar agendamento em lote: ${err}`);
+                                          } finally {
+                                            setIsBulkScheduling(false);
+                                          }
+                                        }}
+                                        className="px-4 py-2 bg-[#3525cd] hover:bg-[#2010aa] text-white rounded-lg font-black uppercase text-[10px] tracking-wider cursor-pointer shadow-sm transition-all"
+                                      >
+                                        Confirmar Agenda
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -2037,23 +2047,34 @@ export default function ServiceOrdersView({
             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
               Busca Inteligente (ID, Título, Técnico)
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={smartSearch}
-                onChange={(e) => setSmartSearch(e.target.value)}
-                placeholder="Pesquisar ID, Técnico, Titulo..."
-                className="w-full text-xs py-2 pl-8 pr-8 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-800"
-              />
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-3" />
-              {smartSearch && (
-                <button
-                  onClick={() => setSmartSearch('')}
-                  className="absolute right-2 top-2.5 p-0.5 text-gray-400 hover:text-rose-600 rounded"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+            <div className="flex gap-2">
+              <div className="relative flex-grow">
+                <input
+                  type="text"
+                  value={smartSearch}
+                  onChange={(e) => setSmartSearch(e.target.value)}
+                  placeholder="Pesquisar ID, Técnico, Titulo..."
+                  className="w-full text-xs py-2 pl-8 pr-8 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-800"
+                />
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-3" />
+                {smartSearch && (
+                  <button
+                    onClick={() => setSmartSearch('')}
+                    className="absolute right-2 top-2.5 p-0.5 text-gray-400 hover:text-rose-600 rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPreventiveScanSimulator(true)}
+                className="px-3 bg-indigo-50 border border-indigo-200 text-[#3525cd] hover:bg-indigo-100 rounded-lg text-xs font-black flex items-center gap-1 hover:shadow-2xs cursor-pointer shrink-0 transition-colors"
+                title="Escanear QR Ativo para Localizar Preventiva"
+              >
+                <QrCode className="w-4 h-4" />
+                <span className="hidden sm:inline">Escanear Ativo</span>
+              </button>
             </div>
           </div>
 
@@ -3520,6 +3541,151 @@ export default function ServiceOrdersView({
                 {isBulkDeleting ? 'Excluindo...' : 'Sim, Excluir Todas'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCAN SIMULATOR MODAL FOR SERVICE ORDERS / PREVENTIVES */}
+      {showPreventiveScanSimulator && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans text-left">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border border-gray-200">
+            <div className="flex items-center gap-2 mb-4 justify-between border-b pb-3">
+              <h3 className="font-extrabold text-[#0b1c30] text-sm flex items-center gap-2">
+                <QrCode className="w-4 h-4 text-[#3525cd]" />
+                Encontrar Preventiva via QR Code
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowPreventiveScanSimulator(false);
+                  setSimulatedPreventiveScanCode('');
+                }}
+                className="text-gray-400 hover:text-rose-600 font-extrabold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* TAB TOGGLES */}
+            <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+              <button
+                type="button"
+                onClick={() => setPreventiveScannerTab('camera')}
+                className={`flex-1 text-center py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                  preventiveScannerTab === 'camera'
+                    ? 'bg-white text-[#3525cd] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Câmera ao Vivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreventiveScannerTab('manual')}
+                className={`flex-1 text-center py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                  preventiveScannerTab === 'manual'
+                    ? 'bg-white text-[#3525cd] shadow-xs'
+                    : 'text-slate-550 hover:text-slate-800'
+                }`}
+              >
+                Simulador Manual
+              </button>
+            </div>
+
+            {preventiveScannerTab === 'camera' ? (
+              <div className="py-2">
+                <CameraQrScanner 
+                  onScanSuccess={(decodedText) => {
+                    const normalized = decodedText.trim();
+                    const cleanValue = normalized.replace('HEXON_PREVENTIVA_ASSET_ID_', '');
+                    
+                    const matchingAsset = assets.find(
+                      a => a.id === cleanValue || 
+                           a.code.toLowerCase() === cleanValue.toLowerCase() || 
+                           a.id === normalized || 
+                           a.code.toLowerCase() === normalized.toLowerCase()
+                    );
+                    
+                    const codeToSet = matchingAsset ? matchingAsset.code : cleanValue;
+                    setSmartSearch(codeToSet);
+                    setShowPreventiveScanSimulator(false);
+                    setSimulatedPreventiveScanCode('');
+                    alert(`🔍 LEITURA REALIZADA COM SUCESSO!\nIdentificado Ativo: ${matchingAsset ? matchingAsset.name : codeToSet}\nFiltrando fila de preventivas para o patrimônio.`);
+                  }}
+                  onClose={() => setPreventiveScannerTab('manual')}
+                />
+                <p className="text-[10px] text-gray-400 text-center mt-3 font-semibold leading-relaxed">
+                  Dica: Para ler, use a câmera traseira para escanear a etiqueta QR correspondente no equipamento.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-550 leading-relaxed font-semibold">
+                  Selecione o equipamento ou digite o patrimônio/código manualmente para simular a leitura do QR Code fixado no bem:
+                </p>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Selecione o Patrimônio do Ativo
+                  </label>
+                  <select
+                    value={simulatedPreventiveScanCode}
+                    onChange={(e) => setSimulatedPreventiveScanCode(e.target.value)}
+                    className="w-full py-2 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-bold"
+                  >
+                    <option value="">Selecione para simular...</option>
+                    {assets.map((ast) => (
+                      <option key={ast.id} value={ast.code}>
+                        [{ast.code}] {ast.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Ou digite o Patrimônio manualmente
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="EX: 168548 ou GMC-01"
+                    value={simulatedPreventiveScanCode}
+                    onChange={(e) => setSimulatedPreventiveScanCode(e.target.value)}
+                    className="w-full py-2 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-bold placeholder-slate-400"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end text-xs pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPreventiveScanSimulator(false);
+                      setSimulatedPreventiveScanCode('');
+                    }}
+                    className="px-4 py-2 border border-slate-200 rounded-lg text-gray-650 hover:bg-slate-50 font-black uppercase text-[10px] tracking-wider"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!simulatedPreventiveScanCode.trim()) {
+                        alert('Selecione ou insira um código para escanear.');
+                        return;
+                      }
+                      
+                      setSmartSearch(simulatedPreventiveScanCode.trim());
+                      setShowPreventiveScanSimulator(false);
+                      setSimulatedPreventiveScanCode('');
+                      alert(`🔍 LEITURA REALIZADA COM SUCESSO!\nFiltrando preventivas para o Equipamento de Patrimônio: ${simulatedPreventiveScanCode}`);
+                    }}
+                    disabled={!simulatedPreventiveScanCode}
+                    className="px-4 py-2 bg-[#3525cd] text-white rounded-lg font-black hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer uppercase text-[10px] tracking-wider transition-colors"
+                  >
+                    Simular QR Match
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
