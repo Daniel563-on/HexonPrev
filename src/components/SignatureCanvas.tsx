@@ -4,13 +4,20 @@ import { RotateCcw, PenTool, CheckCircle } from 'lucide-react';
 interface SignatureCanvasProps {
   onSave: (signatureBase64: string, signeeName: string) => void;
   onCancel: () => void;
+  defaultName?: string;
 }
 
-export default function SignatureCanvas({ onSave, onCancel }: SignatureCanvasProps) {
+export default function SignatureCanvas({ onSave, onCancel, defaultName = 'Daniel Torres' }: SignatureCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
-  const [signeeName, setSigneeName] = useState('Daniel Torres');
+  const [signeeName, setSigneeName] = useState(defaultName);
+
+  useEffect(() => {
+    if (defaultName) {
+      setSigneeName(defaultName);
+    }
+  }, [defaultName]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

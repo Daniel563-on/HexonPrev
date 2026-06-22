@@ -365,6 +365,7 @@ export default function DashboardView({
     const end = o.endDate || '';
     if (end && end < currentDateStr) return 'Não Realizada';
     
+    if (o.status === 'Planejada' || o.status === 'Em Execução') return 'Planejada';
     return 'Nova';
   };
 
@@ -376,6 +377,7 @@ export default function DashboardView({
   }));
 
   const novaCount = classifiedList.filter(item => item.statusEnquadramento === 'Nova').length;
+  const planejadaCount = classifiedList.filter(item => item.statusEnquadramento === 'Planejada').length;
   const concluidaNoPrazoCount = classifiedList.filter(item => item.statusEnquadramento === 'Concluída no Prazo').length;
   const concluidaEmAtrasoCount = classifiedList.filter(item => item.statusEnquadramento === 'Concluídas em Atraso').length;
   const naoRealizadaCount = classifiedList.filter(item => item.statusEnquadramento === 'Não Realizada').length;
@@ -453,6 +455,19 @@ export default function DashboardView({
         const month = parseInt(parts[1], 10) - 1;
         referenceDate = new Date(year, month, 15);
       }
+    } else {
+      // If 'all', dynamically find the latest date in filteredOrders to expand the sliding window
+      let maxDate = new Date();
+      filteredOrders.forEach(o => {
+        const dateStr = o.scheduledDate || o.startDate || o.createdAt || '';
+        if (dateStr && dateStr.includes('-')) {
+          const d = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+          if (!isNaN(d.getTime()) && d > maxDate) {
+            maxDate = d;
+          }
+        }
+      });
+      referenceDate = maxDate;
     }
 
     for (let i = 11; i >= 0; i--) {
@@ -464,29 +479,83 @@ export default function DashboardView({
     }
 
     filteredOrders.forEach(o => {
-      const date = new Date(o.scheduledDate + 'T12:00:00');
+      // Try scheduledDate, fallback to startDate, fallback to createdAt
+      const dateStr = o.scheduledDate || o.startDate || o.createdAt || '';
+      if (!dateStr || !dateStr.includes('-')) return;
+
+      const date = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+      if (isNaN(date.getTime())) return;
+
       const label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
-      if (monthsData[label]) {
-        monthsData[label].total++;
+      
+      // Look for a match in the keys
+      let matchedLabel = monthsList.find(m => m.toLowerCase().trim() === label.toLowerCase().trim());
+      
+      if (!matchedLabel && monthsList.length > 0) {
+        // Clamp outliers gracefully to the boundary of the 12-month sliding window so they are counted
+        const firstMonthDate = new Date(referenceDate);
+        firstMonthDate.setMonth(referenceDate.getMonth() - 11);
+        
+        if (date < firstMonthDate) {
+          matchedLabel = monthsList[0];
+        } else {
+          matchedLabel = monthsList[monthsList.length - 1];
+        }
+      }
+
+      if (matchedLabel && monthsData[matchedLabel]) {
+        monthsData[matchedLabel].total++;
         const statusEq = getEnquadramentoStatus(o);
         if (statusEq === 'Concluída no Prazo') {
-          monthsData[label].completedOnTime++;
+          monthsData[matchedLabel].completedOnTime++;
         } else if (statusEq === 'Concluídas em Atraso') {
-          monthsData[label].completedLate++;
+          monthsData[matchedLabel].completedLate++;
         } else {
-          monthsData[label].uncompleted++;
+          monthsData[matchedLabel].uncompleted++;
         }
       }
     });
 
     return monthsList.map(m => {
       const total = monthsData[m].total;
+      if (total === 0) {
+        return {
+          month: m.toUpperCase(),
+          'Total': 0,
+          'Concluídas no Prazo': 0,
+          'Concluídas em Atraso': 0,
+          'Não Realizadas': 0
+        };
+      }
+
+      let p1 = Math.round((monthsData[m].completedOnTime / total) * 100);
+      let p2 = Math.round((monthsData[m].completedLate / total) * 100);
+      let p3 = Math.round((monthsData[m].uncompleted / total) * 100);
+
+      const sum = p1 + p2 + p3;
+      if (sum !== 100) {
+        const diff = 100 - sum;
+        const values = [
+          { key: 'p1', val: p1, count: monthsData[m].completedOnTime },
+          { key: 'p2', val: p2, count: monthsData[m].completedLate },
+          { key: 'p3', val: p3, count: monthsData[m].uncompleted }
+        ];
+        const candidates = values.filter(v => v.count > 0);
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => b.val - a.val);
+          const topKey = candidates[0].key;
+          if (topKey === 'p1') p1 += diff;
+          else if (topKey === 'p2') p2 += diff;
+          else if (topKey === 'p3') p3 += diff;
+        }
+      }
+
       return {
         month: m.toUpperCase(),
-        Previstas: total,
-        'Concluídas no Prazo': total > 0 ? Math.round((monthsData[m].completedOnTime / total) * 100) : 0,
-        'Concluídas em Atraso': total > 0 ? Math.round((monthsData[m].completedLate / total) * 100) : 0,
-        'Não Realizadas': total > 0 ? Math.round((monthsData[m].uncompleted / total) * 100) : 0
+        'Total': total,
+        'Concluídas no Prazo': p1,
+        'Concluídas em Atraso': p2,
+        'Não Realizadas': p3
       };
     });
   };
@@ -529,21 +598,40 @@ export default function DashboardView({
     }
 
     filteredOrders.forEach(o => {
-      const date = new Date(o.scheduledDate + 'T12:00:00');
+      const dateStr = o.scheduledDate || o.startDate || o.createdAt || '';
+      if (!dateStr || !dateStr.includes('-')) return;
+
+      const date = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+      if (isNaN(date.getTime())) return;
+
       const label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
       const g = getOrderGerencia(o);
-      if (rawData[label]) {
+
+      let matchedLabel = monthsList.find(m => m.toLowerCase().trim() === label.toLowerCase().trim());
+
+      if (!matchedLabel && monthsList.length > 0) {
+        const firstMonthDate = new Date(referenceDate);
+        firstMonthDate.setMonth(referenceDate.getMonth() - 11);
+        
+        if (date < firstMonthDate) {
+          matchedLabel = monthsList[0];
+        } else {
+          matchedLabel = monthsList[monthsList.length - 1];
+        }
+      }
+
+      if (matchedLabel && rawData[matchedLabel]) {
         const audit = getOrderAuditMetrics(o);
         
-        rawData[label].overall.total++;
+        rawData[matchedLabel].overall.total++;
         if (audit.realizado) {
-          rawData[label].overall.completed++;
+          rawData[matchedLabel].overall.completed++;
         }
 
-        if (rawData[label][g as 'GMMR' | 'GMEE' | 'GMC']) {
-          rawData[label][g as 'GMMR' | 'GMEE' | 'GMC'].total++;
+        if (rawData[matchedLabel][g as 'GMMR' | 'GMEE' | 'GMC']) {
+          rawData[matchedLabel][g as 'GMMR' | 'GMEE' | 'GMC'].total++;
           if (audit.realizado) {
-            rawData[label][g as 'GMMR' | 'GMEE' | 'GMC'].completed++;
+            rawData[matchedLabel][g as 'GMMR' | 'GMEE' | 'GMC'].completed++;
           }
         }
       }
@@ -606,16 +694,35 @@ export default function DashboardView({
     }
 
     filteredOrders.forEach(o => {
-      const date = new Date(o.scheduledDate + 'T12:00:00');
+      const dateStr = o.scheduledDate || o.startDate || o.createdAt || '';
+      if (!dateStr || !dateStr.includes('-')) return;
+
+      const date = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+      if (isNaN(date.getTime())) return;
+
       const label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
       const g = getOrderGerencia(o);
-      if (rawData[label] && rawData[label][g]) {
+
+      let matchedLabel = monthsList.find(m => m.toLowerCase().trim() === label.toLowerCase().trim());
+
+      if (!matchedLabel && monthsList.length > 0) {
+        const firstMonthDate = new Date(referenceDate);
+        firstMonthDate.setMonth(referenceDate.getMonth() - 11);
+        
+        if (date < firstMonthDate) {
+          matchedLabel = monthsList[0];
+        } else {
+          matchedLabel = monthsList[monthsList.length - 1];
+        }
+      }
+
+      if (matchedLabel && rawData[matchedLabel] && rawData[matchedLabel][g]) {
         const audit = getOrderAuditMetrics(o);
         if (audit.realizado) {
-          rawData[label][g].realized++;
+          rawData[matchedLabel][g].realized++;
         }
         if (audit.eficaz) {
-          rawData[label][g].eficaz++;
+          rawData[matchedLabel][g].eficaz++;
         }
       }
     });
@@ -813,7 +920,7 @@ export default function DashboardView({
       </div>
 
       {/* THE BENTO METRIC GRID */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             
             {/* Card 1: EFICIÊNCIA OPERACIONAL */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-[#3525cd]/40 transition-all flex flex-col justify-between">
@@ -904,6 +1011,64 @@ export default function DashboardView({
               </div>
             </div>
 
+            {/* Card 3.5: PREVENTIVAS PLANEJADAS */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-slate-350 transition-all flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                    No Cronograma
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Planejada</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-3xl font-black text-slate-800 tracking-tight">{planejadaCount}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">alocadas no calendário</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Total de preventivas já devidamente planejadas e alocadas a um período do calendário de execução pela gestão.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${totalCount > 0 ? (planejadaCount/totalCount)*100 : 0}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3.6: PREVENTIVAS CONCLUÍDAS */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs relative overflow-hidden group hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    Concluídas
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Concluída</h3>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-3xl font-black text-slate-800 tracking-tight">{realizadoCount}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500">atividades realizadas</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Total de preventivas executadas com sucesso, somando as concluídas no prazo e concluídas com atraso.
+                </p>
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (realizadoCount/totalCount)*100 : 0}%` }}></div>
+                </div>
+              </div>
+            </div>
+
             {/* Card 4: NÃO REALIZADAS */}
             <div className={`rounded-2xl p-5 shadow-xs relative overflow-hidden transition-all flex flex-col justify-between ${
               naoRealizadaCount > 0
@@ -945,22 +1110,24 @@ export default function DashboardView({
             
             {/* Chart 1: Evolução Mensal dos Últimos 12 Meses (Recharts Area/Line) */}
             <div className="lg:col-span-6 bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex flex-col justify-between min-w-0">
-              <div>
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-blue-600" />
-                  Evolução Mensal (Últimos 12 Meses)
-                </h3>
-                <p className="text-[11px] text-slate-450">Histórico de preventivas Previstas (Qtd. absoluta) vs Concluídas no Prazo, Concluídas em Atraso e Não Realizadas (% do total).</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-2">
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-[#3525cd]" />
+                    Evolução Mensal (Últimos 12 Meses)
+                  </h3>
+                  <p className="text-[11px] text-slate-450 mt-0.5">Visão percentual de eficiência no período para as preventivas.</p>
+                </div>
+                <div className="bg-indigo-50 border border-indigo-150 rounded-xl px-3.5 py-1.5 flex flex-col items-center justify-center shrink-0 min-w-[100px] shadow-3xs">
+                  <span className="text-[8px] font-black text-[#3525cd] uppercase tracking-widest leading-none">TOTAL CRIADAS</span>
+                  <span className="text-lg font-black text-slate-900 mt-1 leading-none">{evolutionData.reduce((acc, curr) => acc + (curr['Total'] || 0), 0)}</span>
+                </div>
               </div>
 
-              <div ref={chart1Ref} className="h-[320px] w-full mt-6 min-w-0 min-h-0 relative">
+              <div ref={chart1Ref} className="h-[320px] w-full mt-4 min-w-0 min-h-0 relative">
                 {chart1Size.width > 0 ? (
                   <AreaChart width={chart1Size.width} height={chart1Size.height} data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="colorPrevistas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3525cd" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#3525cd" stopOpacity={0}/>
-                      </linearGradient>
                       <linearGradient id="colorConcluidasNoPrazo" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
@@ -978,16 +1145,35 @@ export default function DashboardView({
                     <XAxis dataKey="month" tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
                     <YAxis tick={{ fontSize: 9, fontWeight: 700 }} stroke="#94a3b8" />
                     <Tooltip 
-                      contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: '8px', border: '1px solid #e2e8f0' }} 
-                      formatter={(val: any, name: string) => {
-                        if (name === 'Previstas') {
-                          return [val, 'Previstas (Qtd)'];
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-md text-xs font-black text-slate-800 space-y-1.5 min-w-[200px]">
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wider">{data.month}</p>
+                              <div className="border-b border-slate-100 pb-1.5 mb-1.5 flex justify-between items-center gap-4">
+                                <span className="text-slate-500 font-bold">Total Criadas:</span>
+                                <span className="text-[#3525cd] font-black">{data.Total}</span>
+                              </div>
+                              <div className="flex justify-between items-center gap-4">
+                                <span className="text-emerald-600 font-bold">Concluídas no Prazo:</span>
+                                <span>{data['Concluídas no Prazo']}%</span>
+                              </div>
+                              <div className="flex justify-between items-center gap-4">
+                                <span className="text-amber-500 font-bold">Concluídas em Atraso:</span>
+                                <span>{data['Concluídas em Atraso']}%</span>
+                              </div>
+                              <div className="flex justify-between items-center gap-4">
+                                <span className="text-rose-500 font-bold">Não Realizadas:</span>
+                                <span>{data['Não Realizadas']}%</span>
+                              </div>
+                            </div>
+                          );
                         }
-                        return [`${val}%`, name];
+                        return null;
                       }}
                     />
                     <Legend wrapperStyle={{ fontSize: 9, fontWeight: 700, paddingTop: 12 }} iconSize={8} iconType="circle" />
-                    <Area type="monotone" dataKey="Previstas" stroke="#3525cd" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPrevistas)" />
                     <Area type="monotone" dataKey="Concluídas no Prazo" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorConcluidasNoPrazo)" />
                     <Area type="monotone" dataKey="Concluídas em Atraso" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorConcluidasEmAtraso)" />
                     <Area type="monotone" dataKey="Não Realizadas" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorNaoRealizadas)" />

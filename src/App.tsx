@@ -412,6 +412,14 @@ export default function App() {
               const updatedUser = { ...foundUser, currentSessionId: sessionId };
               await dbSaveUser(updatedUser);
               setUserProfile(updatedUser);
+              
+              // Automatically send field technicians (Profissional) to "Preventivas" (service-orders) instead of "Dashboard"
+              if (updatedUser.perfil === 'Profissional') {
+                setCurrentTab('service-orders');
+              } else {
+                setCurrentTab('dashboard');
+              }
+
               await dbAddAccessLog({
                 userMatricula: foundUser.matricula,
                 userName: foundUser.name,
@@ -450,6 +458,14 @@ export default function App() {
     const updatedUser = { ...profile, currentSessionId: sessionId };
     await dbSaveUser(updatedUser);
     setUserProfile(updatedUser);
+    
+    // Automatically send field technicians (Profissional) to "Preventivas" (service-orders) instead of "Dashboard"
+    if (updatedUser.perfil === 'Profissional') {
+      setCurrentTab('service-orders');
+    } else {
+      setCurrentTab('dashboard');
+    }
+
     await loadPermissions();
     await loadServiceOrders();
   };

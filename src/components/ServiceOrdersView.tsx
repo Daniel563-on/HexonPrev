@@ -129,6 +129,13 @@ export default function ServiceOrdersView({
 
   // Smart Filter States
   const [smartSearch, setSmartSearch] = useState('');
+  const [selectedExecutionDate, setSelectedExecutionDate] = useState<string>(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [showPreventiveScanSimulator, setShowPreventiveScanSimulator] = useState(false);
   const [preventiveScannerTab, setPreventiveScannerTab] = useState<'camera' | 'manual'>('camera');
   const [simulatedPreventiveScanCode, setSimulatedPreventiveScanCode] = useState('');
@@ -164,7 +171,7 @@ export default function ServiceOrdersView({
   // Reset pagination to page 1 whenever search, filters, or orders list changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [smartSearch, selectedComarca, selectedPatrimonio, selectedStatus, orders]);
+  }, [smartSearch, selectedComarca, selectedPatrimonio, selectedStatus, selectedExecutionDate, orders]);
 
   // Form states for NEW Service Order
   const [osAssetId, setOsAssetId] = useState('');
@@ -761,7 +768,10 @@ export default function ServiceOrdersView({
     // 4. Status filter
     const matchesStatus = selectedStatus === 'Todos' || os.status === selectedStatus;
 
-    return matchesSmart && matchesComarca && matchesPatrimonio && matchesStatus;
+    // 5. Execution Date filter
+    const matchesExecutionDate = !selectedExecutionDate || os.scheduledDate === selectedExecutionDate;
+
+    return matchesSmart && matchesComarca && matchesPatrimonio && matchesStatus && matchesExecutionDate;
   });
 
   // Pagination calculation variables for 50 items per page
@@ -2041,7 +2051,7 @@ export default function ServiceOrdersView({
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Smart Search */}
           <div>
             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
@@ -2115,6 +2125,69 @@ export default function ServiceOrdersView({
               ))}
             </select>
           </div>
+
+          {/* Filter by Execution Date */}
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center justify-between">
+              <span>Dia Programado</span>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayStr = (() => {
+                      const d = new Date();
+                      const year = d.getFullYear();
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const day = String(d.getDate()).padStart(2, '0');
+                      return `${year}-${month}-${day}`;
+                    })();
+                    setSelectedExecutionDate(todayStr);
+                  }}
+                  className={`text-[8.5px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    selectedExecutionDate === (() => {
+                      const d = new Date();
+                      const year = d.getFullYear();
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const day = String(d.getDate()).padStart(2, '0');
+                      return `${year}-${month}-${day}`;
+                    })()
+                      ? 'bg-indigo-650 text-white font-extrabold'
+                      : 'bg-gray-150 text-slate-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedExecutionDate('')}
+                  className={`text-[8.5px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    !selectedExecutionDate
+                      ? 'bg-indigo-610 text-white font-extrabold'
+                      : 'bg-gray-150 text-slate-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Ver Todos
+                </button>
+              </div>
+            </label>
+            <div className="relative">
+              <input
+                type="date"
+                value={selectedExecutionDate}
+                onChange={(e) => setSelectedExecutionDate(e.target.value)}
+                className="w-full text-xs py-1.5 px-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800"
+              />
+              {selectedExecutionDate && (
+                <button
+                  onClick={() => setSelectedExecutionDate('')}
+                  className="absolute right-7 top-2 text-gray-400 hover:text-rose-600 cursor-pointer"
+                  title="Listar sem data"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Status filtering row & quick clear */}
@@ -2141,13 +2214,14 @@ export default function ServiceOrdersView({
             </div>
           </div>
 
-          {(smartSearch || selectedComarca !== 'Todas' || selectedPatrimonio !== 'Todos' || selectedStatus !== 'Todos') && (
+          {(smartSearch || selectedComarca !== 'Todas' || selectedPatrimonio !== 'Todos' || selectedStatus !== 'Todos' || selectedExecutionDate !== '') && (
             <button
               onClick={() => {
                 setSmartSearch('');
                 setSelectedComarca('Todas');
                 setSelectedPatrimonio('Todos');
                 setSelectedStatus('Todos');
+                setSelectedExecutionDate('');
               }}
               className="text-[10px] font-black text-rose-600 hover:text-rose-800 uppercase tracking-wider flex items-center gap-1 cursor-pointer"
             >
@@ -2275,16 +2349,23 @@ export default function ServiceOrdersView({
                     </h3>
 
                     {/* Periodicity / date parameters */}
-                    <div className="mb-3">
-                      {os.startDate && os.endDate ? (
-                        <div className="flex items-center gap-1 text-[9px] font-black text-indigo-700 bg-indigo-50/80 border border-indigo-150 px-2 py-1 rounded-lg w-full whitespace-normal leading-tight">
-                          <Calendar className="w-3 h-3 text-indigo-600 shrink-0" />
-                          <span>Período: {formatDateBR(os.startDate)} até {formatDateBR(os.endDate)}</span>
+                    <div className="mb-3 space-y-1.5">
+                      {os.startDate && os.endDate && (
+                        <div className="flex items-center gap-1 text-[9px] font-black text-slate-500 bg-slate-50/80 border border-slate-200 px-2 py-1 rounded-lg w-full whitespace-normal leading-tight">
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>Janela: {formatDateBR(os.startDate)} até {formatDateBR(os.endDate)}</span>
+                        </div>
+                      )}
+                      
+                      {os.scheduledDate ? (
+                        <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-850 bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg w-full whitespace-normal leading-tight shadow-3xs">
+                          <Clock className="w-3.5 h-3.5 text-[#3525cd] shrink-0 animate-pulse" />
+                          <span>DIA DE EXECUÇÃO DETERMINADO: <strong className="text-[#3525cd] text-[10.5px]">{formatDateBR(os.scheduledDate)}</strong></span>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1 text-[9px] font-black text-slate-600 bg-slate-50 border border-slate-150 px-2 py-1 rounded-lg w-full whitespace-normal leading-tight">
+                        <div className="flex items-center gap-1 text-[9px] font-black text-slate-605 bg-slate-50 border border-slate-150 px-2 py-1 rounded-lg w-full whitespace-normal leading-tight">
                           <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                          <span>Previsão: {formatDateBR(os.scheduledDate)}</span>
+                          <span>Não agendado</span>
                         </div>
                       )}
                     </div>
@@ -3250,6 +3331,7 @@ export default function ServiceOrdersView({
                 <SignatureCanvas 
                   onSave={handleSignConfirm}
                   onCancel={() => setShowSignaturePad(false)}
+                  defaultName={userProfile?.name}
                 />
               </div>
             )}

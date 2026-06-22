@@ -845,7 +845,7 @@ export default function AssetsView({
     <div className="font-sans space-y-6">
       
       {/* 1. SECTOR SUMMARY CARDS (RESUMO DO INVENTÁRIO DO LADO DE FORA) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
         {/* Card Total */}
         <div 
           id="summary-card-total" 
@@ -854,18 +854,33 @@ export default function AssetsView({
             setSearchQuery('');
             setSelectedAsset(null);
           }}
-          className={`p-4 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center gap-4 ${
+          className={`p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between h-full relative overflow-hidden group min-h-[140px] ${
             selectedSector === 'Todos' 
-              ? 'bg-[#0b1c30] text-white border-slate-800 shadow-md scale-102 ring-1 ring-indigo-500' 
+              ? 'bg-[#0b1c30] text-white border-slate-900 shadow-md scale-102 ring-1 ring-indigo-500' 
               : 'bg-white text-slate-800 border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5'
           }`}
         >
-          <div className={`p-2.5 rounded-xl shrink-0 ${selectedSector === 'Todos' ? 'bg-white/10 text-white' : 'bg-[#0b1c30]/10 text-[#0b1c30]'}`}>
-            <Cpu className="w-5 h-5 text-indigo-300" />
+          {selectedSector === 'Todos' && (
+            <div className="absolute right-0 top-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
+          )}
+          <div className="flex justify-between items-start">
+            <div className={`p-2.5 rounded-xl shrink-0 ${selectedSector === 'Todos' ? 'bg-white/10 text-white' : 'bg-[#0b1c30]/10 text-[#0b1c30]'}`}>
+              <Cpu className="w-5 h-5 text-indigo-400" />
+            </div>
+            {selectedSector === 'Todos' && (
+              <span className="text-[8px] font-black uppercase text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full tracking-widest leading-none">
+                Todos
+              </span>
+            )}
           </div>
-          <div className="min-w-0 flex-1">
-            <span className={`text-[10px] font-extrabold uppercase tracking-widest block truncate ${selectedSector === 'Todos' ? 'text-gray-300' : 'text-gray-400'}`}>Total de Ativos</span>
-            <span className="text-2xl font-black block mt-0.5">{assets.length} <span className="text-xs font-normal opacity-70">ativos</span></span>
+          <div className="mt-4">
+            <span className={`text-[10px] font-black uppercase tracking-widest block truncate ${selectedSector === 'Todos' ? 'text-gray-300' : 'text-gray-400'}`}>
+              Total de Ativos
+            </span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-3xl font-black tracking-tight">{assets.length}</span>
+              <span className={`text-[10px] font-bold ${selectedSector === 'Todos' ? 'text-gray-400' : 'text-gray-500'}`}>ativos</span>
+            </div>
           </div>
         </div>
 
@@ -889,18 +904,33 @@ export default function AssetsView({
               key={m.id}
               id={`summary-card-${m.id}`}
               onClick={() => setSelectedSector(isSelected ? 'Todos' : m.name)}
-              className={`p-4 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center gap-4 ${
+              className={`p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between h-full relative overflow-hidden group min-h-[140px] ${
                 isSelected 
                   ? 'bg-slate-800 text-white border-slate-700 shadow-md scale-102 ring-1 ring-slate-600' 
                   : 'bg-white text-slate-800 border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5'
               }`}
             >
-              <div className={`p-2.5 rounded-xl shrink-0 ${isSelected ? 'bg-white/10 text-white' : colorSet.bg}`}>
-                <IconComponent className="w-5 h-5" />
+              {isSelected && (
+                <div className="absolute right-0 top-0 w-24 h-24 bg-white/5 rounded-full blur-xl pointer-events-none" />
+              )}
+              <div className="flex justify-between items-start">
+                <div className={`p-2.5 rounded-xl shrink-0 ${isSelected ? 'bg-white/10 text-white' : colorSet.bg}`}>
+                  <IconComponent className="w-5 h-5" />
+                </div>
+                {isSelected && (
+                  <span className="text-[8px] font-black uppercase text-slate-200 bg-white/20 px-2 py-0.5 rounded-full tracking-widest leading-none">
+                    Ativo
+                  </span>
+                )}
               </div>
-              <div className="min-w-0 flex-1">
-                <span className={`text-[10px] font-extrabold uppercase tracking-widest block truncate ${isSelected ? 'text-gray-200' : 'text-gray-400'}`} title={m.name}>{m.name}</span>
-                <span className="text-2xl font-black block mt-0.5">{assetCount} <span className="text-xs font-normal opacity-70">ativos</span></span>
+              <div className="mt-4">
+                <span className={`text-[10px] font-black uppercase tracking-widest block truncate ${isSelected ? 'text-gray-200' : 'text-gray-400'}`} title={m.name}>
+                  {m.name}
+                </span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-3xl font-black tracking-tight">{assetCount}</span>
+                  <span className={`text-[10px] font-bold ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>ativos</span>
+                </div>
               </div>
             </div>
           );
