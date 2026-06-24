@@ -842,7 +842,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
               const alreadyExists = existingOrders.some((o) => {
                 if (!o.isSurvey || o.surveyLocation !== comarca) return false;
                 if (o.title !== title) return false;
-                return isSamePeriod(o.scheduledDate, dates.scheduledDate, 'Semanal');
+                return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, 'Semanal');
               });
 
               previewList.push({
@@ -909,7 +909,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                   const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
                   if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
 
-                  return isSamePeriod(o.scheduledDate, dates.scheduledDate, periodicity);
+                  return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, periodicity);
                 });
 
                 previewList.push({

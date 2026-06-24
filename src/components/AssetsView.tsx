@@ -1532,7 +1532,7 @@ export default function AssetsView({
 
                             {/* Spawned Corrective action notes */}
                             {log.correctiveActionsText && (
-                              <div className="bg-blue-50/55 p-2.5 rounded-lg border border-blue-100 font-medium text-[10px] text-blue-900">
+                              <div className="bg-blue-50/55 p-2.5 rounded-lg border border-blue-100 font-medium text-[10px] text-blue-900 whitespace-pre-line">
                                 <span className="font-black text-blue-800 block mb-0.5">⚙️ Desdobramento e Ações Corretivas:</span>
                                 {log.correctiveActionsText}
                               </div>

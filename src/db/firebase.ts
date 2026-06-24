@@ -648,13 +648,54 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     const preventiveType = order.periodicity || (order.title.includes('Anual') ? 'Anual' : order.title.includes('Semestral') ? 'Semestral' : order.title.includes('Trimestral') ? 'Trimestral' : order.title.includes('Mensal') ? 'Mensal' : 'Inspeção Geral');
     
     // Check if any checklist items demanded automatic corrective request
-    const correctiveDemandedItems = order.checklist.filter(c => c.autoCreateCorrective && c.autoCorrectiveAnswer === 'Sim');
-    let correctiveActionsText = '';
+    const correctiveDemandedItems = order.checklist.filter(c => c.autoCorrectiveAnswer === 'Sim');
     
+    // Let's build the sections
+    let correctiveActionsText = '';
+    const sections: string[] = [];
+
+    // Section 1: All items where corrective action was requested (autoCorrectiveAnswer === 'Sim')
     if (correctiveDemandedItems.length > 0) {
-      correctiveActionsText = `Solicitação de corretiva aut. registrada devido a apontamentos em: ${correctiveDemandedItems.map(i => i.task).join(', ')}.`;
+      const details = correctiveDemandedItems.map(i => {
+        const obs = i.observations && i.observations.trim() 
+          ? `\n   ↳ Relato Técnico / Descrição da Corretiva: "${i.observations.trim()}"` 
+          : '\n   ↳ (Nenhum texto de relato foi digitado pelo técnico)';
+        return `• ${i.task}: SOLICITADO SIM${obs}`;
+      }).join('\n');
+      sections.push(`⚙️ Desdobramento de Ação Corretiva Solicitado (Sim):\n${details}`);
+    }
+
+    // Section 2: Other items with typed observations (excluding those already listed as 'Sim' above)
+    const otherItemsWithObs = order.checklist.filter(c => {
+      const isAlreadyLogged = correctiveDemandedItems.some(i => i.id === c.id);
+      return c.observations && c.observations.trim() && !isAlreadyLogged;
+    });
+
+    if (otherItemsWithObs.length > 0) {
+      const details = otherItemsWithObs.map(i => {
+        const statusLabel = i.statusCheck ? ` [Status: ${i.statusCheck}]` : (!i.checked ? ' [Não Conforme]' : '');
+        return `• ${i.task}${statusLabel}:\n   ↳ Relato Técnico: "${i.observations!.trim()}"`;
+      }).join('\n');
+      sections.push(`📋 Observações e Apontamentos do Checklist:\n${details}`);
+    }
+
+    // Section 3: Non-conformities without typed observations
+    const nonConformsWithoutObs = order.checklist.filter(c => {
+      const isFailed = !c.checked || c.statusCheck === 'Não Atestado';
+      const isAlreadyLogged = correctiveDemandedItems.some(i => i.id === c.id) || otherItemsWithObs.some(i => i.id === c.id);
+      return isFailed && !isAlreadyLogged;
+    });
+
+    if (nonConformsWithoutObs.length > 0) {
+      const details = nonConformsWithoutObs.map(i => `• ${i.task}`).join('\n');
+      sections.push(`⚠ Outros itens não-conformes (sem relato adicional):\n${details}`);
+    }
+
+    // Assemble final text
+    if (sections.length > 0) {
+      correctiveActionsText = sections.join('\n\n');
     } else {
-      correctiveActionsText = nonConforms.length > 0 ? 'Não-conformidades registradas, sem solicitação de corretiva emergencial.' : 'Equipamento operando com 100% de conformidade.';
+      correctiveActionsText = 'Equipamento operando com 100% de conformidade.';
     }
 
     const historyEntry: MaintenanceLog = {
@@ -736,32 +777,111 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
   }
 }
 
+// Helper to dynamically enrich history logs using matching service orders details
+function enrichHistoryList(histories: MaintenanceLog[], orders: ServiceOrder[]): MaintenanceLog[] {
+  if (!orders || orders.length === 0) return histories;
+  
+  return histories.map(h => {
+    const matchingOrder = orders.find(o => o.id === h.osId);
+    if (!matchingOrder || !matchingOrder.checklist) return h;
+    
+    // Dynamically recalculate the correctiveActionsText based on the checklist
+    const correctiveDemandedItems = matchingOrder.checklist.filter(c => c.autoCorrectiveAnswer === 'Sim');
+    
+    let correctiveActionsText = '';
+    const sections: string[] = [];
+
+    // Section 1: All items where corrective action was requested (autoCorrectiveAnswer === 'Sim')
+    if (correctiveDemandedItems.length > 0) {
+      const details = correctiveDemandedItems.map(i => {
+        const obs = i.observations && i.observations.trim() 
+          ? `\n   ↳ Relato Técnico / Descrição da Corretiva: "${i.observations.trim()}"` 
+          : '\n   ↳ (Nenhum texto de relato foi digitado pelo técnico)';
+        return `• ${i.task}: SOLICITADO SIM${obs}`;
+      }).join('\n');
+      sections.push(`⚙️ Desdobramento de Ação Corretiva Solicitado (Sim):\n${details}`);
+    }
+
+    // Section 2: Other items with typed observations (excluding those already listed as 'Sim' above)
+    const otherItemsWithObs = matchingOrder.checklist.filter(c => {
+      const isAlreadyLogged = correctiveDemandedItems.some(i => i.id === c.id);
+      return c.observations && c.observations.trim() && !isAlreadyLogged;
+    });
+
+    if (otherItemsWithObs.length > 0) {
+      const details = otherItemsWithObs.map(i => {
+        const statusLabel = i.statusCheck ? ` [Status: ${i.statusCheck}]` : (!i.checked ? ' [Não Conforme]' : '');
+        return `• ${i.task}${statusLabel}:\n   ↳ Relato Técnico: "${i.observations!.trim()}"`;
+      }).join('\n');
+      sections.push(`📋 Observações e Apontamentos do Checklist:\n${details}`);
+    }
+
+    // Section 3: Non-conformities without typed observations
+    const nonConformsWithoutObs = matchingOrder.checklist.filter(c => {
+      const isFailed = !c.checked || c.statusCheck === 'Não Atestado';
+      const isAlreadyLogged = correctiveDemandedItems.some(i => i.id === c.id) || otherItemsWithObs.some(i => i.id === c.id);
+      return isFailed && !isAlreadyLogged;
+    });
+
+    if (nonConformsWithoutObs.length > 0) {
+      const details = nonConformsWithoutObs.map(i => `• ${i.task}`).join('\n');
+      sections.push(`⚠ Outros itens não-conformes (sem relato adicional):\n${details}`);
+    }
+
+    if (sections.length > 0) {
+      correctiveActionsText = sections.join('\n\n');
+    } else {
+      correctiveActionsText = 'Equipamento operando com 100% de conformidade.';
+    }
+
+    return {
+      ...h,
+      correctiveActionsText
+    };
+  });
+}
+
 // Get maintenance logs for a specific asset
 export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+  
+  // Try retrieving from local storage fallback first
+  let localData: MaintenanceLog[] | null = null;
+  try {
+    const saved = localStorage.getItem('hexon_histories');
+    if (saved) {
+      localData = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('Error reading maintenance logs:', e);
+  }
+
+  const orders = cacheServiceOrders || [];
+
   if (cacheAllHistories !== null && (!hasUser || cacheAllHistoriesFromFirebase)) {
-    return cacheAllHistories
+    const filtered = cacheAllHistories
       .filter((h) => h.assetId === assetId)
       .sort((a, d) => d.date.localeCompare(a.date));
+    return enrichHistoryList(filtered, orders);
+  }
+  if (isCacheValid('histories') && localData && localData.length > 0) {
+    cacheAllHistories = localData;
+    cacheAllHistoriesFromFirebase = true;
+    const filtered = cacheAllHistories
+      .filter((h) => h.assetId === assetId)
+      .sort((a, d) => d.date.localeCompare(a.date));
+    return enrichHistoryList(filtered, orders);
   }
   if (pendingHistoriesPromise !== null) {
     const list = await pendingHistoriesPromise;
-    return list
+    const filtered = list
       .filter((h) => h.assetId === assetId)
       .sort((a, d) => d.date.localeCompare(a.date));
+    const loadedOrders = await dbGetServiceOrders();
+    return enrichHistoryList(filtered, loadedOrders);
   }
 
   pendingHistoriesPromise = (async () => {
-    let localData: MaintenanceLog[] | null = null;
-    try {
-      const saved = localStorage.getItem('hexon_histories');
-      if (saved) {
-        localData = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Error reading maintenance logs:', e);
-    }
-
     if (firebaseActive && dbInstance) {
       const path = 'histories';
       try {
@@ -775,6 +895,7 @@ export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog
         });
         cacheAllHistories = [...list];
         cacheAllHistoriesFromFirebase = true;
+        updateCacheTimestamp('histories');
         try {
           localStorage.setItem('hexon_histories', JSON.stringify(cacheAllHistories));
         } catch (lsErr) {
@@ -800,9 +921,11 @@ export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog
   })();
 
   const list = await pendingHistoriesPromise;
-  return list
+  const filtered = list
     .filter((h) => h.assetId === assetId)
     .sort((a, d) => d.date.localeCompare(a.date));
+  const loadedOrders = await dbGetServiceOrders();
+  return enrichHistoryList(filtered, loadedOrders);
 }
 
 // Adds an entry to the history log
@@ -811,8 +934,11 @@ export async function dbAddHistoryLog(log: MaintenanceLog): Promise<void> {
     cacheAllHistories = [];
   }
 
-  // Prevent duplicate entries for the same finished service order session
-  if (!cacheAllHistories!.some(h => h.id === log.id || (h.osId === log.osId && h.date === log.date))) {
+  // Prevent duplicate entries for the same finished service order session, update if exists
+  const existingIndex = cacheAllHistories!.findIndex(h => h.id === log.id || (h.osId === log.osId && h.date === log.date));
+  if (existingIndex >= 0) {
+    cacheAllHistories![existingIndex] = log;
+  } else {
     cacheAllHistories!.unshift(log);
   }
 
@@ -1280,7 +1406,7 @@ export async function dbAutoGeneratePreventiveActivities(
               // EXTREME SAFETY CODES: Enforce Duplication Prevention & Weekly Boundaries using unified helper
               const alreadyExists = orders.some((o) => {
                 if (!o.isSurvey || o.surveyLocation !== comarca || o.title !== title) return false;
-                return isSamePeriodLocal(o.scheduledDate, scheduledDate, 'Semanal');
+                return isSamePeriodLocal(o.startDate || o.scheduledDate, scheduledDate, 'Semanal');
               });
 
               if (!alreadyExists) {
@@ -1309,7 +1435,7 @@ export async function dbAutoGeneratePreventiveActivities(
                   description: `Vistoria de rotina programada. Comarca: ${comarca}. Procedimento autônomo sem vinculação com ativos de engenharia.`,
                   priority: 'Baixa',
                   status: 'Novo',
-                  scheduledDate: scheduledDate,
+                  scheduledDate: '',
                   startDate: pStartDate,
                   endDate: pEndDate,
                   assignedTechnician: '',
@@ -1386,7 +1512,7 @@ export async function dbAutoGeneratePreventiveActivities(
                   if (o.isSurvey) return false;
                   const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
                   if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
-                  return isSamePeriodLocal(o.scheduledDate, scheduledDate, periodicity);
+                  return isSamePeriodLocal(o.startDate || o.scheduledDate, scheduledDate, periodicity);
                 });
 
                 if (alreadyExists) {
@@ -1420,7 +1546,7 @@ export async function dbAutoGeneratePreventiveActivities(
                   description: `Atividade preventiva automática programada (${periodicity}). Equipamento: ${asset.name} (${asset.code}). Relacionado ao modelo versionado V${t.version || 1}.`,
                   priority: periodicity === 'Anual' ? 'Alta' : 'Média',
                   status: 'Novo',
-                  scheduledDate: scheduledDate,
+                  scheduledDate: '',
                   startDate: pStartDate,
                   endDate: pEndDate,
                   assignedTechnician: '',
@@ -2102,6 +2228,12 @@ export async function dbAddAccessLog(log: Omit<AccessLog, 'id'>): Promise<void> 
     console.warn('LocalStorage limit writing access log:', lsErr);
   }
 
+  // To limit Firestore write usages, skip routine background logs while keeping key manual login events
+  const isRoutineEvent = log.event.includes("Automática") || log.event.includes("Sincronização") || log.event.includes("Check") || log.event.includes("Leitura") || log.event.includes("Visualização");
+  if (isRoutineEvent) {
+    return;
+  }
+
   if (firebaseActive && dbInstance) {
     try {
       await setDoc(doc(dbInstance, 'accessLogs', id), cleanUndefined(item));
@@ -2606,17 +2738,29 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
     ]);
 
     const now = new Date();
-    const expiredManagements = deadlines.filter(d => d.expiresAt && d.expiresAt !== 'none' && new Date(d.expiresAt) < now);
-
-    if (expiredManagements.length === 0) return;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const currentDateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
     const updatedOrders: ServiceOrder[] = [];
     const nonUpdated: ServiceOrder[] = [];
 
     for (const os of orders) {
-      if (os.status === 'Novo') {
-        const isExpired = expiredManagements.some(d => isSectorInGerencia(os.sector, d.id));
-        if (isExpired) {
+      const isRangePassed = os.endDate && os.endDate < currentDateStr;
+
+      if (os.status === 'Não Executada') {
+        if (!isRangePassed) {
+          // SELF-HEAL: Range is still active! Revert status back to its correct state
+          const restoredStatus = os.scheduledDate ? 'Planejada' : 'Novo';
+          updatedOrders.push({
+            ...os,
+            status: restoredStatus,
+            updatedAt: new Date().toISOString()
+          });
+          continue;
+        }
+      } else if (os.status !== 'Concluída') {
+        if (isRangePassed) {
+          // EXPIRE: Transition only when the Super Admin target range actually passes
           updatedOrders.push({
             ...os,
             status: 'Não Executada',
@@ -2629,7 +2773,7 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
     }
 
     if (updatedOrders.length > 0) {
-      console.log(`[Auto-Expiration] Transitioning ${updatedOrders.length} Novo orders to Não Executada due to deadline expiry!`);
+      console.log(`[Auto-Expiration/Self-Heal] Updating ${updatedOrders.length} service orders status based on Super Admin active range!`);
       // Update cache
       cacheServiceOrders = [...nonUpdated, ...updatedOrders];
       try {

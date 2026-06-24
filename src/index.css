@@ -2,6 +2,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Inter", system-ui, sans-serif;
   --font-headline: "Plus Jakarta Sans", sans-serif;
@@ -205,4 +207,145 @@ html.high-contrast .recharts-cartesian-grid-vertical line {
 
 .daltonism-tritanopia {
   filter: url('#tritanopia-filter') !important;
+}
+
+/* HIGH FIDELITY PRINT / PDF STYLING */
+@media print {
+  /* Ensure backgrounds and colors print beautifully */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-scheme: light !important;
+  }
+
+  /* Force light theme colors for clean printing regardless of dark mode state */
+  html, body, #root, main, div, section, table, td, th, h1, h2, h3, h4, h5, h6, span, p {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    background-image: none !important;
+  }
+
+  /* Hide sidebar, header, filters, action bars, toasts, accessibility panels, floating items */
+  header,
+  aside,
+  footer,
+  .print\:hidden,
+  [class*="print:hidden"],
+  button,
+  .fixed,
+  .absolute {
+    display: none !important;
+  }
+
+  /* Reset container widths, heights and flex boxes to standard flow layout */
+  html, body, #root, main, .flex-1, .h-screen, .w-screen {
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Prevent elements from being cut off by scroll containers */
+  .overflow-y-auto, 
+  .overflow-hidden,
+  .overflow-x-auto,
+  div[class*="overflow-"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  /* Override min-widths so elements fit inside standard A4 portrait width */
+  [class*="min-w-"] {
+    min-width: 0 !important;
+  }
+
+  /* Optimize main container layout for standard page size */
+  main, .flex-grow {
+    display: block !important;
+    width: 100% !important;
+    padding: 1.5cm !important;
+    margin: 0 !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm !important;
+  }
+
+  /* Make components flat, clean and high contrast */
+  .rounded-2xl, .rounded-xl, .rounded-lg {
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    margin-bottom: 1rem !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Page break utility */
+  .print-page-break {
+    page-break-after: always !important;
+    break-after: page !important;
+    display: block !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  /* Avoid page breaking inside important blocks like the audit table or cards */
+  tr, .card, section, .bg-white {
+    page-break-inside: avoid !important;
+  }
+
+  /* Ensure text sizing is legible */
+  h1 {
+    font-size: 20pt !important;
+    line-height: 1.2 !important;
+    margin-bottom: 0.4cm !important;
+  }
+  h2 {
+    font-size: 14pt !important;
+    margin-bottom: 0.3cm !important;
+  }
+  h3 {
+    font-size: 11pt !important;
+    margin-bottom: 0.2cm !important;
+  }
+  p, td, th, span {
+    font-size: 9pt !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Grid layout adjustments to prevent overlaps */
+  .grid:not([class*="print:grid"]) {
+    display: block !important;
+  }
+  .grid:not([class*="print:grid"]) > * {
+    margin-bottom: 1rem !important;
+    width: 100% !important;
+  }
+
+  /* Specific rules for printable grid sizes */
+  .print\:grid {
+    display: grid !important;
+  }
+  .print\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  /* Table styles override for high contrast */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  th, td {
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding: 6px 10px !important;
+    text-align: left !important;
+  }
 }

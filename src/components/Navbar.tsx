@@ -78,7 +78,7 @@ export default function Navbar({
   const displayInitials = getInitials(displayName);
 
   return (
-    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#0b1c30]/95 backdrop-blur-md border-b border-gray-200 dark:border-slate-850/80 flex justify-between items-center sticky top-0 z-40 shadow-sm font-sans transition-colors duration-150">
+    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#0b1c30]/95 backdrop-blur-md border-b border-gray-200 dark:border-slate-850/80 flex justify-between items-center sticky top-0 z-40 shadow-sm font-sans transition-colors duration-150 print:hidden">
       {/* Tab Context and Title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {onMenuToggle && (

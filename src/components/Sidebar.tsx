@@ -54,7 +54,7 @@ export default function Sidebar({
       )}
 
       <aside 
-        className={`fixed lg:static top-0 bottom-0 left-0 h-screen w-[280px] bg-[#0b1c30] flex flex-col py-6 shadow-2xl lg:shadow-xl shrink-0 z-50 text-white font-sans transition-transform duration-300 ease-in-out ${
+        className={`fixed lg:static top-0 bottom-0 left-0 h-screen w-[280px] bg-[#0b1c30] flex flex-col py-6 shadow-2xl lg:shadow-xl shrink-0 z-50 text-white font-sans transition-transform duration-300 ease-in-out print:hidden ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -111,7 +111,7 @@ export default function Sidebar({
               }`}>
                 grid_view
               </span>
-              <span className="text-sm font-medium">Dashboard das Preventivas</span>
+              <span className="text-sm font-medium">Dashboard e Auditoria</span>
             </button>
           )}
 
@@ -210,6 +210,8 @@ export default function Sidebar({
               <span className="text-sm font-medium">Modelos e Protocolos</span>
             </button>
           )}
+
+
 
           {/* SECURE ADMIN CONTROL: Super Administrador ONLY */}
           {isSuperAdmin && (

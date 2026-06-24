@@ -23,7 +23,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
-  QrCode
+  QrCode,
+  Camera,
+  Trash
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia } from '../types';
 import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
@@ -129,13 +131,7 @@ export default function ServiceOrdersView({
 
   // Smart Filter States
   const [smartSearch, setSmartSearch] = useState('');
-  const [selectedExecutionDate, setSelectedExecutionDate] = useState<string>(() => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
+  const [selectedExecutionDate, setSelectedExecutionDate] = useState<string>('');
   const [showPreventiveScanSimulator, setShowPreventiveScanSimulator] = useState(false);
   const [preventiveScannerTab, setPreventiveScannerTab] = useState<'camera' | 'manual'>('camera');
   const [simulatedPreventiveScanCode, setSimulatedPreventiveScanCode] = useState('');
@@ -1175,11 +1171,10 @@ export default function ServiceOrdersView({
       )}
 
       {subTab === 'planejamento' && userProfile?.perfil !== 'Profissional' ? (() => {
-        // Evaluate if planning is expired for this specific administrator's gerência
         let isPlanningExpired = false;
         if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
           const dlObj = deadlines.find(d => d.id === userProfile.gerencia);
-          if (dlObj) {
+          if (dlObj && dlObj.expiresAt && dlObj.expiresAt !== 'none') {
             const countdownHelper = getCountdownText(dlObj.expiresAt);
             isPlanningExpired = countdownHelper.isExpired;
           }
@@ -2661,7 +2656,7 @@ export default function ServiceOrdersView({
                   Checklist de Verificação Técnica
                 </p>
 
-                {selectedOrder.status === 'Concluída' ? (
+                {selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada' ? (
                   /* Completed locked list with custom responseTypes */
                   <div className="space-y-2.5">
                     {selectedOrder.checklist.map((item) => {
@@ -3281,7 +3276,17 @@ export default function ServiceOrdersView({
             {/* Sticky footer actions validation panel */}
             <div className="p-5 border-t border-gray-100 bg-[#eff4ff]/30 flex gap-3 shrink-0">
               
-               {selectedOrder.status !== 'Concluída' ? (
+               {selectedOrder.status === 'Concluída' ? (
+                <div className="flex-grow text-center text-[11px] font-bold text-emerald-700 bg-emerald-50 py-3.5 rounded-lg border border-emerald-200 flex items-center justify-center gap-1">
+                  <FileCheck className="w-4 h-4" />
+                  ORDEM CONCLUÍDA EM CONFORMIDADE
+                </div>
+              ) : selectedOrder.status === 'Não Executada' ? (
+                <div className="flex-grow text-center text-[11px] font-bold text-rose-700 bg-rose-50 py-3.5 rounded-lg border border-rose-200 flex items-center justify-center gap-1">
+                  <AlertTriangle className="w-4 h-4" />
+                  ORDEM EXPIRADA / NÃO REALIZADA NO PRAZO
+                </div>
+              ) : (
                 /* Primary completion CTA triggers signature box after checking validator rules */
                 <button 
                   onClick={() => {
@@ -3309,11 +3314,6 @@ export default function ServiceOrdersView({
                   <FileSignature className="w-4 h-4 text-white" />
                   VALIDAR EXECUÇÃO DE OS
                 </button>
-              ) : (
-                <div className="flex-grow text-center text-[11px] font-bold text-emerald-700 bg-emerald-50 py-3.5 rounded-lg border border-emerald-200 flex items-center justify-center gap-1">
-                  <FileCheck className="w-4 h-4" />
-                  ORDEM CONCLUÍDA EM CONFORMIDADE
-                </div>
               )}
 
               <button 

@@ -407,10 +407,16 @@ export default function App() {
             const users = await dbGetUsers();
             const foundUser = users.find(u => u.matricula === savedMatricula && u.status === 'Ativo');
             if (foundUser) {
-              const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-              localStorage.setItem('hexon_current_session_id', sessionId);
+              let sessionId = localStorage.getItem('hexon_current_session_id');
+              const needsWrite = !sessionId || foundUser.currentSessionId !== sessionId;
+              if (!sessionId) {
+                sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem('hexon_current_session_id', sessionId);
+              }
               const updatedUser = { ...foundUser, currentSessionId: sessionId };
-              await dbSaveUser(updatedUser);
+              if (needsWrite) {
+                await dbSaveUser(updatedUser);
+              }
               setUserProfile(updatedUser);
               
               // Automatically send field technicians (Profissional) to "Preventivas" (service-orders) instead of "Dashboard"
@@ -498,7 +504,7 @@ export default function App() {
   const getTabTitle = () => {
     switch (currentTab) {
       case 'dashboard':
-        return 'Dashboard de Controle';
+        return 'Dashboard e Auditoria';
       case 'service-orders':
         return 'Ordens de Serviço';
       case 'assets':
@@ -656,7 +662,7 @@ export default function App() {
   }
 
   return (
-    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 ${darkMode ? 'bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
+    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 print:h-auto print:w-auto print:overflow-visible print:block print:bg-white print:text-black ${darkMode ? 'bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
       
       {/* LEFT SIDEBAR: Responsive drawer on mobile, persistent on desktop */}
       <Sidebar 
@@ -671,7 +677,7 @@ export default function App() {
       />
 
       {/* RIGHT DISPLAY TERMINAL */}
-      <main className="flex-grow flex flex-col min-w-0 relative h-full">
+      <main className="flex-grow flex flex-col min-w-0 relative h-full print:h-auto print:overflow-visible print:block print:bg-white">
         
         {/* TOP COMPLIANCE NAVBAR */}
         <Navbar 
@@ -692,7 +698,7 @@ export default function App() {
         />
 
         {/* COMPARTIMENTALIZED SCROLLABLE SUBVIEW PANEL */}
-        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 ${darkMode ? 'bg-[#060d17]' : 'bg-[#f8f9ff]'}`}>
+        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 print:overflow-visible print:h-auto print:p-0 print:bg-white ${darkMode ? 'bg-[#060d17]' : 'bg-[#f8f9ff]'}`}>
           
           {typeof window !== 'undefined' && (window as any).__hexonFirebaseQuotaExceeded && !dismissedQuotaWarning && (
             <div className="mb-6 bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-900/50 rounded-xl p-5 shadow-sm text-red-900 dark:text-red-200 font-sans relative">
@@ -782,7 +788,7 @@ export default function App() {
       </main>
 
       {/* Floating Non-Blocking Toast Containers (Replaces Intrusive Pop-up Notifications) */}
-      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0 print:hidden">
         {toasts.map((toast) => (
           <div
             key={toast.id}
