@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FileText,
   Plus,
@@ -30,9 +30,15 @@ import {
   Search,
   ArrowLeft,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Upload,
+  Crosshair,
+  FileCheck,
+  Eye,
+  Download
 } from 'lucide-react';
-import { MaintenanceTemplate, ChecklistTemplateItem, TemplateChangeLog, Asset, formatDateBR, Management, ServiceOrder, getSectorGerencia } from '../types';
+import { MaintenanceTemplate, ChecklistTemplateItem, TemplateChangeLog, Asset, formatDateBR, Management, ServiceOrder, getSectorGerencia, PdfTemplateConfig } from '../types';
+import PdfTemplateMapper from './PdfTemplateMapper';
 import { 
   dbGetTemplates, 
   dbSaveTemplate, 
@@ -268,6 +274,13 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   const [newTemplatePeriodicity, setNewTemplatePeriodicity] = useState('Mensal');
   const [newTemplatePeriodicities, setNewTemplatePeriodicities] = useState<string[]>(['Mensal']);
   const [newTemplateInitialTasks, setNewTemplateInitialTasks] = useState<string>('');
+  const [newTemplatePdfBase64, setNewTemplatePdfBase64] = useState<string | undefined>(undefined);
+  const [newTemplatePdfName, setNewTemplatePdfName] = useState<string | undefined>(undefined);
+  const [newTemplatePdfSize, setNewTemplatePdfSize] = useState<number | undefined>(undefined);
+
+  // PDF Mapping State
+  const [showPdfMapperModal, setShowPdfMapperModal] = useState(false);
+  const directPdfInputRef = useRef<HTMLInputElement | null>(null);
 
   // Editing current active checklist item configuration
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -366,6 +379,9 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     setNewTemplateName('');
     setNewTemplateInitialTasks('');
     setNewTemplateType('preventive');
+    setNewTemplatePdfBase64(undefined);
+    setNewTemplatePdfName(undefined);
+    setNewTemplatePdfSize(undefined);
     
     const firstType = existingAssetTypes[0] || '';
     setNewTemplateAssetType(firstType);
@@ -468,7 +484,14 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
       checklistItems: initialChecklistItems,
       createdAt: new Date().toISOString(),
       version: 1,
-      history: initialHistory
+      history: initialHistory,
+      pdfTemplate: newTemplatePdfBase64 ? {
+        pdfBase64: newTemplatePdfBase64,
+        pdfName: newTemplatePdfName,
+        pdfSize: newTemplatePdfSize,
+        pageCount: 1,
+        pins: []
+      } : undefined
     };
 
     await dbSaveTemplate(newTemplate);
@@ -478,9 +501,89 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     setNewTemplateName('');
     setNewTemplateInitialTasks('');
     setNewTemplateAssetType('');
+    setNewTemplatePdfBase64(undefined);
+    setNewTemplatePdfName(undefined);
+    setNewTemplatePdfSize(undefined);
     await loadData();
     setSelectedTemplate(newTemplate);
     
+    if (onTemplatesUpdated) onTemplatesUpdated();
+
+    // If PDF was attached, open the mapper immediately to allow positioning pins!
+    if (newTemplate.pdfTemplate?.pdfBase64) {
+      setShowPdfMapperModal(true);
+    }
+  };
+
+  // Save PDF Mapping config to Firebase
+  const handleSavePdfMapping = async (newConfig: PdfTemplateConfig) => {
+    if (!selectedTemplate) return;
+    const newVersion = (selectedTemplate.version || 1) + 1;
+    const historyEntry: TemplateChangeLog = {
+      version: newVersion,
+      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      changeDescription: `Mapeamento de PDF atualizado (${newConfig.pins.length} marcadores posicionados com pinça).`,
+      user: currentUserLabel
+    };
+
+    const updatedTemplate: MaintenanceTemplate = {
+      ...selectedTemplate,
+      version: newVersion,
+      pdfTemplate: newConfig,
+      history: [historyEntry, ...(selectedTemplate.history || [])]
+    };
+
+    setSelectedTemplate(updatedTemplate);
+    await dbSaveTemplate(updatedTemplate);
+    setTemplates(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
+    if (onTemplatesUpdated) onTemplatesUpdated();
+  };
+
+  // Directly upload/replace PDF file on selected template
+  const handleUploadPdfDirectly = (file: File) => {
+    if (!selectedTemplate || !file || file.type !== 'application/pdf') {
+      alert('Por favor selecione um arquivo válido no formato PDF (.pdf).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result as string;
+      if (base64) {
+        const newConfig: PdfTemplateConfig = {
+          pdfBase64: base64,
+          pdfName: file.name,
+          pdfSize: file.size,
+          pageCount: 1,
+          pins: selectedTemplate.pdfTemplate?.pins || []
+        };
+        await handleSavePdfMapping(newConfig);
+        setShowPdfMapperModal(true);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove PDF mapping from selected template
+  const handleRemovePdfFromSelected = async () => {
+    if (!selectedTemplate || !window.confirm('Tem certeza que deseja remover o PDF base e os marcadores de resposta deste modelo?')) return;
+    const newVersion = (selectedTemplate.version || 1) + 1;
+    const historyEntry: TemplateChangeLog = {
+      version: newVersion,
+      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      changeDescription: 'Documento PDF base e mapeamento de pinça removidos do modelo.',
+      user: currentUserLabel
+    };
+
+    const updatedTemplate: MaintenanceTemplate = {
+      ...selectedTemplate,
+      version: newVersion,
+      pdfTemplate: undefined,
+      history: [historyEntry, ...(selectedTemplate.history || [])]
+    };
+
+    setSelectedTemplate(updatedTemplate);
+    await dbSaveTemplate(updatedTemplate);
+    setTemplates(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
     if (onTemplatesUpdated) onTemplatesUpdated();
   };
 
@@ -791,6 +894,183 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   };
 
 
+  // Helper: check if asset is compatible with template
+  const isAssetCompatibleWithTemplate = (asset: Asset, t: MaintenanceTemplate): boolean => {
+    if (t.type !== 'preventive') return false;
+    const tAssetType = (t.targetAssetType || '').toLowerCase().trim();
+    const assetTipoSpec = (asset.specs?.TIPO || asset.specs?.tipo || '').toLowerCase().trim();
+    const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
+    const assetSector = (asset.sector || '').toLowerCase().trim();
+
+    if (tAssetType && assetTipoSpec) {
+      if (!assetTipoSpec.includes(tAssetType) && !tAssetType.includes(assetTipoSpec)) {
+        return false;
+      }
+    } else if (tAssetType && !assetTipoSpec) {
+      const assetName = (asset.name || '').toLowerCase();
+      if (!assetName.includes(tAssetType)) return false;
+    } else if (!tAssetType && tSector) {
+      if (assetSector !== tSector) return false;
+    }
+
+    const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
+    const activePeriodicities = asset.periodicities || [];
+    const commonPeriodicities = activePeriodicities.filter((ap) =>
+      tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
+    );
+    return commonPeriodicities.length > 0;
+  };
+
+  const getAssetComarcaClean = (asset: Asset): string => {
+    const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || '';
+    return c.trim();
+  };
+
+  // Helper to compute available Comarcas and Gerências for a filter row:
+  // ONLY lists comarcas and sectors that actually have pending preventivas/surveys to be generated.
+  // Hides any comarca/sector that has 0 matching assets OR where all preventivas already exist for the selected date period.
+  const getRowScopeInfo = (row: {
+    id: string;
+    templateId: string;
+    comarca: string;
+    sector: string;
+    startDate: string;
+    endDate: string;
+  }) => {
+    const targetTemplates = templates.filter((t) => {
+      if (row.templateId !== 'all' && t.id !== row.templateId) return false;
+      return true;
+    });
+
+    const checkPreventiveAlreadyExists = (asset: Asset, periodicity: string, startDateStr: string): boolean => {
+      const dates = alignPeriodDates(startDateStr, periodicity);
+      return existingOrders.some((o) => {
+        if (o.isSurvey) return false;
+        if (o.assetId !== asset.id) return false;
+        const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
+        if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
+        return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, periodicity);
+      });
+    };
+
+    const checkSurveyAlreadyExists = (comarcaName: string, templateName: string, startDateStr: string): boolean => {
+      const dates = alignPeriodDates(startDateStr, 'Semanal');
+      const title = `${templateName} - ${comarcaName}`;
+      return existingOrders.some((o) => {
+        if (!o.isSurvey || o.surveyLocation !== comarcaName) return false;
+        if (o.title !== title) return false;
+        return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, 'Semanal');
+      });
+    };
+
+    // Calculate pending counts per comarca
+    const comarcaStats: Record<string, number> = {};
+
+    existingComarcas.forEach((comarcaName) => {
+      let pendingForComarca = 0;
+
+      for (const t of targetTemplates) {
+        if (t.type === 'survey') {
+          if (row.sector !== 'all') {
+            const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
+            if (tSector !== row.sector.toLowerCase().trim()) continue;
+          }
+          const already = checkSurveyAlreadyExists(comarcaName, t.name, row.startDate);
+          if (!already) {
+            pendingForComarca++;
+          }
+        } else if (t.type === 'preventive') {
+          const matchingAssets = assets.filter((a) => {
+            if (getAssetComarcaClean(a).toLowerCase() !== comarcaName.toLowerCase()) return false;
+            if (row.sector !== 'all' && a.sector && a.sector.toLowerCase().trim() !== row.sector.toLowerCase().trim()) return false;
+            return isAssetCompatibleWithTemplate(a, t);
+          });
+
+          const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
+          for (const asset of matchingAssets) {
+            const commonPeriodicities = (asset.periodicities || []).filter((ap) =>
+              tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
+            );
+            for (const p of commonPeriodicities) {
+              const already = checkPreventiveAlreadyExists(asset, p, row.startDate);
+              if (!already) {
+                pendingForComarca++;
+              }
+            }
+          }
+        }
+      }
+
+      // ONLY keep comarcas that have > 0 pending items! Completely hide comarcas with 0!
+      if (pendingForComarca > 0) {
+        comarcaStats[comarcaName] = pendingForComarca;
+      }
+    });
+
+    const eligibleComarcas = Object.entries(comarcaStats)
+      .map(([comarca, pendingCount]) => ({
+        comarca,
+        pendingCount
+      }))
+      .sort((a, b) => a.comarca.localeCompare(b.comarca));
+
+    const totalComarcaPending = eligibleComarcas.reduce((acc, curr) => acc + curr.pendingCount, 0);
+
+    // Calculate pending counts per sector / gerência
+    const sectorStats: Record<string, number> = {};
+
+    for (const t of targetTemplates) {
+      if (t.type === 'survey') {
+        const sectorName = t.targetSectorOrType || 'GMC';
+        const targetComarcas = existingComarcas.filter((c) => {
+          if (row.comarca !== 'all' && c.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) return false;
+          return true;
+        });
+        for (const c of targetComarcas) {
+          const already = checkSurveyAlreadyExists(c, t.name, row.startDate);
+          if (!already) {
+            sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
+          }
+        }
+      } else if (t.type === 'preventive') {
+        const matchingAssets = assets.filter((a) => {
+          if (row.comarca !== 'all' && getAssetComarcaClean(a).toLowerCase() !== row.comarca.toLowerCase().trim()) return false;
+          return isAssetCompatibleWithTemplate(a, t);
+        });
+
+        const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
+        for (const asset of matchingAssets) {
+          const sectorName = asset.sector || t.targetSectorOrType || 'GMMR';
+          const commonPeriodicities = (asset.periodicities || []).filter((ap) =>
+            tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
+          );
+          for (const p of commonPeriodicities) {
+            const already = checkPreventiveAlreadyExists(asset, p, row.startDate);
+            if (!already) {
+              sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
+            }
+          }
+        }
+      }
+    }
+
+    const eligibleSectors = Object.entries(sectorStats)
+      .map(([sector, pendingCount]) => ({
+        sector,
+        pendingCount
+      }))
+      .sort((a, b) => a.sector.localeCompare(b.sector));
+
+    const totalSectorPending = eligibleSectors.reduce((acc, curr) => acc + curr.pendingCount, 0);
+
+    return {
+      eligibleComarcas,
+      totalComarcaPending,
+      eligibleSectors,
+      totalSectorPending
+    };
+  };
+
   // FRONTEND SIMULATOR / DRY-RUN CALCULATOR
   // Renders a preview list of what would be prepared without mutating the DB
   const calculateDryRunSimulation = () => {
@@ -812,11 +1092,16 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     let idCounter = 1;
 
     for (const row of filterRows) {
+      if (row.comarca === 'none' || row.sector === 'none') continue;
+
       // Filter templates to generate
       const targetTemplates = templates.filter((t) => {
         if (row.templateId !== 'all' && t.id !== row.templateId) return false;
         return true;
       });
+
+      const scopeInfo = getRowScopeInfo(row);
+      const eligibleComarcasSet = new Set(scopeInfo.eligibleComarcas.map((c) => c.comarca.toLowerCase().trim()));
 
       for (const t of targetTemplates) {
         // 1. SURVEY / VISTORIA TEMPLATE (Semanal - sem vínculo com ativo, única por comarca)
@@ -827,8 +1112,10 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
           }
 
           const targetComarcas = existingComarcas.filter((comarca) => {
-            if (row.comarca !== 'all' && comarca.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) return false;
-            return true;
+            const cLower = comarca.toLowerCase().trim();
+            if (row.comarca !== 'all' && cLower !== row.comarca.toLowerCase().trim()) return false;
+            // Only include eligible comarcas with pending items
+            return eligibleComarcasSet.has(cLower);
           });
 
           for (const comarca of targetComarcas) {
@@ -869,20 +1156,14 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         if (t.type === 'preventive') {
           // Find matching assets across the set comarca and sector filter
           const matchingAssets = assets.filter((asset) => {
-            const assetComarca = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location);
-            if (row.comarca !== 'all' && assetComarca.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) return false;
+            const assetComarca = getAssetComarcaClean(asset);
+            const cLower = assetComarca.toLowerCase().trim();
+            if (row.comarca !== 'all' && cLower !== row.comarca.toLowerCase().trim()) return false;
+            if (row.comarca === 'all' && !eligibleComarcasSet.has(cLower)) return false;
 
             if (row.sector !== 'all' && asset.sector && asset.sector.toLowerCase().trim() !== row.sector.toLowerCase().trim()) return false;
 
-            const tAssetType = (t.targetAssetType || '').toLowerCase().trim();
-            const assetTipoSpec = (asset.specs?.TIPO || asset.specs?.tipo || '').toLowerCase().trim();
-            const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
-            const assetSector = (asset.sector || '').toLowerCase().trim();
-
-            if (tAssetType && assetTipoSpec) {
-              return assetTipoSpec.includes(tAssetType) || tAssetType.includes(assetTipoSpec);
-            }
-            return assetSector === tSector;
+            return isAssetCompatibleWithTemplate(asset, t);
           });
 
           // Determine periodicities in template to iterate
@@ -923,7 +1204,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                   periodicity: periodicity,
                   type: 'preventive',
                   management: asset.sector || t.targetSectorOrType || 'Refrigeração',
-                  comarca: asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral',
+                  comarca: getAssetComarcaClean(asset) || 'Geral',
                   alreadyExists: alreadyExists
                 });
 
@@ -1147,9 +1428,22 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       >
                         <div className="flex justify-between items-start gap-2">
                           <h3 className="text-xs font-black text-slate-900 leading-snug">{tmp.name}</h3>
-                          <span className={`text-[8px] px-1.5 py-0.5 font-bold rounded-full select-none shrink-0 ${tmp.type === 'preventive' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                            {tmp.type === 'preventive' ? 'PREVENTIVA' : 'VISTORIA'}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`text-[8px] px-1.5 py-0.5 font-bold rounded-full select-none ${tmp.type === 'preventive' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                              {tmp.type === 'preventive' ? 'PREVENTIVA' : 'VISTORIA'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTemplateToDeleteId(tmp.id);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                              title="Excluir este modelo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500 font-bold flex-wrap">
@@ -1413,6 +1707,118 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                           </span>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-view: Official PDF Document & Pin Mapping Section */}
+                <div className="px-6 pt-6 pb-2">
+                  <input
+                    ref={directPdfInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUploadPdfDirectly(file);
+                      e.target.value = '';
+                    }}
+                  />
+
+                  <div className="bg-slate-900 border border-slate-800/90 rounded-2xl p-5 text-white shadow-xl shadow-slate-950/20">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                      
+                      {/* Left info column */}
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-12 h-12 bg-blue-500/10 border border-blue-400/20 text-blue-400 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
+                          <FileCheck className="w-6 h-6" />
+                        </div>
+
+                        <div className="space-y-1.5 min-w-0 text-left">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-100">
+                              Documento PDF Oficial & Mapeamento de Respostas
+                            </h3>
+                            {selectedTemplate.pdfTemplate?.pdfBase64 ? (
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                PDF Vinculado
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-slate-800 text-slate-400 px-2.5 py-0.5 rounded-full font-bold border border-slate-700">
+                                Sem PDF Base
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="text-[11px] text-slate-300 flex flex-wrap items-center gap-2">
+                            {selectedTemplate.pdfTemplate?.pdfBase64 ? (
+                              <>
+                                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-slate-200 bg-slate-800/90 px-2.5 py-0.5 rounded-md border border-slate-700 truncate max-w-[280px]">
+                                  <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                  <span className="truncate">{selectedTemplate.pdfTemplate.pdfName || 'Modelo_Oficial.pdf'}</span>
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-blue-300 font-bold">
+                                  {selectedTemplate.pdfTemplate.pins?.length || 0} {selectedTemplate.pdfTemplate.pins?.length === 1 ? 'área mapeada' : 'áreas mapeadas'}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 leading-relaxed">
+                                Importe o formulário ou laudo em PDF para desenhar as caixas onde as respostas serão impressas.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right action button bar with uniform height and spacing */}
+                      <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
+                        {selectedTemplate.pdfTemplate?.pdfBase64 ? (
+                          <>
+                            {/* Primary Button */}
+                            <button
+                              type="button"
+                              onClick={() => setShowPdfMapperModal(true)}
+                              className="h-10 px-4 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              <Crosshair className="w-4 h-4 text-blue-200" />
+                              <span>Mapear Áreas no PDF</span>
+                            </button>
+
+                            {/* Secondary Button */}
+                            <button
+                              type="button"
+                              onClick={() => directPdfInputRef.current?.click()}
+                              className="h-10 px-3.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white border border-slate-700 font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap"
+                              title="Substituir arquivo PDF deste modelo"
+                            >
+                              <Upload className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Trocar PDF</span>
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={handleRemovePdfFromSelected}
+                              className="h-10 w-10 flex items-center justify-center bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500/40 rounded-xl transition-all cursor-pointer shrink-0 active:scale-95"
+                              title="Remover PDF deste modelo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => directPdfInputRef.current?.click()}
+                            className="h-10 px-5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
+                          >
+                            <Upload className="w-4 h-4" />
+                            <span>Importar PDF & Mapear Áreas</span>
+                          </button>
+                        )}
+                      </div>
+
                     </div>
                   </div>
                 </div>
@@ -1732,97 +2138,152 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                           Regra de Filtro Repetida Detectada (Conflito de Lote)
                         </div>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-1 text-left">
-                        
-                        {/* Modelo de Checklist Filter */}
-                        <div>
-                          <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Filtro #{index + 1} - Modelo
-                          </label>
-                          <select
-                            value={row.templateId}
-                            onChange={(e) => updateFilterRow(row.id, 'templateId', e.target.value)}
-                            className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
-                          >
-                            <option value="all">
-                              {row.sector === 'all' 
-                                ? `Todos os Modelos (${templates.length})` 
-                                : `Filtrados p/ Gerência (${filteredTemplatesForSelect.length})`
-                              }
-                            </option>
-                            {filteredTemplatesForSelect.map(t => (
-                              <option key={t.id} value={t.id}>
-                                [{t.type === 'preventive' ? 'PREV' : 'VIST'}] {t.name} {t.targetSectorOrType ? `(${t.targetSectorOrType})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      {(() => {
+                        const scopeInfo = getRowScopeInfo(row);
+                        const isComarcaInScope = row.comarca === 'all' || scopeInfo.eligibleComarcas.some((c) => c.comarca.toLowerCase().trim() === row.comarca.toLowerCase().trim());
+                        const selectedComarcaValue = isComarcaInScope ? row.comarca : (scopeInfo.eligibleComarcas.length > 0 ? 'all' : 'none');
 
-                      {/* Comarca Filter */}
-                      <div>
-                        <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Comarca
-                        </label>
-                        <select
-                          value={row.comarca}
-                          onChange={(e) => updateFilterRow(row.id, 'comarca', e.target.value)}
-                          className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
-                        >
-                          <option value="all">Todas as Comarcas ({existingComarcas.length})</option>
-                          {existingComarcas.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      </div>
+                        const isSectorInScope = row.sector === 'all' || scopeInfo.eligibleSectors.some((s) => s.sector.toLowerCase().trim() === row.sector.toLowerCase().trim());
+                        const selectedSectorValue = isSectorInScope ? row.sector : (scopeInfo.eligibleSectors.length > 0 ? 'all' : 'none');
 
-                      {/* Operational Sector Filter */}
-                      <div>
-                        <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Gerência / Setor Destinatário
-                        </label>
-                        <select
-                          value={row.sector}
-                          onChange={(e) => updateFilterRow(row.id, 'sector', e.target.value)}
-                          className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
-                        >
-                          <option value="all">Todas as Gerências ({managementsList.length})</option>
-                          {managementsList.map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-1 text-left">
+                            
+                            {/* Modelo de Checklist Filter */}
+                            <div>
+                              <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                Filtro #{index + 1} - Modelo
+                              </label>
+                              <select
+                                value={row.templateId}
+                                onChange={(e) => updateFilterRow(row.id, 'templateId', e.target.value)}
+                                className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors"
+                              >
+                                <option value="all">
+                                  {row.sector === 'all' 
+                                    ? `Todos os Modelos (${templates.length})` 
+                                    : `Filtrados p/ Gerência (${filteredTemplatesForSelect.length})`
+                                  }
+                                </option>
+                                {filteredTemplatesForSelect.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    [{t.type === 'preventive' ? 'PREV' : 'VIST'}] {t.name} {t.targetSectorOrType ? `(${t.targetSectorOrType})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
 
-                      {/* Specific Start Date */}
-                      <div>
-                        <label className="block text-[9px] font-black text-rose-500 uppercase mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                          Início
-                        </label>
-                        <input
-                          type="date"
-                          value={row.startDate}
-                          onChange={(e) => updateFilterRow(row.id, 'startDate', e.target.value)}
-                          className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 transition-colors"
-                        />
-                      </div>
+                            {/* Comarca Filter - DYNAMIC & ONLY SHOWS ELIGIBLE COMARCAS */}
+                            <div>
+                              <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  Comarca
+                                </span>
+                                {scopeInfo.eligibleComarcas.length > 0 ? (
+                                  <span className="text-[8.5px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    {scopeInfo.eligibleComarcas.length} aptas ({scopeInfo.totalComarcaPending})
+                                  </span>
+                                ) : (
+                                  <span className="text-[8.5px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    0 aptas
+                                  </span>
+                                )}
+                              </label>
+                              <select
+                                value={selectedComarcaValue}
+                                onChange={(e) => updateFilterRow(row.id, 'comarca', e.target.value)}
+                                disabled={scopeInfo.eligibleComarcas.length === 0}
+                                className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {scopeInfo.eligibleComarcas.length === 0 ? (
+                                  <option value="none">Nenhuma comarca com preventivas pendentes</option>
+                                ) : (
+                                  <>
+                                    <option value="all">
+                                      Todas as Comarcas Aptas ({scopeInfo.totalComarcaPending} preventivas a gerar)
+                                    </option>
+                                    {scopeInfo.eligibleComarcas.map((c) => (
+                                      <option key={c.comarca} value={c.comarca}>
+                                        {c.comarca} ({c.pendingCount} {c.pendingCount === 1 ? 'preventiva' : 'preventivas'})
+                                      </option>
+                                    ))}
+                                  </>
+                                )}
+                              </select>
+                            </div>
 
-                      {/* Specific End Date */}
-                      <div>
-                        <label className="block text-[9px] font-black text-rose-500 uppercase mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                          Limite de Corte
-                        </label>
-                        <input
-                          type="date"
-                          value={row.endDate}
-                          onChange={(e) => updateFilterRow(row.id, 'endDate', e.target.value)}
-                          className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 transition-colors"
-                        />
-                      </div>
-                    </div>
+                            {/* Operational Sector Filter - DYNAMIC */}
+                            <div>
+                              <label className="block text-[9px] font-black text-[#0b1c30] uppercase mb-1 flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  Gerência / Setor
+                                </span>
+                                {scopeInfo.eligibleSectors.length > 0 ? (
+                                  <span className="text-[8.5px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                    {scopeInfo.eligibleSectors.length} aptas
+                                  </span>
+                                ) : (
+                                  <span className="text-[8.5px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    0 aptas
+                                  </span>
+                                )}
+                              </label>
+                              <select
+                                value={selectedSectorValue}
+                                onChange={(e) => updateFilterRow(row.id, 'sector', e.target.value)}
+                                disabled={scopeInfo.eligibleSectors.length === 0}
+                                className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-slate-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {scopeInfo.eligibleSectors.length === 0 ? (
+                                  <option value="none">Nenhuma gerência vinculada pendente</option>
+                                ) : (
+                                  <>
+                                    <option value="all">
+                                      Todas as Gerências Aptas ({scopeInfo.totalSectorPending} preventivas)
+                                    </option>
+                                    {scopeInfo.eligibleSectors.map((s) => (
+                                      <option key={s.sector} value={s.sector}>
+                                        {s.sector} ({s.pendingCount} {s.pendingCount === 1 ? 'preventiva' : 'preventivas'})
+                                      </option>
+                                    ))}
+                                  </>
+                                )}
+                              </select>
+                            </div>
+
+                            {/* Specific Start Date */}
+                            <div>
+                              <label className="block text-[9px] font-black text-rose-500 uppercase mb-1 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                Início
+                              </label>
+                              <input
+                                type="date"
+                                value={row.startDate}
+                                onChange={(e) => updateFilterRow(row.id, 'startDate', e.target.value)}
+                                className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 transition-colors"
+                              />
+                            </div>
+
+                            {/* Specific End Date */}
+                            <div>
+                              <label className="block text-[9px] font-black text-rose-500 uppercase mb-1 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                Limite de Corte
+                              </label>
+                              <input
+                                type="date"
+                                value={row.endDate}
+                                onChange={(e) => updateFilterRow(row.id, 'endDate', e.target.value)}
+                                className="w-full text-xs font-extrabold h-[38px] px-3 bg-slate-50 hover:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 transition-colors"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                     {/* Actions for this row */}
                     <div className="flex justify-end gap-1 shrink-0 md:self-end">
@@ -1875,7 +2336,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                   hasDuplicateRuleError 
                     ? 'bg-rose-50 border-rose-200 ring-4 ring-rose-500/10' 
                     : countNew === 0
-                      ? 'bg-amber-50 border-amber-200 ring-4 ring-amber-500/5'
+                      ? countExists > 0 ? 'bg-amber-50 border-amber-200 ring-4 ring-amber-500/5' : 'bg-slate-50 border-slate-200'
                       : 'bg-emerald-50 border-emerald-100'
                 }`}>
                   <div className="space-y-1 w-full md:w-auto text-left flex-1">
@@ -1886,10 +2347,17 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                           <span className="font-extrabold text-xs text-rose-900 uppercase tracking-wider">Aviso de Regra Redundante ou Duplicada</span>
                         </>
                       ) : countNew === 0 ? (
-                        <>
-                          <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0" />
-                          <span className="font-extrabold text-xs text-amber-950 uppercase tracking-wider">Cronograma Totalmente Preenchido</span>
-                        </>
+                        countExists > 0 ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0" />
+                            <span className="font-extrabold text-xs text-amber-950 uppercase tracking-wider">Cronograma Totalmente Preenchido</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-5 h-5 text-slate-500 shrink-0" />
+                            <span className="font-extrabold text-xs text-slate-700 uppercase tracking-wider">Nenhuma Atividade Compatível Pendente</span>
+                          </>
+                        )
                       ) : (
                         <>
                           <Sparkles className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -1914,10 +2382,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       </div>
                     ) : (
                       <div className="space-y-1">
-                        <p className="text-[11px] text-slate-600 leading-normal max-w-2xl">
-                          Análise de cobertura para {assets.length} ativos e {templates.length} modelos de conformidade:
-                        </p>
-                        <div className="flex flex-wrap gap-2 pt-1">
+                        <div className="flex flex-wrap gap-2 pt-0.5">
                           <span className="text-[10px] bg-emerald-600 text-white font-black px-2.5 py-1 rounded-md shadow-3xs uppercase tracking-wider">
                             🆕 {countNew} Novas Programações a Agendar
                           </span>
@@ -1927,9 +2392,14 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                             </span>
                           )}
                         </div>
-                        {countNew === 0 && (
+                        {countNew === 0 && countExists > 0 && (
                           <p className="text-[10.5px] text-amber-800 font-extrabold pt-1">
                             ⚠️ Bloqueio Preventivo: Todas as programações deste lote já existem no banco de dados para os respectivos períodos de recorrência.
+                          </p>
+                        )}
+                        {countNew === 0 && countExists === 0 && (
+                          <p className="text-[10.5px] text-slate-600 font-medium pt-1">
+                            ℹ️ Não há ativos compatíveis com este modelo ou todas as programações já foram concluídas para o período selecionado.
                           </p>
                         )}
                       </div>
@@ -1960,7 +2430,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                       : hasDuplicateRuleError 
                         ? '🚫 BLOQUEADO: REMOVA DUPLICADOS' 
                         : countNew === 0
-                          ? '✔️ CRONOGRAMA EM DIA'
+                          ? (countExists > 0 ? '✔️ CRONOGRAMA EM DIA' : 'SEM ATIVIDADES PENDENTES')
                           : 'GERAR CRONOGRAMA EM LOTE'
                     }
                   </button>
@@ -2277,6 +2747,59 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                 )}
               </div>
 
+              {/* IMPORT PDF FOR PREVENTIVE TEMPLATE */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-[#3525cd] uppercase mb-1">
+                  Importar Documento PDF Oficial (Opcional)
+                </label>
+                <div className="border border-dashed border-slate-300 rounded-xl p-3 bg-slate-50 hover:bg-slate-100/70 transition-colors">
+                  {newTemplatePdfName ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                        <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span className="truncate max-w-[240px] font-mono">{newTemplatePdfName}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTemplatePdfBase64(undefined);
+                          setNewTemplatePdfName(undefined);
+                          setNewTemplatePdfSize(undefined);
+                        }}
+                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-2 text-xs font-bold text-slate-600 cursor-pointer py-1.5">
+                      <Upload className="w-4 h-4 text-blue-600" />
+                      <span>Selecionar PDF Base para Mapeamento de Respostas (.pdf)</span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f && f.type === 'application/pdf') {
+                            const reader = new FileReader();
+                            reader.onload = (re) => {
+                              setNewTemplatePdfBase64(re.target?.result as string);
+                              setNewTemplatePdfName(f.name);
+                              setNewTemplatePdfSize(f.size);
+                            };
+                            reader.readAsDataURL(f);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+                <span className="text-[8px] text-slate-400 mt-1 block">
+                  Permite mapear em forma de pinça onde as respostas do checklist aparecerão impressas no formulário.
+                </span>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1">
                   Perguntas Iniciais do Checklist (Uma por linha)*
@@ -2309,6 +2832,15 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             </form>
           </div>
         </div>
+      )}
+
+      {/* PDF TEMPLATE MAPPER MODAL */}
+      {showPdfMapperModal && selectedTemplate && (
+        <PdfTemplateMapper
+          template={selectedTemplate}
+          onSaveConfig={handleSavePdfMapping}
+          onClose={() => setShowPdfMapperModal(false)}
+        />
       )}
 
       {/* CUSTOM DELETE CONFIRMATION MODAL */}

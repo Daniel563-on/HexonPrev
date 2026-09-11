@@ -27,8 +27,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import QRCode from 'qrcode';
 import CameraQrScanner from './CameraQrScanner';
+import { AssetQrCode } from './AssetQrCode';
+import { downloadAssetQrCode, printAssetTag } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management } from '../types';
 import { dbGetAssets, dbGetAssetHistory, dbSaveAsset, dbSaveAssetsBulk, dbAutoGeneratePreventiveActivities, dbDeleteAsset, dbDeleteAssetsBySector, dbGetManagements } from '../db/firebase';
 
@@ -316,8 +317,7 @@ export default function AssetsView({
         specs: updatedSpecs,
         createdAt: selectedAsset?.createdAt || nowString,
         updatedAt: nowString,
-        periodicities: editingAssetPeriodicities,
-        qrCode: selectedAsset?.qrCode
+        periodicities: editingAssetPeriodicities
       };
 
       await dbSaveAsset(updatedAsset);
@@ -362,14 +362,6 @@ export default function AssetsView({
     }
 
     const uniqueId = `as_${newAssetSector.toLowerCase()}_${Date.now().toString().slice(-4)}`;
-    
-    // Generate QR Code offline using the imported qrcode library
-    let qrCodeBase64 = '';
-    try {
-      qrCodeBase64 = await QRCode.toDataURL(`HEXON_PREVENTIVA_ASSET_ID_${uniqueId}`);
-    } catch (qrErr) {
-      console.warn('Falha ao gerar QR Code base64:', qrErr);
-    }
 
     const statusVal = dynamicFormValues['STATUS'] || 'Operando';
     const acqDateVal = dynamicFormValues['DATA DE AQUISIÇÃO'] || new Date().toISOString().split('T')[0];
@@ -407,8 +399,7 @@ export default function AssetsView({
       status: statusVal as any,
       specs: manualSpecs,
       createdAt: new Date().toISOString(),
-      periodicities: newAssetPeriodicities,
-      qrCode: qrCodeBase64 || undefined
+      periodicities: newAssetPeriodicities
     };
 
     try {
@@ -714,14 +705,6 @@ export default function AssetsView({
           // Generate ID based on selected target sector for a new asset
           const formattedSectorName = importTargetSector.toLowerCase().replace('/', '_');
           const uniqueId = `as_${formattedSectorName}_${Date.now().toString().slice(-4)}_${Math.random().toString(36).substring(2, 6)}`;
-          
-          // Generate QR code base64 completely offline
-          let qrCodeB64 = '';
-          try {
-            qrCodeB64 = await QRCode.toDataURL(`HEXON_PREVENTIVA_ASSET_ID_${uniqueId}`);
-          } catch (e) {
-            console.warn('QR code generation failed on import row:', rawCode);
-          }
 
           // Prepare specs mapping standard properties as well as user specific fields for total consistency
           const assetSpecs: any = {
@@ -753,8 +736,7 @@ export default function AssetsView({
             status: rawStatus,
             specs: assetSpecs,
             createdAt: nowString,
-            periodicities: pArray,
-            qrCode: qrCodeB64 || undefined
+            periodicities: pArray
           };
 
           parsedAssets.push(newAsset);
@@ -1174,12 +1156,12 @@ export default function AssetsView({
                 </div>
 
                 {/* QR Code Identification Block */}
-                {/* Every asset must possess a QR code for quick access to history and specs */}
+                {/* Dynamically generated on-the-fly: ultra-lightweight and instant */}
                 <div className="w-full md:w-auto p-4 border border-indigo-100 bg-indigo-50/20 rounded-xl flex flex-col items-center justify-center shrink-0 text-center gap-2">
                   <div className="bg-white p-2.5 rounded-lg shadow-sm border border-indigo-100 relative group cursor-pointer" title="Clique para simular leitura QR rápido" onClick={() => triggerQuickScan(selectedAsset)}>
-                    <img
-                      src={selectedAsset.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=HEXON_PREVENTIVA_ASSET_ID_${selectedAsset.id}`}
-                      alt="Asset QR Code"
+                    <AssetQrCode
+                      assetId={selectedAsset.id}
+                      size={112}
                       className="w-28 h-28 mix-blend-multiply"
                     />
                     <div className="absolute inset-0 bg-[#3525cd]/80 hover:opacity-100 opacity-0 flex flex-col items-center justify-center text-white text-[10px] font-bold rounded-lg transition-all gap-1 text-center">
@@ -1199,49 +1181,19 @@ export default function AssetsView({
 
                   {/* Actions to download or print tag */}
                   <div className="flex gap-1.5 mt-1.5 w-full">
-                    <a
-                      href={selectedAsset.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=HEXON_PREVENTIVA_ASSET_ID_${selectedAsset.id}`}
-                      download={`qrcode_${selectedAsset.code}.png`}
+                    <button
+                      type="button"
+                      onClick={() => downloadAssetQrCode(selectedAsset.code, selectedAsset.id)}
                       className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-50 border border-gray-200 rounded-lg text-[9px] font-black tracking-tight text-gray-700 flex items-center justify-center gap-1 transition-colors cursor-pointer text-center"
-                      title="Download da Imagem do QR Code"
+                      title="Download da Imagem do QR Code em Alta Resolução"
                     >
                       <Download className="w-3 h-3 text-gray-500" />
                       BAIXAR
-                    </a>
+                    </button>
                     
                     <button
-                      onClick={() => {
-                        const win = window.open();
-                        if (win) {
-                          win.document.write(`
-                            <html>
-                              <head>
-                                <title>Plaqueta de Ativo - ${selectedAsset.code}</title>
-                                <style>
-                                  body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 40px; color: #0f172a; }
-                                  .card { border: 2.5px solid #0f172a; padding: 24px; border-radius: 12px; max-width: 280px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-                                  h1 { margin: 10px 0 4px 0; font-size: 18px; font-weight: 800; letter-spacing: -0.025em; }
-                                  p { margin: 0 0 16px 0; font-size: 11px; color: #475569; font-weight: bold; text-transform: uppercase; }
-                                  .code { font-family: monospace; font-size: 13px; font-weight: bold; background: #e2e8f0; padding: 4px 8px; border-radius: 4px; color: #3525cd; display: inline-block; }
-                                  .logo { font-size: 9px; font-weight: 900; color: #64748b; letter-spacing: 0.12em; margin-bottom: 18px; }
-                                  .qr { width: 170px; height: 170px; margin: 0 auto 12px auto; display: block; }
-                                </style>
-                              </head>
-                              <body>
-                                <div class="card">
-                                  <div class="logo">HEXON PREVENTIVA</div>
-                                  <img class="qr" src="${selectedAsset.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=HEXON_PREVENTIVA_ASSET_ID_${selectedAsset.id}`}" />
-                                  <div class="code">${selectedAsset.code}</div>
-                                  <h1>${selectedAsset.name}</h1>
-                                  <p>${selectedAsset.sector} &bull; ${selectedAsset.location.split(' - ')[0]}</p>
-                                </div>
-                                <script>window.onload = function() { window.print(); }</script>
-                              </body>
-                            </html>
-                          `);
-                          win.document.close();
-                        }
-                      }}
+                      type="button"
+                      onClick={() => printAssetTag(selectedAsset)}
                       className="py-1 px-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-[9px] font-black tracking-tight text-[#3525cd] flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       title="Imprimir Plaqueta de Ativo"
                     >

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Bell, Moon, Sun, LogOut, Menu, Type, RefreshCw } from 'lucide-react';
-import { signOutHexon, getDatabaseMode } from '../db/firebase';
+import { createPortal } from 'react-dom';
+import { Bell, Moon, Sun, LogOut, Menu, Type, Lock } from 'lucide-react';
+import { signOutHexon } from '../db/firebase';
 import { HexonUser, ServiceOrder } from '../types';
 import AccessibilityPanel from './AccessibilityPanel';
+import ChangePasswordModal from './ChangePasswordModal';
 
 interface NavbarProps {
   tabTitle: string;
@@ -19,6 +21,7 @@ interface NavbarProps {
   setDaltonism: (val: string) => void;
   currentTab: string;
   orders: ServiceOrder[];
+  onUpdateUserProfile?: (user: HexonUser) => void;
 }
 
 export default function Navbar({ 
@@ -35,32 +38,11 @@ export default function Navbar({
   daltonism,
   setDaltonism,
   currentTab,
-  orders
+  orders,
+  onUpdateUserProfile
 }: NavbarProps) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
-
-  const handleManualSync = async () => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    setSyncStatus('syncing');
-    try {
-      const { forceRefetchAllData } = await import('../db/firebase');
-      await forceRefetchAllData();
-      setSyncStatus('success');
-      setTimeout(() => {
-        window.location.reload();
-      }, 1600);
-    } catch (err) {
-      console.error('Failed to sync manually:', err);
-      setSyncStatus('error');
-      setTimeout(() => {
-        setIsSyncing(false);
-        setSyncStatus('idle');
-      }, 3000);
-    }
-  };
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   // Get initials for profile picture
   const getInitials = (name: string) => {
@@ -74,11 +56,10 @@ export default function Navbar({
 
   const displayName = userProfile ? userProfile.name : 'Colaborador';
   const displayCargo = userProfile ? userProfile.cargo : 'Carregando...';
-  const displayPerfil = userProfile ? userProfile.perfil : 'Acesso Restrito';
   const displayInitials = getInitials(displayName);
 
   return (
-    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#0b1c30]/95 backdrop-blur-md border-b border-gray-200 dark:border-slate-850/80 flex justify-between items-center sticky top-0 z-40 shadow-sm font-sans transition-colors duration-150 print:hidden">
+    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#0A101D]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 flex justify-between items-center sticky top-0 z-40 shadow-xs font-sans transition-colors duration-150 print:hidden">
       {/* Tab Context and Title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {onMenuToggle && (
@@ -90,150 +71,106 @@ export default function Navbar({
             <Menu className="w-5 h-5 animate-pulse" />
           </button>
         )}
-        <span className="text-[10px] font-bold text-gray-400 dark:text-slate-400 uppercase tracking-widest hidden lg:block">
-          CONSOLE OPERACIONAL
-        </span>
-        <div className="h-4 w-[1px] bg-gray-200 dark:bg-slate-700 hidden lg:block"></div>
-        {(() => {
-          const dbMode = getDatabaseMode();
-          return (
-            <button
-              onClick={handleManualSync}
-              disabled={isSyncing}
-              className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 cursor-pointer ${
-                syncStatus === 'success'
-                  ? 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 font-extrabold shadow-sm shadow-emerald-200/50 dark:shadow-none'
-                  : syncStatus === 'error'
-                  ? 'bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400 font-extrabold shadow-sm'
-                  : dbMode.isFirebase
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/40 dark:text-emerald-400 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40'
-                  : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/40 dark:text-amber-400 hover:bg-amber-100/60 dark:hover:bg-amber-950/40'
-              }`}
-              title={
-                syncStatus === 'syncing'
-                  ? "Sincronizando dados com o servidor da nuvem..."
-                  : syncStatus === 'success'
-                  ? "Sincronização concluída!"
-                  : dbMode.isFirebase
-                  ? "Banco de dados sincronizado e em nuvem. Clique para forçar a sincronização e atualização de dados das tabelas."
-                  : "Operando em modo de dados local. Clique para tentar forçar a sincronização com o banco em nuvem."
-              }
-            >
-              <span className="relative flex h-2 w-2">
-                {syncStatus !== 'syncing' && (
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    syncStatus === 'success' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-rose-400' : dbMode.isFirebase ? 'bg-emerald-400' : 'bg-amber-400'
-                  }`}></span>
-                )}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  syncStatus === 'success' ? 'bg-emerald-500' : syncStatus === 'error' ? 'bg-rose-500' : dbMode.isFirebase ? 'bg-emerald-500' : 'bg-amber-500'
-                }`}></span>
-              </span>
-              <span className="hidden xs:inline truncate font-black tracking-wider">
-                {syncStatus === 'syncing'
-                  ? "Sincronizando"
-                  : syncStatus === 'success'
-                  ? "Sincronizado!"
-                  : syncStatus === 'error'
-                  ? "Erro"
-                  : dbMode.isFirebase
-                  ? "Nuvem Ok"
-                  : "Modo Local"}
-              </span>
-              <RefreshCw className={`w-3 h-3 text-current ${isSyncing ? 'animate-spin' : 'hover:scale-110'}`} />
-            </button>
-          );
-        })()}
-        <div className="h-4 w-[1px] bg-gray-200 dark:bg-slate-700 hidden lg:block"></div>
-        <h2 className="text-sm xs:text-base sm:text-lg font-black text-[#0b1c30] dark:text-white truncate pr-1">{tabTitle}</h2>
-        
-        {userProfile && (
-          <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wider rounded border hidden sm:inline-block ${
-            userProfile.perfil === 'Super Administrador'
-              ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border-amber-250/50'
-              : userProfile.perfil === 'Administrador'
-              ? 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-250/50'
-              : 'bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-800'
-          }`}>
-            {displayPerfil}
-          </span>
-        )}
+        <h2 className="text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
       </div>
 
-      {/* Actionable Controls */}
-      <div className="flex items-center gap-2 sm:gap-6">
+      {/* Actionable Controls matching the attached mockup */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* 1. Integrated Accessibility Pill Button and Flyout dropdown */}
+        <AccessibilityPanel
+          fontScale={fontScale}
+          setFontScale={setFontScale}
+          highContrast={highContrast}
+          setHighContrast={setHighContrast}
+          daltonism={daltonism}
+          setDaltonism={setDaltonism}
+          currentTab={currentTab}
+          orders={orders}
+        />
 
-        <div className="flex items-center gap-1.5 sm:gap-3">
+        {/* 2. Dynamic Dark Mode Toggle (rounded box with indigo moon/sun icon) */}
+        <button 
+          onClick={onToggleDarkMode}
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-850 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
+        >
+          {darkMode ? (
+            <Sun className="w-4 h-4 text-amber-500" />
+          ) : (
+            <Moon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          )}
+        </button>
 
+        {/* 3. Divider Line */}
+        <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0"></div>
 
-          {/* Dynamic Dark Mode Toggle */}
-          <button 
-            onClick={onToggleDarkMode}
-            className={`w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800/60 transition-all border hover:scale-105 active:scale-95 cursor-pointer ${
-              darkMode ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'text-gray-600 dark:text-gray-300 border-gray-100 dark:border-slate-800/60'
-            }`}
-            title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
+        {/* 4. User Profile (Avatar Circle on Left + Name in Uppercase on Right) */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div 
+            className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs flex items-center justify-center shrink-0 border border-indigo-200/60 dark:border-indigo-800/50"
+            title={displayName}
           >
-            {darkMode ? <Sun className="w-5 h-5 text-amber-500 rotate-45 hover:rotate-90 transition-transform duration-300" /> : <Moon className="w-5 h-5 -rotate-12 hover:rotate-0 transition-transform duration-300" />}
-          </button>
-
-          {/* Integrated Accessibility Button and Flyout dropdown */}
-          <AccessibilityPanel
-            fontScale={fontScale}
-            setFontScale={setFontScale}
-            highContrast={highContrast}
-            setHighContrast={setHighContrast}
-            daltonism={daltonism}
-            setDaltonism={setDaltonism}
-            currentTab={currentTab}
-            orders={orders}
-          />
-
-          <div className="h-8 w-[1px] bg-gray-200 dark:bg-slate-700 mx-1"></div>
-
-          {/* User Profile Container and Connection Trigger */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800/40 transition-all">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-gray-900 dark:text-slate-100 leading-tight">{displayName}</p>
-                <p className={`text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400`}>{displayCargo || 'Colaborador'}</p>
-              </div>
-              
-              <div className={`w-10 h-10 rounded-full font-black text-sm flex items-center justify-center border shadow-sm ${
-                userProfile?.perfil === 'Super Administrador'
-                  ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/40' 
-                  : userProfile?.perfil === 'Administrador'
-                  ? 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-705 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/40'
-                  : 'bg-slate-100 dark:bg-slate-850 text-slate-705 dark:text-slate-350 border-slate-205 dark:border-slate-800/40'
-              }`}>
-                {displayInitials}
-              </div>
-
-              <button
-                onClick={() => setShowLogoutConfirm(true)}
-                className="ml-1 w-8 h-8 flex items-center justify-center rounded-full hover:bg-rose-50 dark:hover:bg-rose-950/20 text-red-650 dark:text-rose-400 hover:text-red-700 dark:hover:text-rose-250 transition-all cursor-pointer"
-                title="Sair do Console"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
+            {displayInitials}
           </div>
+          <span 
+            className="font-bold text-xs text-slate-800 dark:text-white uppercase tracking-tight truncate max-w-[110px] sm:max-w-[160px] lg:max-w-[220px]"
+            title={displayName}
+          >
+            {displayName}
+          </span>
         </div>
+
+        {/* 5. Cadeado (Lock) Button - Alterar Senha */}
+        <button
+          onClick={() => setShowChangePassword(true)}
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          title="Alterar Senha de Acesso"
+          aria-label="Alterar Senha"
+        >
+          <Lock className="w-4 h-4" />
+        </button>
+
+        {/* 6. Sair (Logout) Button */}
+        <button
+          onClick={() => setShowLogoutConfirm(true)}
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          title="Sair do Console"
+          aria-label="Sair"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+        userProfile={userProfile}
+        onSuccess={(updated) => {
+          if (onUpdateUserProfile) {
+            onUpdateUserProfile(updated);
+          }
+        }}
+      />
 
       {/* Elegant Custom Confirmation Modal (Bypasses iFrame native blocks) */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs font-sans">
-          <div className="bg-white dark:bg-[#0b1c30] p-6 rounded-2xl max-w-sm w-full mx-4 border border-gray-200 dark:border-slate-800 shadow-2xl text-center">
-            <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/30 text-[#ea4335] dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100 dark:border-rose-900/10">
-              <LogOut className="w-6 h-6" />
+      {showLogoutConfirm && typeof document !== 'undefined' && createPortal(
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowLogoutConfirm(false);
+          }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md font-sans p-4 animate-in fade-in duration-200"
+        >
+          <div className="bg-white dark:bg-[#0A101D] p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800/80 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100 dark:border-rose-900/20">
+              <LogOut className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-black text-[#0b1c30] dark:text-white">Confirmar Saída</h3>
-            <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">Deseja realmente sair do sistema?</p>
+            <h3 className="text-base font-extrabold font-sans tracking-tight text-slate-900 dark:text-white">Confirmar Saída</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Deseja realmente sair do sistema?</p>
             <div className="mt-6 flex gap-3 justify-center">
               <button
                 onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-slate-800 rounded-xl text-xs font-bold text-gray-650 dark:text-slate-350 hover:bg-gray-50 dark:hover:bg-slate-850 transition-all cursor-pointer"
+                className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
               >
                 Cancelar
               </button>
@@ -247,13 +184,14 @@ export default function Navbar({
                   }
                   onLogout();
                 }}
-                className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer"
+                className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
               >
                 Sair
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </header>
   );

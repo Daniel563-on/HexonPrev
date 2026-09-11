@@ -10,6 +10,7 @@ interface CameraQrScannerProps {
 export default function CameraQrScanner({ onScanSuccess, onClose }: CameraQrScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
@@ -52,7 +53,7 @@ export default function CameraQrScanner({ onScanSuccess, onClose }: CameraQrScan
         console.error("Erro ao iniciar leitor da câmera QR:", err);
         const msg = err?.message || String(err);
         if (msg.includes("NotAllowedError") || msg.includes("Permission denied")) {
-          setErrorMessage("Permissão de câmera negada! Habilite o acesso nas configurações do seu navegador para continuar.");
+          setErrorMessage("Permissão de câmera negada! Habilite o acesso à câmera quando solicitado pelo navegador.");
         } else if (msg.includes("Requested device not found") || msg.includes("no video input devices")) {
           setErrorMessage("Nenhuma câmera encontrada no seu dispositivo.");
         } else {
@@ -75,7 +76,7 @@ export default function CameraQrScanner({ onScanSuccess, onClose }: CameraQrScan
         });
       }
     };
-  }, [onScanSuccess]);
+  }, [onScanSuccess, retryCount]);
 
   return (
     <div className="space-y-4">
@@ -98,13 +99,25 @@ export default function CameraQrScanner({ onScanSuccess, onClose }: CameraQrScan
             <AlertCircle className="w-9 h-9 text-rose-500 animate-pulse" />
             <span className="text-[11px] font-black text-rose-500 uppercase tracking-wider">Falha de Conexão</span>
             <p className="text-[10px] text-slate-300 leading-relaxed font-semibold max-w-[240px]">{errorMessage}</p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="mt-2 text-[9px] font-extrabold uppercase bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 py-1.5 px-3 rounded-lg text-indigo-300 tracking-wider transition-colors"
-            >
-              Usar Simulador Manual
-            </button>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setRetryCount(c => c + 1);
+                }}
+                className="text-[9px] font-extrabold uppercase bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 py-1.5 px-3 rounded-lg text-white tracking-wider transition-colors"
+              >
+                Tentar Novamente
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-[9px] font-extrabold uppercase bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 py-1.5 px-3 rounded-lg text-indigo-300 tracking-wider transition-colors"
+              >
+                Simulador Manual
+              </button>
+            </div>
           </div>
         )}
 

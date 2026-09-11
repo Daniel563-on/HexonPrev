@@ -25,20 +25,19 @@
 }
 
 /* Dark theme overrides */
-html.dark, html.dark body, html.dark main, html.dark .bg-\[\#f8f9ff\] {
-  background-color: #060d17 !important;
+html.dark, html.dark body, html.dark main, html.dark .bg-\[\#f8f9ff\], html.dark .bg-slate-50 {
+  background-color: #0A101D !important;
   color: #f1f5f9 !important;
 }
 
 html.dark .bg-white,
 html.dark .bg-white\/95,
 html.dark header {
-  background-color: #0d1926/95 !important;
-  background-color: #0d1926 !important;
+  background-color: #0d1527 !important;
 }
 
 html.dark .bg-white\/95 {
-  background-color: rgba(13, 25, 38, 0.95) !important;
+  background-color: rgba(13, 21, 39, 0.95) !important;
 }
 
 html.dark .text-\[\#0b1c30\],

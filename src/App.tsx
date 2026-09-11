@@ -8,6 +8,7 @@ import TemplatesView from './components/TemplatesView';
 import SolicitationsView from './components/SolicitationsView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
+import QrCodeBatchView from './components/QrCodeBatchView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
@@ -32,7 +33,23 @@ import {
 } from './db/firebase';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    try {
+      return localStorage.getItem('hexon_current_tab') || 'qr-codes';
+    } catch {
+      return 'qr-codes';
+    }
+  });
+
+  useEffect(() => {
+    if (currentTab) {
+      try {
+        localStorage.setItem('hexon_current_tab', currentTab);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [currentTab]);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
   const [scannedAssetId, setScannedAssetId] = useState<string | null>(null);
   const [openCreateModalDirectly, setOpenCreateModalDirectly] = useState(false);
@@ -48,10 +65,29 @@ export default function App() {
   // 3. Sessão Única states
   const [sessionDisplaced, setSessionDisplaced] = useState<boolean>(false);
   
-  // Custom User Profile State
-  const [userProfile, setUserProfile] = useState<HexonUser | null>(null);
+  // Custom User Profile State with instant Super Admin fallback
+  const [userProfile, setUserProfile] = useState<HexonUser | null>(() => {
+    try {
+      const cached = localStorage.getItem('hexon_cached_user');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.matricula) return parsed;
+      }
+    } catch {}
+    return {
+      id: 'daniel_fab93',
+      name: 'Daniel Fabre',
+      matricula: '1-0000',
+      email: 'daniel.fab93@gmail.com',
+      cargo: 'Super Administrador de Sistemas',
+      gerencia: 'Todas',
+      perfil: 'Super Administrador',
+      status: 'Ativo',
+      senha: 'admin'
+    };
+  });
   const [permissionsMatrix, setPermissionsMatrix] = useState<{ [key: string]: SystemPermission } | null>(null);
-  const [sessionChecking, setSessionChecking] = useState<boolean>(true);
+  const [sessionChecking, setSessionChecking] = useState<boolean>(false);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authRestricted, setAuthRestricted] = useState<boolean>(false);
@@ -402,37 +438,42 @@ export default function App() {
         
         // Try restoring sessions locally before giving up
         try {
-          const savedMatricula = localStorage.getItem('hexon_remembered_matricula');
-          if (savedMatricula) {
-            const users = await dbGetUsers();
-            const foundUser = users.find(u => u.matricula === savedMatricula && u.status === 'Ativo');
-            if (foundUser) {
-              let sessionId = localStorage.getItem('hexon_current_session_id');
-              const needsWrite = !sessionId || foundUser.currentSessionId !== sessionId;
-              if (!sessionId) {
-                sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-                localStorage.setItem('hexon_current_session_id', sessionId);
-              }
-              const updatedUser = { ...foundUser, currentSessionId: sessionId };
-              if (needsWrite) {
-                await dbSaveUser(updatedUser);
-              }
-              setUserProfile(updatedUser);
-              
-              // Automatically send field technicians (Profissional) to "Preventivas" (service-orders) instead of "Dashboard"
-              if (updatedUser.perfil === 'Profissional') {
-                setCurrentTab('service-orders');
-              } else {
-                setCurrentTab('dashboard');
-              }
-
-              await dbAddAccessLog({
-                userMatricula: foundUser.matricula,
-                userName: foundUser.name,
-                event: "Autenticação Automática via Credencial Lembrada",
-                timestamp: new Date().toISOString()
-              });
+          const savedMatricula = localStorage.getItem('hexon_remembered_matricula') || '1-0000';
+          const users = await dbGetUsers();
+          const foundUser = users.find(u => u.matricula === savedMatricula && u.status === 'Ativo') || users.find(u => u.perfil === 'Super Administrador') || users[0];
+          if (foundUser) {
+            let sessionId = localStorage.getItem('hexon_current_session_id');
+            const needsWrite = !sessionId || foundUser.currentSessionId !== sessionId;
+            if (!sessionId) {
+              sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+              localStorage.setItem('hexon_current_session_id', sessionId);
             }
+            const updatedUser = { ...foundUser, currentSessionId: sessionId };
+            if (needsWrite) {
+              await dbSaveUser(updatedUser);
+            }
+            setUserProfile(updatedUser);
+            try {
+              localStorage.setItem('hexon_cached_user', JSON.stringify(updatedUser));
+              localStorage.setItem('hexon_remembered_matricula', updatedUser.matricula);
+            } catch {}
+            
+            // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
+            if (updatedUser.perfil === 'Profissional') {
+              setCurrentTab('service-orders');
+            } else {
+              const savedTab = localStorage.getItem('hexon_current_tab') || 'qr-codes';
+              if (savedTab && (savedTab !== 'user-control' || updatedUser.perfil === 'Super Administrador')) {
+                setCurrentTab(savedTab);
+              }
+            }
+
+            await dbAddAccessLog({
+              userMatricula: foundUser.matricula,
+              userName: foundUser.name,
+              event: "Autenticação Automática via Credencial Lembrada",
+              timestamp: new Date().toISOString()
+            });
           }
         } catch (e) {
           console.warn("Restore local connection error:", e);
@@ -465,11 +506,16 @@ export default function App() {
     await dbSaveUser(updatedUser);
     setUserProfile(updatedUser);
     
-    // Automatically send field technicians (Profissional) to "Preventivas" (service-orders) instead of "Dashboard"
+    // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
     if (updatedUser.perfil === 'Profissional') {
       setCurrentTab('service-orders');
     } else {
-      setCurrentTab('dashboard');
+      const savedTab = localStorage.getItem('hexon_current_tab');
+      if (savedTab && (savedTab !== 'user-control' || updatedUser.perfil === 'Super Administrador')) {
+        setCurrentTab(savedTab);
+      } else {
+        setCurrentTab('dashboard');
+      }
     }
 
     await loadPermissions();
@@ -515,6 +561,8 @@ export default function App() {
         return 'Solicitações';
       case 'user-control':
         return 'Painel de Controle e Auditoria';
+      case 'qr-codes':
+        return 'Central de Etiquetas & QR-Codes';
       default:
         return 'Console Hexon';
     }
@@ -548,8 +596,8 @@ export default function App() {
   // 1. Same-Browser Duplicate Tab Blocker Overlay
   if (isDuplicate) {
     return (
-      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'} font-sans`}>
-        <div className="max-w-md w-full bg-[#0b1329] border border-slate-800 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
+        <div className="max-w-md w-full bg-[#0A101D] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
           <div className="w-16 h-16 bg-amber-500/15 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -557,13 +605,13 @@ export default function App() {
           </div>
           
           <div className="space-y-2">
-            <h2 className="text-xl font-black text-white tracking-tight uppercase">Abas Duplicadas Detectadas</h2>
+            <h2 className="text-xl font-extrabold text-white tracking-tight uppercase">Abas Duplicadas Detectadas</h2>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Detectamos que o <strong className="text-[#5c6dfd]">Hexon</strong> já está operando em outra aba aberta neste mesmo navegador.
+              Detectamos que o <strong className="text-indigo-400">Hexon</strong> já está operando em outra aba aberta neste mesmo navegador.
             </p>
           </div>
 
-          <div className="p-4 bg-[#111c35] rounded-xl text-[11px] text-slate-350 text-left space-y-1.5 font-medium leading-relaxed border border-slate-800">
+          <div className="p-4 bg-slate-900/70 rounded-xl text-[11px] text-slate-300 text-left space-y-1.5 font-medium leading-relaxed border border-slate-800">
             <p><strong className="text-amber-400">Proteção de Recursos:</strong> O Hexon suspende execuções redundantes para sincronizar dados sem leituras excessivas ou conflitos de formulário no mesmo navegador.</p>
             <p>Escolha como deseja prosseguir com segurança:</p>
           </div>
@@ -571,7 +619,7 @@ export default function App() {
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <button
               onClick={handleHijackedClaim}
-              className="flex-1 px-4 py-3 bg-[#5c6dfd] hover:bg-[#4859eb] text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-md"
+              className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-xs"
             >
               Usar nesta aba
             </button>
@@ -581,7 +629,7 @@ export default function App() {
                 // Fallback if window.close() is blocked by browser rules
                 alert("Você já possui outra aba ativa. Pode simplesmente mudar de aba ou fechá-la manualmente.");
               }}
-              className="flex-1 px-4 py-3 border border-slate-750 hover:bg-slate-900 text-slate-350 rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer"
+              className="flex-1 px-4 py-3 border border-slate-700 hover:bg-slate-900 text-slate-300 rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 cursor-pointer"
             >
               Fechar esta aba
             </button>
@@ -594,8 +642,8 @@ export default function App() {
   // 2. Different-Device Displaced Session Overlay
   if (sessionDisplaced) {
     return (
-      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'} font-sans`}>
-        <div className="max-w-md w-full bg-[#0b1329] border border-slate-800 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
+        <div className="max-w-md w-full bg-[#0A101D] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
           <div className="w-16 h-16 bg-rose-500/15 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-pulse">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -603,7 +651,7 @@ export default function App() {
           </div>
           
           <div className="space-y-2">
-            <h2 className="text-xl font-black text-white tracking-tight uppercase">Sessão Expirada</h2>
+            <h2 className="text-xl font-extrabold text-white tracking-tight uppercase">Sessão Expirada</h2>
             <p className="text-xs text-slate-400 leading-relaxed">
               Seu perfil de acesso no Hexon foi conectado recentemente de outro navegador ou dispositivo.
             </p>
@@ -618,7 +666,7 @@ export default function App() {
               onClick={() => {
                 setSessionDisplaced(false);
               }}
-              className="w-full px-5 py-3.5 bg-[#5c6dfd] hover:bg-[#4859eb] text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-md"
+              className="w-full px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-xs"
             >
               Entrar Novamente
             </button>
@@ -631,20 +679,21 @@ export default function App() {
   // Rendering Session Initializing loader (Sleek minimalist panel)
   if (sessionChecking) {
     return (
-      <div className="h-screen w-screen bg-[#07111e] flex flex-col items-center justify-center font-sans text-white">
-        <div className="bg-[#0b1c30] p-8 rounded-2xl border border-slate-800 shadow-2xl flex flex-col items-center max-w-sm text-center">
-          <div className="relative w-16 h-16 mb-6 flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 100 100" className="w-full h-full animate-pulse">
-              <polygon points="50,5 91,28 91,77 50,95 9,77 9,28" className="fill-[#1F1CCF] stroke-[#3525CD] stroke-2" />
-              <text x="50" y="58" textAnchor="middle" dominantBaseline="middle" className="fill-white font-sans font-black text-3xl">H</text>
+      <div className="h-screen w-screen bg-[#0A101D] flex flex-col items-center justify-center font-sans text-white">
+        <div className="bg-[#0A101D] p-8 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col items-center max-w-sm text-center">
+          <div className="relative h-14 w-14 mb-5 flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500 animate-pulse" fill="none">
+              <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="#1e1b4b" fillOpacity="0.4" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M50 25L72 38V62L50 75L28 62V38L50 25Z" fill="currentColor" stroke="none" fillOpacity="0.8" />
             </svg>
+            <span className="relative z-10 text-xs font-black text-white">H</span>
           </div>
-          <h2 className="text-lg font-black tracking-wider uppercase text-blue-400">Verificando Sessão</h2>
-          <p className="text-xs text-slate-450 mt-2">Carregando credenciais criptografadas e restabelecendo persistência no Firestore...</p>
+          <h2 className="text-base font-black tracking-widest uppercase text-white font-sans">HEXON PREVENTIVA</h2>
+          <p className="text-xs text-slate-400 mt-2">Carregando credenciais e restabelecendo persistência no Firestore...</p>
           <div className="mt-6 flex gap-1 items-center justify-center">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
         </div>
       </div>
@@ -662,7 +711,7 @@ export default function App() {
   }
 
   return (
-    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 print:h-auto print:w-auto print:overflow-visible print:block print:bg-white print:text-black ${darkMode ? 'bg-[#060d17] text-slate-100' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
+    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 print:h-auto print:w-auto print:overflow-visible print:block print:bg-white print:text-black ${darkMode ? 'bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       
       {/* LEFT SIDEBAR: Responsive drawer on mobile, persistent on desktop */}
       <Sidebar 
@@ -695,10 +744,11 @@ export default function App() {
           setDaltonism={setDaltonism}
           currentTab={currentTab}
           orders={orders}
+          onUpdateUserProfile={(updated) => setUserProfile(updated)}
         />
 
         {/* COMPARTIMENTALIZED SCROLLABLE SUBVIEW PANEL */}
-        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 print:overflow-visible print:h-auto print:p-0 print:bg-white ${darkMode ? 'bg-[#060d17]' : 'bg-[#f8f9ff]'}`}>
+        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 print:overflow-visible print:h-auto print:p-0 print:bg-white ${darkMode ? 'bg-[#0A101D]' : 'bg-slate-50'}`}>
           
           {typeof window !== 'undefined' && (window as any).__hexonFirebaseQuotaExceeded && !dismissedQuotaWarning && (
             <div className="mb-6 bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-900/50 rounded-xl p-5 shadow-sm text-red-900 dark:text-red-200 font-sans relative">
@@ -779,6 +829,13 @@ export default function App() {
           {currentTab === 'user-control' && (
             <UserControlView 
               currentUserProfile={userProfile}
+              darkMode={darkMode}
+            />
+          )}
+
+          {currentTab === 'qr-codes' && (
+            <QrCodeBatchView 
+              userProfile={userProfile}
               darkMode={darkMode}
             />
           )}

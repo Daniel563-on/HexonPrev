@@ -202,10 +202,10 @@ export default function AccessibilityPanel({
         <button
           ref={triggerRef}
           onClick={handleToggle}
-          className={`w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800/60 transition-all border hover:scale-105 active:scale-95 cursor-pointer relative ${
+          className={`h-9 px-3 sm:px-3.5 flex items-center gap-2 rounded-2xl sm:rounded-xl border font-bold text-xs tracking-wider transition-all hover:scale-102 active:scale-95 cursor-pointer relative shadow-2xs ${
             isOpen || highContrast || (daltonism && daltonism !== 'none') || fontScale !== 1
-              ? 'bg-[#3525cd]/10 text-[#3525cd] dark:text-[#c3c0ff] border-[#3525cd]/30' 
-              : 'text-gray-600 dark:text-gray-300 border-gray-100 dark:border-slate-800/60'
+              ? 'bg-indigo-100/90 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700' 
+              : 'bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-200/80 dark:border-indigo-800/60 hover:bg-indigo-100/60 dark:hover:bg-indigo-900/40'
           }`}
           aria-haspopup="true"
           aria-expanded={isOpen}
@@ -213,10 +213,13 @@ export default function AccessibilityPanel({
           title="Painel de Acessibilidade Hexon"
           id="accessibility-header-btn"
         >
-          <Accessibility className={`w-5 h-5 ${isOpen ? 'animate-spin-slow' : ''}`} />
+          <Accessibility className={`w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 ${isOpen ? 'animate-spin-slow' : ''}`} />
+          <span className="hidden sm:inline font-extrabold text-[11px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+            ACESSIBILIDADE
+          </span>
           {/* Subtle indicator dot if accessibility is active */}
           {(highContrast || (daltonism && daltonism !== 'none') || fontScale !== 1) && (
-            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-indigo-650 dark:bg-indigo-400 border border-white dark:border-slate-900 rounded-full" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-600 dark:bg-indigo-400 border-2 border-white dark:border-slate-900 rounded-full" />
           )}
         </button>
 
@@ -224,7 +227,7 @@ export default function AccessibilityPanel({
         {isOpen && (
           <div
             ref={panelRef}
-            className="absolute top-12 right-0 w-80 bg-white dark:bg-[#0b1c30] border border-gray-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 overflow-hidden animate-in slide-in-from-top-2 duration-200 text-slate-800 dark:text-slate-100 origin-top-right z-50"
+            className="absolute top-12 right-0 w-80 bg-white dark:bg-[#0A101D] border border-gray-200 dark:border-slate-800/80 rounded-2xl shadow-2xl p-5 overflow-hidden animate-in slide-in-from-top-2 duration-200 text-slate-800 dark:text-slate-100 origin-top-right z-50"
             role="dialog"
             aria-modal="true"
             aria-label="Opções de Acessibilidade"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, 
   Wrench, 
@@ -25,12 +25,15 @@ import {
   Flag,
   QrCode,
   Camera,
-  Trash
+  Trash,
+  Download,
+  FileText
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia } from '../types';
 import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
 import SignatureCanvas from './SignatureCanvas';
 import CameraQrScanner from './CameraQrScanner';
+import { generateFilledPdf } from '../lib/pdfGenerator';
 
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
@@ -3318,11 +3321,54 @@ export default function ServiceOrdersView({
 
               <button 
                 onClick={() => window.print()}
-                className="w-12 h-11 flex items-center justify-center bg-white border border-gray-200 hover:bg-gray-50 rounded-lg text-slate-500 transition-colors cursor-pointer"
-                title="Imprimir Ficha Técnica"
+                className="w-12 h-11 flex items-center justify-center bg-white border border-gray-200 hover:bg-gray-50 rounded-lg text-slate-500 transition-colors cursor-pointer shrink-0"
+                title="Imprimir Ficha Técnica do Sistema"
               >
                 <span className="material-symbols-outlined text-lg">print</span>
               </button>
+
+              {/* DOWNLOAD FILLED MAPPED PDF IF TEMPLATE HAS PDF */}
+              {(() => {
+                const assetObj = assets.find(a => a.id === selectedOrder.assetId);
+                const matchingTpl = templates.find(t => {
+                  if (selectedOrder.templateId && t.id === selectedOrder.templateId) return true;
+                  if (assetObj) {
+                    const type = assetObj.specs?.TIPO || assetObj.specs?.tipo;
+                    if (t.targetAssetType && type && t.targetAssetType.toLowerCase() === type.toLowerCase()) return true;
+                    if (t.targetSectorOrType && assetObj.sector && t.targetSectorOrType.toLowerCase() === assetObj.sector.toLowerCase()) return true;
+                  }
+                  return false;
+                });
+
+                if (!matchingTpl?.pdfTemplate?.pdfBase64) return null;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { blobUrl } = await generateFilledPdf(
+                          matchingTpl.pdfTemplate,
+                          selectedOrder,
+                          assetObj,
+                          matchingTpl
+                        );
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = `Laudo_PDF_${selectedOrder.id}_${matchingTpl.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                        link.click();
+                      } catch (err: any) {
+                        alert(`Erro ao gerar PDF preenchido: ${err?.message || err}`);
+                      }
+                    }}
+                    className="px-3 h-11 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black transition-all shadow-sm cursor-pointer shrink-0"
+                    title="Baixar Documento PDF Oficial Mapeado Preenchido"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline">Baixar PDF Mapeado</span>
+                  </button>
+                );
+              })()}
             </div>
 
             {/* FLOATING SIGNATURE PAD INNER DRAWER POPUP */}

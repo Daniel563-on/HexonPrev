@@ -1423,7 +1423,7 @@ export default function DashboardView({
                   <Tooltip 
                     formatter={(value: any, name: any) => {
                       const total = statusDistributionData.reduce((sum, item) => sum + item.value, 0);
-                      const percentage = total > 0 ? Math.round((Number(value) / total) * 100) : 0;
+                      const percentage = total > 0 ? ((Number(value) / total) * 100).toFixed(1).replace('.0', '') : '0';
                       return [`${value} OS (${percentage}%)`, name];
                     }} 
                     contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '10px', fontSize: '11px', color: '#fff' }} 

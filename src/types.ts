@@ -109,6 +109,53 @@ export interface TemplateChangeLog {
   user: string;
 }
 
+export type PdfPinFieldType = 
+  | 'checklist_status'      // 'Atestado' | 'Não Atestado' | 'Não se Aplica'
+  | 'checklist_status_mark' // 'X', '✓', 'OK', '[X]', '[ ]'
+  | 'checklist_obs'         // Observações preenchidas para o item
+  | 'checklist_val'         // Valor informado (texto/número/data)
+  | 'asset_name'            // Nome do Equipamento
+  | 'asset_code'            // Patrimônio / Código QR
+  | 'asset_sector'          // Setor / Gerência
+  | 'asset_location'        // Comarca / Local
+  | 'asset_specs'           // Fabricante, Modelo, Nº Série, Potência
+  | 'technician'            // Técnico Responsável
+  | 'scheduled_date'        // Data da Ordem de Serviço / Execução
+  | 'os_id'                 // Código / ID da Ordem de Serviço
+  | 'os_title'              // Título da Ordem de Serviço
+  | 'signature'             // Assinatura Digital do Técnico / Cliente
+  | 'signed_by'             // Nome de quem assinou
+  | 'signed_at'             // Data/Hora da assinatura
+  | 'result_status'         // Aprovado / Aprovado com Ressalvas / Não Conforme
+  | 'notes'                 // Observações gerais da OS
+  | 'fixed_text';           // Texto fixo personalizado
+
+export interface PdfMappingPin {
+  id: string;
+  page: number; // 1-indexed (1, 2, 3...)
+  x: number;    // % de 0 a 100 em relação à largura da página
+  y: number;    // % de 0 a 100 em relação à altura da página
+  fieldType: PdfPinFieldType;
+  targetItemId?: string; // ID do ChecklistTemplateItem quando fieldType é checklist_*
+  label?: string; // Título exibido no marcador
+  fontSize?: number; // Tamanho da fonte em pt (padrão: 10)
+  fontColor?: string; // Cor hex (padrão: '#000000')
+  style?: 'text' | 'check_mark' | 'cross_mark' | 'box_checked' | 'badge';
+  fixedText?: string;
+  width?: number; // % de largura recomendada
+  height?: number; // % de altura recomendada
+  align?: 'left' | 'center' | 'right'; // Alinhamento do texto na caixa
+  bold?: boolean; // Negrito
+}
+
+export interface PdfTemplateConfig {
+  pdfBase64?: string;     // Dados base64 do PDF original
+  pdfName?: string;       // Nome do arquivo PDF original
+  pdfSize?: number;       // Tamanho em bytes
+  pageCount?: number;     // Número total de páginas
+  pins: PdfMappingPin[];  // Lista de marcadores/pinças mapeados
+}
+
 export interface MaintenanceTemplate {
   id: string;
   name: string; // e.g., "Preventiva Mensal - Chiller"
@@ -120,6 +167,7 @@ export interface MaintenanceTemplate {
   createdAt: string;
   version?: number;
   history?: TemplateChangeLog[];
+  pdfTemplate?: PdfTemplateConfig;
 }
 
 /**

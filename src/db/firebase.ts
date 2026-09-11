@@ -22,8 +22,10 @@ import {
   limit,
   getDocFromServer,
   writeBatch,
+  deleteField,
   onSnapshot
 } from 'firebase/firestore';
+import { idbGet, idbSet } from '../utils/idbCache';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Asset, ServiceOrder, MaintenanceLog, ChecklistItem, MaintenanceTemplate, HexonUser, Management, Unit, AccessLog, AuditLog, Profile, Permission, SystemPermission, RolePermissions, isSectorInGerencia } from '../types';
 
@@ -391,25 +393,65 @@ export function subscribeToAuth(callback: (user: any) => void) {
   return () => {};
 }
 
+// Clean legacy heavy QR codes from Firestore documents in the background
+async function cleanLegacyAssetQrCodesBackground(assetsWithQr: string[]): Promise<void> {
+  if (!firebaseActive || !dbInstance || assetsWithQr.length === 0) return;
+  try {
+    const batchSize = 100;
+    for (let i = 0; i < assetsWithQr.length; i += batchSize) {
+      const chunk = assetsWithQr.slice(i, i + batchSize);
+      const batch = writeBatch(dbInstance);
+      for (const assetId of chunk) {
+        batch.update(doc(dbInstance, 'assets', assetId), {
+          qrCode: deleteField()
+        });
+      }
+      await batch.commit().catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    console.log(`[Firestore Optimization] Cleaned ${assetsWithQr.length} legacy QR codes from assets in Firestore.`);
+  } catch (e) {
+    console.warn('[Firestore Optimization] Legacy QR cleanup skipped:', e);
+  }
+}
+
 // Get all assets
 export async function dbGetAssets(): Promise<Asset[]> {
   const hasUser = !!(firebaseActive && dbInstance);
-  
-  // Try retrieving from local storage fallback first
-  let localData: Asset[] | null = null;
-  try {
-    const saved = localStorage.getItem('hexon_assets');
-    if (saved) {
-      localData = JSON.parse(saved).filter((item: any) => !isMockOrLegacyId(item.id));
-    }
-  } catch (e) {
-    console.warn('Error reading assets from local storage fallback:', e);
-  }
 
-  // Check if in-memory cache OR local storage cache is valid
+  // 1. Check in-memory cache
   if (cacheAssets !== null && (!hasUser || cacheAssetsFromFirebase)) {
     return [...cacheAssets];
   }
+
+  // 2. Try retrieving from high-capacity IndexedDB cache first
+  let localData: Asset[] | null = null;
+  try {
+    localData = await idbGet<Asset[]>('hexon_assets');
+  } catch (e) {
+    // IndexedDB fallback
+  }
+
+  // 3. Fallback to localStorage
+  if (!localData || localData.length === 0) {
+    try {
+      const saved = localStorage.getItem('hexon_assets');
+      if (saved) {
+        localData = JSON.parse(saved).filter((item: any) => !isMockOrLegacyId(item.id));
+      }
+    } catch (e) {
+      console.warn('Error reading assets from local storage fallback:', e);
+    }
+  }
+
+  // Ensure any cached data has heavy qrCode stripped
+  if (localData && localData.length > 0) {
+    localData = localData.map((a: any) => {
+      if (a.qrCode) delete a.qrCode;
+      return a;
+    });
+  }
+
   if (isCacheValid('assets') && localData && localData.length > 0) {
     cacheAssets = localData;
     cacheAssetsFromFirebase = true;
@@ -426,19 +468,38 @@ export async function dbGetAssets(): Promise<Asset[]> {
       try {
         const snap = await getDocs(collection(dbInstance, path));
         const list: Asset[] = [];
+        const legacyQrIdsToClean: string[] = [];
+
         snap.forEach((docSnap) => {
           if (!isMockOrLegacyId(docSnap.id)) {
-            list.push({ id: docSnap.id, ...docSnap.data() } as Asset);
+            const data = docSnap.data() as any;
+            if (data.qrCode) {
+              legacyQrIdsToClean.push(docSnap.id);
+              delete data.qrCode; // Strip heavy base64 string immediately from memory
+            }
+            list.push({ id: docSnap.id, ...data } as Asset);
           }
         });
+
         cacheAssets = list;
         cacheAssetsFromFirebase = true;
         updateCacheTimestamp('assets');
+
+        // Persist to IndexedDB (supports unlimited items without quota errors)
+        idbSet('hexon_assets', cacheAssets).catch(() => {});
+
+        // Safely update localStorage
         try {
           localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
         } catch (lsErr) {
-          console.warn('LocalStorage limit writing assets:', lsErr);
+          // If 10k items exceed localStorage, IndexedDB already holds the cache safely
         }
+
+        // Asynchronously clean legacy heavy fields from Firestore documents without blocking UI
+        if (legacyQrIdsToClean.length > 0) {
+          cleanLegacyAssetQrCodesBackground(legacyQrIdsToClean).catch(() => {});
+        }
+
         pendingAssetsPromise = null;
         return [...cacheAssets];
       } catch (err: any) {
@@ -449,11 +510,6 @@ export async function dbGetAssets(): Promise<Asset[]> {
 
     cacheAssets = localData || [];
     cacheAssetsFromFirebase = false;
-    try {
-      localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-    } catch (lsErr) {
-      console.warn('LocalStorage limit writing assets fallback:', lsErr);
-    }
     pendingAssetsPromise = null;
     return [...cacheAssets];
   })();
@@ -474,24 +530,30 @@ export async function dbSaveAsset(asset: Asset): Promise<void> {
     await dbGetAssets();
   }
 
-  // Optimistically update cache instantly
-  const idx = cacheAssets!.findIndex((a) => a.id === asset.id);
-  if (idx >= 0) {
-    cacheAssets![idx] = { ...asset };
-  } else {
-    cacheAssets!.push({ ...asset });
+  // Ensure asset is lightweight: never persist base64 QR images
+  const cleanAsset: Asset = { ...asset };
+  if (cleanAsset.qrCode) {
+    delete cleanAsset.qrCode;
   }
 
+  // Optimistically update cache instantly
+  const idx = cacheAssets!.findIndex((a) => a.id === cleanAsset.id);
+  if (idx >= 0) {
+    cacheAssets![idx] = { ...cleanAsset };
+  } else {
+    cacheAssets!.push({ ...cleanAsset });
+  }
+
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
   try {
     localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
   } catch (lsErr) {
-    console.warn('LocalStorage limit saving asset:', lsErr);
+    // Handled by IndexedDB
   }
 
   if (firebaseActive && dbInstance) {
-    const path = `assets/${asset.id}`;
     try {
-      await setDoc(doc(dbInstance, 'assets', asset.id), cleanUndefined(asset));
+      await setDoc(doc(dbInstance, 'assets', cleanAsset.id), cleanUndefined(cleanAsset));
     } catch (err: any) {
       console.warn('Firestore write asset failed, utilizing local fallback state:', err);
       checkQuotaException(err);
@@ -506,7 +568,13 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
     await dbGetAssets();
   }
 
-  for (const asset of assets) {
+  const cleanedAssets = assets.map((a) => {
+    const clean = { ...a };
+    if (clean.qrCode) delete clean.qrCode;
+    return clean;
+  });
+
+  for (const asset of cleanedAssets) {
     const idx = cacheAssets!.findIndex((a) => a.id === asset.id || a.code === asset.code);
     if (idx >= 0) {
       cacheAssets![idx] = { ...cacheAssets![idx], ...asset };
@@ -515,24 +583,25 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
     }
   }
 
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
   try {
     localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
   } catch (lsErr) {
-    console.warn('LocalStorage bulk assets error:', lsErr);
+    // Handled by IndexedDB
   }
 
   if (firebaseActive && dbInstance) {
     try {
       const batchSize = 100;
-      for (let i = 0; i < assets.length; i += batchSize) {
-        const chunk = assets.slice(i, i + batchSize);
+      for (let i = 0; i < cleanedAssets.length; i += batchSize) {
+        const chunk = cleanedAssets.slice(i, i + batchSize);
         const batch = writeBatch(dbInstance);
         for (const asset of chunk) {
           batch.set(doc(dbInstance, 'assets', asset.id), cleanUndefined(asset));
         }
         await batch.commit();
         // Give the write stream queue a brief moment to process and drain
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
     } catch (err: any) {
       console.warn('Firestore bulk write asset failed:', err);
@@ -1367,6 +1436,10 @@ export async function dbAutoGeneratePreventiveActivities(
     for (const filter of filters) {
       const { templateId, comarca: filterComarca, sector: filterSector, startDate: filterStartDate, endDate: filterEndDate } = filter;
 
+      if (filterComarca === 'none' || filterSector === 'none') {
+        continue;
+      }
+
       // Filter templates to generate
       const targetTemplates = templates.filter((t) => {
         if (templateId !== 'all' && t.id !== templateId) return false;
@@ -1480,6 +1553,10 @@ export async function dbAutoGeneratePreventiveActivities(
 
             if (tAssetType && assetTipoSpec) {
               return assetTipoSpec.includes(tAssetType) || tAssetType.includes(assetTipoSpec);
+            }
+            if (tAssetType && !assetTipoSpec) {
+              const assetName = (asset.name || '').toLowerCase();
+              return assetName.includes(tAssetType);
             }
             return assetSector === tSector;
           });
@@ -1639,10 +1716,11 @@ export async function dbDeleteAsset(assetId: string): Promise<void> {
 
   cacheAssets = cacheAssets!.filter((a) => a.id !== assetId);
 
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
   try {
     localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
   } catch (lsErr) {
-    console.warn('LocalStorage limit writing assets:', lsErr);
+    // Handled by IndexedDB
   }
 
   if (firebaseActive && dbInstance) {
@@ -1680,6 +1758,13 @@ export async function dbDeleteAssetsBySector(sectorName: string): Promise<void> 
 
   const assetsToDelete = cacheAssets!.filter((a) => isMatch(a.sector));
   cacheAssets = cacheAssets!.filter((a) => !isMatch(a.sector));
+
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
+  try {
+    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
+  } catch (lsErr) {
+    // Handled by IndexedDB
+  }
 
   if (firebaseActive && dbInstance) {
     try {
