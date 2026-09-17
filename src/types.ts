@@ -342,4 +342,74 @@ export function isSectorInGerencia(sector: string, gerencia: string): boolean {
   return s.includes(g) || g.includes(s);
 }
 
+// ==========================================
+// MODELOS DE ETIQUETA E QR CODE (PERSISTÊNCIA EM BANCO)
+// ==========================================
+
+export type FieldKey = 'header' | 'code' | 'name' | 'comarca' | 'location' | 'sector' | 'model' | 'serial';
+
+export const DEFAULT_FIELD_ORDER: FieldKey[] = [
+  'header',
+  'code',
+  'name',
+  'comarca',
+  'location',
+  'sector',
+  'model',
+  'serial'
+];
+
+export interface FieldStyle {
+  enabled: boolean;
+  fontFamily: string;
+  fontSizePt: number;
+  fontWeight: 'normal' | 'bold' | '900';
+  color: string;
+  uppercase: boolean;
+  wordWrap?: boolean;
+}
+
+export interface SheetConfig {
+  paperType: 'A4' | 'A3' | 'Custom';
+  pageWidthMm: number;
+  pageHeightMm: number;
+  labelWidthMm: number;
+  labelHeightMm: number;
+  columns: number;
+  rows: number;
+  marginTopMm: number;
+  marginLeftMm: number;
+  gapXMm: number;
+  gapYMm: number;
+}
+
+export interface PlacardConfig {
+  orientation: 'horizontal-left' | 'horizontal-right' | 'vertical-top' | 'vertical-bottom';
+  qrScalePercent: number;
+  borderStyle: 'none' | 'dashed' | 'dotted' | 'solid-thin' | 'solid-thick' | 'badge' | 'rounded-frame';
+  borderColor: string;
+  borderRadiusMm: number;
+  backgroundColor: string;
+  headerCustomText: string;
+  fieldOrder?: FieldKey[];
+  fields: {
+    header: FieldStyle;
+    code: FieldStyle;
+    name: FieldStyle;
+    comarca: FieldStyle;
+    location: FieldStyle;
+    sector: FieldStyle;
+    model: FieldStyle;
+    serial: FieldStyle;
+  };
+}
+
+export interface SavedQrTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  sheet: SheetConfig;
+  placard: PlacardConfig;
+}
+
 

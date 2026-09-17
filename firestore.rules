@@ -44,12 +44,22 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // 6. PRAZOS E METAS DE PLANEJAMENTO
+    // 6. MODELOS DE ETIQUETAS E QR CODES
+    match /qrTemplates/{templateId} {
+      allow read, write: if true;
+    }
+
+    // 7. CONFIGURAÇÕES GLOBAIS E PERMISSÕES
+    match /config/{configId} {
+      allow read, write: if true;
+    }
+
+    // 8. PRAZOS E METAS DE PLANEJAMENTO
     match /planningDeadlines/{deadlineId} {
       allow read, write: if true;
     }
 
-    // 7. GERÊNCIAS E UNIDADES OPERACIONAIS
+    // 9. GERÊNCIAS E UNIDADES OPERACIONAIS
     match /managements/{managementId} {
       allow read, write: if true;
     }
@@ -57,13 +67,13 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // 8. USUÁRIOS E CONTAS DE ACESSO
+    // 10. USUÁRIOS E CONTAS DE ACESSO
     // Necessário para o login interno e gestão de técnicos.
     match /users/{userId} {
       allow read, write: if true;
     }
 
-    // 9. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
+    // 11. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
     match /{document=**} {
       allow read, write: if false;
     }

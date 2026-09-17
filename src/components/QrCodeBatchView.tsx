@@ -26,10 +26,33 @@ import {
   ChevronUp,
   WrapText,
   AlertTriangle,
-  Layers
+  Layers,
+  Database,
+  Cloud,
+  Loader2
 } from 'lucide-react';
-import { Asset, HexonUser } from '../types';
-import { dbGetAssets } from '../db/firebase';
+import { 
+  Asset, 
+  HexonUser, 
+  FieldKey, 
+  FieldStyle, 
+  SheetConfig, 
+  PlacardConfig, 
+  SavedQrTemplate 
+} from '../types';
+import { 
+  dbGetAssets, 
+  dbGetQrTemplates, 
+  dbSaveQrTemplate, 
+  dbDeleteQrTemplate 
+} from '../db/firebase';
+import { 
+  DEFAULT_FIELD_ORDER, 
+  DEFAULT_SHEET_CONFIG, 
+  DEFAULT_PLACARD_CONFIG, 
+  DEFAULT_SAVED_TEMPLATES, 
+  FONT_OPTIONS 
+} from '../utils/qrDefaults';
 import { getAssetQrDataUrl } from '../utils/qrUtils';
 import { AssetQrCode } from './AssetQrCode';
 
@@ -37,274 +60,6 @@ interface QrCodeBatchViewProps {
   userProfile: HexonUser | null;
   darkMode: boolean;
 }
-
-export type FieldKey = 'header' | 'code' | 'name' | 'comarca' | 'location' | 'sector' | 'model' | 'serial';
-
-export const DEFAULT_FIELD_ORDER: FieldKey[] = [
-  'header',
-  'code',
-  'name',
-  'comarca',
-  'location',
-  'sector',
-  'model',
-  'serial'
-];
-
-export interface FieldStyle {
-  enabled: boolean;
-  fontFamily: string;
-  fontSizePt: number;
-  fontWeight: 'normal' | 'bold' | '900';
-  color: string;
-  uppercase: boolean;
-  wordWrap?: boolean; // Permite quebra em múltiplas linhas para textos grandes
-}
-
-export interface SheetConfig {
-  paperType: 'A4' | 'A3' | 'Custom';
-  pageWidthMm: number;
-  pageHeightMm: number;
-  labelWidthMm: number;
-  labelHeightMm: number;
-  columns: number;
-  rows: number;
-  marginTopMm: number;
-  marginLeftMm: number;
-  gapXMm: number;
-  gapYMm: number;
-}
-
-export interface PlacardConfig {
-  orientation: 'horizontal-left' | 'horizontal-right' | 'vertical-top' | 'vertical-bottom';
-  qrScalePercent: number;
-  borderStyle: 'none' | 'dashed' | 'dotted' | 'solid-thin' | 'solid-thick' | 'badge' | 'rounded-frame';
-  borderColor: string;
-  borderRadiusMm: number;
-  backgroundColor: string;
-  headerCustomText: string;
-  fieldOrder?: FieldKey[]; // Ordem personalizada de exibição dos campos na etiqueta
-  fields: {
-    header: FieldStyle;
-    code: FieldStyle;
-    name: FieldStyle;
-    comarca: FieldStyle;
-    location: FieldStyle;
-    sector: FieldStyle;
-    model: FieldStyle;
-    serial: FieldStyle;
-  };
-}
-
-export interface SavedQrTemplate {
-  id: string;
-  name: string;
-  createdAt: string;
-  sheet: SheetConfig;
-  placard: PlacardConfig;
-}
-
-const STORAGE_KEY_TEMPLATES = 'hexon_saved_qr_templates_v2';
-
-const FONT_OPTIONS = [
-  { label: 'Arial (Padrão)', value: 'Arial, sans-serif' },
-  { label: 'Arial Black (Extra Negrito)', value: '"Arial Black", Gadget, sans-serif' },
-  { label: 'Trebuchet MS (Moderna)', value: '"Trebuchet MS", "Lucida Grande", sans-serif' },
-  { label: 'Monospace (Técnica / Código)', value: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' },
-  { label: 'Impact (Industrial / Chamativa)', value: 'Impact, Haettenschweiler, sans-serif' },
-  { label: 'Georgia (Serifada Elegante)', value: 'Georgia, "Times New Roman", serif' },
-];
-
-const DEFAULT_SHEET_CONFIG: SheetConfig = {
-  paperType: 'A4',
-  pageWidthMm: 210,
-  pageHeightMm: 297,
-  labelWidthMm: 63.5,
-  labelHeightMm: 25.4,
-  columns: 3,
-  rows: 8,
-  marginTopMm: 12.7,
-  marginLeftMm: 7.2,
-  gapXMm: 2.5,
-  gapYMm: 0,
-};
-
-const DEFAULT_PLACARD_CONFIG: PlacardConfig = {
-  orientation: 'horizontal-left',
-  qrScalePercent: 38,
-  borderStyle: 'dashed',
-  borderColor: '#94a3b8',
-  borderRadiusMm: 1.5,
-  backgroundColor: '#ffffff',
-  headerCustomText: 'HEXON PREVENTIVA',
-  fieldOrder: [...DEFAULT_FIELD_ORDER],
-  fields: {
-    header: {
-      enabled: true,
-      fontFamily: '"Arial Black", Gadget, sans-serif',
-      fontSizePt: 9,
-      fontWeight: '900',
-      color: '#7c3aed', // Roxo de destaque
-      uppercase: true,
-      wordWrap: false
-    },
-    code: {
-      enabled: true,
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-      fontSizePt: 10,
-      fontWeight: '900',
-      color: '#0f172a',
-      uppercase: true,
-      wordWrap: false
-    },
-    name: {
-      enabled: true,
-      fontFamily: 'Arial, sans-serif',
-      fontSizePt: 8,
-      fontWeight: 'bold',
-      color: '#1e293b',
-      uppercase: false,
-      wordWrap: true
-    },
-    comarca: {
-      enabled: true,
-      fontFamily: '"Arial Black", Gadget, sans-serif',
-      fontSizePt: 7.5,
-      fontWeight: 'bold',
-      color: '#4338ca',
-      uppercase: true,
-      wordWrap: false
-    },
-    location: {
-      enabled: true,
-      fontFamily: 'Arial, sans-serif',
-      fontSizePt: 6.5,
-      fontWeight: 'normal',
-      color: '#64748b',
-      uppercase: false,
-      wordWrap: true
-    },
-    sector: {
-      enabled: true,
-      fontFamily: 'Arial, sans-serif',
-      fontSizePt: 6.5,
-      fontWeight: 'bold',
-      color: '#64748b',
-      uppercase: true,
-      wordWrap: false
-    },
-    model: {
-      enabled: true,
-      fontFamily: 'Arial, sans-serif',
-      fontSizePt: 6.5,
-      fontWeight: 'normal',
-      color: '#64748b',
-      uppercase: false,
-      wordWrap: false
-    },
-    serial: {
-      enabled: false,
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-      fontSizePt: 6.5,
-      fontWeight: 'normal',
-      color: '#64748b',
-      uppercase: true,
-      wordWrap: false
-    }
-  }
-};
-
-const DEFAULT_SAVED_TEMPLATES: SavedQrTemplate[] = [
-  {
-    id: 'tpl_a4_pimaco_roxo',
-    name: 'A4 3x8 - Destaque Roxo & Arial Black',
-    createdAt: '2026-09-10',
-    sheet: { ...DEFAULT_SHEET_CONFIG },
-    placard: { ...DEFAULT_PLACARD_CONFIG }
-  },
-  {
-    id: 'tpl_a4_plaqueta_industrial',
-    name: 'A4 2x5 - Plaqueta Grande Industrial',
-    createdAt: '2026-09-10',
-    sheet: {
-      paperType: 'A4',
-      pageWidthMm: 210,
-      pageHeightMm: 297,
-      labelWidthMm: 101.6,
-      labelHeightMm: 50.8,
-      columns: 2,
-      rows: 5,
-      marginTopMm: 12.7,
-      marginLeftMm: 4.8,
-      gapXMm: 2.0,
-      gapYMm: 0,
-    },
-    placard: {
-      ...DEFAULT_PLACARD_CONFIG,
-      borderStyle: 'badge',
-      borderColor: '#0f172a',
-      borderRadiusMm: 2,
-      fields: {
-        ...DEFAULT_PLACARD_CONFIG.fields,
-        header: {
-          enabled: true,
-          fontFamily: '"Arial Black", Gadget, sans-serif',
-          fontSizePt: 13,
-          fontWeight: '900',
-          color: '#7c3aed',
-          uppercase: true
-        },
-        code: {
-          enabled: true,
-          fontFamily: '"Arial Black", Gadget, sans-serif',
-          fontSizePt: 15,
-          fontWeight: '900',
-          color: '#000000',
-          uppercase: true
-        },
-        name: {
-          enabled: true,
-          fontFamily: 'Arial, sans-serif',
-          fontSizePt: 11,
-          fontWeight: 'bold',
-          color: '#1e293b',
-          uppercase: true
-        },
-        comarca: {
-          enabled: true,
-          fontFamily: '"Arial Black", Gadget, sans-serif',
-          fontSizePt: 10,
-          fontWeight: 'bold',
-          color: '#312e81',
-          uppercase: true
-        }
-      }
-    }
-  },
-  {
-    id: 'tpl_a3_lote_massivo',
-    name: 'A3 4x12 - Folha Dupla A3 (48 por Folha)',
-    createdAt: '2026-09-10',
-    sheet: {
-      paperType: 'A3',
-      pageWidthMm: 297,
-      pageHeightMm: 420,
-      labelWidthMm: 65,
-      labelHeightMm: 30,
-      columns: 4,
-      rows: 12,
-      marginTopMm: 15,
-      marginLeftMm: 15,
-      gapXMm: 4,
-      gapYMm: 2.5,
-    },
-    placard: {
-      ...DEFAULT_PLACARD_CONFIG,
-      borderStyle: 'solid-thin',
-      borderColor: '#cbd5e1'
-    }
-  }
-];
 
 const ITEMS_PER_TABLE_PAGE = 35;
 
@@ -348,10 +103,10 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
   // Placard Individual Fields Config
   const [placardConfig, setPlacardConfig] = useState<PlacardConfig>(DEFAULT_PLACARD_CONFIG);
 
-  // Saved templates state
+  // Saved templates state (loaded from Firestore database)
   const [savedTemplates, setSavedTemplates] = useState<SavedQrTemplate[]>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY_TEMPLATES);
+      const stored = localStorage.getItem('hexon_saved_qr_templates_v2');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -367,11 +122,14 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
         }
       }
     } catch (e) {
-      console.warn('Erro ao carregar templates salvos do storage:', e);
+      console.warn('Erro ao ler cache local de modelos:', e);
     }
     return DEFAULT_SAVED_TEMPLATES;
   });
 
+  const [loadingTemplates, setLoadingTemplates] = useState<boolean>(true);
+  const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
+  const [isDeletingTemplate, setIsDeletingTemplate] = useState<boolean>(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('tpl_a4_pimaco_roxo');
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
   const [newTemplateName, setNewTemplateName] = useState<string>('');
@@ -397,6 +155,38 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [printProgress, setPrintProgress] = useState<string>('');
 
+  // Carregar templates do Banco de Dados Firestore na montagem
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTemplatesFromDb() {
+      setLoadingTemplates(true);
+      try {
+        const templates = await dbGetQrTemplates();
+        if (!isMounted) return;
+        if (templates && templates.length > 0) {
+          const sanitized = templates.map(t => ({
+            ...t,
+            placard: {
+              ...t.placard,
+              fieldOrder: t.placard.fieldOrder && t.placard.fieldOrder.length > 0
+                ? t.placard.fieldOrder
+                : [...DEFAULT_FIELD_ORDER]
+            }
+          }));
+          setSavedTemplates(sanitized);
+          // Manter seleção ou selecionar o primeiro modelo do banco
+          setSelectedTemplateId(prev => sanitized.some(t => t.id === prev) ? prev : sanitized[0].id);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar modelos do banco de dados:', err);
+      } finally {
+        if (isMounted) setLoadingTemplates(false);
+      }
+    }
+    loadTemplatesFromDb();
+    return () => { isMounted = false; };
+  }, []);
+
   // Load assets on mount
   useEffect(() => {
     let isMounted = true;
@@ -418,16 +208,6 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
     loadData();
     return () => { isMounted = false; };
   }, []);
-
-  // Save templates to localStorage whenever modified
-  const persistTemplates = (templates: SavedQrTemplate[]) => {
-    setSavedTemplates(templates);
-    try {
-      localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(templates));
-    } catch (e) {
-      console.error('Erro ao gravar template no localStorage:', e);
-    }
-  };
 
   // Quick paper format preset handler
   const handlePaperTypeSelect = (type: 'A4' | 'A3' | 'Custom') => {
@@ -468,7 +248,7 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
     }
   };
 
-  const handleSaveCurrentAsNewTemplate = () => {
+  const handleSaveCurrentAsNewTemplate = async () => {
     if (!newTemplateName.trim()) {
       setSaveModalError('Digite um nome para o modelo de etiqueta.');
       return;
@@ -481,13 +261,24 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
       sheet: { ...sheetConfig },
       placard: { ...placardConfig }
     };
-    const updated = [newTpl, ...savedTemplates];
-    persistTemplates(updated);
-    setSelectedTemplateId(newId);
-    setShowSaveModal(false);
-    setNewTemplateName('');
+    
+    setIsSavingTemplate(true);
     setSaveModalError('');
-    setToastMessage({ text: `Modelo "${newTpl.name}" salvo com sucesso!`, type: 'success' });
+    try {
+      await dbSaveQrTemplate(newTpl);
+      const updated = [newTpl, ...savedTemplates.filter(t => t.id !== newId)];
+      setSavedTemplates(updated);
+      setSelectedTemplateId(newId);
+      setShowSaveModal(false);
+      setNewTemplateName('');
+      setSaveModalError('');
+      setToastMessage({ text: `Modelo "${newTpl.name}" salvo no banco de dados com sucesso!`, type: 'success' });
+    } catch (err) {
+      console.error('Erro ao salvar modelo no banco de dados Firestore:', err);
+      setSaveModalError('Falha ao conectar com o banco de dados. Tente novamente.');
+    } finally {
+      setIsSavingTemplate(false);
+    }
   };
 
   const promptDeleteTemplate = (id: string, e?: React.MouseEvent) => {
@@ -512,35 +303,45 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
     }
   };
 
-  const handleConfirmDeleteTemplate = () => {
+  const handleConfirmDeleteTemplate = async () => {
     if (!templateToDelete) return;
     const idToDelete = templateToDelete.id;
     const nameDeleted = templateToDelete.name;
-    const updated = savedTemplates.filter(t => t.id !== idToDelete);
+    
+    setIsDeletingTemplate(true);
+    try {
+      await dbDeleteQrTemplate(idToDelete);
+      const updated = savedTemplates.filter(t => t.id !== idToDelete);
 
-    // If all deleted, fallback to a clean basic custom template
-    const finalTemplates = updated.length > 0 ? updated : [
-      {
-        id: 'tpl_custom_basico',
-        name: 'Modelo Básico A4 (Personalizado)',
-        createdAt: new Date().toISOString().split('T')[0],
-        sheet: { ...DEFAULT_SHEET_CONFIG },
-        placard: { ...DEFAULT_PLACARD_CONFIG }
-      }
-    ];
-    persistTemplates(finalTemplates);
+      // If all deleted, fallback to a clean basic custom template
+      const finalTemplates = updated.length > 0 ? updated : [
+        {
+          id: 'tpl_custom_basico',
+          name: 'Modelo Básico A4 (Personalizado)',
+          createdAt: new Date().toISOString().split('T')[0],
+          sheet: { ...DEFAULT_SHEET_CONFIG },
+          placard: { ...DEFAULT_PLACARD_CONFIG }
+        }
+      ];
+      setSavedTemplates(finalTemplates);
 
-    const nextSelected = finalTemplates[0];
-    setSelectedTemplateId(nextSelected.id);
-    setSheetConfig({ ...nextSelected.sheet });
-    setPlacardConfig({
-      ...nextSelected.placard,
-      fieldOrder: nextSelected.placard.fieldOrder && nextSelected.placard.fieldOrder.length > 0
-        ? nextSelected.placard.fieldOrder
-        : [...DEFAULT_FIELD_ORDER]
-    });
-    setTemplateToDelete(null);
-    setToastMessage({ text: `Modelo "${nameDeleted}" excluído com sucesso!`, type: 'success' });
+      const nextSelected = finalTemplates[0];
+      setSelectedTemplateId(nextSelected.id);
+      setSheetConfig({ ...nextSelected.sheet });
+      setPlacardConfig({
+        ...nextSelected.placard,
+        fieldOrder: nextSelected.placard.fieldOrder && nextSelected.placard.fieldOrder.length > 0
+          ? nextSelected.placard.fieldOrder
+          : [...DEFAULT_FIELD_ORDER]
+      });
+      setTemplateToDelete(null);
+      setToastMessage({ text: `Modelo "${nameDeleted}" excluído do banco de dados!`, type: 'success' });
+    } catch (err) {
+      console.error('Erro ao excluir modelo do banco de dados:', err);
+      setToastMessage({ text: 'Falha ao excluir modelo no banco de dados.', type: 'error' });
+    } finally {
+      setIsDeletingTemplate(false);
+    }
   };
 
   // Helper to update individual field style
@@ -1429,11 +1230,16 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
             <div className="flex items-center flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <FolderOpen className="w-5 h-5 text-indigo-500" />
-                <span className="text-xs font-black uppercase tracking-wider font-mono">Modelos Salvos:</span>
+                <span className="text-xs font-black uppercase tracking-wider font-mono">Modelos:</span>
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md" title="Modelos sincronizados no banco de dados Firestore">
+                  <Cloud className="w-3 h-3" />
+                  Banco de Dados
+                </span>
               </div>
 
               <select
                 value={selectedTemplateId}
+                disabled={loadingTemplates}
                 onChange={(e) => handleLoadTemplate(e.target.value)}
                 className={`px-3 py-1.5 text-xs rounded-xl border font-bold max-w-xs md:max-w-md truncate ${
                   darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
@@ -2386,18 +2192,29 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={isSavingTemplate}
                 onClick={() => setShowSaveModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
+                disabled={isSavingTemplate}
                 onClick={handleSaveCurrentAsNewTemplate}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed"
               >
-                <Check className="w-4 h-4" />
-                Confirmar e Salvar
+                {isSavingTemplate ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Salvando no Banco...
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-4 h-4" />
+                    Salvar no Banco de Dados
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -2413,9 +2230,9 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
                 <Trash2 className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">Excluir Modelo Salvo</h3>
+                <h3 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">Excluir Modelo do Banco</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Tem certeza que deseja excluir o modelo <strong className="text-slate-800 dark:text-slate-200 font-bold">"{templateToDelete.name}"</strong>?
+                  Tem certeza que deseja excluir o modelo <strong className="text-slate-800 dark:text-slate-200 font-bold">"{templateToDelete.name}"</strong> do banco de dados na nuvem?
                 </p>
                 {savedTemplates.length <= 1 && (
                   <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-2.5 rounded-xl mt-2">
@@ -2428,18 +2245,29 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
+                disabled={isDeletingTemplate}
                 onClick={() => setTemplateToDelete(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
+                disabled={isDeletingTemplate}
                 onClick={handleConfirmDeleteTemplate}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer transition-colors active:scale-[0.98]"
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-black tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer transition-colors active:scale-[0.98] disabled:cursor-not-allowed"
               >
-                <Trash2 className="w-4 h-4" />
-                Sim, Excluir Definitivamente
+                {isDeletingTemplate ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Excluindo do Banco...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Sim, Excluir do Banco
+                  </>
+                )}
               </button>
             </div>
           </div>

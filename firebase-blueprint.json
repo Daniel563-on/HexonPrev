@@ -185,9 +185,26 @@
         "expiresAt": { "type": "string", "description": "Data limite no formato ISO string ou o marcador 'none'" }
       },
       "required": ["id", "expiresAt"]
+    },
+    "QrTemplate": {
+      "title": "Modelo de Etiqueta e QR Code",
+      "description": "Modelo de layout, dimensões de folha e personalização de etiquetas para impressão",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo do modelo" },
+        "name": { "type": "string", "description": "Nome descritivo do modelo de etiqueta" },
+        "createdAt": { "type": "string", "description": "Data de criação do modelo" },
+        "sheet": { "type": "object", "description": "Configurações da folha e grid de impressão" },
+        "placard": { "type": "object", "description": "Estilos, cores, fontes e campos da etiqueta" }
+      },
+      "required": ["id", "name", "createdAt", "sheet", "placard"]
     }
   },
   "firestore": {
+    "qrTemplates": {
+      "schema": "QrTemplate",
+      "description": "Coleção de modelos e layouts de etiquetas QR Code salvos na nuvem"
+    },
     "config": {
       "schema": "Config",
       "description": "Coleção de parâmetros e privilégios específicos de configuração global"
