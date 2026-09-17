@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import { HexonUser } from '../types';
-import { dbSaveUser } from '../db/firebase';
+import { dbSaveUser, verifyPassword } from '../db/firebase';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -74,9 +74,12 @@ export default function ChangePasswordModal({
       return;
     }
 
-    if (hasExistingSenha && userProfile.senha !== senhaAtual) {
-      setErrorMessage('A senha atual digitada está incorreta.');
-      return;
+    if (hasExistingSenha) {
+      const isCurrentCorrect = await verifyPassword(senhaAtual, userProfile.senha);
+      if (!isCurrentCorrect) {
+        setErrorMessage('A senha atual digitada está incorreta.');
+        return;
+      }
     }
 
     setIsLoading(true);

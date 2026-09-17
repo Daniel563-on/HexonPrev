@@ -55,6 +55,7 @@ export interface ServiceOrder {
   priority: 'Baixa' | 'Média' | 'Alta' | 'Urgente';
   status: 'Novo' | 'Planejada' | 'Em Execução' | 'Concluída' | 'Atrasada' | 'Não Executada';
   scheduledDate: string;
+  scheduledEndDate?: string; // Optional end of execution period assigned by manager, e.g. "2026-09-11"
   startDate?: string;   // date window start, e.g. "2026-06-01"
   endDate?: string;     // date window end, e.g. "2026-06-06"
   assignedTechnician: string;

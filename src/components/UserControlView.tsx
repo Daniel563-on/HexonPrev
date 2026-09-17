@@ -111,7 +111,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       gerencia: user.gerencia,
       perfil: user.perfil,
       status: user.status,
-      senha: user.senha || 'admin'
+      // If password is encrypted hash, keep empty in form unless admin enters a new one
+      senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || '')
     });
     setIsUserModalOpen(true);
   };
@@ -125,6 +126,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
     try {
       const targetId = editingUser ? editingUser.id : `u_${Date.now()}`;
+      // If editing and password was left blank, keep the previous hashed/existing password
+      const finalSenha = (editingUser && !userForm.senha.trim())
+        ? (editingUser.senha || 'admin')
+        : (userForm.senha || 'admin');
+
       const newUser: HexonUser = {
         id: targetId,
         name: userForm.name,
@@ -134,7 +140,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         gerencia: userForm.gerencia,
         perfil: userForm.perfil,
         status: userForm.status,
-        senha: userForm.senha
+        senha: finalSenha
       };
 
       await dbSaveUser(newUser);
@@ -733,11 +739,13 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
                 {/* Password input */}
                 <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Senha de Acesso *</label>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Senha de Acesso {editingUser ? '(Opcional na edição)' : '*'}
+                  </label>
                   <input
                     type="text"
-                    required
-                    placeholder="Senha numérica ou alfa"
+                    required={!editingUser}
+                    placeholder={editingUser ? 'Deixe vazio para manter a atual' : 'Senha inicial de acesso'}
                     value={userForm.senha}
                     onChange={(e) => setUserForm({...userForm, senha: e.target.value})}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${

@@ -29,7 +29,7 @@ import {
 import * as XLSX from 'xlsx';
 import CameraQrScanner from './CameraQrScanner';
 import { AssetQrCode } from './AssetQrCode';
-import { downloadAssetQrCode, printAssetTag } from '../utils/qrUtils';
+import { downloadAssetQrCode, printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management } from '../types';
 import { dbGetAssets, dbGetAssetHistory, dbSaveAsset, dbSaveAssetsBulk, dbAutoGeneratePreventiveActivities, dbDeleteAsset, dbDeleteAssetsBySector, dbGetManagements } from '../db/firebase';
 
@@ -89,6 +89,17 @@ export default function AssetsView({
   const [importProgress, setImportProgress] = useState(0);
   const [totalToImport, setTotalToImport] = useState(0);
   const [importTargetSector, setImportTargetSector] = useState<string>('Refrigeração');
+  const [importStats, setImportStats] = useState<{
+    totalProcessed: number;
+    newCount: number;
+    updatedCount: number;
+    unchangedCount: number;
+  }>({
+    totalProcessed: 0,
+    newCount: 0,
+    updatedCount: 0,
+    unchangedCount: 0
+  });
 
   // Custom rules mappings for spreadsheet TIPO to Periodicities map
   const [periodicityRules, setPeriodicityRules] = useState<Array<{ keyword: string; selectPeriodicities: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] }>>(() => {
@@ -624,6 +635,18 @@ export default function AssetsView({
         return str;
       };
 
+      // Build quick lookup map of existing assets by code
+      const existingMap = new Map<string, Asset>();
+      for (const a of assets) {
+        if (a.code) {
+          existingMap.set(a.code.toUpperCase().trim(), a);
+        }
+      }
+
+      let newCount = 0;
+      let updatedCount = 0;
+      let unchangedCount = 0;
+
       for (let i = 0; i < importRows.length; i++) {
         setImportProgress(i + 1);
         const row = importRows[i];
@@ -662,12 +685,58 @@ export default function AssetsView({
         const pArray = getPeriodicitiesFromTipo(rawTipo);
 
         const rawCodeUpper = rawCode.toUpperCase();
-        const existing = assets.find(a => a.code === rawCodeUpper);
+        const existing = existingMap.get(rawCodeUpper);
 
         if (existing) {
           // Asset with this patrimônio already exists.
-          // We modify only its cadastral information, keeping the original ID, QR code, and creation date
-          // to fully preserve the active maintenance history.
+          // Compare fields to detect if anything actually changed before saving.
+          const existingSpecs: Record<string, any> = (existing.specs as any) || {};
+          const targetPeriodicities = pArray.length > 0 ? pArray : (existing.periodicities || []);
+
+          const nameChanged = (existing.name || '').trim() !== rawName;
+          const sectorChanged = (existing.sector || '').trim() !== importTargetSector.trim();
+          const locationChanged = (existing.location || '').trim() !== rawLocation;
+          const statusChanged = existing.status !== rawStatus;
+
+          const specManufacturerChanged = (existingSpecs.manufacturer || '').trim() !== rawMarca;
+          const specModelChanged = (existingSpecs.model || '').trim() !== rawModelo;
+          const specSerialChanged = (existingSpecs.serialNumber || '').trim() !== rawSerie;
+          const specInstallDateChanged = (existingSpecs.installationDate || '').trim() !== rawDataAquisicao.split('T')[0];
+          const specCRAAIChanged = (existingSpecs.CRAAI || '').trim() !== rawCRAAI;
+          const specComarcaChanged = (existingSpecs.COMARCA || '').trim() !== rawComarca;
+          const specTipoChanged = (existingSpecs.TIPO || '').trim() !== rawTipo;
+          const specValorAqChanged = (existingSpecs['VALOR DE AQUISIÇÃO'] || '').trim() !== rawValorAquisicao;
+          const specValorLiqChanged = (existingSpecs['VALOR LÍQUIDO'] || '').trim() !== rawValorLiquido;
+
+          // Check if periodicities changed
+          const existingPStr = (existing.periodicities || []).slice().sort().join(',');
+          const newPStr = targetPeriodicities.slice().sort().join(',');
+          const periodicitiesChanged = existingPStr !== newPStr;
+
+          const hasAnyChange =
+            nameChanged ||
+            sectorChanged ||
+            locationChanged ||
+            statusChanged ||
+            specManufacturerChanged ||
+            specModelChanged ||
+            specSerialChanged ||
+            specInstallDateChanged ||
+            specCRAAIChanged ||
+            specComarcaChanged ||
+            specTipoChanged ||
+            specValorAqChanged ||
+            specValorLiqChanged ||
+            periodicitiesChanged;
+
+          if (!hasAnyChange) {
+            // Absolutely identical to what is in database - skip writing to avoid unnecessary operations
+            unchangedCount++;
+            continue;
+          }
+
+          // Asset has changed fields: update only the delta
+          updatedCount++;
           const assetSpecs: any = {
             ...existing.specs,
             manufacturer: rawMarca,
@@ -696,13 +765,14 @@ export default function AssetsView({
             location: rawLocation,
             status: rawStatus,
             specs: assetSpecs,
-            periodicities: pArray.length > 0 ? pArray : existing.periodicities,
+            periodicities: targetPeriodicities,
             updatedAt: nowString
           };
 
           parsedAssets.push(updatedAsset);
         } else {
           // Generate ID based on selected target sector for a new asset
+          newCount++;
           const formattedSectorName = importTargetSector.toLowerCase().replace('/', '_');
           const uniqueId = `as_${formattedSectorName}_${Date.now().toString().slice(-4)}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -743,13 +813,26 @@ export default function AssetsView({
         }
       }
 
+      setImportStats({
+        totalProcessed: importRows.length,
+        newCount,
+        updatedCount,
+        unchangedCount
+      });
+
       if (parsedAssets.length === 0) {
+        if (unchangedCount > 0) {
+          // All rows were identical to the current database records!
+          setImportStep(3);
+          setIsProcessingImport(false);
+          return;
+        }
         alert('Nenhum ativo válido pôde ser extraído da planilha.');
         setIsProcessingImport(false);
         return;
       }
 
-      // Save chunk in database
+      // Save only new or modified assets in database (skips identical records)
       await dbSaveAssetsBulk(parsedAssets);
 
       // Save dynamic custom fields from import headers so manual creation forms follow same format
@@ -793,12 +876,12 @@ export default function AssetsView({
     }
 
     const normalized = decodedText.trim();
-    const cleanValue = normalized.replace('HEXON_PREVENTIVA_ASSET_ID_', '');
+    const cleanValue = parseScannedQrCode(normalized);
 
     const match = assets.find(
-      (a) => a.id === cleanValue || 
+      (a) => a.id.toLowerCase() === cleanValue.toLowerCase() || 
              a.code.toLowerCase() === cleanValue.toLowerCase() || 
-             a.id === normalized || 
+             a.id.toLowerCase() === normalized.toLowerCase() || 
              a.code.toLowerCase() === normalized.toLowerCase()
     );
 
@@ -2963,25 +3046,33 @@ export default function AssetsView({
                     ✓
                   </div>
                   <div className="space-y-1.5">
-                    <h3 className="font-black text-sm text-[#0b1c30]">Banco de Ativos Importado com Sucesso!</h3>
+                    <h3 className="font-black text-sm text-[#0b1c30]">Sincronização de Ativos Concluída!</h3>
                     <p className="text-xs text-gray-500 max-w-md mx-auto leading-relaxed block">
-                      Foram criados <strong className="font-semibold text-emerald-600">{importRows.length} novos ativos</strong> no sistema. Todas as fichas, QR Codes criptografados offline e tabelas de agendamento de manutenção estão guardados na memória do console.
+                      A planilha foi comparada com a base de dados. Somente novos ativos e alterações reais foram gravados, economizando operações de banco.
                     </p>
                   </div>
                   
-                  <div className="max-w-xs mx-auto p-3 bg-gray-50 rounded-lg text-left text-[11px] text-gray-500 space-y-1 shadow-xs">
-                    <span className="font-bold uppercase tracking-wider text-[9px] text-gray-400 block mb-1">Status do Processo</span>
+                  <div className="max-w-xs mx-auto p-3 bg-gray-50 rounded-lg text-left text-[11px] text-gray-500 space-y-1.5 shadow-xs border border-gray-200/60">
+                    <span className="font-bold uppercase tracking-wider text-[9px] text-gray-400 block mb-1">Resumo Diferencial</span>
                     <div className="flex justify-between">
-                      <span>Fichas Criadas:</span>
-                      <strong className="text-slate-800 font-bold">{importRows.length}</strong>
+                      <span>Total Analisado na Planilha:</span>
+                      <strong className="text-slate-800 font-bold">{importStats.totalProcessed}</strong>
                     </div>
-                    <div className="flex justify-between">
-                      <span>QR Codes Persistidos:</span>
-                      <strong className="text-slate-800 font-bold">100%</strong>
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Novos Ativos Inseridos:</span>
+                      <strong className="font-bold">+{importStats.newCount}</strong>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Cache Ativo:</span>
-                      <strong className="text-emerald-600 font-bold">Sim (RAM/LocalStorage)</strong>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Ativos com Dados Atualizados:</span>
+                      <strong className="font-bold">{importStats.updatedCount}</strong>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span>Idênticos (Sem regravação):</span>
+                      <strong className="font-bold">{importStats.unchangedCount}</strong>
+                    </div>
+                    <div className="pt-1.5 border-t border-gray-200 flex justify-between text-[10px]">
+                      <span className="text-slate-400">Gravações no Banco:</span>
+                      <strong className="text-emerald-600 font-bold">{importStats.newCount + importStats.updatedCount} ({importStats.unchangedCount} poupadas)</strong>
                     </div>
                   </div>
                 </div>

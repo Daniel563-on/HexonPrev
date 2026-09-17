@@ -5,11 +5,31 @@ import { Asset } from '../types';
 const qrCache = new Map<string, string>();
 
 /**
+ * Helper to get the truly public URL origin (not the private -dev- preview)
+ */
+export function getPublicAppOrigin(): string {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return '';
+  }
+  const currentOrigin = window.location.origin;
+  // If running in AI Studio private development preview (-dev-), map to public preview (-pre-)
+  if (currentOrigin.includes('ais-dev-')) {
+    return currentOrigin.replace('ais-dev-', 'ais-pre-');
+  }
+  return currentOrigin;
+}
+
+/**
  * Returns a deterministic QR Code data URL for an asset.
- * Encodes the standard format: HEXON_PREVENTIVA_ASSET_ID_${assetId}
+ * Encodes the public URL: https://[domain]/?public_asset=${assetId}
+ * This allows both native phone camera scanners to open the public history,
+ * and the internal scanner to identify the asset.
  */
 export async function getAssetQrDataUrl(assetId: string, size = 180): Promise<string> {
-  const content = `HEXON_PREVENTIVA_ASSET_ID_${assetId}`;
+  const origin = getPublicAppOrigin();
+  const content = origin 
+    ? `${origin}/?public_asset=${encodeURIComponent(assetId)}` 
+    : `HEXON_PREVENTIVA_ASSET_ID_${assetId}`;
   const cacheKey = `${content}_${size}`;
   
   if (qrCache.has(cacheKey)) {
@@ -39,6 +59,45 @@ export async function getAssetQrDataUrl(assetId: string, size = 180): Promise<st
     console.warn('Fallback generating QR code:', err);
     return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(content)}`;
   }
+}
+
+/**
+ * Parses any scanned QR code string (URL, legacy format, or pure code)
+ * and extracts the clean asset identifier.
+ */
+export function parseScannedQrCode(rawScannedText: string): string {
+  if (!rawScannedText) return '';
+  const trimmed = rawScannedText.trim();
+
+  // 1. Check if it's a URL with public_asset or asset_id query param
+  try {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const url = new URL(trimmed);
+      const param = url.searchParams.get('public_asset') || 
+                    url.searchParams.get('asset_id') || 
+                    url.searchParams.get('patrimonio');
+      if (param) {
+        return decodeURIComponent(param).trim();
+      }
+    }
+  } catch {
+    // If URL parsing fails, fallback to regex search
+  }
+
+  // Regex check for ?public_asset=... in case URL isn't strictly standard
+  const urlParamMatch = trimmed.match(/[?&](?:public_asset|asset_id|patrimonio)=([^&#]+)/i);
+  if (urlParamMatch && urlParamMatch[1]) {
+    return decodeURIComponent(urlParamMatch[1]).trim();
+  }
+
+  // 2. Check for legacy internal prefix: HEXON_PREVENTIVA_ASSET_ID_...
+  const legacyPrefix = 'HEXON_PREVENTIVA_ASSET_ID_';
+  if (trimmed.toUpperCase().startsWith(legacyPrefix)) {
+    return trimmed.substring(legacyPrefix.length).trim();
+  }
+
+  // 3. Return as is (direct code, e.g. "168548" or "AR-001")
+  return trimmed;
 }
 
 /**

@@ -10,6 +10,7 @@ import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
 import QrCodeBatchView from './components/QrCodeBatchView';
 import AccessibilityPanel from './components/AccessibilityPanel';
+import PublicAssetView from './components/PublicAssetView';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
@@ -33,6 +34,16 @@ import {
 } from './db/firebase';
 
 export default function App() {
+  // Public Asset View URL query detection (for external QR code scans)
+  const [publicAssetParam, setPublicAssetParam] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('public_asset') || params.get('asset_id') || params.get('patrimonio') || null;
+    } catch {
+      return null;
+    }
+  });
+
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
       return localStorage.getItem('hexon_current_tab') || 'qr-codes';
@@ -697,6 +708,19 @@ export default function App() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // PUBLIC ASSET VIEW (External QR Code Scanning)
+  if (publicAssetParam) {
+    return (
+      <PublicAssetView 
+        assetIdentifier={publicAssetParam}
+        onGoToLogin={() => {
+          setPublicAssetParam(null);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+      />
     );
   }
 

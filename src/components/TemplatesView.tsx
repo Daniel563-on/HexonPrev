@@ -97,6 +97,70 @@ export function isSamePeriod(dateAStr: string, dateBStr: string, periodicity: st
   return dateAStr === dateBStr;
 }
 
+export function getPeriodKey(dateStr: string, periodicity: string): string {
+  if (!dateStr) return '';
+  const p = periodicity || '';
+  if (p === 'Semanal') {
+    return getYearWeekLocal(dateStr);
+  }
+  if (p === 'Mensal') {
+    return dateStr.slice(0, 7);
+  }
+  if (p === 'Trimestral') {
+    return getQuarterLocal(dateStr);
+  }
+  if (p === 'Semestral') {
+    return getSemesterLocal(dateStr);
+  }
+  if (p === 'Anual') {
+    return dateStr.slice(0, 4);
+  }
+  return dateStr;
+}
+
+export const getAssetComarcaClean = (asset: Asset): string => {
+  const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || '';
+  return c.trim();
+};
+
+export const isAssetCompatibleWithTemplate = (asset: Asset, t: MaintenanceTemplate): boolean => {
+  if (t.type !== 'preventive') return false;
+  const tAssetType = (t.targetAssetType || '').toLowerCase().trim();
+  const assetTipoSpec = (asset.specs?.TIPO || asset.specs?.tipo || '').toLowerCase().trim();
+  const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
+  const assetSector = (asset.sector || '').toLowerCase().trim();
+
+  if (tAssetType && assetTipoSpec) {
+    if (!assetTipoSpec.includes(tAssetType) && !tAssetType.includes(assetTipoSpec)) {
+      return false;
+    }
+  } else if (tAssetType && !assetTipoSpec) {
+    const assetName = (asset.name || '').toLowerCase();
+    if (!assetName.includes(tAssetType)) return false;
+  } else if (!tAssetType && tSector) {
+    if (assetSector !== tSector) return false;
+  }
+
+  const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
+  const activePeriodicities = asset.periodicities || [];
+  const commonPeriodicities = activePeriodicities.filter((ap) =>
+    tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
+  );
+  return commonPeriodicities.length > 0;
+};
+
+const defaultScopeInfo: {
+  eligibleComarcas: { comarca: string; pendingCount: number }[];
+  totalComarcaPending: number;
+  eligibleSectors: { sector: string; pendingCount: number }[];
+  totalSectorPending: number;
+} = {
+  eligibleComarcas: [],
+  totalComarcaPending: 0,
+  eligibleSectors: [],
+  totalSectorPending: 0
+};
+
 export function alignPeriodDates(baseDateStr: string, periodicity: string): { startDate: string; endDate: string; scheduledDate: string } {
   if (!baseDateStr) {
     const today = new Date().toISOString().slice(0, 10);
@@ -435,14 +499,19 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   }, []);
 
   // Filter templates list on left sidebar
-  const filteredTemplates = templates.filter((t) => {
-    const matchesTab = templateFilter === 'all' || t.type === templateFilter;
-    const matchesSearch = searchQuery === '' || 
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.targetSectorOrType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.targetAssetType && t.targetAssetType.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesTab && matchesSearch;
-  });
+  const filteredTemplates = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return templates.filter((t) => {
+      const matchesTab = templateFilter === 'all' || t.type === templateFilter;
+      if (!matchesTab) return false;
+      if (!q) return true;
+      return (
+        t.name.toLowerCase().includes(q) ||
+        (t.targetSectorOrType && t.targetSectorOrType.toLowerCase().includes(q)) ||
+        (t.targetAssetType && t.targetAssetType.toLowerCase().includes(q))
+      );
+    });
+  }, [templates, templateFilter, searchQuery]);
 
   // Handle template creation
   const handleCreateTemplate = async (e: React.FormEvent) => {
@@ -894,36 +963,68 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   };
 
 
-  // Helper: check if asset is compatible with template
-  const isAssetCompatibleWithTemplate = (asset: Asset, t: MaintenanceTemplate): boolean => {
-    if (t.type !== 'preventive') return false;
-    const tAssetType = (t.targetAssetType || '').toLowerCase().trim();
-    const assetTipoSpec = (asset.specs?.TIPO || asset.specs?.tipo || '').toLowerCase().trim();
-    const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
-    const assetSector = (asset.sector || '').toLowerCase().trim();
+  // 1. High performance lookup sets for existing orders (O(1) lookups instead of scanning thousands of items)
+  const existingOrdersLookup = useMemo(() => {
+    const preventiveSet = new Set<string>();
+    const surveySet = new Set<string>();
 
-    if (tAssetType && assetTipoSpec) {
-      if (!assetTipoSpec.includes(tAssetType) && !tAssetType.includes(assetTipoSpec)) {
-        return false;
+    for (let i = 0; i < existingOrders.length; i++) {
+      const o = existingOrders[i];
+      const dateStr = o.startDate || o.scheduledDate;
+      if (!dateStr) continue;
+
+      if (o.isSurvey) {
+        if (o.surveyLocation && o.title) {
+          const loc = o.surveyLocation.toLowerCase().trim();
+          const title = o.title.trim();
+          const periodKey = getPeriodKey(dateStr, 'Semanal');
+          surveySet.add(`${loc}|${title}|${periodKey}`);
+        }
+      } else if (o.assetId) {
+        const oPeriodicity = o.periodicity || (
+          o.title.includes('Mensal') ? 'Mensal' :
+          o.title.includes('Semanal') ? 'Semanal' :
+          o.title.includes('Trimestral') ? 'Trimestral' :
+          o.title.includes('Semestral') ? 'Semestral' :
+          o.title.includes('Anual') ? 'Anual' : ''
+        );
+        if (oPeriodicity) {
+          const periodKey = getPeriodKey(dateStr, oPeriodicity);
+          preventiveSet.add(`${o.assetId}|${oPeriodicity.toLowerCase().trim()}|${periodKey}`);
+        }
       }
-    } else if (tAssetType && !assetTipoSpec) {
-      const assetName = (asset.name || '').toLowerCase();
-      if (!assetName.includes(tAssetType)) return false;
-    } else if (!tAssetType && tSector) {
-      if (assetSector !== tSector) return false;
     }
 
-    const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
-    const activePeriodicities = asset.periodicities || [];
-    const commonPeriodicities = activePeriodicities.filter((ap) =>
-      tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
-    );
-    return commonPeriodicities.length > 0;
+    return { preventiveSet, surveySet };
+  }, [existingOrders]);
+
+  // 2. High performance assets grouped by comarca
+  const assetsByComarca = useMemo(() => {
+    const map = new Map<string, Asset[]>();
+    for (let i = 0; i < assets.length; i++) {
+      const a = assets[i];
+      const c = getAssetComarcaClean(a).toLowerCase();
+      let list = map.get(c);
+      if (!list) {
+        list = [];
+        map.set(c, list);
+      }
+      list.push(a);
+    }
+    return map;
+  }, [assets]);
+
+  const checkPreventiveAlreadyExists = (assetId: string, periodicity: string, startDateStr: string): boolean => {
+    const dates = alignPeriodDates(startDateStr, periodicity);
+    const periodKey = getPeriodKey(dates.scheduledDate, periodicity);
+    return existingOrdersLookup.preventiveSet.has(`${assetId}|${periodicity.toLowerCase().trim()}|${periodKey}`);
   };
 
-  const getAssetComarcaClean = (asset: Asset): string => {
-    const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || '';
-    return c.trim();
+  const checkSurveyAlreadyExists = (comarcaName: string, templateName: string, startDateStr: string): boolean => {
+    const dates = alignPeriodDates(startDateStr, 'Semanal');
+    const title = `${templateName} - ${comarcaName}`;
+    const periodKey = getPeriodKey(dates.scheduledDate, 'Semanal');
+    return existingOrdersLookup.surveySet.has(`${comarcaName.toLowerCase().trim()}|${title.trim()}|${periodKey}`);
   };
 
   // Helper to compute available Comarcas and Gerências for a filter row:
@@ -942,34 +1043,16 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
       return true;
     });
 
-    const checkPreventiveAlreadyExists = (asset: Asset, periodicity: string, startDateStr: string): boolean => {
-      const dates = alignPeriodDates(startDateStr, periodicity);
-      return existingOrders.some((o) => {
-        if (o.isSurvey) return false;
-        if (o.assetId !== asset.id) return false;
-        const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
-        if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
-        return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, periodicity);
-      });
-    };
-
-    const checkSurveyAlreadyExists = (comarcaName: string, templateName: string, startDateStr: string): boolean => {
-      const dates = alignPeriodDates(startDateStr, 'Semanal');
-      const title = `${templateName} - ${comarcaName}`;
-      return existingOrders.some((o) => {
-        if (!o.isSurvey || o.surveyLocation !== comarcaName) return false;
-        if (o.title !== title) return false;
-        return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, 'Semanal');
-      });
-    };
-
     // Calculate pending counts per comarca
     const comarcaStats: Record<string, number> = {};
 
-    existingComarcas.forEach((comarcaName) => {
+    for (let i = 0; i < existingComarcas.length; i++) {
+      const comarcaName = existingComarcas[i];
+      const comarcaLower = comarcaName.toLowerCase().trim();
       let pendingForComarca = 0;
 
-      for (const t of targetTemplates) {
+      for (let j = 0; j < targetTemplates.length; j++) {
+        const t = targetTemplates[j];
         if (t.type === 'survey') {
           if (row.sector !== 'all') {
             const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
@@ -980,19 +1063,21 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             pendingForComarca++;
           }
         } else if (t.type === 'preventive') {
-          const matchingAssets = assets.filter((a) => {
-            if (getAssetComarcaClean(a).toLowerCase() !== comarcaName.toLowerCase()) return false;
-            if (row.sector !== 'all' && a.sector && a.sector.toLowerCase().trim() !== row.sector.toLowerCase().trim()) return false;
-            return isAssetCompatibleWithTemplate(a, t);
-          });
+          const comarcaAssets = assetsByComarca.get(comarcaLower) || [];
+          if (comarcaAssets.length === 0) continue;
 
           const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
-          for (const asset of matchingAssets) {
-            const commonPeriodicities = (asset.periodicities || []).filter((ap) =>
+          for (let k = 0; k < comarcaAssets.length; k++) {
+            const a = comarcaAssets[k];
+            if (row.sector !== 'all' && a.sector && a.sector.toLowerCase().trim() !== row.sector.toLowerCase().trim()) continue;
+            if (!isAssetCompatibleWithTemplate(a, t)) continue;
+
+            const commonPeriodicities = (a.periodicities || []).filter((ap) =>
               tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
             );
-            for (const p of commonPeriodicities) {
-              const already = checkPreventiveAlreadyExists(asset, p, row.startDate);
+            for (let pIdx = 0; pIdx < commonPeriodicities.length; pIdx++) {
+              const p = commonPeriodicities[pIdx];
+              const already = checkPreventiveAlreadyExists(a.id, p, row.startDate);
               if (!already) {
                 pendingForComarca++;
               }
@@ -1001,11 +1086,11 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         }
       }
 
-      // ONLY keep comarcas that have > 0 pending items! Completely hide comarcas with 0!
+      // ONLY keep comarcas that have > 0 pending items!
       if (pendingForComarca > 0) {
         comarcaStats[comarcaName] = pendingForComarca;
       }
-    });
+    }
 
     const eligibleComarcas = Object.entries(comarcaStats)
       .map(([comarca, pendingCount]) => ({
@@ -1019,33 +1104,35 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     // Calculate pending counts per sector / gerência
     const sectorStats: Record<string, number> = {};
 
-    for (const t of targetTemplates) {
+    for (let j = 0; j < targetTemplates.length; j++) {
+      const t = targetTemplates[j];
       if (t.type === 'survey') {
         const sectorName = t.targetSectorOrType || 'GMC';
-        const targetComarcas = existingComarcas.filter((c) => {
-          if (row.comarca !== 'all' && c.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) return false;
-          return true;
-        });
-        for (const c of targetComarcas) {
+        for (let i = 0; i < existingComarcas.length; i++) {
+          const c = existingComarcas[i];
+          if (row.comarca !== 'all' && c.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) continue;
           const already = checkSurveyAlreadyExists(c, t.name, row.startDate);
           if (!already) {
             sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
           }
         }
       } else if (t.type === 'preventive') {
-        const matchingAssets = assets.filter((a) => {
-          if (row.comarca !== 'all' && getAssetComarcaClean(a).toLowerCase() !== row.comarca.toLowerCase().trim()) return false;
-          return isAssetCompatibleWithTemplate(a, t);
-        });
-
+        const candidateAssets = row.comarca !== 'all'
+          ? (assetsByComarca.get(row.comarca.toLowerCase().trim()) || [])
+          : assets;
         const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
-        for (const asset of matchingAssets) {
+
+        for (let k = 0; k < candidateAssets.length; k++) {
+          const asset = candidateAssets[k];
+          if (!isAssetCompatibleWithTemplate(asset, t)) continue;
+
           const sectorName = asset.sector || t.targetSectorOrType || 'GMMR';
           const commonPeriodicities = (asset.periodicities || []).filter((ap) =>
             tPeriodicities.some((tp) => tp.toLowerCase() === ap.toLowerCase())
           );
-          for (const p of commonPeriodicities) {
-            const already = checkPreventiveAlreadyExists(asset, p, row.startDate);
+          for (let pIdx = 0; pIdx < commonPeriodicities.length; pIdx++) {
+            const p = commonPeriodicities[pIdx];
+            const already = checkPreventiveAlreadyExists(asset.id, p, row.startDate);
             if (!already) {
               sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
             }
@@ -1070,6 +1157,22 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
       totalSectorPending
     };
   };
+
+  // Precompute rowScopeMap using useMemo so it never re-runs during render
+  const rowScopeMap = useMemo(() => {
+    const map = new Map<string, {
+      eligibleComarcas: { comarca: string; pendingCount: number }[];
+      totalComarcaPending: number;
+      eligibleSectors: { sector: string; pendingCount: number }[];
+      totalSectorPending: number;
+    }>();
+
+    for (let i = 0; i < filterRows.length; i++) {
+      const row = filterRows[i];
+      map.set(row.id, getRowScopeInfo(row));
+    }
+    return map;
+  }, [filterRows, templates, assets, existingOrdersLookup, assetsByComarca, existingComarcas]);
 
   // FRONTEND SIMULATOR / DRY-RUN CALCULATOR
   // Renders a preview list of what would be prepared without mutating the DB
@@ -1100,7 +1203,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         return true;
       });
 
-      const scopeInfo = getRowScopeInfo(row);
+      const scopeInfo = rowScopeMap.get(row.id) || getRowScopeInfo(row);
       const eligibleComarcasSet = new Set(scopeInfo.eligibleComarcas.map((c) => c.comarca.toLowerCase().trim()));
 
       for (const t of targetTemplates) {
@@ -1119,54 +1222,42 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
           });
 
           for (const comarca of targetComarcas) {
-            let i = 0;
-            const limit = 100;
-            while (i < limit) {
-              const dates = alignPeriodDates(row.startDate, 'Semanal');
-              const title = `${t.name} - ${comarca}`;
+            const dates = alignPeriodDates(row.startDate, 'Semanal');
+            const title = `${t.name} - ${comarca}`;
 
-              // Duplication check in existing database orders
-              const alreadyExists = existingOrders.some((o) => {
-                if (!o.isSurvey || o.surveyLocation !== comarca) return false;
-                if (o.title !== title) return false;
-                return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, 'Semanal');
-              });
+            const alreadyExists = checkSurveyAlreadyExists(comarca, t.name, row.startDate);
 
-              previewList.push({
-                id: idCounter++,
-                assetName: 'S/V - Vistoria Periódica',
-                assetCode: 'PE-VISTORIA',
-                title: title,
-                scheduledDate: dates.scheduledDate,
-                startDate: dates.startDate,
-                endDate: dates.endDate,
-                periodicity: 'Semanal',
-                type: 'survey',
-                management: t.targetSectorOrType || 'Comarcas',
-                comarca: comarca,
-                alreadyExists: alreadyExists
-              });
-
-              i = limit; // Only generate 1 instance per selected period
-            }
+            previewList.push({
+              id: idCounter++,
+              assetName: 'S/V - Vistoria Periódica',
+              assetCode: 'PE-VISTORIA',
+              title: title,
+              scheduledDate: dates.scheduledDate,
+              startDate: dates.startDate,
+              endDate: dates.endDate,
+              periodicity: 'Semanal',
+              type: 'survey',
+              management: t.targetSectorOrType || 'Comarcas',
+              comarca: comarca,
+              alreadyExists: alreadyExists
+            });
           }
         }
 
         // 2. PREVENTIVE TEMPLATE (Sempre vinculada a ativo por tipo/setor, um por equipamento)
         if (t.type === 'preventive') {
-          // Find matching assets across the set comarca and sector filter
-          const matchingAssets = assets.filter((asset) => {
+          const candidateAssets = row.comarca !== 'all'
+            ? (assetsByComarca.get(row.comarca.toLowerCase().trim()) || [])
+            : assets;
+
+          const matchingAssets = candidateAssets.filter((asset) => {
             const assetComarca = getAssetComarcaClean(asset);
             const cLower = assetComarca.toLowerCase().trim();
-            if (row.comarca !== 'all' && cLower !== row.comarca.toLowerCase().trim()) return false;
             if (row.comarca === 'all' && !eligibleComarcasSet.has(cLower)) return false;
-
             if (row.sector !== 'all' && asset.sector && asset.sector.toLowerCase().trim() !== row.sector.toLowerCase().trim()) return false;
-
             return isAssetCompatibleWithTemplate(asset, t);
           });
 
-          // Determine periodicities in template to iterate
           const tPeriodicities = (t.periodicity || '').split(',').map((p) => p.trim());
 
           for (const asset of matchingAssets) {
@@ -1176,40 +1267,25 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             );
 
             for (const periodicity of commonPeriodicities) {
-              let i = 0;
-              const limit = 100;
-              while (i < limit) {
-                const dates = alignPeriodDates(row.startDate, periodicity);
-                const title = `Preventiva ${periodicity} - ${asset.name}`;
+              const dates = alignPeriodDates(row.startDate, periodicity);
+              const title = `Preventiva ${periodicity} - ${asset.name}`;
 
-                // Duplication check in existing database orders
-                const alreadyExists = existingOrders.some((o) => {
-                  if (o.isSurvey) return false;
-                  if (o.assetId !== asset.id) return false;
-                  
-                  const oPeriodicity = o.periodicity || (o.title.includes('Mensal') ? 'Mensal' : o.title.includes('Semanal') ? 'Semanal' : o.title.includes('Trimestral') ? 'Trimestral' : o.title.includes('Semestral') ? 'Semestral' : o.title.includes('Anual') ? 'Anual' : '');
-                  if (oPeriodicity.toLowerCase().trim() !== periodicity.toLowerCase().trim()) return false;
+              const alreadyExists = checkPreventiveAlreadyExists(asset.id, periodicity, row.startDate);
 
-                  return isSamePeriod(o.startDate || o.scheduledDate, dates.scheduledDate, periodicity);
-                });
-
-                previewList.push({
-                  id: idCounter++,
-                  assetName: asset.name,
-                  assetCode: asset.code,
-                  title: title,
-                  scheduledDate: dates.scheduledDate,
-                  startDate: dates.startDate,
-                  endDate: dates.endDate,
-                  periodicity: periodicity,
-                  type: 'preventive',
-                  management: asset.sector || t.targetSectorOrType || 'Refrigeração',
-                  comarca: getAssetComarcaClean(asset) || 'Geral',
-                  alreadyExists: alreadyExists
-                });
-
-                i = limit; // Only generate 1 instance per selected period
-              }
+              previewList.push({
+                id: idCounter++,
+                assetName: asset.name,
+                assetCode: asset.code,
+                title: title,
+                scheduledDate: dates.scheduledDate,
+                startDate: dates.startDate,
+                endDate: dates.endDate,
+                periodicity: periodicity,
+                type: 'preventive',
+                management: asset.sector || t.targetSectorOrType || 'Refrigeração',
+                comarca: getAssetComarcaClean(asset) || 'Geral',
+                alreadyExists: alreadyExists
+              });
             }
           }
         }
@@ -1219,7 +1295,9 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
     return previewList;
   };
 
-  const simulationRecords = calculateDryRunSimulation();
+  const simulationRecords = useMemo(() => {
+    return calculateDryRunSimulation();
+  }, [filterRows, templates, assets, existingOrdersLookup, rowScopeMap, assetsByComarca, existingComarcas]);
 
   // Check for duplicate rows in filterRows
   const duplicateRowMap = useMemo(() => {
@@ -2139,7 +2217,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
                         </div>
                       )}
                       {(() => {
-                        const scopeInfo = getRowScopeInfo(row);
+                        const scopeInfo = rowScopeMap.get(row.id) || defaultScopeInfo;
                         const isComarcaInScope = row.comarca === 'all' || scopeInfo.eligibleComarcas.some((c) => c.comarca.toLowerCase().trim() === row.comarca.toLowerCase().trim());
                         const selectedComarcaValue = isComarcaInScope ? row.comarca : (scopeInfo.eligibleComarcas.length > 0 ? 'all' : 'none');
 

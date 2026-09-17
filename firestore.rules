@@ -1,9 +1,71 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Permite leitura e escrita pública em qualquer documento e subcoleção durante Preview para desenvolvimento rápido.
-    match /{document=**} {
+
+    // 1. ATIVOS E EQUIPAMENTOS
+    // Leitura pública essencial para o escaneamento externo via QR Code.
+    // Gravação validando integridade mínima de campos.
+    match /assets/{assetId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['name', 'status']);
+      allow delete: if true;
+    }
+
+    // 2. HISTÓRICO DE MANUTENÇÃO PREVENTIVA
+    // Leitura pública essencial para auditoria da máquina pelo cliente.
+    // Gravação de laudos validada.
+    // BLINDAGEM: Registros de histórico de manutenção são permanentes (proibida exclusão direta).
+    match /histories/{historyId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
+      allow delete: if false;
+    }
+
+    // 3. LOGS DE ACESSO E AUDITORIA
+    // Criação de novos eventos permitida.
+    // BLINDAGEM: Proibida qualquer alteração ou exclusão de logs já registrados (trilha de auditoria imutável).
+    match /accessLogs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 4. ORDENS DE SERVIÇO
+    // Gestão operacional de preventivas e checklists técnicos.
+    match /serviceOrders/{orderId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['status', 'title']);
+      allow delete: if true;
+    }
+
+    // 5. MODELOS DE CHECKLIST E TEMPLATES
+    match /templates/{templateId} {
       allow read, write: if true;
+    }
+
+    // 6. PRAZOS E METAS DE PLANEJAMENTO
+    match /planningDeadlines/{deadlineId} {
+      allow read, write: if true;
+    }
+
+    // 7. GERÊNCIAS E UNIDADES OPERACIONAIS
+    match /managements/{managementId} {
+      allow read, write: if true;
+    }
+    match /units/{unitId} {
+      allow read, write: if true;
+    }
+
+    // 8. USUÁRIOS E CONTAS DE ACESSO
+    // Necessário para o login interno e gestão de técnicos.
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // 9. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

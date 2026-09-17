@@ -53,7 +53,7 @@ export default function CameraQrScanner({ onScanSuccess, onClose }: CameraQrScan
         console.error("Erro ao iniciar leitor da câmera QR:", err);
         const msg = err?.message || String(err);
         if (msg.includes("NotAllowedError") || msg.includes("Permission denied")) {
-          setErrorMessage("Permissão de câmera negada! Habilite o acesso à câmera quando solicitado pelo navegador.");
+          setErrorMessage("Acesso à câmera bloqueado ou não autorizado pelo navegador. Você pode liberar a permissão nas configurações do site (ícone de cadeado na barra de endereços) ou usar a digitação manual do código.");
         } else if (msg.includes("Requested device not found") || msg.includes("no video input devices")) {
           setErrorMessage("Nenhuma câmera encontrada no seu dispositivo.");
         } else {

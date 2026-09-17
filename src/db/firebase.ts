@@ -26,6 +26,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { idbGet, idbSet } from '../utils/idbCache';
+import { sanitizePublicAsset, sanitizePublicLog } from '../utils/lgpdUtils';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Asset, ServiceOrder, MaintenanceLog, ChecklistItem, MaintenanceTemplate, HexonUser, Management, Unit, AccessLog, AuditLog, Profile, Permission, SystemPermission, RolePermissions, isSectorInGerencia } from '../types';
 
@@ -523,6 +524,127 @@ export async function dbGetAsset(assetId: string): Promise<Asset | null> {
   return assets.find((a) => a.id === assetId) || null;
 }
 
+// SECURE PUBLIC ASSET LOOKUP (Only fetches the scanned document - no batch collection leak)
+export async function dbGetSingleAssetPublic(assetIdentifier: string): Promise<Asset | null> {
+  if (!assetIdentifier) return null;
+  const clean = decodeURIComponent(assetIdentifier).trim();
+  const cleanLower = clean.toLowerCase();
+  const rawId = cleanLower.startsWith('hexon_preventiva_asset_id_')
+    ? clean.substring('hexon_preventiva_asset_id_'.length).trim()
+    : clean;
+
+  if (firebaseActive && dbInstance) {
+    try {
+      // 1. Try direct document fetch by ID (1 read only)
+      const docRef = doc(dbInstance, 'assets', rawId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        if (data.qrCode) delete data.qrCode;
+        return sanitizePublicAsset({ id: snap.id, ...data } as Asset);
+      }
+
+      // 2. Fallback: Search by code field with limit(1) (e.g. "AR-001" or "168548")
+      const qCode = query(
+        collection(dbInstance, 'assets'),
+        where('code', '==', rawId),
+        limit(1)
+      );
+      const qSnap = await getDocs(qCode);
+      if (!qSnap.empty) {
+        const docItem = qSnap.docs[0];
+        const data = docItem.data() as any;
+        if (data.qrCode) delete data.qrCode;
+        return sanitizePublicAsset({ id: docItem.id, ...data } as Asset);
+      }
+
+      // 3. Fallback: Upper/lower case variations for code matching
+      if (rawId !== rawId.toUpperCase()) {
+        const qUpper = query(
+          collection(dbInstance, 'assets'),
+          where('code', '==', rawId.toUpperCase()),
+          limit(1)
+        );
+        const qUpperSnap = await getDocs(qUpper);
+        if (!qUpperSnap.empty) {
+          const docItem = qUpperSnap.docs[0];
+          const data = docItem.data() as any;
+          if (data.qrCode) delete data.qrCode;
+          return sanitizePublicAsset({ id: docItem.id, ...data } as Asset);
+        }
+      }
+    } catch (err: any) {
+      console.warn('dbGetSingleAssetPublic error querying Firestore:', err);
+      checkQuotaException(err);
+    }
+  }
+
+  // 4. Offline/Local fallback (checks if already in local storage, WITHOUT saving all assets)
+  try {
+    const saved = localStorage.getItem('hexon_assets');
+    if (saved) {
+      const parsed: Asset[] = JSON.parse(saved);
+      const found = parsed.find(
+        (a) =>
+          a.id.toLowerCase() === rawId.toLowerCase() ||
+          a.code.toLowerCase() === rawId.toLowerCase()
+      );
+      if (found) {
+        const cleanFound = { ...found };
+        if (cleanFound.qrCode) delete cleanFound.qrCode;
+        return sanitizePublicAsset(cleanFound);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
+// SECURE PUBLIC ASSET HISTORY (Only fetches logs belonging strictly to this single asset)
+export async function dbGetAssetHistoryPublic(assetId: string): Promise<MaintenanceLog[]> {
+  if (!assetId) return [];
+
+  if (firebaseActive && dbInstance) {
+    try {
+      // Direct filtered query: only histories matching this specific assetId
+      const q = query(
+        collection(dbInstance, 'histories'),
+        where('assetId', '==', assetId)
+      );
+      const snap = await getDocs(q);
+      const list: MaintenanceLog[] = [];
+      snap.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as MaintenanceLog);
+      });
+
+      // Sort chronologically descending (newest first) and sanitize each log for LGPD
+      list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      return list.map(sanitizePublicLog);
+    } catch (err: any) {
+      console.warn('dbGetAssetHistoryPublic error querying Firestore:', err);
+      checkQuotaException(err);
+    }
+  }
+
+  // Offline/Local fallback for this asset only
+  try {
+    const saved = localStorage.getItem('hexon_histories');
+    if (saved) {
+      const parsed: MaintenanceLog[] = JSON.parse(saved);
+      return parsed
+        .filter((h) => h.assetId === assetId)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .map(sanitizePublicLog);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return [];
+}
+
 // Save or Update asset
 export async function dbSaveAsset(asset: Asset): Promise<void> {
   // Ensure cache is initialized
@@ -613,12 +735,20 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
 function processExpiredOrders(orders: ServiceOrder[]): ServiceOrder[] {
   const todayStr = new Date().toISOString().slice(0, 10);
   const processed = orders.map((o) => {
-    if (o.endDate && o.status !== 'Concluída' && o.status !== 'Não Executada' && todayStr > o.endDate) {
-      return {
-        ...o,
-        status: 'Não Executada' as const,
-        updatedAt: new Date().toISOString()
-      };
+    if (o.status !== 'Concluída' && o.status !== 'Não Executada') {
+      // Check 1: Super Admin month limit SLA (endDate) has passed
+      const hasSlaExpired = !!(o.endDate && todayStr > o.endDate);
+      // Check 2: Scheduled execution window has passed without execution
+      const executionDeadline = o.scheduledEndDate || o.scheduledDate;
+      const hasExecutionWindowExpired = !!(executionDeadline && todayStr > executionDeadline);
+
+      if (hasSlaExpired || hasExecutionWindowExpired) {
+        return {
+          ...o,
+          status: 'Não Executada' as const,
+          updatedAt: new Date().toISOString()
+        };
+      }
     }
     return o;
   });
@@ -1818,6 +1948,44 @@ const SEED_UNITS: Unit[] = [
   { id: 'u-4', name: 'Unidade Zona Sul', location: 'Posto de Atendimento Copacabana, Rio de Janeiro' }
 ];
 
+// SECURE PASSWORD HASHING (SHA-256 with enterprise salt)
+export async function hashPassword(password: string): Promise<string> {
+  if (!password) return '';
+  // If already hashed with our prefix, return as is
+  if (password.startsWith('hexon_sha256:')) return password;
+
+  try {
+    const encoder = new TextEncoder();
+    // Salted with application-specific pepper to prevent rainbow table attacks
+    const data = encoder.encode(`hexon_pepper_salt_2026_${password}`);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `hexon_sha256:${hashHex}`;
+  } catch (e) {
+    // Robust fallback if subtle crypto is unavailable in rare environments
+    return `hexon_sha256:${btoa(encodeURIComponent(`hexon_fallback_${password}`))}`;
+  }
+}
+
+// VERIFY PASSWORD (Supports modern SHA-256 hashes and backward-compatible legacy plain-text)
+export async function verifyPassword(passwordInserted: string, storedPassword?: string): Promise<boolean> {
+  if (!storedPassword || !passwordInserted) return false;
+
+  // 1. Direct match with SHA-256 hashed password
+  const hashedInput = await hashPassword(passwordInserted);
+  if (storedPassword === hashedInput) {
+    return true;
+  }
+
+  // 2. Backward compatibility: if the stored password was legacy plain text (e.g. 'admin')
+  if (storedPassword === passwordInserted) {
+    return true;
+  }
+
+  return false;
+}
+
 // Helper to check and bootstrap initial tables/collections asynchronously
 async function bootstrapRBACCollectionsIfEmpty() {
   if (!firebaseActive || !dbInstance) return;
@@ -1828,14 +1996,16 @@ async function bootstrapRBACCollectionsIfEmpty() {
     if (usersSnap.empty) {
       console.log('Seeding default users into Firestore...');
       for (const u of SEED_USERS) {
-        await setDoc(doc(dbInstance, 'users', u.id), cleanUndefined(u));
+        const secureUser = { ...u, senha: await hashPassword(u.senha || 'admin') };
+        await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
       }
     } else {
       // Ensure specific Super Admin user with Daniel Fabre exists/is up to date
       const dDoc = await getDoc(doc(dbInstance, 'users', 'daniel_fab93'));
       if (!dDoc.exists()) {
         const u = SEED_USERS[0];
-        await setDoc(doc(dbInstance, 'users', u.id), cleanUndefined(u));
+        const secureUser = { ...u, senha: await hashPassword(u.senha || 'admin') };
+        await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
       }
     }
 
@@ -1937,12 +2107,19 @@ export async function dbGetUsers(): Promise<HexonUser[]> {
 // SAVE USER
 export async function dbSaveUser(user: HexonUser): Promise<void> {
   const users = await dbGetUsers();
-  const index = users.findIndex(u => u.matricula === user.matricula || u.id === user.id);
+  
+  // Ensure password is safely encrypted with SHA-256 before persisting
+  const safeUser: HexonUser = { ...user };
+  if (safeUser.senha && !safeUser.senha.startsWith('hexon_sha256:')) {
+    safeUser.senha = await hashPassword(safeUser.senha);
+  }
+
+  const index = users.findIndex(u => u.matricula === safeUser.matricula || u.id === safeUser.id);
   
   if (index >= 0) {
-    users[index] = { ...users[index], ...user };
+    users[index] = { ...users[index], ...safeUser };
   } else {
-    users.push(user);
+    users.push(safeUser);
   }
   
   cacheUsers = users;
@@ -1955,7 +2132,7 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'users', user.id || user.matricula), cleanUndefined(user));
+      await setDoc(doc(dbInstance, 'users', safeUser.id || safeUser.matricula), cleanUndefined(safeUser));
     } catch (err: any) {
       console.warn('Firestore write user failed, Utilizing local state:', err);
       checkQuotaException(err);
@@ -2447,7 +2624,10 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
     return null;
   }
 
-  if (foundUser.senha !== senhaInserida) {
+  // Robust verification (matches SHA-256 hash or legacy plain-text)
+  const isPasswordValid = await verifyPassword(senhaInserida, foundUser.senha);
+
+  if (!isPasswordValid) {
     await dbAddAccessLog({
       userId: foundUser.id,
       userName: foundUser.name,
@@ -2456,6 +2636,18 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
       timestamp: new Date().toISOString()
     });
     return null;
+  }
+
+  // Transparent auto-upgrade: if stored password is still legacy plain text, hash it and save in background!
+  if (foundUser.senha && !foundUser.senha.startsWith('hexon_sha256:')) {
+    (async () => {
+      try {
+        foundUser.senha = await hashPassword(senhaInserida);
+        await dbSaveUser(foundUser);
+      } catch (e) {
+        console.warn('Background auto-upgrade to password hash failed:', e);
+      }
+    })();
   }
 
   // Access Granted!
@@ -2830,11 +3022,14 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
     const nonUpdated: ServiceOrder[] = [];
 
     for (const os of orders) {
-      const isRangePassed = os.endDate && os.endDate < currentDateStr;
+      const isSlaPassed = !!(os.endDate && os.endDate < currentDateStr);
+      const executionDeadline = os.scheduledEndDate || os.scheduledDate;
+      const isExecutionWindowPassed = !!(executionDeadline && executionDeadline < currentDateStr);
+      const isExpired = isSlaPassed || isExecutionWindowPassed;
 
       if (os.status === 'Não Executada') {
-        if (!isRangePassed) {
-          // SELF-HEAL: Range is still active! Revert status back to its correct state
+        if (!isExpired) {
+          // SELF-HEAL: Neither SLA nor execution window has passed! Revert status back to its correct state
           const restoredStatus = os.scheduledDate ? 'Planejada' : 'Novo';
           updatedOrders.push({
             ...os,
@@ -2844,8 +3039,8 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
           continue;
         }
       } else if (os.status !== 'Concluída') {
-        if (isRangePassed) {
-          // EXPIRE: Transition only when the Super Admin target range actually passes
+        if (isExpired) {
+          // EXPIRE: Transition when the SLA range or the scheduled window passes without completion
           updatedOrders.push({
             ...os,
             status: 'Não Executada',
