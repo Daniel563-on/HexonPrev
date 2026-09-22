@@ -5,7 +5,7 @@ import { HexonUser } from '../types';
 import { User, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface LoginViewProps {
-  onLoginSuccess: (user: HexonUser) => void;
+  onLoginSuccess: (user: HexonUser) => Promise<void> | void;
   darkMode: boolean;
 }
 
@@ -60,7 +60,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           localStorage.removeItem('hexon_remembered_matricula');
           localStorage.setItem('hexon_remember_matricula_optout', 'true');
         }
-        onLoginSuccess(user);
+        await onLoginSuccess(user);
       } else {
         setErrorMessage('Matrícula ou senha de acesso incorretas.');
       }

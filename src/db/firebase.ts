@@ -23,7 +23,8 @@ import {
   getDocFromServer,
   writeBatch,
   deleteField,
-  onSnapshot
+  onSnapshot,
+  updateDoc
 } from 'firebase/firestore';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { sanitizePublicAsset, sanitizePublicLog } from '../utils/lgpdUtils';
@@ -2168,6 +2169,35 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
       console.error('Firestore write user failed:', err);
       checkQuotaException(err);
       throw err;
+    }
+  }
+}
+
+// UPDATE USER SESSION ID (Fast targeted write for single-session enforcement)
+export async function dbUpdateUserSessionId(userId: string, sessionId: string): Promise<void> {
+  // Update in-memory and local caches immediately
+  if (cacheUsers) {
+    const idx = cacheUsers.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      cacheUsers[idx].currentSessionId = sessionId;
+      try {
+        localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
+      } catch {}
+    }
+  }
+
+  // Update in Firestore directly using updateDoc (or merge fallback)
+  if (firebaseActive && dbInstance) {
+    try {
+      const userRef = doc(dbInstance, 'users', userId);
+      await updateDoc(userRef, { currentSessionId: sessionId });
+    } catch (err: any) {
+      console.warn('Firestore update session id failed, using setDoc fallback:', err);
+      try {
+        await setDoc(doc(dbInstance, 'users', userId), { currentSessionId: sessionId }, { merge: true });
+      } catch (mergeErr) {
+        console.error('Failed to set session id merge:', mergeErr);
+      }
     }
   }
 }

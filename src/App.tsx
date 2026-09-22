@@ -27,6 +27,7 @@ import {
   dbGetPermissions,
   subscribeToUserProfile,
   dbSaveUser,
+  dbUpdateUserSessionId,
   dbGetPlanningDeadlines,
   dbSavePlanningDeadline,
   dbCheckAndExpirePlanningOrders,
@@ -312,6 +313,8 @@ export default function App() {
     const localSessionId = localStorage.getItem('hexon_current_session_id');
     if (!localSessionId) return;
 
+    let isInitialSnapshot = true;
+
     // Listen to changes in the active user's document
     const unsubscribe = subscribeToUserProfile(userProfile.id, (dbUser) => {
       if (!dbUser) return;
@@ -323,9 +326,21 @@ export default function App() {
         return;
       }
 
+      const activeLocalSession = localStorage.getItem('hexon_current_session_id');
+
+      // Initial snapshot safeguard: If remote hasn't received local ID yet due to network transit,
+      // synchronize it now and do NOT trigger false displacement.
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        if (activeLocalSession && dbUser.currentSessionId !== activeLocalSession) {
+          dbUpdateUserSessionId(userProfile.id, activeLocalSession).catch(() => {});
+          return;
+        }
+      }
+
       // If a modern currentSessionId is specified, and it doesn't match our local ID, trigger displacement:
-      if (dbUser.currentSessionId && dbUser.currentSessionId !== localSessionId) {
-        console.warn(`Sessão deslocada! ID Remoto: ${dbUser.currentSessionId}, ID Local: ${localSessionId}`);
+      if (dbUser.currentSessionId && activeLocalSession && dbUser.currentSessionId !== activeLocalSession) {
+        console.warn(`Sessão deslocada! ID Remoto: ${dbUser.currentSessionId}, ID Local: ${activeLocalSession}`);
         handleLogoutState();
         setSessionDisplaced(true);
       }
@@ -477,7 +492,7 @@ export default function App() {
                   // Only restore if this device's sessionId still matches the active session in Firestore
                   if (!foundUser.currentSessionId || foundUser.currentSessionId === savedSessionId) {
                     if (!foundUser.currentSessionId) {
-                      await dbSaveUser({ ...foundUser, currentSessionId: savedSessionId });
+                      dbUpdateUserSessionId(foundUser.id, savedSessionId).catch(() => {});
                     }
                     const synchronizedUser = { ...foundUser, currentSessionId: savedSessionId };
                     // Ensure local cache has the most recent user document
@@ -536,14 +551,17 @@ export default function App() {
     
     // CRITICAL: Persist user profile to localStorage so page refreshes (F5) maintain the session
     localStorage.setItem('hexon_cached_user', JSON.stringify(updatedUser));
-    setUserProfile(updatedUser);
     
-    // Persist session to Firestore
+    // 1. Register session in Firestore BEFORE activating userProfile state so real-time listeners don't see stale data
     try {
-      await dbSaveUser(updatedUser);
+      await dbUpdateUserSessionId(profile.id, sessionId);
     } catch (e) {
       console.warn('Erro ao atualizar sessionId do usuário no Firestore:', e);
     }
+
+    // 2. Clear any displacement modal and mount authenticated view
+    setSessionDisplaced(false);
+    setUserProfile(updatedUser);
     
     // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
     if (updatedUser.perfil === 'Profissional') {
