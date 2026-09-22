@@ -32,6 +32,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   // User form modal state
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<HexonUser | null>(null);
+  const [userModalError, setUserModalError] = useState<string | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
   const [userForm, setUserForm] = useState({
     name: '',
     matricula: '',
@@ -63,11 +65,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     loadAllData();
   }, [activeSubTab]);
 
-  const loadAllData = async () => {
+  const loadAllData = async (force: boolean = false) => {
     setIsLoading(true);
     try {
       if (activeSubTab === 'users') {
-        const uList = await dbGetUsers();
+        const uList = await dbGetUsers(force);
         setUsers(uList);
         const mList = await dbGetManagements();
         setManagements(mList);
@@ -85,12 +87,26 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     }
   };
 
+  const getNextSuggestedMatricula = (currentUsers: HexonUser[]): string => {
+    let maxNum = 0;
+    currentUsers.forEach(u => {
+      const match = (u.matricula || '').match(/(\d+)$/);
+      if (match) {
+        const val = parseInt(match[1], 10);
+        if (val > maxNum) maxNum = val;
+      }
+    });
+    return `1-${String(maxNum + 1).padStart(4, '0')}`;
+  };
+
   // User Management actions
   const handleOpenCreateUser = () => {
     setEditingUser(null);
+    setUserModalError(null);
+    const suggested = getNextSuggestedMatricula(users);
     setUserForm({
       name: '',
-      matricula: '',
+      matricula: suggested,
       email: '',
       cargo: '',
       gerencia: managements[0]?.name || 'Refrigeração',
@@ -103,6 +119,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
   const handleOpenEditUser = (user: HexonUser) => {
     setEditingUser(user);
+    setUserModalError(null);
     setUserForm({
       name: user.name,
       matricula: user.matricula,
@@ -119,11 +136,24 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userForm.name || !userForm.matricula || !userForm.email) {
-      alert('Preencha os campos obrigatórios (Nome, Matrícula e E-mail).');
+    setUserModalError(null);
+
+    const sanitizedMatricula = userForm.matricula.trim();
+    if (!userForm.name.trim() || !sanitizedMatricula || !userForm.email.trim()) {
+      setUserModalError('Preencha os campos obrigatórios (Nome, Matrícula e E-mail).');
       return;
     }
 
+    // Trava de Matrícula Única: impede que outro usuário já possua a mesma matrícula
+    const duplicate = users.find(
+      u => u.matricula.trim().toLowerCase() === sanitizedMatricula.toLowerCase() && u.id !== editingUser?.id
+    );
+    if (duplicate) {
+      setUserModalError(`A matrícula "${sanitizedMatricula}" já pertence ao colaborador "${duplicate.name}". Defina uma matrícula exclusiva.`);
+      return;
+    }
+
+    setIsSavingUser(true);
     try {
       const targetId = editingUser ? editingUser.id : `u_${Date.now()}`;
       // If editing and password was left blank, keep the previous hashed/existing password
@@ -133,10 +163,10 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
       const newUser: HexonUser = {
         id: targetId,
-        name: userForm.name,
-        matricula: userForm.matricula,
-        email: userForm.email,
-        cargo: userForm.cargo,
+        name: userForm.name.trim(),
+        matricula: sanitizedMatricula,
+        email: userForm.email.trim(),
+        cargo: userForm.cargo.trim(),
         gerencia: userForm.gerencia,
         perfil: userForm.perfil,
         status: userForm.status,
@@ -144,20 +174,33 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       };
 
       await dbSaveUser(newUser);
+
+      if (currentUserProfile.id === newUser.id) {
+        const cached = localStorage.getItem('hexon_cached_user');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            localStorage.setItem('hexon_cached_user', JSON.stringify({ ...parsed, ...newUser }));
+          } catch {}
+        }
+      }
+
       await dbAddAuditLog({
         userMatricula: currentUserProfile.matricula,
         userName: currentUserProfile.name,
         action: editingUser ? 'Atualizou Usuário' : 'Criou Usuário',
-        target: `users/${newUser.matricula}`,
-        details: `${editingUser ? 'Editou' : 'Registrou'} o colaborador ${newUser.name} (${newUser.perfil})`,
+        target: `users/${newUser.id}`,
+        details: `${editingUser ? 'Editou' : 'Registrou'} o colaborador ${newUser.name} (Matrícula: ${newUser.matricula}, Perfil: ${newUser.perfil})`,
         timestamp: new Date().toISOString()
       });
 
       setIsUserModalOpen(false);
-      loadAllData();
-    } catch (err) {
+      await loadAllData(true);
+    } catch (err: any) {
       console.error(err);
-      alert('Erro ao salvar os dados do colaborador.');
+      setUserModalError(err.message || 'Erro ao salvar os dados do colaborador no banco de dados.');
+    } finally {
+      setIsSavingUser(false);
     }
   };
 
@@ -170,7 +213,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     setGenericConfirm({
       show: true,
       title: 'Excluir Usuário',
-      message: `Tem certeza que deseja excluir em definitivo o usuário "${userName}"? Esta ação removerá permanentemente o acesso deste colaborador.`,
+      message: `Tem certeza que deseja excluir em definitivo o usuário "${userName}"? Esta ação removerá permanentemente o acesso deste colaborador do banco de dados.`,
       onConfirm: async () => {
         try {
           await dbDeleteUser(userId);
@@ -182,9 +225,10 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             details: `Excluiu permanentemente o usuário ${userName}`,
             timestamp: new Date().toISOString()
           });
-          loadAllData();
-        } catch (err) {
-          console.error(err);
+          await loadAllData(true);
+        } catch (err: any) {
+          console.error('Erro ao excluir usuário:', err);
+          alert(`Não foi possível excluir o usuário: ${err.message || 'Erro no banco de dados'}`);
         }
       }
     });
@@ -705,6 +749,14 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             </div>
             
             <form onSubmit={handleSaveUser} className="p-6 space-y-4">
+              {/* Error Message Alert */}
+              {userModalError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 dark:text-rose-300 text-xs rounded-xl flex items-start gap-2 animate-in fade-in">
+                  <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+                  <div className="flex-1 font-medium leading-relaxed">{userModalError}</div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 {/* Full name */}
                 <div className="col-span-2">
@@ -714,27 +766,53 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                     required
                     placeholder="Ex: Carlos Gabriel Silva"
                     value={userForm.name}
-                    onChange={(e) => setUserForm({...userForm, name: e.target.value})}
+                    onChange={(e) => {
+                      setUserForm({...userForm, name: e.target.value});
+                      if (userModalError) setUserModalError(null);
+                    }}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                      darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
                     }`}
                   />
                 </div>
 
                 {/* Matricula */}
                 <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Matrícula Corporativa *</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500">Matrícula Corporativa *</label>
+                    {!editingUser && userForm.matricula.trim() && (
+                      users.some(u => u.matricula.trim().toLowerCase() === userForm.matricula.trim().toLowerCase()) ? (
+                        <span className="text-[10px] font-bold text-rose-500 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">error</span> Em uso
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">check_circle</span> Liberada
+                        </span>
+                      )
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
-                    placeholder="Ex: 3-0021"
+                    placeholder="Ex: 1-0003"
                     disabled={!!editingUser}
                     value={userForm.matricula}
-                    onChange={(e) => setUserForm({...userForm, matricula: e.target.value})}
-                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      editingUser ? 'opacity-50 cursor-not-allowed ' : ''
-                    }${darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'}`}
+                    onChange={(e) => {
+                      setUserForm({...userForm, matricula: e.target.value});
+                      if (userModalError) setUserModalError(null);
+                    }}
+                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none transition-colors ${
+                      !editingUser && userForm.matricula.trim() && users.some(u => u.matricula.trim().toLowerCase() === userForm.matricula.trim().toLowerCase())
+                        ? 'border-rose-500 bg-rose-500/5 focus:border-rose-500'
+                        : darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
+                    } ${editingUser ? 'opacity-50 cursor-not-allowed ' : ''}`}
                   />
+                  {!editingUser && userForm.matricula.trim() && users.some(u => u.matricula.trim().toLowerCase() === userForm.matricula.trim().toLowerCase()) && (
+                    <p className="text-[10px] text-rose-500 font-medium mt-1">
+                      Esta matrícula já está em uso. Defina uma matrícula única.
+                    </p>
+                  )}
                 </div>
 
                 {/* Password input */}
@@ -747,9 +825,12 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                     required={!editingUser}
                     placeholder={editingUser ? 'Deixe vazio para manter a atual' : 'Senha inicial de acesso'}
                     value={userForm.senha}
-                    onChange={(e) => setUserForm({...userForm, senha: e.target.value})}
+                    onChange={(e) => {
+                      setUserForm({...userForm, senha: e.target.value});
+                      if (userModalError) setUserModalError(null);
+                    }}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                      darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
                     }`}
                   />
                 </div>
@@ -762,9 +843,12 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                     required
                     placeholder="Ex: carlos.silva@hexon.com"
                     value={userForm.email}
-                    onChange={(e) => setUserForm({...userForm, email: e.target.value})}
+                    onChange={(e) => {
+                      setUserForm({...userForm, email: e.target.value});
+                      if (userModalError) setUserModalError(null);
+                    }}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                      darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
                     }`}
                   />
                 </div>
@@ -844,6 +928,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-850">
                 <button
                   type="button"
+                  disabled={isSavingUser}
                   onClick={() => setIsUserModalOpen(false)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                     darkMode ? 'border-slate-800 hover:bg-slate-800/40' : 'border-slate-250 hover:bg-slate-50'
@@ -853,9 +938,19 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer transition-all"
+                  disabled={isSavingUser}
+                  className={`px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer transition-all flex items-center gap-1.5 ${
+                    isSavingUser ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}
                 >
-                  Confirmar Registro
+                  {isSavingUser ? (
+                    <>
+                      <span className="material-symbols-outlined text-xs animate-spin">sync</span>
+                      Gravando no Banco...
+                    </>
+                  ) : (
+                    editingUser ? 'Salvar Alterações' : 'Confirmar Registro'
+                  )}
                 </button>
               </div>
 

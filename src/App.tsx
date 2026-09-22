@@ -304,7 +304,7 @@ export default function App() {
 
   // 3. Real-time Single Session per Account Sync
   useEffect(() => {
-    if (!userProfile) return;
+    if (!userProfile?.id) return;
 
     const { isFirebase } = getDatabaseMode();
     if (!isFirebase) return;
@@ -316,6 +316,13 @@ export default function App() {
     const unsubscribe = subscribeToUserProfile(userProfile.id, (dbUser) => {
       if (!dbUser) return;
       
+      // If user status became inactive, terminate session
+      if (dbUser.status === 'Inativo') {
+        handleLogoutState();
+        alert('Seu perfil de usuário foi inativado pela administração.');
+        return;
+      }
+
       // If a modern currentSessionId is specified, and it doesn't match our local ID, trigger displacement:
       if (dbUser.currentSessionId && dbUser.currentSessionId !== localSessionId) {
         console.warn(`Sessão deslocada! ID Remoto: ${dbUser.currentSessionId}, ID Local: ${localSessionId}`);
@@ -325,7 +332,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [userProfile]);
+  }, [userProfile?.id]);
 
   const handleToggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -458,31 +465,41 @@ export default function App() {
                 parsedUser = JSON.parse(savedCached);
               } catch {}
 
-              if (parsedUser && parsedUser.id) {
-                const users = await dbGetUsers();
-                const foundUser = users.find(u => u.id === parsedUser!.id && u.status === 'Ativo');
+              if (parsedUser && (parsedUser.id || parsedUser.matricula)) {
+                // Fetch fresh users from database to confirm active status
+                const users = await dbGetUsers(true);
+                const foundUser = users.find(u => 
+                  (u.id === parsedUser!.id || u.matricula.trim().toLowerCase() === (parsedUser!.matricula || '').trim().toLowerCase()) && 
+                  u.status === 'Ativo'
+                );
+
                 if (foundUser) {
                   // Only restore if this device's sessionId still matches the active session in Firestore
                   if (!foundUser.currentSessionId || foundUser.currentSessionId === savedSessionId) {
                     if (!foundUser.currentSessionId) {
                       await dbSaveUser({ ...foundUser, currentSessionId: savedSessionId });
                     }
-                    setUserProfile(foundUser);
+                    const synchronizedUser = { ...foundUser, currentSessionId: savedSessionId };
+                    // Ensure local cache has the most recent user document
+                    localStorage.setItem('hexon_cached_user', JSON.stringify(synchronizedUser));
+                    setUserProfile(synchronizedUser);
 
                     // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
                     if (foundUser.perfil === 'Profissional') {
                       setCurrentTab('service-orders');
                     } else {
-                      const savedTab = localStorage.getItem('hexon_current_tab') || 'qr-codes';
+                      const savedTab = localStorage.getItem('hexon_current_tab') || 'dashboard';
                       if (savedTab && (savedTab !== 'user-control' || foundUser.perfil === 'Super Administrador')) {
                         setCurrentTab(savedTab);
                       }
                     }
                   } else {
                     // Session was replaced by a newer login elsewhere
+                    console.warn('Sessão remota não coincide com o ID local, efetuando logout.');
                     handleLogoutState();
                   }
                 } else {
+                  console.warn('Usuário não localizado ou inativado no banco de dados.');
                   handleLogoutState();
                 }
               }
@@ -507,7 +524,6 @@ export default function App() {
 
   const handleLogoutState = () => {
     localStorage.removeItem('hexon_cached_user');
-    localStorage.removeItem('hexon_remembered_matricula');
     localStorage.removeItem('hexon_current_session_id');
     setUserProfile(null);
     setCurrentUser(null);
@@ -517,8 +533,17 @@ export default function App() {
     const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
     localStorage.setItem('hexon_current_session_id', sessionId);
     const updatedUser = { ...profile, currentSessionId: sessionId };
-    await dbSaveUser(updatedUser);
+    
+    // CRITICAL: Persist user profile to localStorage so page refreshes (F5) maintain the session
+    localStorage.setItem('hexon_cached_user', JSON.stringify(updatedUser));
     setUserProfile(updatedUser);
+    
+    // Persist session to Firestore
+    try {
+      await dbSaveUser(updatedUser);
+    } catch (e) {
+      console.warn('Erro ao atualizar sessionId do usuário no Firestore:', e);
+    }
     
     // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
     if (updatedUser.perfil === 'Profissional') {

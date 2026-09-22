@@ -2045,7 +2045,7 @@ async function bootstrapRBACCollectionsIfEmpty() {
 }
 
 // GET USERS
-export async function dbGetUsers(): Promise<HexonUser[]> {
+export async function dbGetUsers(forceFresh: boolean = false): Promise<HexonUser[]> {
   const hasUser = !!(firebaseActive && dbInstance);
 
   // Try retrieving from local storage fallback first
@@ -2059,17 +2059,19 @@ export async function dbGetUsers(): Promise<HexonUser[]> {
     console.warn('Error reading users from local fallback:', e);
   }
 
-  // Check if in-memory cache OR local storage cache is valid
-  if (cacheUsers !== null && (!hasUser || cacheUsersFromFirebase)) {
-    return [...cacheUsers];
-  }
-  if (isCacheValid('users') && localData && localData.length > 0) {
-    cacheUsers = localData;
-    cacheUsersFromFirebase = true;
-    return [...cacheUsers];
+  if (!forceFresh) {
+    // Check if in-memory cache OR local storage cache is valid
+    if (cacheUsers !== null && (!hasUser || cacheUsersFromFirebase)) {
+      return [...cacheUsers];
+    }
+    if (isCacheValid('users') && localData && localData.length > 0) {
+      cacheUsers = localData;
+      cacheUsersFromFirebase = true;
+      return [...cacheUsers];
+    }
   }
 
-  if (pendingUsersPromise !== null) {
+  if (pendingUsersPromise !== null && !forceFresh) {
     return pendingUsersPromise;
   }
 
@@ -2119,15 +2121,29 @@ export async function dbGetUsers(): Promise<HexonUser[]> {
 
 // SAVE USER
 export async function dbSaveUser(user: HexonUser): Promise<void> {
-  const users = await dbGetUsers();
+  // Always fetch fresh users to check for duplicate matriculas
+  const users = await dbGetUsers(true);
   
+  const sanitizedMatricula = (user.matricula || '').trim();
+  if (!sanitizedMatricula) {
+    throw new Error('A matrícula do colaborador é obrigatória.');
+  }
+
+  // Trava de Matrícula Única: impedir que outro usuário tenha a mesma matrícula
+  const duplicate = users.find(
+    u => u.matricula.trim().toLowerCase() === sanitizedMatricula.toLowerCase() && u.id !== user.id
+  );
+  if (duplicate) {
+    throw new Error(`A matrícula "${sanitizedMatricula}" já pertence ao colaborador "${duplicate.name}". Por favor, defina uma matrícula única.`);
+  }
+
   // Ensure password is safely encrypted with SHA-256 before persisting
-  const safeUser: HexonUser = { ...user };
+  const safeUser: HexonUser = { ...user, matricula: sanitizedMatricula };
   if (safeUser.senha && !safeUser.senha.startsWith('hexon_sha256:')) {
     safeUser.senha = await hashPassword(safeUser.senha);
   }
 
-  const index = users.findIndex(u => u.matricula === safeUser.matricula || u.id === safeUser.id);
+  const index = users.findIndex(u => u.id === safeUser.id);
   
   if (index >= 0) {
     users[index] = { ...users[index], ...safeUser };
@@ -2136,6 +2152,8 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
   }
   
   cacheUsers = users;
+  cacheUsersFromFirebase = true;
+  updateCacheTimestamp('users');
 
   try {
     localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
@@ -2145,18 +2163,21 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'users', safeUser.id || safeUser.matricula), cleanUndefined(safeUser));
+      await setDoc(doc(dbInstance, 'users', safeUser.id), cleanUndefined(safeUser));
     } catch (err: any) {
-      console.warn('Firestore write user failed, Utilizing local state:', err);
+      console.error('Firestore write user failed:', err);
       checkQuotaException(err);
+      throw err;
     }
   }
 }
 
 // DELETE USER
 export async function dbDeleteUser(userId: string): Promise<void> {
-  const users = await dbGetUsers();
+  const users = await dbGetUsers(true);
   cacheUsers = users.filter(u => u.id !== userId && u.matricula !== userId);
+  cacheUsersFromFirebase = true;
+  updateCacheTimestamp('users');
 
   try {
     localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
@@ -2168,8 +2189,9 @@ export async function dbDeleteUser(userId: string): Promise<void> {
     try {
       await deleteDoc(doc(dbInstance, 'users', userId));
     } catch (err: any) {
-      console.warn('Firestore delete user failed:', err);
+      console.error('Firestore delete user failed:', err);
       checkQuotaException(err);
+      throw err;
     }
   }
 }
@@ -2612,10 +2634,11 @@ export async function dbAddAuditLog(log: Omit<AuditLog, 'id'>): Promise<void> {
 
 // RBAC MATRÍCULA LOGIN PROXY
 export async function dbLoginByMatricula(matricula: string, senhaInserida: string): Promise<HexonUser | null> {
-  const users = await dbGetUsers();
+  const users = await dbGetUsers(true);
   
   // Normalize matricula match
-  const foundUser = users.find(u => u.matricula.trim() === matricula.trim());
+  const sanitized = matricula.trim().toLowerCase();
+  const foundUser = users.find(u => u.matricula.trim().toLowerCase() === sanitized);
   
   if (!foundUser) {
     await dbAddAccessLog({
