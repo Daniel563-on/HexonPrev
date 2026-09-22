@@ -28,7 +28,7 @@ import {
   Play,
   AlertTriangle
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser } from '../../types';
+import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { dbSaveServiceOrder } from '../../db/firebase';
 import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
@@ -146,6 +146,63 @@ export default function TechnicianMobileView({
     return myOrders.filter(o => o.status === 'Concluída').length;
   }, [myOrders]);
 
+  // Helper to determine the comarca of an order
+  const getOrderComarca = (os: ServiceOrder): string => {
+    if ((os as any).comarca) return (os as any).comarca;
+    if (os.isSurvey && os.surveyLocation) {
+      return os.surveyLocation;
+    }
+    if ((os.assetId || os.assetCode) && assets.length > 0) {
+      const asset = assets.find(a => (os.assetId && a.id === os.assetId) || (os.assetCode && a.code === os.assetCode));
+      if (asset) {
+        return asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral';
+      }
+    }
+    if (os.description && os.description.includes('Comarca:')) {
+      const match = os.description.match(/Comarca:\s*([^.]+)/);
+      if (match) return match[1].trim();
+    }
+    return 'Geral';
+  };
+
+  // Helper to determine the execution window (período programado) of an order
+  const getOrderExecutionWindow = (os: ServiceOrder): { window: string; scheduledDay: string | null } => {
+    // 1. Explicit multi-day scheduled period (scheduledDate até scheduledEndDate)
+    let windowStr = '';
+    if (os.scheduledDate && os.scheduledEndDate && os.scheduledDate !== os.scheduledEndDate) {
+      windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.scheduledEndDate)}`;
+    } else if (os.startDate && os.endDate) {
+      // 2. Standard cycle window (startDate até endDate)
+      windowStr = os.startDate === os.endDate
+        ? formatDateBR(os.startDate)
+        : `${formatDateBR(os.startDate)} até ${formatDateBR(os.endDate)}`;
+    } else if (os.scheduledDate && os.scheduledEndDate) {
+      windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.scheduledEndDate)}`;
+    } else if (os.scheduledDate && os.endDate && os.scheduledDate !== os.endDate) {
+      windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.endDate)}`;
+    } else if (os.startDate && os.scheduledDate && os.startDate !== os.scheduledDate) {
+      windowStr = `${formatDateBR(os.startDate)} até ${formatDateBR(os.scheduledDate)}`;
+    } else {
+      const fallback = os.scheduledDate || os.startDate || os.endDate;
+      windowStr = fallback ? formatDateBR(fallback) : 'A definir';
+    }
+
+    // Check if there is also a specific execution day determined by management inside a broader cycle window
+    let scheduledDay: string | null = null;
+    if (os.scheduledDate && (!os.scheduledEndDate || os.scheduledEndDate === os.scheduledDate)) {
+      const formattedScheduled = formatDateBR(os.scheduledDate);
+      const formattedStart = os.startDate ? formatDateBR(os.startDate) : null;
+      const formattedEnd = os.endDate ? formatDateBR(os.endDate) : null;
+      if (formattedStart && formattedEnd && formattedStart !== formattedEnd) {
+        if (formattedScheduled !== formattedStart && formattedScheduled !== formattedEnd) {
+          scheduledDay = formattedScheduled;
+        }
+      }
+    }
+
+    return { window: windowStr, scheduledDay };
+  };
+
   // Apply search and status tab filters
   const displayedOrders = useMemo(() => {
     return myOrders.filter(o => {
@@ -166,30 +223,34 @@ export default function TechnicianMobileView({
         const matchesCode = (o.assetCode || '').toLowerCase().includes(q);
         const matchesId = (o.id || '').toLowerCase().includes(q);
         const matchesSector = (o.sector || '').toLowerCase().includes(q);
-        return matchesTitle || matchesAsset || matchesCode || matchesId || matchesSector;
+        const orderComarca = getOrderComarca(o).toLowerCase();
+        const matchesComarca = orderComarca.includes(q);
+        const execWindow = getOrderExecutionWindow(o);
+        const matchesDate = execWindow.window.toLowerCase().includes(q) || (execWindow.scheduledDay && execWindow.scheduledDay.toLowerCase().includes(q));
+        return matchesTitle || matchesAsset || matchesCode || matchesId || matchesSector || matchesComarca || matchesDate;
       }
 
       return true;
     });
-  }, [myOrders, filterStatus, searchQuery]);
+  }, [myOrders, filterStatus, searchQuery, assets]);
 
-  // Pagination State for technician mobile view
+  // Pagination State for technician mobile view (fixed strictly at 20 per page)
+  const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(15);
 
-  // Reset to first page when filter tab, search query, or page size changes
+  // Reset to first page when filter tab or search query changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterStatus, searchQuery, pageSize]);
+  }, [filterStatus, searchQuery]);
 
   const totalOrdersCount = displayedOrders.length;
-  const totalPages = Math.max(1, Math.ceil(totalOrdersCount / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalOrdersCount / PAGE_SIZE));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
 
   const paginatedOrders = useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * pageSize;
-    return displayedOrders.slice(startIndex, startIndex + pageSize);
-  }, [displayedOrders, safeCurrentPage, pageSize]);
+    const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+    return displayedOrders.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [displayedOrders, safeCurrentPage]);
 
   const handlePageChange = (newPage: number) => {
     const clamped = Math.min(Math.max(1, newPage), totalPages);
@@ -423,33 +484,15 @@ export default function TechnicianMobileView({
             </button>
           </div>
 
-          {/* Pagination & Filter Summary Info */}
+          {/* Pagination Summary Info */}
           {displayedOrders.length > 0 && (
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1 pt-1">
               <span>
-                Mostrando <strong className="text-slate-800 dark:text-slate-200">{(safeCurrentPage - 1) * pageSize + 1}–{Math.min(safeCurrentPage * pageSize, totalOrdersCount)}</strong> de <strong className="text-slate-800 dark:text-slate-200">{totalOrdersCount}</strong>
+                Mostrando <strong className="text-slate-800 dark:text-slate-200">{(safeCurrentPage - 1) * PAGE_SIZE + 1}–{Math.min(safeCurrentPage * PAGE_SIZE, totalOrdersCount)}</strong> de <strong className="text-slate-800 dark:text-slate-200">{totalOrdersCount}</strong> ordens
               </span>
-
-              {/* Page size selector */}
-              <div className="flex items-center gap-1">
-                <span className="text-[11px] text-slate-400 mr-0.5">Por pág:</span>
-                {[10, 15, 25, 50].map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => setPageSize(size)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                      pageSize === size
-                        ? 'bg-indigo-600 text-white font-black shadow-2xs'
-                        : darkMode
-                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
+              <span className="text-[11px] font-medium text-slate-400">
+                (20 por página)
+              </span>
             </div>
           )}
 
@@ -477,6 +520,11 @@ export default function TechnicianMobileView({
                 const checkedCount = order.checklist?.filter(c => c.checked).length || 0;
                 const progress = totalChecklist > 0 ? Math.round((checkedCount / totalChecklist) * 100) : 0;
 
+                const asset = assets.find(a => (order.assetId && a.id === order.assetId) || (order.assetCode && a.code === order.assetCode));
+                const patrimonio = order.assetCode || asset?.code || asset?.specs?.PATRIMONIO || asset?.specs?.patrimonio || 'Não informado';
+                const comarca = getOrderComarca(order);
+                const execWindow = getOrderExecutionWindow(order);
+
                 return (
                   <div
                     key={order.id}
@@ -502,36 +550,60 @@ export default function TechnicianMobileView({
                         <span className="text-xs font-mono font-bold text-indigo-500">
                           #{order.id}
                         </span>
-                        {order.periodicity && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {order.periodicity}
-                          </span>
-                        )}
                       </div>
                       {getStatusBadge(order.status)}
                     </div>
 
+                    {/* Destaque do Patrimônio */}
+                    <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 mb-2.5 ${
+                      darkMode ? 'bg-amber-950/30 border-amber-800/50' : 'bg-amber-50/80 border-amber-200'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 leading-tight">
+                            Patrimônio
+                          </span>
+                          <span className="font-mono text-sm font-black text-slate-900 dark:text-amber-100 tracking-wide">
+                            {patrimonio}
+                          </span>
+                        </div>
+                      </div>
+                      {order.periodicity && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800">
+                          {order.periodicity}
+                        </span>
+                      )}
+                    </div>
+
                     {/* Title */}
-                    <h3 className="text-sm font-bold leading-tight mb-1 text-slate-900 dark:text-white">
+                    <h3 className="text-sm font-bold leading-tight mb-2 text-slate-900 dark:text-white">
                       {order.title}
                     </h3>
 
-                    {/* Asset details */}
-                    <div className="space-y-1 mb-3">
+                    {/* Comarca & Janela de Execução / Período Programado */}
+                    <div className="space-y-1.5 mb-3">
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                        <Wrench className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate">{order.assetName || 'Equipamento'}</span>
-                        {order.assetCode && (
-                          <span className="text-[11px] font-mono text-slate-400 font-semibold">
-                            ({order.assetCode})
-                          </span>
-                        )}
+                        <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span className="text-slate-500 dark:text-slate-400">Comarca:</span>
+                        <strong className="text-slate-900 dark:text-white font-bold">{comarca}</strong>
                       </div>
 
-                      {order.scheduledDate && (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>Previsão: {order.scheduledDate}</span>
+                      <div className="flex items-start gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                          <span className="text-slate-500 dark:text-slate-400">Janela de Execução:</span>
+                          <strong className="text-slate-900 dark:text-white font-bold">{execWindow.window}</strong>
+                        </div>
+                      </div>
+
+                      {execWindow.scheduledDay && (
+                        <div className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-medium pl-5">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span className="text-slate-500 dark:text-slate-400">Dia Agendado:</span>
+                          <strong className="font-bold">{execWindow.scheduledDay}</strong>
                         </div>
                       )}
                     </div>
