@@ -11,10 +11,13 @@ import UserControlView from './components/UserControlView';
 import QrCodeBatchView from './components/QrCodeBatchView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
+import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, HexonUser, SystemPermission, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
   dbGetServiceOrders, 
+  dbGetAssets,
+  dbGetTemplates,
   signInHexonAnonymously, 
   testFirebaseConnection,
   subscribeToAuth,
@@ -63,9 +66,26 @@ export default function App() {
     }
   }, [currentTab]);
   const [orders, setOrders] = useState<ServiceOrder[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   const [scannedAssetId, setScannedAssetId] = useState<string | null>(null);
   const [openCreateModalDirectly, setOpenCreateModalDirectly] = useState(false);
   const [highlightedOSId, setHighlightedOSId] = useState<string | null>(null);
+
+  // Mobile device screen detection
+  const [isMobileScreen, setIsMobileScreen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // 1. Same-Browser Duplicate Tab Protection states
   const [isDuplicate, setIsDuplicate] = useState(false);
@@ -365,10 +385,20 @@ export default function App() {
   const loadServiceOrders = async () => {
     try {
       await dbCheckAndExpirePlanningOrders();
-      const list = await dbGetServiceOrders();
+      const [list, assetsList, templatesList] = await Promise.all([
+        dbGetServiceOrders(),
+        dbGetAssets().catch(() => []),
+        dbGetTemplates().catch(() => [])
+      ]);
       setOrders(list);
+      if (assetsList && assetsList.length > 0) {
+        setAssets(assetsList);
+      }
+      if (templatesList && templatesList.length > 0) {
+        setTemplates(templatesList);
+      }
     } catch (err) {
-      console.error('Failed loading service orders:', err);
+      console.error('Failed loading service orders and assets:', err);
     }
   };
 
@@ -777,6 +807,28 @@ export default function App() {
       <LoginView 
         onLoginSuccess={handleLoginSuccess}
         darkMode={darkMode}
+      />
+    );
+  }
+
+  // DEDICATED FIELD TECHNICIAN EXPERIENCE
+  // Exclusively for 'Profissional' profile - only this operational view exists for technicians
+  if (userProfile.perfil === 'Profissional') {
+    return (
+      <TechnicianMobileView
+        orders={orders}
+        assets={assets}
+        templates={templates}
+        userProfile={userProfile}
+        onReloadOrders={loadServiceOrders}
+        darkMode={darkMode}
+        onToggleDarkMode={handleToggleDarkMode}
+        fontScale={fontScale}
+        setFontScale={setFontScale}
+        highContrast={highContrast}
+        setHighContrast={setHighContrast}
+        onLogout={handleLogoutState}
+        onUpdateUserProfile={(updated) => setUserProfile(updated)}
       />
     );
   }

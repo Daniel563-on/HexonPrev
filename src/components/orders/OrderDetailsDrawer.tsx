@@ -124,7 +124,7 @@ export default function OrderDetailsDrawer({
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
       checklist: updatedChecklist,
-      status: selectedOrder.status === 'Planejada' ? 'Em Execução' : selectedOrder.status
+      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
     };
 
     setSelectedOrder(updatedOrder);
@@ -152,7 +152,7 @@ export default function OrderDetailsDrawer({
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
       checklist: updatedChecklist,
-      status: selectedOrder.status === 'Planejada' ? 'Em Execução' : selectedOrder.status
+      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
     };
 
     setSelectedOrder(updatedOrder);
@@ -391,17 +391,17 @@ export default function OrderDetailsDrawer({
 
   // Helper to determine the comarca of an order
       return (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+        <div className="fixed inset-0 z-[75] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 font-sans">
           {/* Overlay dismissal */}
           <div className="absolute inset-0" onClick={onClose}></div>
 
           {/* Centered Modal Frame */}
-          <div className="relative w-full max-w-2xl bg-white max-h-[90vh] rounded-2xl shadow-2xl flex flex-col z-10 border border-gray-200 transform transition-all animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
+          <div className="relative w-full max-w-2xl bg-white max-h-[96vh] sm:max-h-[90vh] rounded-2xl shadow-2xl flex flex-col z-10 border border-gray-200 transform transition-all animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
             
             {/* Header branding */}
-            <div className="p-5 bg-[#0b1c30] text-white flex justify-between items-center shrink-0">
+            <div className="p-4 sm:p-5 bg-[#0b1c30] text-white flex justify-between items-center shrink-0">
               <div>
-                <h3 className="font-extrabold text-base flex items-center gap-1.5">
+                <h3 className="font-extrabold text-sm sm:text-base flex items-center gap-1.5">
                   <ClipboardList className="w-4 h-4 text-indigo-400" />
                   Detalhes da Ordem de Serviço
                 </h3>
@@ -419,7 +419,7 @@ export default function OrderDetailsDrawer({
             </div>
 
             {/* Scrollable execution items */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-6">
               
               {/* 1. DADOS COMPLETOS DO ATIVO VINCULADO */}
               <div>
@@ -788,7 +788,7 @@ export default function OrderDetailsDrawer({
                           const updatedOrder: ServiceOrder = {
                             ...selectedOrder,
                             checklist: updatedChecklist,
-                            status: selectedOrder.status === 'Planejada' ? 'Em Execução' : selectedOrder.status
+                            status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
                           };
                           
                           setSelectedOrder(updatedOrder);
@@ -859,7 +859,7 @@ export default function OrderDetailsDrawer({
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
                                       checklist: updatedChecklist,
-                                      status: selectedOrder.status === 'Planejada' ? 'Em Execução' : selectedOrder.status
+                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
                                     };
                                     setSelectedOrder(updatedOrder);
                                     await dbSaveServiceOrder(updatedOrder);
@@ -894,7 +894,7 @@ export default function OrderDetailsDrawer({
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
                                       checklist: updatedChecklist,
-                                      status: selectedOrder.status === 'Planejada' ? 'Em Execução' : selectedOrder.status
+                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
                                     };
                                     setSelectedOrder(updatedOrder);
                                     await dbSaveServiceOrder(updatedOrder);
@@ -958,7 +958,7 @@ export default function OrderDetailsDrawer({
                                 <button
                                   type="button"
                                   onClick={() => selectItemStatus(selectedOrder.id, item.id, 'Atestado')}
-                                  className={`flex-1 py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
+                                  className={`flex-1 min-h-[44px] py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center flex items-center justify-center cursor-pointer ${
                                     currentStatus === 'Atestado'
                                       ? 'bg-emerald-600 border-emerald-700 text-white shadow-sm scale-102 font-black'
                                       : 'bg-emerald-50/45 border-emerald-100/50 text-emerald-850 hover:bg-emerald-55'
@@ -970,7 +970,7 @@ export default function OrderDetailsDrawer({
                                 <button
                                   type="button"
                                   onClick={() => selectItemStatus(selectedOrder.id, item.id, 'Não Atestado')}
-                                  className={`flex-1 py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
+                                  className={`flex-1 min-h-[44px] py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center flex items-center justify-center cursor-pointer ${
                                     currentStatus === 'Não Atestado'
                                       ? 'bg-rose-600 border-rose-700 text-white shadow-sm scale-102 font-black'
                                       : 'bg-rose-50/45 border-rose-100/50 text-rose-850 hover:bg-rose-55'
@@ -982,7 +982,7 @@ export default function OrderDetailsDrawer({
                                 <button
                                   type="button"
                                   onClick={() => selectItemStatus(selectedOrder.id, item.id, 'Não se Aplica')}
-                                  className={`flex-1 py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
+                                  className={`flex-1 min-h-[44px] py-2 px-2.5 rounded-lg text-[10.5px] font-black uppercase tracking-wider border transition-all text-center flex items-center justify-center cursor-pointer ${
                                     currentStatus === 'Não se Aplica'
                                       ? 'bg-slate-600 border-slate-700 text-white shadow-sm scale-102 font-black'
                                       : 'bg-slate-100/60 border-slate-200 text-slate-700 hover:bg-slate-200/50'
@@ -1239,15 +1239,15 @@ export default function OrderDetailsDrawer({
             </div>
 
             {/* Sticky footer actions validation panel */}
-            <div className="p-5 border-t border-gray-100 bg-[#eff4ff]/30 flex gap-3 shrink-0">
+            <div className="p-3 sm:p-5 border-t border-gray-100 bg-[#eff4ff]/30 flex flex-wrap sm:flex-nowrap gap-2 sm:gap-3 shrink-0">
               
                {selectedOrder.status === 'Concluída' ? (
-                <div className="flex-grow text-center text-[11px] font-bold text-emerald-700 bg-emerald-50 py-3.5 rounded-lg border border-emerald-200 flex items-center justify-center gap-1">
+                <div className="flex-grow text-center text-[11px] font-bold text-emerald-700 bg-emerald-50 py-3 rounded-xl border border-emerald-200 flex items-center justify-center gap-1">
                   <FileCheck className="w-4 h-4" />
                   ORDEM CONCLUÍDA EM CONFORMIDADE
                 </div>
               ) : selectedOrder.status === 'Não Executada' ? (
-                <div className="flex-grow text-center text-[11px] font-bold text-rose-700 bg-rose-50 py-3.5 rounded-lg border border-rose-200 flex items-center justify-center gap-1">
+                <div className="flex-grow text-center text-[11px] font-bold text-rose-700 bg-rose-50 py-3 rounded-xl border border-rose-200 flex items-center justify-center gap-1">
                   <AlertTriangle className="w-4 h-4" />
                   ORDEM EXPIRADA / NÃO REALIZADA NO PRAZO
                 </div>
@@ -1274,7 +1274,7 @@ export default function OrderDetailsDrawer({
                     }
                     setShowSignaturePad(true);
                   }}
-                  className="flex-grow bg-[#3525cd] hover:bg-indigo-700 text-white font-bold text-xs py-3.5 rounded-lg flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                  className="flex-grow min-h-[46px] bg-[#3525cd] hover:bg-indigo-700 text-white font-black text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-98 cursor-pointer"
                 >
                   <FileSignature className="w-4 h-4 text-white" />
                   VALIDAR EXECUÇÃO DE OS

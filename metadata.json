@@ -1,7 +1,9 @@
 {
   "name": "Hexon Preventiva",
   "description": "Sistema de manutencao preventiva com controle de ativos, checklists dinamicos, QR Code de identificacao e assinaturas digitais.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
