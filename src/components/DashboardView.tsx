@@ -1,4 +1,4 @@
-// DashboardView.tsx - Hexon OS Unified Dashboard & Auditing Ledger (Consolidated MPMG Operations Console)
+// DashboardView.tsx - Hexon OS Unified Dashboard & Auditing Ledger (Consolidated MPRJ Operations Console)
 import { useState, useEffect, useRef, useMemo, Fragment, useCallback } from 'react';
 import {
   TrendingUp,
@@ -22,7 +22,6 @@ import {
   Sliders,
   CalendarDays,
   FileSpreadsheet,
-  Printer,
   Filter,
   RotateCcw,
   Users,
@@ -767,28 +766,6 @@ export default function DashboardView({
     }
   };
 
-  // NATIVE WINDOW PRINT / PDF TRICK (High fidelity layouts)
-  const handlePrintPDF = () => {
-    if (typeof window !== 'undefined') {
-      const isIframe = window.self !== window.top;
-      if (isIframe) {
-        // Build the URL with ?print=true
-        const url = new URL(window.location.href);
-        url.searchParams.set('print', 'true');
-        
-        // Show a helpful toast warning before opening the new tab
-        if ((window as any).__onCustomAlert) {
-          (window as any).__onCustomAlert('⚠️ Abrindo relatório em nova aba para gerar o PDF sem as bordas do editor...');
-        }
-        
-        window.open(url.toString(), '_blank');
-      } else {
-        window.focus();
-        window.print();
-      }
-    }
-  };
-
   // SORT TABLE COLUMNS
   const requestSort = (field: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -834,6 +811,20 @@ export default function DashboardView({
     return sortedData.slice(startIdx, startIdx + itemsPerPage);
   }, [sortedData, currentPage]);
 
+  // Windowed pagination array generator (prevents button overflow)
+  const visiblePages = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (currentPage >= totalPages - 3) {
+      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+  }, [currentPage, totalPages]);
+
   const toggleRowExpansion = (rowId: string) => {
     const next = new Set(expandedRowIds);
     if (next.has(rowId)) {
@@ -871,7 +862,7 @@ export default function DashboardView({
           </span>
           <h1 className="text-2xl font-black tracking-tight mt-1 flex items-center gap-2">
             <Activity className="w-6 h-6 text-emerald-400 animate-pulse" />
-            Hexon Inteligência & Compliance MPMG
+            Hexon Inteligência & Compliance MPRJ
           </h1>
           <p className="text-slate-300 text-xs max-w-2xl leading-relaxed">
             Painel consolidado e integrado de monitoramento em tempo real de preventivas, índices de conformidade operacional, auditorias operacionais e relatórios analíticos para os ativos de engenharia.
@@ -949,15 +940,6 @@ export default function DashboardView({
           >
             <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
             <span>Planilha Excel</span>
-          </button>
-
-          <button
-            onClick={handlePrintPDF}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-xs cursor-pointer transition-all active:scale-[0.98]"
-            title="Imprimir visual moderno ou Salvar como PDF corporativo"
-          >
-            <Printer className="w-3.5 h-3.5 shrink-0" />
-            <span>Imprimir / PDF</span>
           </button>
         </div>
       </div>
@@ -1287,7 +1269,7 @@ export default function DashboardView({
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60">
             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              Ordens que ultrapassaram o prazo limitador das datas definidas na janela global do MPMG (Super Admin) sem execução.
+              Ordens que ultrapassaram o prazo limitador das datas definidas na janela global do MPRJ (Super Admin) sem execução.
             </p>
             <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
               <div className="bg-rose-500 h-full rounded-full" style={{ width: `${metrics.total > 0 ? (metrics.uncompleted / metrics.total) * 100 : 0}%` }}></div>
@@ -1762,36 +1744,61 @@ export default function DashboardView({
 
         {/* Dynamic Pagination Controls */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-5 print:hidden">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-750 text-slate-800 dark:text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-xs font-black uppercase transition-all cursor-pointer"
-            >
-              Anterior
-            </button>
-            <div className="flex gap-1">
-              {Array.from({ length: totalPages }).map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setCurrentPage(idx + 1)}
-                  className={`px-3 py-1.5 text-xs font-black rounded-lg cursor-pointer ${
-                    currentPage === idx + 1
-                      ? 'bg-blue-600 text-white font-black'
-                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {idx + 1}
-                </button>
-              ))}
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-150 dark:border-slate-800 print:hidden">
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Mostrando página <strong className="text-slate-800 dark:text-slate-100 font-bold">{currentPage}</strong> de <strong className="text-slate-800 dark:text-slate-100 font-bold">{totalPages}</strong> ({sortedData.length} registros)
             </div>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-750 text-slate-800 dark:text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-xs font-black uppercase transition-all cursor-pointer"
-            >
-              Próximo
-            </button>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold uppercase transition-all cursor-pointer shadow-2xs"
+              >
+                Anterior
+              </button>
+
+              <div className="flex items-center gap-1">
+                {visiblePages.map((item, idx) => {
+                  if (typeof item === 'string') {
+                    return (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="px-2 py-1 text-xs text-slate-400 dark:text-slate-500 font-bold select-none"
+                      >
+                        …
+                      </span>
+                    );
+                  }
+                  const pageNum = item;
+                  const isActive = currentPage === pageNum;
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`min-w-[32px] h-8 px-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold uppercase transition-all cursor-pointer shadow-2xs"
+              >
+                Próximo
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1799,7 +1806,7 @@ export default function DashboardView({
       {/* 9. MASTER CONSOLIDATED FOOTER WITH SYSTEM CREDITS */}
       <footer className="pt-4 border-t border-slate-200 dark:border-slate-850 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider print:hidden">
         <p>Hexon Preventivas • Console Único de Auditoria & Inteligência</p>
-        <p className="mt-1 sm:mt-0">© 2026 MPMG • Banco de dados em nuvem ativo e integrado em tempo real</p>
+        <p className="mt-1 sm:mt-0">© 2026 MPRJ • Banco de dados em nuvem ativo e integrado em tempo real</p>
       </footer>
     </div>
   );

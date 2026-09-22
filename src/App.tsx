@@ -76,26 +76,22 @@ export default function App() {
   // 3. Sessão Única states
   const [sessionDisplaced, setSessionDisplaced] = useState<boolean>(false);
   
-  // Custom User Profile State with instant Super Admin fallback
+  // Custom User Profile State - strictly null unless active authenticated session exists on this browser
   const [userProfile, setUserProfile] = useState<HexonUser | null>(() => {
     try {
+      // If URL is a public QR code scan, never preload any user profile
+      const search = window.location.search;
+      if (search.includes('public_asset=') || search.includes('asset_id=') || search.includes('patrimonio=')) {
+        return null;
+      }
       const cached = localStorage.getItem('hexon_cached_user');
-      if (cached) {
+      const sessionId = localStorage.getItem('hexon_current_session_id');
+      if (cached && sessionId) {
         const parsed = JSON.parse(cached);
         if (parsed && parsed.matricula) return parsed;
       }
     } catch {}
-    return {
-      id: 'daniel_fab93',
-      name: 'Daniel Fabre',
-      matricula: '1-0000',
-      email: 'daniel.fab93@gmail.com',
-      cargo: 'Super Administrador de Sistemas',
-      gerencia: 'Todas',
-      perfil: 'Super Administrador',
-      status: 'Ativo',
-      senha: 'admin'
-    };
+    return null;
   });
   const [permissionsMatrix, setPermissionsMatrix] = useState<{ [key: string]: SystemPermission } | null>(null);
   const [sessionChecking, setSessionChecking] = useState<boolean>(false);
@@ -447,44 +443,50 @@ export default function App() {
       if (!initialAuthChecked) {
         initialAuthChecked = true;
         
-        // Try restoring sessions locally before giving up
+        // Try restoring sessions locally ONLY if the user previously logged in on THIS browser
         try {
-          const savedMatricula = localStorage.getItem('hexon_remembered_matricula') || '1-0000';
-          const users = await dbGetUsers();
-          const foundUser = users.find(u => u.matricula === savedMatricula && u.status === 'Ativo') || users.find(u => u.perfil === 'Super Administrador') || users[0];
-          if (foundUser) {
-            let sessionId = localStorage.getItem('hexon_current_session_id');
-            const needsWrite = !sessionId || foundUser.currentSessionId !== sessionId;
-            if (!sessionId) {
-              sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-              localStorage.setItem('hexon_current_session_id', sessionId);
-            }
-            const updatedUser = { ...foundUser, currentSessionId: sessionId };
-            if (needsWrite) {
-              await dbSaveUser(updatedUser);
-            }
-            setUserProfile(updatedUser);
-            try {
-              localStorage.setItem('hexon_cached_user', JSON.stringify(updatedUser));
-              localStorage.setItem('hexon_remembered_matricula', updatedUser.matricula);
-            } catch {}
-            
-            // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
-            if (updatedUser.perfil === 'Profissional') {
-              setCurrentTab('service-orders');
-            } else {
-              const savedTab = localStorage.getItem('hexon_current_tab') || 'qr-codes';
-              if (savedTab && (savedTab !== 'user-control' || updatedUser.perfil === 'Super Administrador')) {
-                setCurrentTab(savedTab);
+          const search = window.location.search;
+          const isPublicScan = search.includes('public_asset=') || search.includes('asset_id=') || search.includes('patrimonio=');
+
+          if (!isPublicScan) {
+            const savedCached = localStorage.getItem('hexon_cached_user');
+            const savedSessionId = localStorage.getItem('hexon_current_session_id');
+
+            if (savedCached && savedSessionId) {
+              let parsedUser: HexonUser | null = null;
+              try {
+                parsedUser = JSON.parse(savedCached);
+              } catch {}
+
+              if (parsedUser && parsedUser.id) {
+                const users = await dbGetUsers();
+                const foundUser = users.find(u => u.id === parsedUser!.id && u.status === 'Ativo');
+                if (foundUser) {
+                  // Only restore if this device's sessionId still matches the active session in Firestore
+                  if (!foundUser.currentSessionId || foundUser.currentSessionId === savedSessionId) {
+                    if (!foundUser.currentSessionId) {
+                      await dbSaveUser({ ...foundUser, currentSessionId: savedSessionId });
+                    }
+                    setUserProfile(foundUser);
+
+                    // Automatically send field technicians (Profissional) to "Preventivas" (service-orders)
+                    if (foundUser.perfil === 'Profissional') {
+                      setCurrentTab('service-orders');
+                    } else {
+                      const savedTab = localStorage.getItem('hexon_current_tab') || 'qr-codes';
+                      if (savedTab && (savedTab !== 'user-control' || foundUser.perfil === 'Super Administrador')) {
+                        setCurrentTab(savedTab);
+                      }
+                    }
+                  } else {
+                    // Session was replaced by a newer login elsewhere
+                    handleLogoutState();
+                  }
+                } else {
+                  handleLogoutState();
+                }
               }
             }
-
-            await dbAddAccessLog({
-              userMatricula: foundUser.matricula,
-              userName: foundUser.name,
-              event: "Autenticação Automática via Credencial Lembrada",
-              timestamp: new Date().toISOString()
-            });
           }
         } catch (e) {
           console.warn("Restore local connection error:", e);
@@ -504,6 +506,7 @@ export default function App() {
   }, []);
 
   const handleLogoutState = () => {
+    localStorage.removeItem('hexon_cached_user');
     localStorage.removeItem('hexon_remembered_matricula');
     localStorage.removeItem('hexon_current_session_id');
     setUserProfile(null);
@@ -718,6 +721,7 @@ export default function App() {
         assetIdentifier={publicAssetParam}
         onGoToLogin={() => {
           setPublicAssetParam(null);
+          handleLogoutState();
           window.history.replaceState({}, document.title, window.location.pathname);
         }}
       />

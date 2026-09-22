@@ -596,7 +596,7 @@ export default function SolicitationsView({
       {/* Bottom Footer Attribution */}
       <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
         <p>Hexon Preventivas • Módulo de Solicitações e Corretivas</p>
-        <p className="mt-1 sm:mt-0">© 2026 MPMG • Detecção automática integrada via checklist de engenharia</p>
+        <p className="mt-1 sm:mt-0">© 2026 MPRJ • Detecção automática integrada via checklist de engenharia</p>
       </footer>
     </div>
   );

@@ -498,9 +498,13 @@ export async function dbGetAssets(): Promise<Asset[]> {
         // Persist to IndexedDB (supports unlimited items without quota errors)
         idbSet('hexon_assets', cacheAssets).catch(() => {});
 
-        // Safely update localStorage
+        // Safely update localStorage only if small dataset to avoid quota overflow
         try {
-          localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
+          if (cacheAssets.length <= 200) {
+            localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
+          } else {
+            localStorage.removeItem('hexon_assets');
+          }
         } catch (lsErr) {
           // If 10k items exceed localStorage, IndexedDB already holds the cache safely
         }
@@ -2898,6 +2902,88 @@ export async function dbSavePermissions(permissions: { [key: string]: SystemPerm
     } catch (err: any) {
       console.warn('Firestore write config/permissions failed:', err);
       checkQuotaException(err);
+    }
+  }
+}
+
+// 7.1 Regras de Periodicidade Customizadas (persistência em nuvem)
+export async function dbGetPeriodicityRules(): Promise<Array<{ keyword: string; selectPeriodicities: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] }>> {
+  if (firebaseActive && dbInstance) {
+    try {
+      const docRef = doc(dbInstance, 'config', 'periodicity_rules');
+      const snap = await getDoc(docRef);
+      if (snap.exists() && snap.data()?.rules) {
+        return snap.data()!.rules;
+      }
+    } catch (e) {
+      console.warn('Não foi possível ler periodicity_rules do Firestore:', e);
+    }
+  }
+  try {
+    const saved = localStorage.getItem('hexon_periodicity_rules');
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return [
+    { keyword: 'ACJ', selectPeriodicities: ['Mensal', 'Semestral'] },
+    { keyword: 'QUADRO ELÉTRICO', selectPeriodicities: ['Mensal', 'Trimestral', 'Anual'] },
+    { keyword: 'AR CONDICIONADO', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
+    { keyword: 'CHILLER', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
+    { keyword: 'BOMBA', selectPeriodicities: ['Mensal', 'Semestral'] },
+    { keyword: 'EXTINTOR', selectPeriodicities: ['Mensal', 'Anual'] },
+    { keyword: 'PREDIAL', selectPeriodicities: ['Semestral', 'Anual'] },
+    { keyword: 'CIVIL', selectPeriodicities: ['Semestral', 'Anual'] },
+  ];
+}
+
+export async function dbSavePeriodicityRules(rules: Array<{ keyword: string; selectPeriodicities: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] }>): Promise<void> {
+  try {
+    localStorage.setItem('hexon_periodicity_rules', JSON.stringify(rules));
+  } catch {}
+  if (firebaseActive && dbInstance) {
+    try {
+      const docRef = doc(dbInstance, 'config', 'periodicity_rules');
+      await setDoc(docRef, { rules });
+    } catch (e) {
+      console.warn('Não foi possível salvar periodicity_rules no Firestore:', e);
+    }
+  }
+}
+
+// 7.2 Campos Personalizados Dinâmicos de Ativos (persistência em nuvem)
+export async function dbGetCustomDynamicFields(): Promise<string[]> {
+  if (firebaseActive && dbInstance) {
+    try {
+      const docRef = doc(dbInstance, 'config', 'custom_fields');
+      const snap = await getDoc(docRef);
+      if (snap.exists() && snap.data()?.fields) {
+        return snap.data()!.fields;
+      }
+    } catch (e) {
+      console.warn('Não foi possível ler custom_fields do Firestore:', e);
+    }
+  }
+  try {
+    const saved = localStorage.getItem('HEXON_CUSTOM_FIELDS');
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return [
+    'STATUS',
+    'DATA DE AQUISIÇÃO',
+    'VALOR DE AQUISIÇÃO',
+    'VALOR LÍQUIDO'
+  ];
+}
+
+export async function dbSaveCustomDynamicFields(fields: string[]): Promise<void> {
+  try {
+    localStorage.setItem('HEXON_CUSTOM_FIELDS', JSON.stringify(fields));
+  } catch {}
+  if (firebaseActive && dbInstance) {
+    try {
+      const docRef = doc(dbInstance, 'config', 'custom_fields');
+      await setDoc(docRef, { fields });
+    } catch (e) {
+      console.warn('Não foi possível salvar custom_fields no Firestore:', e);
     }
   }
 }

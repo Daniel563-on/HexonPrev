@@ -13,6 +13,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isCapsLockOn, setIsCapsLockOn] = useState(false);
+  const [rememberMatricula, setRememberMatricula] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -21,12 +23,26 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     const saved = localStorage.getItem('hexon_remembered_matricula');
     if (saved) {
       setMatricula(saved);
+      setRememberMatricula(true);
+    } else {
+      const optedOut = localStorage.getItem('hexon_remember_matricula_optout');
+      if (optedOut === 'true') {
+        setRememberMatricula(false);
+      }
     }
   }, []);
 
+  const handlePasswordKeyEvents = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (typeof e.getModifierState === 'function') {
+      setIsCapsLockOn(e.getModifierState('CapsLock'));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!matricula.trim() || !senha) {
+    const sanitizedMatricula = matricula.trim();
+
+    if (!sanitizedMatricula || !senha) {
       setErrorMessage('Por favor, preencha todos os campos.');
       return;
     }
@@ -35,9 +51,15 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setErrorMessage(null);
 
     try {
-      const user = await dbLoginByMatricula(matricula, senha);
+      const user = await dbLoginByMatricula(sanitizedMatricula, senha);
       if (user) {
-        localStorage.setItem('hexon_remembered_matricula', user.matricula);
+        if (rememberMatricula) {
+          localStorage.setItem('hexon_remembered_matricula', user.matricula);
+          localStorage.removeItem('hexon_remember_matricula_optout');
+        } else {
+          localStorage.removeItem('hexon_remembered_matricula');
+          localStorage.setItem('hexon_remember_matricula_optout', 'true');
+        }
         onLoginSuccess(user);
       } else {
         setErrorMessage('Matrícula ou senha de acesso incorretas.');
@@ -152,6 +174,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   placeholder="1-0002"
                   value={matricula}
                   onChange={(e) => setMatricula(e.target.value)}
+                  onBlur={() => setMatricula(prev => prev.trim())}
                   disabled={isLoading}
                   className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-[#EEF2F6] hover:bg-white focus:bg-white border border-transparent focus:border-indigo-400 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 transition-all outline-none shadow-xs focus:ring-2 focus:ring-indigo-500/20"
                 />
@@ -176,6 +199,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   placeholder="••••••••"
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
+                  onKeyDown={handlePasswordKeyEvents}
+                  onKeyUp={handlePasswordKeyEvents}
+                  onBlur={() => setIsCapsLockOn(false)}
                   disabled={isLoading}
                   className="w-full pl-10 pr-10 py-2.5 sm:py-3 bg-[#EEF2F6] hover:bg-white focus:bg-white border border-transparent focus:border-indigo-400 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 tracking-wide transition-all outline-none shadow-xs focus:ring-2 focus:ring-indigo-500/20"
                 />
@@ -193,6 +219,36 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   )}
                 </button>
               </div>
+
+              {/* Caps Lock Alert */}
+              {isCapsLockOn && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-400 font-medium animate-in fade-in duration-150 pt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                  <span>Atenção: <strong>Caps Lock</strong> ativado</span>
+                </div>
+              )}
+            </div>
+
+            {/* Checkbox: Lembrar Matrícula */}
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={rememberMatricula}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setRememberMatricula(checked);
+                    if (!checked) {
+                      localStorage.removeItem('hexon_remembered_matricula');
+                      localStorage.setItem('hexon_remember_matricula_optout', 'true');
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-slate-700 bg-[#070D1B] text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer accent-indigo-500"
+                />
+                <span className="text-xs text-slate-300 group-hover:text-white transition-colors">
+                  Lembrar matrícula neste dispositivo
+                </span>
+              </label>
             </div>
 
             {/* Submit Sign In Button */}
