@@ -234,66 +234,22 @@ export async function signInHexonAnonymously(): Promise<any> {
   return { uid: 'local_technician_dt', isAnonymous: true, email: 'daniel.torres@hexon.com' };
 }
 
-// Enterprise Firebase Auth Login Proxy (bridges app credentials with cryptographically signed Google JWT)
-export async function authenticateWithFirebaseAuth(email: string, rawPassword: string):Promise<any> {
-  if (!firebaseActive || !authInstance || !email || !rawPassword) return null;
-
+// Troca a senha do próprio usuário logado, conferindo a senha atual no Firebase Auth
+export async function changeOwnFirebasePassword(email: string, currentPassword: string, newPassword: string): Promise<'ok' | 'wrong-password' | 'weak-password' | 'error'> {
+  if (!firebaseActive || !authInstance) return 'error';
+  const u = authInstance.currentUser;
+  if (!u || u.isAnonymous || u.email !== email) return 'error';
   try {
-    const cred = await signInWithEmailAndPassword(authInstance, email, rawPassword);
-    return cred.user;
-  } catch (err: any) {
-    const code = err?.code || '';
-    // Auto-provision user account in Firebase Auth on the fly if valid credentials match
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-      try {
-        const newCred = await createUserWithEmailAndPassword(authInstance, email, rawPassword);
-        return newCred.user;
-      } catch (createErr: any) {
-        const createCode = createErr?.code || '';
-        if (createCode === 'auth/weak-password') {
-          console.info('[Hexon Auth] Senha com menos de 6 caracteres: conta Firebase não criada. O usuário deve trocar a senha.');
-        } else if (createCode === 'auth/email-already-in-use') {
-          console.info('[Hexon Auth] Conta Firebase já existe com outra senha; mantido login legado.');
-        } else {
-          console.info('Firebase Auth automatic user creation notice:', createCode || createErr);
-        }
-      }
-    } else if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
-      console.info(
-        '%c[Hexon Security] O provedor Email/Senha do Firebase Authentication pode ser ativado no Firebase Console para tokens nativos do Google.',
-        'color: #0284c7; font-size: 11px;'
-      );
-    } else {
-      console.warn('Firebase Auth sign-in notice:', code);
-    }
-    return null;
-  }
-}
-
-// Atualiza a senha no Firebase Auth após a troca de senha no sistema. Nunca lança erro.
-export async function syncFirebaseAuthPassword(email: string, currentPassword: string, newPassword: string): Promise<string | null> {
-  if (!firebaseActive || !authInstance || !email || !newPassword) return null;
-  try {
-    let u = authInstance.currentUser;
-    if (u && !u.isAnonymous && u.email === email) {
-      await reauthenticateWithCredential(u, EmailAuthProvider.credential(email, currentPassword));
-    } else {
-      try {
-        u = (await signInWithEmailAndPassword(authInstance, email, currentPassword)).user;
-      } catch {
-        u = null;
-      }
-    }
-    if (u) {
-      await updatePassword(u, newPassword);
-      return u.uid;
-    }
-    // Usuário ainda sem conta no Firebase Auth (ex.: senha antiga tinha menos de 6 caracteres): cria agora
-    const created = await authenticateWithFirebaseAuth(email, newPassword);
-    return created?.uid || null;
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(email, currentPassword));
   } catch (e: any) {
-    console.info('[Hexon Auth] Senha não sincronizada com Firebase Auth (login legado mantido):', e?.code || e);
-    return null;
+    const c = e?.code || '';
+    return (c === 'auth/wrong-password' || c === 'auth/invalid-credential') ? 'wrong-password' : 'error';
+  }
+  try {
+    await updatePassword(u, newPassword);
+    return 'ok';
+  } catch (e: any) {
+    return e?.code === 'auth/weak-password' ? 'weak-password' : 'error';
   }
 }
 

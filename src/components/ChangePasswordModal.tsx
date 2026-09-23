@@ -3,11 +3,8 @@ import { createPortal } from 'react-dom';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import { HexonUser } from '../types';
 import {
-  dbSaveUser,
-  dbVerifyCurrentPassword,
   matriculaToAuthEmail,
-  dbLinkAuthUid,
-  syncFirebaseAuthPassword
+  changeOwnFirebasePassword
 } from '../db/firebase';
 
 interface ChangePasswordModalProps {
@@ -82,37 +79,24 @@ export default function ChangePasswordModal({
     setIsLoading(true);
 
     try {
-      const isCurrentCorrect = await dbVerifyCurrentPassword(userProfile.id, senhaAtual);
-      if (!isCurrentCorrect) {
-        setErrorMessage('A senha atual está incorreta ou o servidor está indisponível.');
+      const r = await changeOwnFirebasePassword(matriculaToAuthEmail(userProfile.matricula), senhaAtual, novaSenha);
+      if (r !== 'ok') {
+        setErrorMessage(
+          r === 'wrong-password' ? 'A senha atual está incorreta.'
+          : r === 'weak-password' ? 'A nova senha é fraca demais (mínimo 6 caracteres).'
+          : 'Não foi possível alterar a senha. Saia, entre novamente e tente de novo.'
+        );
         setIsLoading(false);
         return;
       }
-
-      const updatedUser: HexonUser = {
-        ...userProfile,
-        senha: novaSenha
-      };
-
-      await dbSaveUser(updatedUser);
-
-      const newUid = await syncFirebaseAuthPassword(
-        matriculaToAuthEmail(userProfile.matricula),
-        senhaAtual,
-        novaSenha
-      );
-      if (newUid && newUid !== userProfile.authUid) {
-        await dbLinkAuthUid(userProfile.id, newUid);
-      }
-
-      const { senha: _omit, ...safeUser } = updatedUser;
+      const { senha: _omit, ...safeUser } = userProfile;
 
       // Update remembered or session data if present
       try {
         const storedAuth = localStorage.getItem('hexon_auth_user');
         if (storedAuth) {
           const parsed = JSON.parse(storedAuth);
-          if (parsed.id === updatedUser.id || parsed.matricula === updatedUser.matricula) {
+          if (parsed.id === safeUser.id || parsed.matricula === safeUser.matricula) {
             localStorage.setItem('hexon_auth_user', JSON.stringify(safeUser));
           }
         }

@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -19,7 +20,6 @@ import {
   isCacheValid,
   updateCacheTimestamp,
   checkQuotaException,
-  authenticateWithFirebaseAuth,
   firebaseSignInWithPassword,
   signOutHexon
 } from './core';
@@ -97,8 +97,7 @@ export const SEED_USERS: HexonUser[] = [
     cargo: 'Super Administrador de Sistemas',
     gerencia: 'Todas',
     perfil: 'Super Administrador',
-    status: 'Ativo',
-    senha: 'admin'
+    status: 'Ativo'
   }
 ];
 
@@ -135,20 +134,6 @@ export async function verifyPassword(passwordInserted: string, storedPassword?: 
   return storedPassword === passwordInserted;
 }
 
-export async function dbVerifyCurrentPassword(userId: string, senhaDigitada: string): Promise<boolean> {
-  if (!userId || !senhaDigitada) return false;
-  if (!firebaseActive || !dbInstance) return false;
-  try {
-    const snap = await getDoc(doc(dbInstance, 'users', userId));
-    if (!snap.exists()) return false;
-    const stored = (snap.data() as HexonUser).senha;
-    return verifyPassword(senhaDigitada, stored);
-  } catch (e) {
-    console.warn('Falha ao verificar senha atual:', e);
-    return false;
-  }
-}
-
 // Helper to check and bootstrap initial tables/collections asynchronously
 async function bootstrapRBACCollectionsIfEmpty() {
   if (!firebaseActive || !dbInstance) return;
@@ -159,7 +144,7 @@ async function bootstrapRBACCollectionsIfEmpty() {
     if (usersSnap.empty) {
       console.log('Seeding default users into Firestore...');
       for (const u of SEED_USERS) {
-        const secureUser = { ...u, senha: await hashPassword(u.senha || 'admin') };
+        const secureUser = { ...u };
         await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
       }
     } else {
@@ -167,7 +152,7 @@ async function bootstrapRBACCollectionsIfEmpty() {
       const dDoc = await getDoc(doc(dbInstance, 'users', 'daniel_fab93'));
       if (!dDoc.exists()) {
         const u = SEED_USERS[0];
-        const secureUser = { ...u, senha: await hashPassword(u.senha || 'admin') };
+        const secureUser = { ...u };
         await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
       }
     }
@@ -298,24 +283,9 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
     throw new Error(`A matrícula "${sanitizedMatricula}" já pertence ao colaborador "${duplicate.name}". Por favor, defina uma matrícula única.`);
   }
 
-  // Ensure password is safely encrypted with SHA-256 before persisting
-  const safeUser: HexonUser = { ...user, matricula: sanitizedMatricula };
-  if (safeUser.senha && !safeUser.senha.startsWith('hexon_sha256:')) {
-    safeUser.senha = await hashPassword(safeUser.senha);
-  } else if (!safeUser.senha && firebaseActive && dbInstance) {
-    // If updating a user and password was not typed, retain existing hashed password from Firestore
-    try {
-      const existingSnap = await getDoc(doc(dbInstance, 'users', safeUser.id));
-      if (existingSnap.exists()) {
-        const existingData = existingSnap.data() as HexonUser;
-        if (existingData?.senha) {
-          safeUser.senha = existingData.senha;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not retain previous user password hash:', e);
-    }
-  }
+  // Senhas NÃO são mais guardadas no Firestore (ficam somente no Firebase Auth)
+  const { senha: _ignored, ...userWithoutPassword } = user;
+  const safeUser: HexonUser = { ...userWithoutPassword, matricula: sanitizedMatricula } as HexonUser;
 
   // Maintain client-side cache clean without passwords
   const clientUser = sanitizeUserForClient(safeUser);
@@ -339,7 +309,7 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'users', safeUser.id), cleanUndefined(safeUser), { merge: true });
+      await setDoc(doc(dbInstance, 'users', safeUser.id), { ...cleanUndefined(safeUser), senha: deleteField() }, { merge: true });
     } catch (err: any) {
       console.error('Firestore write user failed:', err);
       checkQuotaException(err);
@@ -478,6 +448,11 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
       return null;
     }
 
+    // Limpeza: remove hash de senha legado do Firestore
+    if ((userSnap.data() as any)?.senha !== undefined) {
+      updateDoc(doc(dbInstance, 'users', foundUser.id), { senha: deleteField() }).catch(() => {});
+    }
+
     await dbAddAccessLog({
       userId: foundUser.id,
       userName: foundUser.name,
@@ -492,35 +467,6 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
     await signOutHexon();
     return null;
   }
-}
-
-// RBAC GOOGLE ACCOUNT ATTACHMENT PROXY
-export async function dbGetUserByEmail(email: string): Promise<HexonUser | null> {
-  const users = await dbGetUsers();
-  const matched = users.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
-
-  if (matched) {
-    return sanitizeUserForClient(matched);
-  }
-
-  // If the email is daniel.fab93@gmail.com, we auto-bootstrap and create the user record dynamically on-the-fly!
-  if (email.toLowerCase().trim() === 'daniel.fab93@gmail.com') {
-    const newUser: HexonUser = {
-      id: 'daniel_fab93',
-      name: 'Daniel Fabre',
-      matricula: '1-0000',
-      email: 'daniel.fab93@gmail.com',
-      cargo: 'Super Administrador (Auto-Criado)',
-      gerencia: 'Todas',
-      perfil: 'Super Administrador',
-      status: 'Ativo',
-      senha: 'admin'
-    };
-    await dbSaveUser(newUser);
-    return sanitizeUserForClient(newUser);
-  }
-
-  return null;
 }
 
 // SUBSCRIBE TO USER PROFILE

@@ -25,7 +25,6 @@ import {
   checkIsAnonymousAuthRestricted,
   getDatabaseMode,
   dbAutoGeneratePreventiveActivities,
-  dbGetUserByEmail,
   dbGetUsers,
   dbAddAccessLog,
   dbGetPermissions,

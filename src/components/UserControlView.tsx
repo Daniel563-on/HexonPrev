@@ -164,10 +164,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     setIsSavingUser(true);
     try {
       const targetId = editingUser ? editingUser.id : `u_${Date.now()}`;
-      // If editing and password was left blank, keep the previous hashed/existing password
-      const finalSenha = (editingUser && !userForm.senha.trim())
-        ? ''
-        : (userForm.senha || '123456');
+      const finalSenha = editingUser ? '' : (userForm.senha || '123456');
 
       const newUser: HexonUser = {
         id: targetId,
@@ -243,7 +240,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               : `Erro ao recriar acesso: ${result.error}`);
             return;
           }
-          await dbSaveUser({ ...u, senha: '123456' });
           await dbLinkAuthUid(u.id, result.uid);
           await dbAddAuditLog({
             userMatricula: currentUserProfile.matricula,
@@ -882,24 +878,28 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 </div>
 
                 {/* Password input */}
-                <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Senha de Acesso {editingUser ? '(Opcional na edição)' : '*'}
-                  </label>
-                  <input
-                    type="text"
-                    required={!editingUser}
-                    placeholder={editingUser ? 'Deixe vazio para manter a atual' : 'Senha inicial de acesso'}
-                    value={userForm.senha}
-                    onChange={(e) => {
-                      setUserForm({...userForm, senha: e.target.value});
-                      if (userModalError) setUserModalError(null);
-                    }}
-                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
-                    }`}
-                  />
-                </div>
+                {!editingUser ? (
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                      Senha de Acesso *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Senha inicial de acesso"
+                      value={userForm.senha}
+                      onChange={(e) => {
+                        setUserForm({...userForm, senha: e.target.value});
+                        if (userModalError) setUserModalError(null);
+                      }}
+                      className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
+                        darkMode ? 'bg-[#121b2d] border-slate-800 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
+                      }`}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-[10.5px] text-slate-500">Para redefinir a senha deste colaborador, use o botão de cadeado (Recriar acesso) na lista.</p>
+                )}
 
                 {/* Contact Email */}
                 <div className="col-span-2">
