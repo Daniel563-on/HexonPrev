@@ -2,92 +2,110 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. ATIVOS E EQUIPAMENTOS
-    // Leitura pública essencial para o escaneamento externo via QR Code.
-    // Gravação validando integridade mínima de campos.
+    // ===== FUNÇÕES AUXILIARES =====
+    function signedInReal() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+    function indexPath() {
+      return /databases/$(database)/documents/authIndex/$(request.auth.uid);
+    }
+    function me() {
+      return get(/databases/$(database)/documents/users/$(get(indexPath()).data.userId)).data;
+    }
+    function isStaff() {
+      return signedInReal() && exists(indexPath())
+        && me().authUid == request.auth.uid
+        && me().status == 'Ativo';
+    }
+    function isAdmin() {
+      return isStaff() && me().perfil in ['Super Administrador', 'Administrador'];
+    }
+    function isSuperAdmin() {
+      return isStaff() && me().perfil == 'Super Administrador';
+    }
+
+    // 1. ATIVOS — leitura pública (QR Code); gravação só equipe
     match /assets/{assetId} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasAll(['name', 'status']);
-      allow delete: if true;
+      allow create, update: if isStaff() && request.resource.data.keys().hasAll(['name', 'status']);
+      allow delete: if isAdmin();
     }
 
-    // 2. HISTÓRICO DE MANUTENÇÃO PREVENTIVA
-    // Leitura pública essencial para auditoria da máquina pelo cliente.
-    // BLINDAGEM: Registros de histórico de manutenção são permanentes (proibida exclusão direta).
+    // 2. HISTÓRICO — leitura pública (QR Code); permanente
     match /histories/{historyId} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
+      allow create, update: if isStaff() && request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
       allow delete: if false;
     }
 
-    // 3. LOGS DE ACESSO E AUDITORIA
-    // Criação de novos eventos permitida.
-    // BLINDAGEM: Proibida qualquer alteração ou exclusão de logs já registrados (trilha de auditoria imutável).
+    // 3. LOGS DE ACESSO — imutáveis
     match /accessLogs/{logId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if false;
-      allow delete: if false;
+      allow read: if isSuperAdmin();
+      allow create: if request.auth != null;
+      allow update, delete: if false;
     }
 
-    // 3b. TRILHA DE AUDITORIA DO SISTEMA
-    // Criação permitida; alteração e exclusão proibidas (trilha imutável).
+    // 3b. TRILHA DE AUDITORIA — imutável
     match /auditLogs/{logId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if false;
-      allow delete: if false;
+      allow read: if isSuperAdmin();
+      allow create: if isStaff();
+      allow update, delete: if false;
     }
 
-    // 4. ORDENS DE SERVIÇO
-    // Gestão operacional de preventivas e checklists técnicos.
+    // 4. ORDENS DE SERVIÇO — leitura pública (QR Code); gravação só equipe
     match /serviceOrders/{orderId} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasAll(['status', 'title']);
-      allow delete: if true;
+      allow create, update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title']);
+      allow delete: if isAdmin();
     }
 
-    // 5. MODELOS DE CHECKLIST E TEMPLATES
+    // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
-    // 6. MODELOS DE ETIQUETAS E QR CODES
+    // 6. MODELOS DE ETIQUETAS / QR CODE
     match /qrTemplates/{templateId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
-    // 7. CONFIGURAÇÕES GLOBAIS E PERMISSÕES
+    // 7. CONFIGURAÇÕES E PERMISSÕES
     match /config/{configId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
     }
 
-    // 8. PRAZOS E METAS DE PLANEJAMENTO
+    // 8. PRAZOS DE PLANEJAMENTO
     match /planningDeadlines/{deadlineId} {
-      allow read, write: if true;
+      allow read, write: if isStaff();
     }
 
-    // 9. GERÊNCIAS E UNIDADES OPERACIONAIS
+    // 9. GERÊNCIAS E UNIDADES
     match /managements/{managementId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
     match /units/{unitId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
-    // 10. USUÁRIOS E CONTAS DE ACESSO
-    // Necessário para o login interno e gestão de técnicos com validação de campos essenciais.
+    // 10. USUÁRIOS — só Super Administrador gerencia; o próprio usuário só atualiza a sessão
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if request.resource.data.keys().hasAll(['name', 'matricula', 'perfil', 'status']);
-      allow delete: if true;
+      allow read: if isStaff();
+      allow create: if isSuperAdmin() && request.resource.data.keys().hasAll(['name', 'matricula', 'perfil', 'status']);
+      allow update: if (isSuperAdmin() && request.resource.data.keys().hasAll(['name', 'matricula', 'perfil', 'status']))
+        || (isStaff() && get(indexPath()).data.userId == userId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentSessionId', 'senha']));
+      allow delete: if isSuperAdmin();
     }
 
-    // 12. ÍNDICE DE CONTAS (UID do Firebase Auth -> cadastro em users)
-    // Só pode apontar para um cadastro cujo authUid seja exatamente este UID.
+    // 12. ÍNDICE DE CONTAS (UID do Firebase Auth -> cadastro)
     match /authIndex/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null
+      allow create, update: if isSuperAdmin()
         && request.resource.data.keys().hasOnly(['userId'])
         && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.authUid == uid;
       allow delete: if false;
