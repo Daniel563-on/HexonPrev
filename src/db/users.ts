@@ -133,6 +133,20 @@ export async function verifyPassword(passwordInserted: string, storedPassword?: 
   return storedPassword === passwordInserted;
 }
 
+export async function dbVerifyCurrentPassword(userId: string, senhaDigitada: string): Promise<boolean> {
+  if (!userId || !senhaDigitada) return false;
+  if (!firebaseActive || !dbInstance) return false;
+  try {
+    const snap = await getDoc(doc(dbInstance, 'users', userId));
+    if (!snap.exists()) return false;
+    const stored = (snap.data() as HexonUser).senha;
+    return verifyPassword(senhaDigitada, stored);
+  } catch (e) {
+    console.warn('Falha ao verificar senha atual:', e);
+    return false;
+  }
+}
+
 // Helper to check and bootstrap initial tables/collections asynchronously
 async function bootstrapRBACCollectionsIfEmpty() {
   if (!firebaseActive || !dbInstance) return;

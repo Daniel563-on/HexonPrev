@@ -539,7 +539,16 @@ export async function dbSavePlanningDeadline(deadline: PlanningDeadline): Promis
   }
 }
 
+let lastExpireCheck = 0;
+
 export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
+  // Throttle to at most once every 15 minutes to prevent hammering Firestore write limits
+  const nowMs = Date.now();
+  if (nowMs - lastExpireCheck < 15 * 60 * 1000) {
+    return;
+  }
+  lastExpireCheck = nowMs;
+
   try {
     const [deadlines, orders] = await Promise.all([
       dbGetPlanningDeadlines(),

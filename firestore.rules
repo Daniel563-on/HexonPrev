@@ -13,11 +13,11 @@ service cloud.firestore {
 
     // 2. HISTÓRICO DE MANUTENÇÃO PREVENTIVA
     // Leitura pública essencial para auditoria da máquina pelo cliente.
-    // Gravação de laudos validada e exclusão de duplicidades permitida.
+    // BLINDAGEM: Registros de histórico de manutenção são permanentes (proibida exclusão direta).
     match /histories/{historyId} {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
-      allow delete: if true;
+      allow delete: if false;
     }
 
     // 3. LOGS DE ACESSO E AUDITORIA

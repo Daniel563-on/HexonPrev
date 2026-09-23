@@ -13,7 +13,11 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   doc,
-  getDocFromServer
+  getDocFromServer,
+  collection,
+  getDocs,
+  limit,
+  query
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -111,6 +115,12 @@ export function checkQuotaException(err: any): boolean {
     return true;
   }
   return false;
+}
+
+export function clearQuotaException(): void {
+  if (typeof window !== 'undefined') {
+    (window as any).__hexonFirebaseQuotaExceeded = false;
+  }
 }
 
 // Custom Error Handler required by the Firebase integration skill
@@ -289,10 +299,12 @@ export async function signOutHexon(): Promise<void> {
 export async function testFirebaseConnection(): Promise<boolean> {
   if (!firebaseActive || !dbInstance) return false;
   try {
-    // Attempt getFromServer call on 'test/connection' document to verify connection
-    await getDocFromServer(doc(dbInstance, 'test', 'connection'));
+    const q = query(collection(dbInstance, 'permissions'), limit(1));
+    await getDocs(q);
+    clearQuotaException();
     return true;
   } catch (error: any) {
+    checkQuotaException(error);
     const errMsg = error?.message || String(error);
     if (errMsg.includes('the client is offline') || errMsg.includes('unavailable') || errMsg.includes('Could not reach')) {
       console.warn("Por favor, verifique a configuração do seu Firebase. O cliente está offline.");

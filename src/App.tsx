@@ -477,12 +477,15 @@ export default function App() {
               } catch {}
 
               if (parsedUser && (parsedUser.id || parsedUser.matricula)) {
-                // Fetch fresh users from database to confirm active status
-                const users = await dbGetUsers(true);
-                const foundUser = users.find(u => 
-                  (u.id === parsedUser!.id || u.matricula.trim().toLowerCase() === (parsedUser!.matricula || '').trim().toLowerCase()) && 
-                  u.status === 'Ativo'
-                );
+                // Pointed 1-doc verification directly from Firestore instead of downloading entire user collection
+                const verification = await dbVerifySessionAuthenticity(parsedUser);
+                if (!verification.isValid) {
+                  console.warn('Sessão inativa ou inconsistente no banco de dados:', verification.reason);
+                  handleLogoutState();
+                  return;
+                }
+
+                const foundUser = verification.verifiedUser || parsedUser;
 
                 if (foundUser) {
                   // Only restore if this device's sessionId still matches the active session in Firestore

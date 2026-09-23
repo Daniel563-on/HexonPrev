@@ -158,7 +158,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       const targetId = editingUser ? editingUser.id : `u_${Date.now()}`;
       // If editing and password was left blank, keep the previous hashed/existing password
       const finalSenha = (editingUser && !userForm.senha.trim())
-        ? (editingUser.senha || 'admin')
+        ? ''
         : (userForm.senha || 'admin');
 
       const newUser: HexonUser = {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import { HexonUser } from '../types';
-import { dbSaveUser, verifyPassword } from '../db/firebase';
+import { dbSaveUser, dbVerifyCurrentPassword } from '../db/firebase';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -48,8 +48,7 @@ export default function ChangePasswordModal({
     setErrorMessage(null);
 
     // Validation
-    const hasExistingSenha = Boolean(userProfile.senha);
-    if (hasExistingSenha && !senhaAtual) {
+    if (!senhaAtual) {
       setErrorMessage('Por favor, informe a senha atual.');
       return;
     }
@@ -64,7 +63,7 @@ export default function ChangePasswordModal({
       return;
     }
 
-    if (hasExistingSenha && senhaAtual === novaSenha) {
+    if (senhaAtual === novaSenha) {
       setErrorMessage('A nova senha deve ser diferente da senha atual.');
       return;
     }
@@ -74,17 +73,16 @@ export default function ChangePasswordModal({
       return;
     }
 
-    if (hasExistingSenha) {
-      const isCurrentCorrect = await verifyPassword(senhaAtual, userProfile.senha);
-      if (!isCurrentCorrect) {
-        setErrorMessage('A senha atual digitada está incorreta.');
-        return;
-      }
-    }
-
     setIsLoading(true);
 
     try {
+      const isCurrentCorrect = await dbVerifyCurrentPassword(userProfile.id, senhaAtual);
+      if (!isCurrentCorrect) {
+        setErrorMessage('A senha atual está incorreta ou o servidor está indisponível.');
+        setIsLoading(false);
+        return;
+      }
+
       const updatedUser: HexonUser = {
         ...userProfile,
         senha: novaSenha
@@ -92,13 +90,15 @@ export default function ChangePasswordModal({
 
       await dbSaveUser(updatedUser);
 
+      const { senha: _omit, ...safeUser } = updatedUser;
+
       // Update remembered or session data if present
       try {
         const storedAuth = localStorage.getItem('hexon_auth_user');
         if (storedAuth) {
           const parsed = JSON.parse(storedAuth);
           if (parsed.id === updatedUser.id || parsed.matricula === updatedUser.matricula) {
-            localStorage.setItem('hexon_auth_user', JSON.stringify(updatedUser));
+            localStorage.setItem('hexon_auth_user', JSON.stringify(safeUser));
           }
         }
       } catch (lsErr) {
@@ -107,7 +107,7 @@ export default function ChangePasswordModal({
 
       setIsSuccess(true);
       if (onSuccess) {
-        onSuccess(updatedUser);
+        onSuccess(safeUser);
       }
 
       setTimeout(() => {
@@ -188,31 +188,29 @@ export default function ChangePasswordModal({
           )}
 
           {/* Current Password Field */}
-          {Boolean(userProfile?.senha) && (
-            <div className="space-y-1">
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Senha Atual
-              </label>
-              <div className="relative">
-                <input
-                  type={showSenhaAtual ? 'text' : 'password'}
-                  value={senhaAtual}
-                  onChange={(e) => setSenhaAtual(e.target.value)}
-                  placeholder="Digite sua senha atual"
-                  disabled={isLoading || isSuccess}
-                  className="w-full px-3.5 py-2 pr-10 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSenhaAtual(!showSenhaAtual)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
-                  tabIndex={-1}
-                >
-                  {showSenhaAtual ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+          <div className="space-y-1">
+            <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Senha Atual
+            </label>
+            <div className="relative">
+              <input
+                type={showSenhaAtual ? 'text' : 'password'}
+                value={senhaAtual}
+                onChange={(e) => setSenhaAtual(e.target.value)}
+                placeholder="Digite sua senha atual"
+                disabled={isLoading || isSuccess}
+                className="w-full px-3.5 py-2 pr-10 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSenhaAtual(!showSenhaAtual)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                tabIndex={-1}
+              >
+                {showSenhaAtual ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-          )}
+          </div>
 
           {/* New Password Field */}
           <div className="space-y-1">
