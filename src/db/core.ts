@@ -244,7 +244,14 @@ export async function authenticateWithFirebaseAuth(email: string, rawPassword: s
         const newCred = await createUserWithEmailAndPassword(authInstance, email, rawPassword);
         return newCred.user;
       } catch (createErr: any) {
-        console.info('Firebase Auth automatic user creation notice:', createErr?.code || createErr);
+        const createCode = createErr?.code || '';
+        if (createCode === 'auth/weak-password') {
+          console.info('[Hexon Auth] Senha com menos de 6 caracteres: conta Firebase não criada. O usuário deve trocar a senha.');
+        } else if (createCode === 'auth/email-already-in-use') {
+          console.info('[Hexon Auth] Conta Firebase já existe com outra senha; mantido login legado.');
+        } else {
+          console.info('Firebase Auth automatic user creation notice:', createCode || createErr);
+        }
       }
     } else if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
       console.info(

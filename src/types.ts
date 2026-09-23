@@ -234,6 +234,7 @@ export interface HexonUser {
   status: 'Ativo' | 'Inativo';
   senha?: string; // Senha para login via credenciais
   currentSessionId?: string; // ID de sessão único do dispositivo ativo
+  authUid?: string; // UID do Firebase Authentication vinculado
 }
 
 export interface Profile {

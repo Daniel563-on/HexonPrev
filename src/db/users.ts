@@ -337,7 +337,7 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'users', safeUser.id), cleanUndefined(safeUser));
+      await setDoc(doc(dbInstance, 'users', safeUser.id), cleanUndefined(safeUser), { merge: true });
     } catch (err: any) {
       console.error('Firestore write user failed:', err);
       checkQuotaException(err);
@@ -397,6 +397,11 @@ export async function dbDeleteUser(userId: string): Promise<void> {
       throw err;
     }
   }
+}
+
+export function matriculaToAuthEmail(matricula: string): string {
+  const local = matricula.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+  return `${local}@hexon.corp`;
 }
 
 // RBAC MATRÍCULA LOGIN PROXY
@@ -473,14 +478,19 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
     })();
   }
 
-  // Dual-Layer Security: Synchronize with Firebase Auth to obtain a cryptographically signed Google JWT session
-  const authEmail = (foundUser.email && foundUser.email.includes('@')) 
-    ? foundUser.email.trim()
-    : `${foundUser.matricula.replace(/[^a-zA-Z0-9]/g, '')}@hexon.corp`;
-
-  authenticateWithFirebaseAuth(authEmail, senhaInserida).catch((e) => {
-    console.info('Firebase Auth bridge session sync notice:', e);
-  });
+  // Vincula a sessão ao Firebase Authentication (sem bloquear o login em caso de falha)
+  try {
+    const authUser = await authenticateWithFirebaseAuth(
+      matriculaToAuthEmail(foundUser.matricula),
+      senhaInserida
+    );
+    if (authUser && firebaseActive && dbInstance && foundUser.authUid !== authUser.uid) {
+      await updateDoc(doc(dbInstance, 'users', foundUser.id), { authUid: authUser.uid });
+      foundUser.authUid = authUser.uid;
+    }
+  } catch (e) {
+    console.info('Vínculo com Firebase Auth não concluído (login legado mantido):', e);
+  }
 
   // Access Granted!
   await dbAddAccessLog({
