@@ -228,32 +228,39 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     }
   };
 
-  const handleRecreateAccess = async (u: HexonUser) => {
+  const handleRecreateAccess = (u: HexonUser) => {
     const email = matriculaToAuthEmail(u.matricula);
-    const ok = window.confirm(
-      `Recriar o acesso de ${u.name} (matrícula ${u.matricula}) com a senha provisória 123456?\n\n` +
-      `ANTES, apague a conta ${email} no Firebase Console (Authentication > Usuários), se ela existir.`
-    );
-    if (!ok) return;
-    const result = await createAuthAccountForUser(email, '123456');
-    if (!result.uid) {
-      alert(result.error === 'auth/email-already-in-use'
-        ? `Erro: a conta ${email} ainda existe. Apague-a no Firebase Console e tente novamente.`
-        : `Erro ao recriar acesso: ${result.error}`);
-      return;
-    }
-    await dbSaveUser({ ...u, senha: '123456' });
-    await dbLinkAuthUid(u.id, result.uid);
-    await dbAddAuditLog({
-      userMatricula: currentUserProfile.matricula,
-      userName: currentUserProfile.name,
-      action: 'Recriou Acesso',
-      target: `users/${u.id}`,
-      details: `Recriou o acesso do colaborador ${u.name} (Matrícula: ${u.matricula}) com senha provisória`,
-      timestamp: new Date().toISOString()
+    setGenericConfirm({
+      show: true,
+      title: 'Recriar Acesso',
+      message: `Recriar o acesso de ${u.name} (matrícula ${u.matricula}) com a senha provisória 123456? ANTES, apague a conta ${email} no Firebase Console (Authentication > Usuários), se ela existir.`,
+      onConfirm: async () => {
+        try {
+          const result = await createAuthAccountForUser(email, '123456');
+          if (!result.uid) {
+            alert(result.error === 'auth/email-already-in-use'
+              ? `Erro: a conta ${email} ainda existe. Apague-a no Firebase Console e tente novamente.`
+              : `Erro ao recriar acesso: ${result.error}`);
+            return;
+          }
+          await dbSaveUser({ ...u, senha: '123456' });
+          await dbLinkAuthUid(u.id, result.uid);
+          await dbAddAuditLog({
+            userMatricula: currentUserProfile.matricula,
+            userName: currentUserProfile.name,
+            action: 'Recriou Acesso',
+            target: `users/${u.id}`,
+            details: `Recriou o acesso do colaborador ${u.name} (Matrícula: ${u.matricula}) com senha provisória`,
+            timestamp: new Date().toISOString()
+          });
+          alert(`✅ Acesso de ${u.name} recriado. Senha provisória: 123456`);
+          await loadAllData(true);
+        } catch (err: any) {
+          console.error('Erro ao recriar acesso:', err);
+          alert(`Não foi possível recriar o acesso: ${err?.message || err}`);
+        }
+      }
     });
-    alert(`✅ Acesso de ${u.name} recriado. Senha provisória: 123456`);
-    await loadAllData(true);
   };
 
   const handleDeleteUser = async (userId: string, userName: string) => {
