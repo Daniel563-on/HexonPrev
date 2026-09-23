@@ -30,6 +30,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 3b. TRILHA DE AUDITORIA DO SISTEMA
+    // Criação permitida; alteração e exclusão proibidas (trilha imutável).
+    match /auditLogs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // 4. ORDENS DE SERVIÇO
     // Gestão operacional de preventivas e checklists técnicos.
     match /serviceOrders/{orderId} {

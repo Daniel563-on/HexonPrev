@@ -299,7 +299,7 @@ export async function signOutHexon(): Promise<void> {
 export async function testFirebaseConnection(): Promise<boolean> {
   if (!firebaseActive || !dbInstance) return false;
   try {
-    const q = query(collection(dbInstance, 'permissions'), limit(1));
+    const q = query(collection(dbInstance, 'config'), limit(1));
     await getDocs(q);
     clearQuotaException();
     return true;
