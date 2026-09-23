@@ -4,6 +4,9 @@ import {
   signInAnonymously,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -261,6 +264,33 @@ export async function authenticateWithFirebaseAuth(email: string, rawPassword: s
     } else {
       console.warn('Firebase Auth sign-in notice:', code);
     }
+    return null;
+  }
+}
+
+// Atualiza a senha no Firebase Auth após a troca de senha no sistema. Nunca lança erro.
+export async function syncFirebaseAuthPassword(email: string, currentPassword: string, newPassword: string): Promise<string | null> {
+  if (!firebaseActive || !authInstance || !email || !newPassword) return null;
+  try {
+    let u = authInstance.currentUser;
+    if (u && !u.isAnonymous && u.email === email) {
+      await reauthenticateWithCredential(u, EmailAuthProvider.credential(email, currentPassword));
+    } else {
+      try {
+        u = (await signInWithEmailAndPassword(authInstance, email, currentPassword)).user;
+      } catch {
+        u = null;
+      }
+    }
+    if (u) {
+      await updatePassword(u, newPassword);
+      return u.uid;
+    }
+    // Usuário ainda sem conta no Firebase Auth (ex.: senha antiga tinha menos de 6 caracteres): cria agora
+    const created = await authenticateWithFirebaseAuth(email, newPassword);
+    return created?.uid || null;
+  } catch (e: any) {
+    console.info('[Hexon Auth] Senha não sincronizada com Firebase Auth (login legado mantido):', e?.code || e);
     return null;
   }
 }

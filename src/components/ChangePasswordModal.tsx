@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import { HexonUser } from '../types';
-import { dbSaveUser, dbVerifyCurrentPassword } from '../db/firebase';
+import {
+  dbSaveUser,
+  dbVerifyCurrentPassword,
+  matriculaToAuthEmail,
+  dbLinkAuthUid,
+  syncFirebaseAuthPassword
+} from '../db/firebase';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -89,6 +95,15 @@ export default function ChangePasswordModal({
       };
 
       await dbSaveUser(updatedUser);
+
+      const newUid = await syncFirebaseAuthPassword(
+        matriculaToAuthEmail(userProfile.matricula),
+        senhaAtual,
+        novaSenha
+      );
+      if (newUid && newUid !== userProfile.authUid) {
+        await dbLinkAuthUid(userProfile.id, newUid);
+      }
 
       const { senha: _omit, ...safeUser } = updatedUser;
 

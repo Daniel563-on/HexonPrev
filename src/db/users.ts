@@ -404,6 +404,15 @@ export function matriculaToAuthEmail(matricula: string): string {
   return `${local}@hexon.corp`;
 }
 
+export async function dbLinkAuthUid(userId: string, authUid: string): Promise<void> {
+  if (!firebaseActive || !dbInstance || !userId || !authUid) return;
+  try {
+    await updateDoc(doc(dbInstance, 'users', userId), { authUid });
+  } catch (e) {
+    console.warn('Falha ao vincular authUid:', e);
+  }
+}
+
 // RBAC MATRÍCULA LOGIN PROXY
 export async function dbLoginByMatricula(matricula: string, senhaInserida: string): Promise<HexonUser | null> {
   const sanitized = matricula.trim();
