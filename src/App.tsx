@@ -487,6 +487,13 @@ export default function App() {
 
                 const foundUser = verification.verifiedUser || parsedUser;
 
+                // A sessão local só vale se o Firebase Auth estiver logado com a conta vinculada a este cadastro
+                if (!user || user.isAnonymous || !foundUser.authUid || user.uid !== foundUser.authUid) {
+                  console.warn('[Segurança] Sessão local sem login válido no Firebase Auth. É necessário entrar novamente.');
+                  handleLogoutState();
+                  return;
+                }
+
                 if (foundUser) {
                   // Only restore if this device's sessionId still matches the active session in Firestore
                   if (!foundUser.currentSessionId || foundUser.currentSessionId === savedSessionId) {

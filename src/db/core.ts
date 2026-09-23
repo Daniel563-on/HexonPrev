@@ -321,6 +321,16 @@ export async function createAuthAccountForUser(email: string, password: string):
   }
 }
 
+export async function firebaseSignInWithPassword(email: string, password: string): Promise<{ user?: any; error?: string }> {
+  if (!firebaseActive || !authInstance) return { error: 'firebase-inativo' };
+  try {
+    const cred = await signInWithEmailAndPassword(authInstance, email, password);
+    return { user: cred.user };
+  } catch (e: any) {
+    return { error: e?.code || String(e) };
+  }
+}
+
 // Ensures Firebase Auth has completed initialization before attempting unauthenticated public reads
 export async function ensureFirebaseAuthReady(timeoutMs = 2500): Promise<void> {
   if (!firebaseActive || !authInstance) return;

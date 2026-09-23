@@ -19,7 +19,9 @@ import {
   isCacheValid,
   updateCacheTimestamp,
   checkQuotaException,
-  authenticateWithFirebaseAuth
+  authenticateWithFirebaseAuth,
+  firebaseSignInWithPassword,
+  signOutHexon
 } from './core';
 import { dbAddAccessLog } from './audit';
 import { SEED_MANAGEMENTS, SEED_UNITS } from './organization';
@@ -414,105 +416,82 @@ export async function dbLinkAuthUid(userId: string, authUid: string): Promise<vo
   }
 }
 
-// RBAC MATRÍCULA LOGIN PROXY
+// LOGIN EXCLUSIVO VIA FIREBASE AUTHENTICATION (matrícula -> e-mail interno)
 export async function dbLoginByMatricula(matricula: string, senhaInserida: string): Promise<HexonUser | null> {
   const sanitized = matricula.trim();
-  if (!sanitized) return null;
+  if (!sanitized || !senhaInserida) return null;
 
-  let foundUser: HexonUser | null = null;
-
-  if (firebaseActive && dbInstance) {
-    try {
-      // Direct 1-doc targeted query by matricula directly from Firestore
-      const q = query(collection(dbInstance, 'users'), where('matricula', '==', sanitized), limit(1));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const docSnap = snap.docs[0];
-        foundUser = { id: docSnap.id, ...docSnap.data() } as HexonUser;
-      }
-    } catch (err: any) {
-      console.warn('Direct Firestore login query failed:', err);
-      checkQuotaException(err);
-    }
+  if (!firebaseActive || !dbInstance) {
+    console.warn('[Hexon Auth] Login indisponível: Firebase inativo.');
+    return null;
   }
 
-  // Fallback to local default / cached users if offline
-  if (!foundUser) {
-    const localUsers = cacheUsers || [...SEED_USERS];
-    foundUser = localUsers.find(u => u.matricula.trim().toLowerCase() === sanitized.toLowerCase()) || null;
-  }
-
-  if (!foundUser) {
+  const signIn = await firebaseSignInWithPassword(matriculaToAuthEmail(sanitized), senhaInserida);
+  if (!signIn.user) {
     await dbAddAccessLog({
-      userMatricula: matricula,
-      event: `Falha de login (Matrícula não cadastrada)`,
+      userMatricula: sanitized,
+      event: `Falha de login (matrícula ou senha incorretas)`,
       timestamp: new Date().toISOString()
     });
     return null;
   }
+  const uid: string = signIn.user.uid;
 
-  if (foundUser.status === 'Inativo') {
-    await dbAddAccessLog({
-      userId: foundUser.id,
-      userName: foundUser.name,
-      userMatricula: foundUser.matricula,
-      event: `Tentativa de login bloqueada (Usuário Inativo)`,
-      timestamp: new Date().toISOString()
-    });
-    return null;
-  }
-
-  // Robust verification (matches SHA-256 hash or legacy plain-text)
-  const isPasswordValid = await verifyPassword(senhaInserida, foundUser.senha);
-
-  if (!isPasswordValid) {
-    await dbAddAccessLog({
-      userId: foundUser.id,
-      userName: foundUser.name,
-      userMatricula: foundUser.matricula,
-      event: `Falha de login (Senha incorreta)`,
-      timestamp: new Date().toISOString()
-    });
-    return null;
-  }
-
-  // Transparent auto-upgrade: if stored password is still legacy plain text, hash it and save in background!
-  if (foundUser.senha && !foundUser.senha.startsWith('hexon_sha256:')) {
-    (async () => {
-      try {
-        const hashed = await hashPassword(senhaInserida);
-        await dbSaveUser({ ...foundUser!, senha: hashed });
-      } catch (e) {
-        console.warn('Background auto-upgrade to password hash failed:', e);
-      }
-    })();
-  }
-
-  // Vincula a sessão ao Firebase Authentication (sem bloquear o login em caso de falha)
   try {
-    const authUser = await authenticateWithFirebaseAuth(
-      matriculaToAuthEmail(foundUser.matricula),
-      senhaInserida
-    );
-    if (authUser) {
-      await dbLinkAuthUid(foundUser.id, authUser.uid);
-      foundUser.authUid = authUser.uid;
+    const idxSnap = await getDoc(doc(dbInstance, 'authIndex', uid));
+    const userId: string | null = idxSnap.exists() ? (idxSnap.data() as any).userId : null;
+    const userSnap = userId ? await getDoc(doc(dbInstance, 'users', userId)) : null;
+
+    if (!userSnap || !userSnap.exists()) {
+      await signOutHexon();
+      await dbAddAccessLog({
+        userMatricula: sanitized,
+        event: `Falha de login (conta sem cadastro vinculado)`,
+        timestamp: new Date().toISOString()
+      });
+      return null;
     }
+
+    const foundUser = { id: userSnap.id, ...userSnap.data() } as HexonUser;
+
+    if (foundUser.authUid !== uid) {
+      await signOutHexon();
+      await dbAddAccessLog({
+        userId: foundUser.id,
+        userName: foundUser.name,
+        userMatricula: foundUser.matricula,
+        event: `Falha de login (conta de acesso não corresponde ao cadastro)`,
+        timestamp: new Date().toISOString()
+      });
+      return null;
+    }
+
+    if (foundUser.status === 'Inativo') {
+      await signOutHexon();
+      await dbAddAccessLog({
+        userId: foundUser.id,
+        userName: foundUser.name,
+        userMatricula: foundUser.matricula,
+        event: `Tentativa de login bloqueada (Usuário Inativo)`,
+        timestamp: new Date().toISOString()
+      });
+      return null;
+    }
+
+    await dbAddAccessLog({
+      userId: foundUser.id,
+      userName: foundUser.name,
+      userMatricula: foundUser.matricula,
+      event: `Login realizado com sucesso via matrícula`,
+      timestamp: new Date().toISOString()
+    });
+
+    return sanitizeUserForClient(foundUser);
   } catch (e) {
-    console.info('Vínculo com Firebase Auth não concluído (login legado mantido):', e);
+    console.warn('[Hexon Auth] Falha ao carregar cadastro após login:', e);
+    await signOutHexon();
+    return null;
   }
-
-  // Access Granted!
-  await dbAddAccessLog({
-    userId: foundUser.id,
-    userName: foundUser.name,
-    userMatricula: foundUser.matricula,
-    event: `Login realizado com sucesso via matrícula`,
-    timestamp: new Date().toISOString()
-  });
-
-  // RETURN SANITIZED USER (Never pass password hash into UI / state)
-  return sanitizeUserForClient(foundUser);
 }
 
 // RBAC GOOGLE ACCOUNT ATTACHMENT PROXY
