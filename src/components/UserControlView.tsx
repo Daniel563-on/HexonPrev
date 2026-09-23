@@ -12,7 +12,8 @@ import {
   dbSavePermissions,
   createAuthAccountForUser,
   matriculaToAuthEmail,
-  dbLinkAuthUid
+  dbLinkAuthUid,
+  adminResetUserPassword
 } from '../db/firebase';
 import { HexonUser, Management, SystemPermission } from '../types';
 
@@ -226,35 +227,20 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   };
 
   const handleRecreateAccess = (u: HexonUser) => {
-    const email = matriculaToAuthEmail(u.matricula);
     setGenericConfirm({
       show: true,
-      title: 'Recriar Acesso',
-      message: `Recriar o acesso de ${u.name} (matrícula ${u.matricula}) com a senha provisória 123456? ANTES, apague a conta ${email} no Firebase Console (Authentication > Usuários), se ela existir.`,
+      title: 'Redefinir Senha',
+      message: `Redefinir a senha de ${u.name} (matrícula ${u.matricula}) para a senha provisória 123456? As sessões abertas deste colaborador serão encerradas.`,
       onConfirm: async () => {
-        try {
-          const result = await createAuthAccountForUser(email, '123456');
-          if (!result.uid) {
-            alert(result.error === 'auth/email-already-in-use'
-              ? `Erro: a conta ${email} ainda existe. Apague-a no Firebase Console e tente novamente.`
-              : `Erro ao recriar acesso: ${result.error}`);
-            return;
-          }
-          await dbLinkAuthUid(u.id, result.uid);
-          await dbAddAuditLog({
-            userMatricula: currentUserProfile.matricula,
-            userName: currentUserProfile.name,
-            action: 'Recriou Acesso',
-            target: `users/${u.id}`,
-            details: `Recriou o acesso do colaborador ${u.name} (Matrícula: ${u.matricula}) com senha provisória`,
-            timestamp: new Date().toISOString()
-          });
-          alert(`✅ Acesso de ${u.name} recriado. Senha provisória: 123456`);
-          await loadAllData(true);
-        } catch (err: any) {
-          console.error('Erro ao recriar acesso:', err);
-          alert(`Não foi possível recriar o acesso: ${err?.message || err}`);
+        const result = await adminResetUserPassword(u.id);
+        if (!result.ok) {
+          alert(result.error === 'functions/permission-denied'
+            ? 'Erro: apenas Super Administrador pode redefinir senhas.'
+            : `Erro ao redefinir a senha: ${result.error}`);
+          return;
         }
+        alert(`✅ Senha de ${u.name} redefinida. Senha provisória: 123456`);
+        await loadAllData(true);
       }
     });
   };
@@ -641,7 +627,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                               <button 
                                 onClick={() => handleRecreateAccess(u)}
                                 className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-amber-600 transition-colors cursor-pointer"
-                                title="Recriar acesso (senha provisória 123456)"
+                                title="Redefinir senha (provisória 123456)"
                               >
                                 <span className="material-symbols-outlined text-[17px]">lock_reset</span>
                               </button>

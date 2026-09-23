@@ -1,4 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getAuth,
   initializeAuth,
@@ -284,6 +285,19 @@ export async function firebaseSignInWithPassword(email: string, password: string
     return { user: cred.user };
   } catch (e: any) {
     return { error: e?.code || String(e) };
+  }
+}
+
+// Redefine a senha de outro usuário para 123456 via Cloud Function (somente Super Administrador)
+export async function adminResetUserPassword(userId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!firebaseActive) return { ok: false, error: 'firebase-inativo' };
+  try {
+    const fns = getFunctions(getApp(), 'us-central1');
+    const call = httpsCallable(fns, 'resetUserPassword');
+    await call({ userId });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.code || e?.message || String(e) };
   }
 }
 
