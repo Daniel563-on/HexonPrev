@@ -83,6 +83,16 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // 12. ÍNDICE DE CONTAS (UID do Firebase Auth -> cadastro em users)
+    // Só pode apontar para um cadastro cujo authUid seja exatamente este UID.
+    match /authIndex/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['userId'])
+        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.authUid == uid;
+      allow delete: if false;
+    }
+
     // 11. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
     match /{document=**} {
       allow read, write: if false;

@@ -408,6 +408,7 @@ export async function dbLinkAuthUid(userId: string, authUid: string): Promise<vo
   if (!firebaseActive || !dbInstance || !userId || !authUid) return;
   try {
     await updateDoc(doc(dbInstance, 'users', userId), { authUid });
+    await setDoc(doc(dbInstance, 'authIndex', authUid), { userId });
   } catch (e) {
     console.warn('Falha ao vincular authUid:', e);
   }
@@ -493,8 +494,8 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
       matriculaToAuthEmail(foundUser.matricula),
       senhaInserida
     );
-    if (authUser && firebaseActive && dbInstance && foundUser.authUid !== authUser.uid) {
-      await updateDoc(doc(dbInstance, 'users', foundUser.id), { authUid: authUser.uid });
+    if (authUser) {
+      await dbLinkAuthUid(foundUser.id, authUser.uid);
       foundUser.authUid = authUser.uid;
     }
   } catch (e) {

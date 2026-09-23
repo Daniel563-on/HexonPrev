@@ -1,6 +1,8 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import {
   getAuth,
+  initializeAuth,
+  inMemoryPersistence,
   signInAnonymously,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -292,6 +294,30 @@ export async function syncFirebaseAuthPassword(email: string, currentPassword: s
   } catch (e: any) {
     console.info('[Hexon Auth] Senha não sincronizada com Firebase Auth (login legado mantido):', e?.code || e);
     return null;
+  }
+}
+
+// Cria contas do Firebase Auth para OUTROS usuários sem derrubar a sessão do administrador
+let secondaryAuthInstance: any = null;
+function getSecondaryAuth() {
+  if (secondaryAuthInstance) return secondaryAuthInstance;
+  const name = 'hexon-admin-secondary';
+  const existing = getApps().find(a => a.name === name);
+  const secondaryApp = existing || initializeApp(firebaseConfig, name);
+  secondaryAuthInstance = existing ? getAuth(secondaryApp) : initializeAuth(secondaryApp, { persistence: inMemoryPersistence });
+  return secondaryAuthInstance;
+}
+
+export async function createAuthAccountForUser(email: string, password: string): Promise<{ uid?: string; error?: string }> {
+  if (!firebaseActive) return { error: 'firebase-inativo' };
+  const secAuth = getSecondaryAuth();
+  try {
+    const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+    const uid = cred.user.uid;
+    await signOut(secAuth);
+    return { uid };
+  } catch (e: any) {
+    return { error: e?.code || String(e) };
   }
 }
 

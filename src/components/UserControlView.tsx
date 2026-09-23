@@ -9,7 +9,10 @@ import {
   dbDeleteManagement, 
   dbAddAuditLog,
   dbGetPermissions,
-  dbSavePermissions
+  dbSavePermissions,
+  createAuthAccountForUser,
+  matriculaToAuthEmail,
+  dbLinkAuthUid
 } from '../db/firebase';
 import { HexonUser, Management, SystemPermission } from '../types';
 
@@ -42,7 +45,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     gerencia: 'Refrigeração',
     perfil: 'Profissional' as HexonUser['perfil'],
     status: 'Ativo' as HexonUser['status'],
-    senha: 'admin'
+    senha: '123456'
   });
 
   // Mgmt Modal state
@@ -112,7 +115,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       gerencia: managements[0]?.name || 'Refrigeração',
       perfil: 'Profissional',
       status: 'Ativo',
-      senha: 'admin'
+      senha: '123456'
     });
     setIsUserModalOpen(true);
   };
@@ -144,6 +147,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       return;
     }
 
+    if (!editingUser && (userForm.senha || '123456').length < 6) {
+      setUserModalError('A senha inicial deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
     // Trava de Matrícula Única: impede que outro usuário já possua a mesma matrícula
     const duplicate = users.find(
       u => u.matricula.trim().toLowerCase() === sanitizedMatricula.toLowerCase() && u.id !== editingUser?.id
@@ -159,7 +167,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       // If editing and password was left blank, keep the previous hashed/existing password
       const finalSenha = (editingUser && !userForm.senha.trim())
         ? ''
-        : (userForm.senha || 'admin');
+        : (userForm.senha || '123456');
 
       const newUser: HexonUser = {
         id: targetId,
@@ -174,6 +182,22 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       };
 
       await dbSaveUser(newUser);
+
+      if (!editingUser) {
+        const result = await createAuthAccountForUser(matriculaToAuthEmail(newUser.matricula), finalSenha);
+        if (result.uid) {
+          await dbLinkAuthUid(newUser.id, result.uid);
+        } else {
+          const motivo = result.error === 'auth/email-already-in-use'
+            ? `Já existe uma conta de acesso para ${matriculaToAuthEmail(newUser.matricula)}. Apague-a no Firebase Console (Authentication > Usuários) e use "Recriar acesso".`
+            : `Motivo: ${result.error}. Use "Recriar acesso" depois.`;
+          setEditingUser(newUser);
+          setUserModalError(`Colaborador salvo, mas a conta de acesso NÃO foi criada. ${motivo}`);
+          await loadAllData(true);
+          setIsSavingUser(false);
+          return;
+        }
+      }
 
       if (currentUserProfile.id === newUser.id) {
         const cached = localStorage.getItem('hexon_cached_user');
@@ -202,6 +226,34 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     } finally {
       setIsSavingUser(false);
     }
+  };
+
+  const handleRecreateAccess = async (u: HexonUser) => {
+    const email = matriculaToAuthEmail(u.matricula);
+    const ok = window.confirm(
+      `Recriar o acesso de ${u.name} (matrícula ${u.matricula}) com a senha provisória 123456?\n\n` +
+      `ANTES, apague a conta ${email} no Firebase Console (Authentication > Usuários), se ela existir.`
+    );
+    if (!ok) return;
+    const result = await createAuthAccountForUser(email, '123456');
+    if (!result.uid) {
+      alert(result.error === 'auth/email-already-in-use'
+        ? `Erro: a conta ${email} ainda existe. Apague-a no Firebase Console e tente novamente.`
+        : `Erro ao recriar acesso: ${result.error}`);
+      return;
+    }
+    await dbSaveUser({ ...u, senha: '123456' });
+    await dbLinkAuthUid(u.id, result.uid);
+    await dbAddAuditLog({
+      userMatricula: currentUserProfile.matricula,
+      userName: currentUserProfile.name,
+      action: 'Recriou Acesso',
+      target: `users/${u.id}`,
+      details: `Recriou o acesso do colaborador ${u.name} (Matrícula: ${u.matricula}) com senha provisória`,
+      timestamp: new Date().toISOString()
+    });
+    alert(`✅ Acesso de ${u.name} recriado. Senha provisória: 123456`);
+    await loadAllData(true);
   };
 
   const handleDeleteUser = async (userId: string, userName: string) => {
@@ -582,6 +634,13 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                                 title="Editar Colaborador"
                               >
                                 <span className="material-symbols-outlined text-[17px]">edit</span>
+                              </button>
+                              <button 
+                                onClick={() => handleRecreateAccess(u)}
+                                className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-amber-600 transition-colors cursor-pointer"
+                                title="Recriar acesso (senha provisória 123456)"
+                              >
+                                <span className="material-symbols-outlined text-[17px]">lock_reset</span>
                               </button>
                               <button 
                                 onClick={() => handleDeleteUser(u.id, u.name)}
