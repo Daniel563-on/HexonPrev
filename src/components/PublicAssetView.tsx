@@ -12,10 +12,12 @@ import {
   AlertCircle,
   ExternalLink,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  RefreshCw,
+  FileCheck
 } from 'lucide-react';
-import { Asset, MaintenanceLog, formatDateBR } from '../types';
-import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic } from '../db/firebase';
+import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
+import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic } from '../db/firebase';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
 interface PublicAssetViewProps {
@@ -29,8 +31,10 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
 }) => {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
+  const [linkedOrders, setLinkedOrders] = useState<ServiceOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -39,7 +43,15 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
       setError(null);
       try {
         // Consulta segura e pontual: busca apenas e estritamente o ativo escaneado
-        const found = await dbGetSingleAssetPublic(assetIdentifier);
+        let found = await dbGetSingleAssetPublic(assetIdentifier);
+
+        // Se na primeira tentativa não encontrar imediatamente (devido ao handshake inicial de rede),
+        // aguarda 600ms e tenta novamente antes de dar como não localizado
+        if (!found) {
+          await new Promise((res) => setTimeout(res, 600));
+          if (!active) return;
+          found = await dbGetSingleAssetPublic(assetIdentifier);
+        }
 
         if (!active) return;
 
@@ -51,12 +63,16 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
 
         setAsset(found);
 
-        // Busca o histórico completo de manutenções registradas exclusivamente para este equipamento
-        const hist = await dbGetAssetHistoryPublic(found.id);
+        // Busca paralela e estrita apenas dos dados deste ativo (sem baixar banco geral)
+        const [hist, orders] = await Promise.all([
+          dbGetAssetHistoryPublic(found.id).catch(() => []),
+          dbGetAssetOrdersPublic(found.id, found.code).catch(() => [])
+        ]);
+
         if (active) {
-          // Ordena do mais recente para o mais antigo para garantir linha do tempo perfeita
-          const sorted = [...hist].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setHistory(sorted);
+          const sortedHist = [...hist].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setHistory(sortedHist);
+          setLinkedOrders(orders);
           setLoading(false);
         }
       } catch (err: any) {
@@ -73,7 +89,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
     return () => {
       active = false;
     };
-  }, [assetIdentifier]);
+  }, [assetIdentifier, retryCount]);
 
   // Renderização de carregamento
   if (loading) {
@@ -105,7 +121,15 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             </p>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
+            <button
+              type="button"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Tentar Novamente
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -316,6 +340,64 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
               <p className="text-[11px] font-medium text-amber-900/90 mt-0.5">
                 Este equipamento está cadastrado e aguardando a realização de sua primeira preventiva programada.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Ordens de Serviço Preventivas Vinculadas (se houver em andamento ou agendadas) */}
+        {linkedOrders.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3.5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                  Preventivas Programadas no Sistema ({linkedOrders.length})
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                Ativas
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {linkedOrders.map((ord) => (
+                <div
+                  key={ord.id}
+                  className="p-3 rounded-xl border border-slate-150 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                        OS #{ord.id}
+                      </span>
+                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                        ord.status === 'Concluído'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : ord.status === 'Em Andamento'
+                          ? 'bg-blue-50 border-blue-200 text-blue-800'
+                          : 'bg-amber-50 border-amber-200 text-amber-800'
+                      }`}>
+                        {ord.status}
+                      </span>
+                    </div>
+                    <p className="font-bold text-slate-850 mt-1 truncate">
+                      {ord.title}
+                    </p>
+                    {ord.dueDate && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Prazo previsto: <strong>{formatDateBR(ord.dueDate)}</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <span className="text-[10px] font-medium text-slate-500 block">Técnico Encarregado</span>
+                    <span className="text-[11px] font-bold text-slate-800">
+                      {sanitizeTechnicianName(ord.assignedTechnician)}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

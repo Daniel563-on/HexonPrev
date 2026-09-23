@@ -6,9 +6,11 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
-  QrCode
+  QrCode,
+  Loader2
 } from 'lucide-react';
 import { Asset } from '../../types';
+import { dbSearchAssetsTargeted } from '../../db/firebase';
 
 export interface QrAssetSelectionTabProps {
   allAssets: Asset[];
@@ -16,6 +18,7 @@ export interface QrAssetSelectionTabProps {
   selectedAssetIds: Set<string>;
   setSelectedAssetIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   darkMode: boolean;
+  onUpdateAssets?: (newAssets: Asset[]) => void;
 }
 
 const ITEMS_PER_TABLE_PAGE = 35;
@@ -25,13 +28,34 @@ export default function QrAssetSelectionTab({
   loading,
   selectedAssetIds,
   setSelectedAssetIds,
-  darkMode
+  darkMode,
+  onUpdateAssets
 }: QrAssetSelectionTabProps) {
   // Local filter states
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedComarca, setSelectedComarca] = useState<string>('Todas');
   const [selectedSector, setSelectedSector] = useState<string>('Todos');
   const [selectedStatus, setSelectedStatus] = useState<string>('Todos');
+  const [isSearchingServer, setIsSearchingServer] = useState<boolean>(false);
+
+  // Trigger targeted server query without downloading full database
+  const handleServerSearch = async () => {
+    if (!onUpdateAssets) return;
+    setIsSearchingServer(true);
+    try {
+      const results = await dbSearchAssetsTargeted({
+        codeOrPatrimonio: searchTerm.trim() || undefined,
+        sector: selectedSector !== 'Todos' ? selectedSector : undefined,
+        unitOrComarca: selectedComarca !== 'Todas' ? selectedComarca : undefined,
+        limitResults: 100
+      });
+      onUpdateAssets(results);
+    } catch (e) {
+      console.warn('Erro ao pesquisar ativos direcionados:', e);
+    } finally {
+      setIsSearchingServer(false);
+    }
+  };
 
   // Table pagination state
   const [tablePage, setTablePage] = useState<number>(1);
@@ -180,6 +204,30 @@ export default function QrAssetSelectionTab({
             </select>
           </div>
         </div>
+
+        {/* Action button to execute targeted search */}
+        {onUpdateAssets && (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={handleServerSearch}
+              disabled={isSearchingServer}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              {isSearchingServer ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Consultando servidor...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Buscar Ativos Filtrados</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Mass Selection Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800">

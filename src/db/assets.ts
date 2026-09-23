@@ -20,7 +20,8 @@ import {
   cleanUndefined,
   isCacheValid,
   updateCacheTimestamp,
-  checkQuotaException
+  checkQuotaException,
+  ensureFirebaseAuthReady
 } from './core';
 import { isMockOrLegacyId } from './templates';
 
@@ -33,28 +34,6 @@ export function clearAssetsCache(): void {
   cacheAssets = null;
   cacheAssetsFromFirebase = false;
   pendingAssetsPromise = null;
-}
-
-// Clean legacy heavy QR codes from Firestore documents in the background
-async function cleanLegacyAssetQrCodesBackground(assetsWithQr: string[]): Promise<void> {
-  if (!firebaseActive || !dbInstance || assetsWithQr.length === 0) return;
-  try {
-    const batchSize = 100;
-    for (let i = 0; i < assetsWithQr.length; i += batchSize) {
-      const chunk = assetsWithQr.slice(i, i + batchSize);
-      const batch = writeBatch(dbInstance);
-      for (const assetId of chunk) {
-        batch.update(doc(dbInstance, 'assets', assetId), {
-          qrCode: deleteField()
-        });
-      }
-      await batch.commit().catch(() => {});
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    console.log(`[Firestore Optimization] Cleaned ${assetsWithQr.length} legacy QR codes from assets in Firestore.`);
-  } catch (e) {
-    console.warn('[Firestore Optimization] Legacy QR cleanup skipped:', e);
-  }
 }
 
 // Get all assets
@@ -110,13 +89,11 @@ export async function dbGetAssets(): Promise<Asset[]> {
       try {
         const snap = await getDocs(collection(dbInstance, path));
         const list: Asset[] = [];
-        const legacyQrIdsToClean: string[] = [];
 
         snap.forEach((docSnap) => {
           if (!isMockOrLegacyId(docSnap.id)) {
             const data = docSnap.data() as any;
             if (data.qrCode) {
-              legacyQrIdsToClean.push(docSnap.id);
               delete data.qrCode; // Strip heavy base64 string immediately from memory
             }
             list.push({ id: docSnap.id, ...data } as Asset);
@@ -141,10 +118,8 @@ export async function dbGetAssets(): Promise<Asset[]> {
           // If 10k items exceed localStorage, IndexedDB already holds the cache safely
         }
 
-        // Asynchronously clean legacy heavy fields from Firestore documents without blocking UI
-        if (legacyQrIdsToClean.length > 0) {
-          cleanLegacyAssetQrCodesBackground(legacyQrIdsToClean).catch(() => {});
-        }
+        // Note: Heavy base64 QR codes are already stripped from memory on line 121.
+        // We avoid triggering remote batch write updates to eliminate write quota consumption.
 
         pendingAssetsPromise = null;
         return [...cacheAssets];
@@ -180,6 +155,9 @@ export async function dbGetSingleAssetPublic(assetIdentifier: string): Promise<A
 
   if (firebaseActive && dbInstance) {
     try {
+      // Ensure Firebase anonymous authentication has connected
+      await ensureFirebaseAuthReady(2000);
+
       // 1. Try direct document fetch by ID (1 read only)
       const docRef = doc(dbInstance, 'assets', rawId);
       const snap = await getDoc(docRef);
@@ -218,13 +196,27 @@ export async function dbGetSingleAssetPublic(assetIdentifier: string): Promise<A
           return sanitizePublicAsset({ id: docItem.id, ...data } as Asset);
         }
       }
+
+      // 4. Fallback: Match by specs.PATRIMONIO in case code was registered under specs
+      const qPatrimonio = query(
+        collection(dbInstance, 'assets'),
+        where('specs.PATRIMONIO', '==', rawId),
+        limit(1)
+      );
+      const qPatrimonioSnap = await getDocs(qPatrimonio);
+      if (!qPatrimonioSnap.empty) {
+        const docItem = qPatrimonioSnap.docs[0];
+        const data = docItem.data() as any;
+        if (data.qrCode) delete data.qrCode;
+        return sanitizePublicAsset({ id: docItem.id, ...data } as Asset);
+      }
     } catch (err: any) {
       console.warn('dbGetSingleAssetPublic error querying Firestore:', err);
       checkQuotaException(err);
     }
   }
 
-  // 4. Offline/Local fallback (checks if already in local storage, WITHOUT saving all assets)
+  // 5. Offline/Local fallback (checks if already in local storage, WITHOUT saving all assets)
   try {
     const saved = localStorage.getItem('hexon_assets');
     if (saved) {
@@ -232,7 +224,8 @@ export async function dbGetSingleAssetPublic(assetIdentifier: string): Promise<A
       const found = parsed.find(
         (a) =>
           a.id.toLowerCase() === rawId.toLowerCase() ||
-          a.code.toLowerCase() === rawId.toLowerCase()
+          a.code.toLowerCase() === rawId.toLowerCase() ||
+          (a.specs?.PATRIMONIO && String(a.specs.PATRIMONIO).toLowerCase() === rawId.toLowerCase())
       );
       if (found) {
         const cleanFound = { ...found };
@@ -253,6 +246,8 @@ export async function dbGetAssetHistoryPublic(assetId: string): Promise<Maintena
 
   if (firebaseActive && dbInstance) {
     try {
+      await ensureFirebaseAuthReady(1500);
+
       // Direct filtered query: only histories matching this specific assetId
       const q = query(
         collection(dbInstance, 'histories'),
@@ -286,6 +281,89 @@ export async function dbGetAssetHistoryPublic(assetId: string): Promise<Maintena
   } catch (e) {
     // ignore
   }
+
+  return [];
+}
+
+// TARGETED ASSET SEARCH: Queries exclusively the filtered items from Firestore (avoids downloading 10,000 assets)
+export interface AssetSearchCriteria {
+  codeOrPatrimonio?: string;
+  sector?: string;
+  unitOrComarca?: string;
+  tipo?: string;
+  limitResults?: number;
+}
+
+export async function dbSearchAssetsTargeted(criteria: AssetSearchCriteria): Promise<Asset[]> {
+  const { codeOrPatrimonio, sector, unitOrComarca, tipo, limitResults = 50 } = criteria;
+  const cleanCode = (codeOrPatrimonio || '').trim();
+
+  // If code / patrimonio is specified, perform 1-doc exact query
+  if (cleanCode) {
+    const single = await dbGetSingleAssetPublic(cleanCode);
+    if (single) return [single];
+  }
+
+  if (firebaseActive && dbInstance) {
+    try {
+      const constraints: any[] = [];
+      if (sector && sector !== 'Todos' && sector !== 'Todas') {
+        constraints.push(where('sector', '==', sector));
+      }
+      if (tipo && tipo !== 'Todos') {
+        constraints.push(where('specs.TIPO', '==', tipo));
+      }
+
+      constraints.push(limit(limitResults));
+
+      const q = query(collection(dbInstance, 'assets'), ...constraints);
+      const snap = await getDocs(q);
+      const list: Asset[] = [];
+      snap.forEach((d) => {
+        if (!isMockOrLegacyId(d.id)) {
+          const data = d.data() as any;
+          if (data.qrCode) delete data.qrCode;
+          list.push({ id: d.id, ...data } as Asset);
+        }
+      });
+
+      // Secondary client-side refinement for composite fields if needed
+      let result = list;
+      if (unitOrComarca && unitOrComarca !== 'Todas' && unitOrComarca !== 'Todos') {
+        const uLower = unitOrComarca.toLowerCase();
+        result = result.filter(a => {
+          const com = String(a.specs?.COMARCA || a.specs?.comarca || '').toLowerCase();
+          const cra = String(a.specs?.CRAAI || a.specs?.craai || '').toLowerCase();
+          const loc = String(a.location || '').toLowerCase();
+          return com.includes(uLower) || cra.includes(uLower) || loc.includes(uLower);
+        });
+      }
+
+      return result;
+    } catch (err: any) {
+      console.warn('dbSearchAssetsTargeted error:', err);
+      checkQuotaException(err);
+    }
+  }
+
+  // Fallback to local cache if offline
+  try {
+    const saved = localStorage.getItem('hexon_assets');
+    if (saved) {
+      const parsed: Asset[] = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(a => {
+          if (cleanCode) {
+            const matchesCode = a.code.toLowerCase().includes(cleanCode.toLowerCase());
+            const matchesId = a.id.toLowerCase().includes(cleanCode.toLowerCase());
+            if (!matchesCode && !matchesId) return false;
+          }
+          if (sector && sector !== 'Todos' && sector !== 'Todas' && a.sector !== sector) return false;
+          return true;
+        }).slice(0, limitResults);
+      }
+    }
+  } catch (e) {}
 
   return [];
 }

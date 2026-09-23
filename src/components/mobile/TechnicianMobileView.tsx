@@ -29,11 +29,11 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
-import { dbSaveServiceOrder } from '../../db/firebase';
+import { dbSaveServiceOrder, dbGetOrdersForTechnician } from '../../db/firebase';
+import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
 import CameraQrScanner from '../CameraQrScanner';
-import QuickCorrectiveModal from './QuickCorrectiveModal';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 
 export interface TechnicianMobileViewProps {
@@ -54,7 +54,7 @@ export interface TechnicianMobileViewProps {
 }
 
 type MobileTab = 'orders' | 'scanner' | 'profile';
-type FilterStatus = 'pending' | 'in_progress' | 'completed' | 'all';
+type FilterStatus = 'pending' | 'in_progress' | 'completed';
 
 export default function TechnicianMobileView({
   orders,
@@ -80,45 +80,114 @@ export default function TechnicianMobileView({
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [scannedAsset, setScannedAsset] = useState<Asset | null>(null);
   const [scannedMatchingOrder, setScannedMatchingOrder] = useState<ServiceOrder | null>(null);
-  const [isCorrectiveModalOpen, setIsCorrectiveModalOpen] = useState(false);
   const [scannerNotification, setScannerNotification] = useState<{
     type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
 
-  // Filter orders strictly assigned to or relevant for this technician
-  const myOrders = useMemo(() => {
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
+  const [loadedAssets, setLoadedAssets] = useState<Record<string, Asset>>({});
+
+  // Direct server-side refresh for technician's orders (Step 2 Optimization)
+  const handleRefreshTechnicianOrders = async () => {
+    setIsRefreshingOrders(true);
+    try {
+      const freshOrders = await dbGetOrdersForTechnician(userProfile.name, userProfile.matricula);
+      if (freshOrders && freshOrders.length > 0) {
+        setSourceOrders(freshOrders);
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar ordens do técnico:', err);
+    } finally {
+      setIsRefreshingOrders(false);
+      onReloadOrders();
+    }
+  };
+
+  // Merged assets list ensuring on-demand loaded assets from QR or single-fetch are available to drawers/modals
+  const effectiveAssets = useMemo(() => {
+    const map = new Map<string, Asset>();
+    // First fill with any assets passed via props
+    if (Array.isArray(assets)) {
+      assets.forEach(a => {
+        if (a && a.id) map.set(a.id, a);
+      });
+    }
+    // Then overlay individually loaded assets from QR or single lookup
+    Object.values(loadedAssets).forEach((a: Asset) => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    return Array.from(map.values());
+  }, [assets, loadedAssets]);
+
+  // Orders source: initialize with props or cached offline orders
+  const [sourceOrders, setSourceOrders] = useState<ServiceOrder[]>(() => {
+    if (orders && orders.length > 0) return orders;
+    try {
+      const raw = localStorage.getItem('hexon_service_orders');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Initial localStorage parse error:', e);
+    }
+    return [];
+  });
+
+  // Synchronize with parent orders updates or local storage
+  useEffect(() => {
+    if (orders && orders.length > 0) {
+      setSourceOrders(orders);
+    } else {
+      try {
+        const raw = localStorage.getItem('hexon_service_orders');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSourceOrders(parsed);
+          }
+        }
+      } catch (e) {
+        console.warn('LocalStorage sync error:', e);
+      }
+    }
+  }, [orders]);
+
+  // Check if an order is strictly assigned to the current user (security & execution check)
+  const isOrderAssignedToUser = (o: ServiceOrder | null | undefined): boolean => {
+    if (!o) return false;
+    // Admins and Super Admins inspecting the mobile view can view all orders
+    if (userProfile.perfil === 'Administrador' || userProfile.perfil === 'Super Administrador') {
+      return true;
+    }
     const userName = (userProfile.name || '').trim().toLowerCase();
     const userMatricula = (userProfile.matricula || '').trim().toLowerCase();
+    const tech = (o.assignedTechnician || '').trim().toLowerCase();
+    return Boolean(
+      tech &&
+      tech !== 'não atribuído' &&
+      tech !== 'nao atribuido' &&
+      tech !== 'equipe técnica' &&
+      tech !== 'equipe tecnica' &&
+      (tech === userName || tech.includes(userName) || userName.includes(tech) || (userMatricula && tech.includes(userMatricula)))
+    );
+  };
 
-    return orders.filter(o => {
-      // 1. Direct match by technician name or matricula
-      const tech = (o.assignedTechnician || '').trim().toLowerCase();
-      if (tech && (tech === userName || tech.includes(userName) || (userMatricula && tech.includes(userMatricula)))) {
-        return true;
-      }
-      // 2. Fallback: if no specific technician assigned, show orders in tech's sector/gerência
-      if (!o.assignedTechnician || o.assignedTechnician === 'Não Atribuído' || o.assignedTechnician === 'Equipe Técnica') {
-        if (userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-          return o.sector === userProfile.gerencia;
-        }
-        return true;
-      }
-      return false;
-    });
-  }, [orders, userProfile]);
+  // Filter orders strictly assigned to this technician
+  const myOrders = useMemo(() => {
+    return sourceOrders.filter(o => isOrderAssignedToUser(o));
+  }, [sourceOrders, userProfile]);
 
-  // Helper to determine if an order is being executed
+  // Check if an order is in progress
   const isOrderInProgress = (o: ServiceOrder): boolean => {
     if (o.status === 'Concluída' || o.status === 'Não Executada') return false;
 
-    // 1. Direct status match (normalized)
     const norm = (o.status || '').trim().toLowerCase();
-    if (norm === 'em execução' || norm === 'em execucao' || norm === 'em andamento') {
+    if (norm === 'em execução' || norm === 'em execucao' || norm === 'em andamento' || norm === 'executando') {
       return true;
     }
 
-    // 2. Any checklist item has been checked, answered, or has progress
     if (o.checklist && Array.isArray(o.checklist) && o.checklist.length > 0) {
       const hasProgress = o.checklist.some(
         c => Boolean(c.checked) || 
@@ -132,19 +201,6 @@ export default function TechnicianMobileView({
 
     return false;
   };
-
-  // Count pending/active orders
-  const pendingCount = useMemo(() => {
-    return myOrders.filter(o => o.status !== 'Concluída' && o.status !== 'Não Executada').length;
-  }, [myOrders]);
-
-  const inProgressCount = useMemo(() => {
-    return myOrders.filter(isOrderInProgress).length;
-  }, [myOrders]);
-
-  const completedCount = useMemo(() => {
-    return myOrders.filter(o => o.status === 'Concluída').length;
-  }, [myOrders]);
 
   // Helper to determine the comarca of an order
   const getOrderComarca = (os: ServiceOrder): string => {
@@ -167,16 +223,14 @@ export default function TechnicianMobileView({
 
   // Helper to determine the execution window (período programado) of an order
   const getOrderExecutionWindow = (os: ServiceOrder): { window: string; scheduledDay: string | null } => {
-    // 1. Explicit multi-day scheduled period (scheduledDate até scheduledEndDate)
     let windowStr = '';
-    if (os.scheduledDate && os.scheduledEndDate && os.scheduledDate !== os.scheduledEndDate) {
-      windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.scheduledEndDate)}`;
-    } else if (os.startDate && os.endDate) {
-      // 2. Standard cycle window (startDate até endDate)
+    let scheduledDay: string | null = null;
+
+    if (os.startDate && os.endDate) {
       windowStr = os.startDate === os.endDate
         ? formatDateBR(os.startDate)
         : `${formatDateBR(os.startDate)} até ${formatDateBR(os.endDate)}`;
-    } else if (os.scheduledDate && os.scheduledEndDate) {
+    } else if (os.scheduledDate && os.scheduledEndDate && os.scheduledDate !== os.scheduledEndDate) {
       windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.scheduledEndDate)}`;
     } else if (os.scheduledDate && os.endDate && os.scheduledDate !== os.endDate) {
       windowStr = `${formatDateBR(os.scheduledDate)} até ${formatDateBR(os.endDate)}`;
@@ -184,38 +238,51 @@ export default function TechnicianMobileView({
       windowStr = `${formatDateBR(os.startDate)} até ${formatDateBR(os.scheduledDate)}`;
     } else {
       const fallback = os.scheduledDate || os.startDate || os.endDate;
-      windowStr = fallback ? formatDateBR(fallback) : 'A definir';
+      windowStr = fallback ? formatDateBR(fallback) : 'Período a definir';
     }
 
-    // Check if there is also a specific execution day determined by management inside a broader cycle window
-    let scheduledDay: string | null = null;
-    if (os.scheduledDate && (!os.scheduledEndDate || os.scheduledEndDate === os.scheduledDate)) {
+    if (os.scheduledDate) {
       const formattedScheduled = formatDateBR(os.scheduledDate);
-      const formattedStart = os.startDate ? formatDateBR(os.startDate) : null;
-      const formattedEnd = os.endDate ? formatDateBR(os.endDate) : null;
-      if (formattedStart && formattedEnd && formattedStart !== formattedEnd) {
-        if (formattedScheduled !== formattedStart && formattedScheduled !== formattedEnd) {
-          scheduledDay = formattedScheduled;
+      if (os.scheduledEndDate && os.scheduledEndDate !== os.scheduledDate) {
+        const subPeriod = `${formattedScheduled} até ${formatDateBR(os.scheduledEndDate)}`;
+        if (subPeriod !== windowStr) {
+          scheduledDay = subPeriod;
         }
+      } else if (formattedScheduled !== windowStr) {
+        scheduledDay = formattedScheduled;
       }
     }
 
     return { window: windowStr, scheduledDay };
   };
 
-  // Apply search and status tab filters
+  // Accurate real-time counts strictly for the technician's assigned orders
+  const pendingCount = useMemo(() => {
+    return myOrders.filter(o => o.status !== 'Concluída' && o.status !== 'Não Executada' && !isOrderInProgress(o)).length;
+  }, [myOrders]);
+
+  const inProgressCount = useMemo(() => {
+    return myOrders.filter(isOrderInProgress).length;
+  }, [myOrders]);
+
+  const completedCount = useMemo(() => {
+    return myOrders.filter(o => o.status === 'Concluída').length;
+  }, [myOrders]);
+
+  // Filtered orders for the active filter tab and search
   const displayedOrders = useMemo(() => {
     return myOrders.filter(o => {
-      // Status filter
+      // 1. Status Filter
       if (filterStatus === 'pending') {
         if (o.status === 'Concluída' || o.status === 'Não Executada') return false;
+        if (isOrderInProgress(o)) return false;
       } else if (filterStatus === 'in_progress') {
         if (!isOrderInProgress(o)) return false;
       } else if (filterStatus === 'completed') {
         if (o.status !== 'Concluída') return false;
       }
 
-      // Search filter
+      // 2. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesTitle = (o.title || '').toLowerCase().includes(q);
@@ -234,7 +301,7 @@ export default function TechnicianMobileView({
     });
   }, [myOrders, filterStatus, searchQuery, assets]);
 
-  // Pagination State for technician mobile view (fixed strictly at 20 per page)
+  // Pagination: 20 orders per page
   const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState<number>(1);
 
@@ -259,18 +326,26 @@ export default function TechnicianMobileView({
   };
 
   // Handle QR Code Scanned
-  const handleQrScanSuccess = (decodedText: string) => {
+  const handleQrScanSuccess = async (decodedText: string) => {
     const raw = decodedText.trim();
     const clean = parseScannedQrCode(raw);
 
-    // Look for matching asset
-    const asset = assets.find(
+    // 1. Look for matching asset in cache or direct single read
+    let asset = effectiveAssets.find(
       a =>
         a.id.toLowerCase() === clean.toLowerCase() ||
         a.code.toLowerCase() === clean.toLowerCase() ||
         a.id.toLowerCase() === raw.toLowerCase() ||
         a.code.toLowerCase() === raw.toLowerCase()
     );
+
+    if (!asset) {
+      try {
+        asset = (await dbGetSingleAssetPublic(clean)) || (await dbGetSingleAssetPublic(raw)) || null;
+      } catch (err) {
+        console.warn('QR code asset single lookup failed:', err);
+      }
+    }
 
     if (!asset) {
       setScannerNotification({
@@ -280,25 +355,42 @@ export default function TechnicianMobileView({
       return;
     }
 
-    // Find active order for this asset
+    // 2. Find active order for this asset
     const matchingOrder = myOrders.find(
-      o => (o.assetId === asset.id || o.assetCode === asset.code) && o.status !== 'Concluída'
-    ) || orders.find(
-      o => (o.assetId === asset.id || o.assetCode === asset.code) && o.status !== 'Concluída'
-    );
+      o => (o.assetId === asset.id || o.assetCode === asset.code) && o.status !== 'Concluída' && o.status !== 'Não Executada'
+    ) || null;
 
     setScannedAsset(asset);
-    setScannedMatchingOrder(matchingOrder || null);
+    if (asset) {
+      setLoadedAssets(prev => ({
+        ...prev,
+        [asset.id]: asset,
+        [asset.code]: asset
+      }));
+    }
 
     if (matchingOrder) {
-      setScannerNotification({
-        type: 'success',
-        message: `Ativo "${asset.name}" (${asset.code}) identificado! Preventiva #${matchingOrder.id} disponível para execução imediata.`
-      });
+      // Security check: is the order assigned to this technician?
+      const isAssigned = isOrderAssignedToUser(matchingOrder);
+
+      if (!isAssigned) {
+        setScannedMatchingOrder(null);
+        setScannerNotification({
+          type: 'error',
+          message: `Ativo "${asset.name}" (${asset.code}) identificado, porém a O.S. #${matchingOrder.id} está atribuída ao técnico "${matchingOrder.assignedTechnician || 'Outro'}". Você só pode executar O.S. atribuídas a você.`
+        });
+      } else {
+        setScannedMatchingOrder(matchingOrder);
+        setScannerNotification({
+          type: 'success',
+          message: `Ativo "${asset.name}" (${asset.code}) identificado! Preventiva #${matchingOrder.id} disponível para execução imediata.`
+        });
+      }
     } else {
+      setScannedMatchingOrder(null);
       setScannerNotification({
         type: 'info',
-        message: `Ativo identificado: ${asset.name} (${asset.code}). Não há O.S. pendente no momento para este equipamento.`
+        message: `Ativo identificado: ${asset.name} (${asset.code}). Não há O.S. pendente atribuída a você no momento para este equipamento.`
       });
     }
   };
@@ -363,18 +455,31 @@ export default function TechnicianMobileView({
           </div>
         </div>
 
-        {/* Quick action: Dark mode toggle */}
-        <button
-          onClick={onToggleDarkMode}
-          title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
-          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer"
-        >
-          {darkMode ? (
-            <Sun className="w-4.5 h-4.5 text-amber-400" />
-          ) : (
-            <Moon className="w-4.5 h-4.5 text-indigo-600" />
-          )}
-        </button>
+        {/* Quick actions: Refresh and Dark mode toggle */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleRefreshTechnicianOrders}
+            disabled={isRefreshingOrders}
+            title="Sincronizar Minhas Ordens com o Servidor"
+            className={`p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer ${
+              isRefreshingOrders ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            <RotateCcw className={`w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400 ${isRefreshingOrders ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={onToggleDarkMode}
+            title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer"
+          >
+            {darkMode ? (
+              <Sun className="w-4.5 h-4.5 text-amber-400" />
+            ) : (
+              <Moon className="w-4.5 h-4.5 text-indigo-600" />
+            )}
+          </button>
+        </div>
       </header>
 
       {/* ================= TAB 1: MINHAS PREVENTIVAS ================= */}
@@ -405,12 +510,12 @@ export default function TechnicianMobileView({
             )}
           </div>
 
-          {/* Status Tabs - Never clips or cuts off on mobile screens */}
-          <div className="grid grid-cols-4 gap-1.5 w-full">
+          {/* Status Tabs - exactly 3 tabs: Pendentes, Execução, Concluídas (sem 'Todas') */}
+          <div className="grid grid-cols-3 gap-2 w-full">
             <button
               type="button"
               onClick={() => setFilterStatus('pending')}
-              className={`min-h-[44px] py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                 filterStatus === 'pending'
                   ? 'bg-indigo-600 text-white shadow-xs font-black'
                   : darkMode
@@ -418,9 +523,9 @@ export default function TechnicianMobileView({
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
               }`}
             >
-              <span className="text-[11px] leading-tight truncate max-w-full">Pendentes</span>
-              <span className={`text-[10px] font-mono leading-none mt-0.5 ${
-                filterStatus === 'pending' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-medium'
+              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Pendentes</span>
+              <span className={`text-[11px] font-mono leading-none mt-1 ${
+                filterStatus === 'pending' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-semibold'
               }`}>
                 ({pendingCount})
               </span>
@@ -429,7 +534,7 @@ export default function TechnicianMobileView({
             <button
               type="button"
               onClick={() => setFilterStatus('in_progress')}
-              className={`min-h-[44px] py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                 filterStatus === 'in_progress'
                   ? 'bg-indigo-600 text-white shadow-xs font-black'
                   : darkMode
@@ -437,9 +542,9 @@ export default function TechnicianMobileView({
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
               }`}
             >
-              <span className="text-[11px] leading-tight truncate max-w-full">Execução</span>
-              <span className={`text-[10px] font-mono leading-none mt-0.5 ${
-                filterStatus === 'in_progress' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-medium'
+              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Execução</span>
+              <span className={`text-[11px] font-mono leading-none mt-1 ${
+                filterStatus === 'in_progress' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-semibold'
               }`}>
                 ({inProgressCount})
               </span>
@@ -448,7 +553,7 @@ export default function TechnicianMobileView({
             <button
               type="button"
               onClick={() => setFilterStatus('completed')}
-              className={`min-h-[44px] py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                 filterStatus === 'completed'
                   ? 'bg-indigo-600 text-white shadow-xs font-black'
                   : darkMode
@@ -456,36 +561,17 @@ export default function TechnicianMobileView({
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
               }`}
             >
-              <span className="text-[11px] leading-tight truncate max-w-full">Concluídas</span>
-              <span className={`text-[10px] font-mono leading-none mt-0.5 ${
-                filterStatus === 'completed' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-medium'
+              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Concluídas</span>
+              <span className={`text-[11px] font-mono leading-none mt-1 ${
+                filterStatus === 'completed' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-semibold'
               }`}>
                 ({completedCount})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStatus('all')}
-              className={`min-h-[44px] py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                filterStatus === 'all'
-                  ? 'bg-indigo-600 text-white shadow-xs font-black'
-                  : darkMode
-                  ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 font-bold'
-                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
-              }`}
-            >
-              <span className="text-[11px] leading-tight truncate max-w-full">Todas</span>
-              <span className={`text-[10px] font-mono leading-none mt-0.5 ${
-                filterStatus === 'all' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-medium'
-              }`}>
-                ({myOrders.length})
               </span>
             </button>
           </div>
 
           {/* Pagination Summary Info */}
-          {displayedOrders.length > 0 && (
+          {totalOrdersCount > 0 && (
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1 pt-1">
               <span>
                 Mostrando <strong className="text-slate-800 dark:text-slate-200">{(safeCurrentPage - 1) * PAGE_SIZE + 1}–{Math.min(safeCurrentPage * PAGE_SIZE, totalOrdersCount)}</strong> de <strong className="text-slate-800 dark:text-slate-200">{totalOrdersCount}</strong> ordens
@@ -497,7 +583,7 @@ export default function TechnicianMobileView({
           )}
 
           {/* Orders Cards List */}
-          {displayedOrders.length === 0 ? (
+          {paginatedOrders.length === 0 ? (
             <div className={`p-8 rounded-2xl border text-center space-y-3 mt-6 ${
               darkMode ? 'bg-slate-900/40 border-slate-800/80 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
             }`}>
@@ -520,7 +606,7 @@ export default function TechnicianMobileView({
                 const checkedCount = order.checklist?.filter(c => c.checked).length || 0;
                 const progress = totalChecklist > 0 ? Math.round((checkedCount / totalChecklist) * 100) : 0;
 
-                const asset = assets.find(a => (order.assetId && a.id === order.assetId) || (order.assetCode && a.code === order.assetCode));
+                const asset = effectiveAssets.find(a => (order.assetId && a.id === order.assetId) || (order.assetCode && a.code === order.assetCode));
                 const patrimonio = order.assetCode || asset?.code || asset?.specs?.PATRIMONIO || asset?.specs?.patrimonio || 'Não informado';
                 const comarca = getOrderComarca(order);
                 const execWindow = getOrderExecutionWindow(order);
@@ -528,11 +614,39 @@ export default function TechnicianMobileView({
                 return (
                   <div
                     key={order.id}
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!isOrderAssignedToUser(order)) {
+                        alert('Acesso Restrito: Esta Ordem de Serviço não está atribuída a você. Você só pode visualizar e executar preventivas atribuídas diretamente a você.');
+                        return;
+                      }
+
+                      // If asset isn't loaded yet, fetch it on-demand (1 single read) so the drawer displays full specs
+                      if (!asset && (order.assetId || order.assetCode)) {
+                        const targetId = order.assetId || order.assetCode || '';
+                        try {
+                          const single = await dbGetSingleAssetPublic(targetId);
+                          if (single) {
+                            setLoadedAssets(prev => ({
+                              ...prev,
+                              [single.id]: single,
+                              [single.code]: single
+                            }));
+                          }
+                        } catch {}
+                      }
+
                       if (order.status !== 'Concluída' && order.status !== 'Não Executada' && order.status !== 'Em Execução') {
-                        const updated = { ...order, status: 'Em Execução' as const };
+                        const updated = { 
+                          ...order, 
+                          status: 'Em Execução' as const,
+                          assignedTechnician: order.assignedTechnician && order.assignedTechnician !== 'Não Atribuído' && order.assignedTechnician !== 'Equipe Técnica'
+                            ? order.assignedTechnician
+                            : (userProfile.name || order.assignedTechnician)
+                        };
                         dbSaveServiceOrder(updated).catch(console.error);
                         setSelectedOrder(updated);
+                        setSourceOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+                        onReloadOrders();
                       } else {
                         setSelectedOrder(order);
                       }
@@ -554,25 +668,27 @@ export default function TechnicianMobileView({
                       {getStatusBadge(order.status)}
                     </div>
 
-                    {/* Destaque do Patrimônio */}
-                    <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 mb-2.5 ${
-                      darkMode ? 'bg-amber-950/30 border-amber-800/50' : 'bg-amber-50/80 border-amber-200'
+                    {/* Destaque Máximo do Patrimônio */}
+                    <div className={`p-3 rounded-xl border-2 flex items-center justify-between gap-2 mb-2.5 ${
+                      darkMode
+                        ? 'bg-amber-950/40 border-amber-500/60 shadow-inner'
+                        : 'bg-amber-50 border-amber-300 shadow-2xs'
                     }`}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                          <Shield className="w-4 h-4" />
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 font-black flex items-center justify-center shrink-0 shadow-xs">
+                          <Shield className="w-4.5 h-4.5" />
                         </div>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 leading-tight">
-                            Patrimônio
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-400 leading-none">
+                            Nº Patrimônio
                           </span>
-                          <span className="font-mono text-sm font-black text-slate-900 dark:text-amber-100 tracking-wide">
+                          <span className="font-mono text-base font-black text-slate-900 dark:text-white tracking-wider mt-0.5 truncate">
                             {patrimonio}
                           </span>
                         </div>
                       </div>
                       {order.periodicity && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800">
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs shrink-0">
                           {order.periodicity}
                         </span>
                       )}
@@ -805,12 +921,12 @@ export default function TechnicianMobileView({
                 </div>
               </div>
 
-              {/* Action Box: Either Active Preventive or Open Corrective */}
+              {/* Action Box: If assigned preventive exists, show execute button. Otherwise, strictly show informative read-only status (no corrective ticket) */}
               {scannedMatchingOrder ? (
                 <div className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-blue-950/20 space-y-3">
                   <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-xs font-black uppercase tracking-wider">
                     <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Preventiva Programada Identificada</span>
+                    <span>Preventiva Programada Atribuída a Você</span>
                   </div>
 
                   <div>
@@ -834,21 +950,18 @@ export default function TechnicianMobileView({
                   </button>
                 </div>
               ) : (
-                <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 space-y-3">
+                <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 space-y-2.5">
                   <div className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <p className="leading-relaxed">
-                      Este equipamento está em dia. Não há preventiva programada aguardando execução para ele no momento.
-                    </p>
+                    <CheckCircle2 className="w-4.5 h-4.5 text-indigo-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">
+                        Ficha Técnica Consultada com Sucesso
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                        Não há ordem de serviço preventiva pendente atribuída à sua matrícula para este equipamento no momento. Modo somente visualização da ficha técnica ativo.
+                      </p>
+                    </div>
                   </div>
-
-                  <button
-                    onClick={() => setIsCorrectiveModalOpen(true)}
-                    className="w-full min-h-[50px] py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 active:scale-98 transition-all cursor-pointer"
-                  >
-                    <AlertTriangle className="w-4.5 h-4.5" />
-                    <span>Abrir Chamado Corretivo Imediato</span>
-                  </button>
                 </div>
               )}
 
@@ -1133,8 +1246,10 @@ export default function TechnicianMobileView({
             setIsOrderDrawerOpen(false);
             setSelectedOrder(null);
           }}
-          onReload={onReloadOrders}
-          assets={assets}
+          onReload={() => {
+            onReloadOrders();
+          }}
+          assets={effectiveAssets}
           templates={templates}
           userProfile={userProfile}
           userHasActionPermission={() => true}
@@ -1142,29 +1257,8 @@ export default function TechnicianMobileView({
           currentCalendarDate={new Date()}
           onOrderUpdated={(updated) => {
             setSelectedOrder(updated);
+            setSourceOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
             onReloadOrders();
-          }}
-        />
-      )}
-
-      {/* ================= MODAL: QUICK CORRECTIVE TICKET ================= */}
-      {scannedAsset && (
-        <QuickCorrectiveModal
-          isOpen={isCorrectiveModalOpen}
-          asset={scannedAsset}
-          userProfile={userProfile}
-          darkMode={darkMode}
-          onClose={() => setIsCorrectiveModalOpen(false)}
-          onSuccess={(newOrder) => {
-            setIsCorrectiveModalOpen(false);
-            onReloadOrders();
-            setScannerNotification({
-              type: 'success',
-              message: `Chamado corretivo #${newOrder.id} registrado com sucesso para ${scannedAsset.name}!`
-            });
-            setSelectedOrder(newOrder);
-            setIsOrderDrawerOpen(true);
-            setActiveTab('orders');
           }}
         />
       )}

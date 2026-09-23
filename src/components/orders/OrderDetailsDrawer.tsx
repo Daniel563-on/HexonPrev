@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ClipboardList,
   Wrench,
@@ -7,6 +7,7 @@ import {
   FileCheck,
   FileSignature,
   Download,
+  Lock,
   X
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
@@ -74,16 +75,38 @@ export default function OrderDetailsDrawer({
 
   const activeLinkedAsset = selectedOrder ? assets.find(a => a.id === selectedOrder.assetId) : null;
 
-  if (!isOpen || !selectedOrder) return null;
+  // Strict field technician assignment check:
+  // If the user profile is 'Profissional', they can ONLY execute orders explicitly assigned to them.
+  const isAssignedToCurrentUser = useMemo(() => {
+    if (!userProfile || userProfile.perfil !== 'Profissional') return true;
+    if (!selectedOrder) return false;
+    const userName = (userProfile.name || '').trim().toLowerCase();
+    const userMat = (userProfile.matricula || '').trim().toLowerCase();
+    const tech = (selectedOrder.assignedTechnician || '').trim().toLowerCase();
+    return Boolean(
+      tech &&
+      tech !== 'não atribuído' &&
+      tech !== 'equipe técnica' &&
+      (tech === userName || tech.includes(userName) || userName.includes(tech) || (userMat && tech.includes(userMat)))
+    );
+  }, [userProfile, selectedOrder]);
 
+  if (!isOpen || !selectedOrder) return null;
 
   // Change individual checklist compliance status
   const selectItemStatus = async (osId: string, itemId: string, status: 'Atestado' | 'Não Atestado' | 'Não se Aplica') => {
+    if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode preencher ou executar ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
+
     if (userHasActionPermission && !userHasActionPermission('execute_order')) {
       alert('Acesso Restrito: Seu perfil de usuário não possui as permissões necessárias para preencher ou executar ordens de serviço (atestar itens).');
       return;
     }
-    if (!selectedOrder) return;
 
     // Clear failed warning flag for this item
     setFailedItemIds(prev => prev.filter(id => id !== itemId));
@@ -124,7 +147,10 @@ export default function OrderDetailsDrawer({
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
       checklist: updatedChecklist,
-      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
+      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
+      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
+        ? selectedOrder.assignedTechnician
+        : (userProfile?.name || selectedOrder.assignedTechnician)
     };
 
     setSelectedOrder(updatedOrder);
@@ -135,6 +161,12 @@ export default function OrderDetailsDrawer({
   // Change custom response type value (text, number, boolean, date)
   const changeCustomResponse = async (itemId: string, value: string, isChecked: boolean, status: 'Atestado' | 'Não Atestado' | 'Não se Aplica' = 'Atestado') => {
     if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode preencher ou executar ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
 
     const updatedChecklist = selectedOrder.checklist.map((item) => {
       if (item.id === itemId) {
@@ -152,7 +184,10 @@ export default function OrderDetailsDrawer({
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
       checklist: updatedChecklist,
-      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
+      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
+      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
+        ? selectedOrder.assignedTechnician
+        : (userProfile?.name || selectedOrder.assignedTechnician)
     };
 
     setSelectedOrder(updatedOrder);
@@ -265,11 +300,18 @@ export default function OrderDetailsDrawer({
 
   // Change individual checklist comment observations
   const handleChecklistObservationChange = async (itemId: string, val: string) => {
+    if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode preencher ou alterar observações de ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
+
     if (userHasActionPermission && !userHasActionPermission('execute_order')) {
       alert('Acesso Restrito: Seu perfil de usuário não possui as permissões necessárias para preencher observações das ordens de serviço.');
       return;
     }
-    if (!selectedOrder) return;
 
     // Clear failed warning flag for this item if observation value is provided
     if (val.trim() !== '') {
@@ -295,6 +337,12 @@ export default function OrderDetailsDrawer({
   // Change custom response fields dynamically keeping focus
   const handleCustomFieldChange = (itemId: string, val: string, responseType: string) => {
     if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode preencher ou executar ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
 
     let isComp = val.trim() !== '';
     if (responseType === 'number') {
@@ -331,6 +379,12 @@ export default function OrderDetailsDrawer({
   // Change overall technician observation notes in real-time
   const handleNotesChange = async (val: string) => {
     if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode alterar observações em ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
 
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
@@ -346,6 +400,12 @@ export default function OrderDetailsDrawer({
   const handleSimulatedPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!selectedOrder || selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada') return;
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode anexar evidências fotográficas em ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -366,11 +426,22 @@ export default function OrderDetailsDrawer({
 
   // Digital signature confirmation action saves as 'Concluída' and feeds asset history logs
   const handleSignConfirm = async (signatureBase64: string, signeeName: string) => {
+    if (!selectedOrder) return;
+    if (selectedOrder.status === 'Concluída') {
+      alert('Esta ordem de serviço já foi concluída anteriormente.');
+      setShowSignaturePad(false);
+      return;
+    }
+
+    if (!isAssignedToCurrentUser) {
+      alert('Acesso Restrito: Você só pode assinar e concluir ordens de serviço atribuídas diretamente a você.');
+      return;
+    }
+
     if (userHasActionPermission && !userHasActionPermission('sign_order')) {
       alert('Acesso Restrito: Seu perfil de usuário não tem autorização para assinar digitalmente e encerrar preventivas.');
       return;
     }
-    if (!selectedOrder) return;
 
     const completedOrder: ServiceOrder = {
       ...selectedOrder,
@@ -420,6 +491,12 @@ export default function OrderDetailsDrawer({
 
             {/* Scrollable execution items */}
             <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-6">
+              {!isAssignedToCurrentUser && (
+                <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center gap-2.5 text-amber-900 text-xs font-bold shadow-2xs">
+                  <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600" />
+                  <span>Esta Ordem de Serviço está atribuída ao técnico <strong>{selectedOrder.assignedTechnician || 'Não Atribuído'}</strong>. Modo somente leitura ativo. Você só pode preencher e validar preventivas atribuídas a você.</span>
+                </div>
+              )}
               
               {/* 1. DADOS COMPLETOS DO ATIVO VINCULADO */}
               <div>
@@ -788,7 +865,10 @@ export default function OrderDetailsDrawer({
                           const updatedOrder: ServiceOrder = {
                             ...selectedOrder,
                             checklist: updatedChecklist,
-                            status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
+                            status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
+                            assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
+                              ? selectedOrder.assignedTechnician
+                              : (userProfile?.name || selectedOrder.assignedTechnician)
                           };
                           
                           setSelectedOrder(updatedOrder);
@@ -859,7 +939,10 @@ export default function OrderDetailsDrawer({
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
                                       checklist: updatedChecklist,
-                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
+                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
+                                      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
+                                        ? selectedOrder.assignedTechnician
+                                        : (userProfile?.name || selectedOrder.assignedTechnician)
                                     };
                                     setSelectedOrder(updatedOrder);
                                     await dbSaveServiceOrder(updatedOrder);
@@ -894,7 +977,10 @@ export default function OrderDetailsDrawer({
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
                                       checklist: updatedChecklist,
-                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status
+                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
+                                      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
+                                        ? selectedOrder.assignedTechnician
+                                        : (userProfile?.name || selectedOrder.assignedTechnician)
                                     };
                                     setSelectedOrder(updatedOrder);
                                     await dbSaveServiceOrder(updatedOrder);
@@ -1250,6 +1336,11 @@ export default function OrderDetailsDrawer({
                 <div className="flex-grow text-center text-[11px] font-bold text-rose-700 bg-rose-50 py-3 rounded-xl border border-rose-200 flex items-center justify-center gap-1">
                   <AlertTriangle className="w-4 h-4" />
                   ORDEM EXPIRADA / NÃO REALIZADA NO PRAZO
+                </div>
+              ) : !isAssignedToCurrentUser ? (
+                <div className="flex-grow min-h-[46px] bg-slate-100 text-slate-500 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 border border-slate-300">
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  SOMENTE O TÉCNICO ATRIBUÍDO PODE VALIDAR A EXECUÇÃO
                 </div>
               ) : (
                 /* Primary completion CTA triggers signature box after checking validator rules */

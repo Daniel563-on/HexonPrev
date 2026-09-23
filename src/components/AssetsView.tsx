@@ -39,6 +39,7 @@ import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management } from '../types';
 import { 
   dbGetAssets, 
+  dbSearchAssetsTargeted,
   dbGetAssetHistory, 
   dbDeleteAsset, 
   dbDeleteAssetsBySector, 
@@ -130,43 +131,11 @@ export default function AssetsView({
   const [showDeleteAssetModal, setShowDeleteAssetModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
 
-  // Load assets
+  // Load initial organizational structure without downloading 10,000 assets
   const loadAssetsData = async () => {
-    const [list, mList] = await Promise.all([
-      dbGetAssets(),
-      dbGetManagements()
-    ]);
-
+    const mList = await dbGetManagements();
     setManagements(mList);
-    if (mList.length > 0) {
-      const activeManagements = mList.filter(m => m.name !== 'Todas');
-      const defaultName = activeManagements.length > 0 ? activeManagements[0].name : mList[0].name;
-    }
-
-    let filteredList = [...list];
-
-    // FILTER BASED ON RBAC ROLES DEFINITIONS
-    if (userProfile) {
-      if (userProfile.perfil === 'Profissional') {
-        const assignedCodes = orders
-          ? orders.filter(o => o.assignedTechnician === userProfile.name).map(o => o.assetCode)
-          : [];
-        filteredList = filteredList.filter(a => assignedCodes.includes(a.code));
-      } else if (userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-        const isSectorMatch = (assetSector: string, userGerencia: string) => {
-          const s = (assetSector || '').toLowerCase();
-          const g = (userGerencia || '').toLowerCase();
-          if (s === g) return true;
-          if (g === 'refrigeração') return s.includes('refr') || s.includes('hvac');
-          if (g === 'elétrica') return s.includes('eletri') || s.includes('eletrô');
-          if (g === 'civil' || g === 'predial') return s.includes('civil') || s.includes('hidr') || s.includes('predial');
-          return s.includes(g) || g.includes(s);
-        };
-        filteredList = filteredList.filter(a => isSectorMatch(a.sector, userProfile.gerencia));
-      }
-    }
-
-    setAssets(filteredList);
+    // Assets remain empty until the user triggers a targeted search/consultation
   };
 
   // Derived unique units/comarcas for dropdown filter
@@ -203,24 +172,28 @@ export default function AssetsView({
     'Predial / Civil'
   ];
 
-  // Execute consultation matching all criteria
+  // Execute consultation matching all criteria via targeted query (ZERO full-collection reads)
   const handleExecuteConsultation = async () => {
     setIsConsulting(true);
     try {
-      let assetPool = assets;
-      if (assetPool.length === 0) {
-        assetPool = await dbGetAssets();
-        setAssets(assetPool);
-      }
-
-      const qPatrimonio = filterPatrimonio.trim().toLowerCase();
-      const qAntigo = filterNumeroAntigo.trim().toLowerCase();
-      const qSetor = filterSetor.trim().toLowerCase();
-      const qFabMod = filterFabricanteModelo.trim().toLowerCase();
+      const qPatrimonio = filterPatrimonio.trim();
+      const qAntigo = filterNumeroAntigo.trim();
+      const qSetor = filterSetor.trim();
+      const qFabMod = filterFabricanteModelo.trim();
       const qTipo = filterTipoEquipamento;
 
-      const filtered = assetPool.filter(asset => {
-        // 1. Tipo de bem / Status
+      // Executa consulta pontual no Firestore: busca apenas os ativos que batem com o filtro
+      const targetedResults = await dbSearchAssetsTargeted({
+        codeOrPatrimonio: qPatrimonio || qAntigo,
+        sector: filterGerencia !== 'Todas' ? filterGerencia : undefined,
+        unitOrComarca: filterUnidade !== 'Todas' ? filterUnidade : undefined,
+        tipo: qTipo !== 'Todos' ? qTipo : undefined,
+        limitResults: 60
+      });
+
+      // Refinamento em memória apenas dos resultados pontuais trazidos (se houver filtros adicionais)
+      const filtered = targetedResults.filter(asset => {
+        // Status
         if (filterTipoBem !== 'Todos') {
           const assetStatus = (asset.specs?.STATUS || asset.specs?.status || 'Ativo').toLowerCase();
           const targetStatus = filterTipoBem.toLowerCase();
@@ -235,56 +208,18 @@ export default function AssetsView({
           }
         }
 
-        // 2. Nº Patrimonial / Código
-        if (qPatrimonio) {
-          const codeMatch = (asset.code || '').toLowerCase().includes(qPatrimonio);
-          const idMatch = (asset.id || '').toLowerCase().includes(qPatrimonio);
-          const patMatch = String(asset.specs?.patrimonio || asset.specs?.PATRIMÔNIO || asset.specs?.['Nº PATRIMONIAL'] || '').toLowerCase().includes(qPatrimonio);
-          if (!codeMatch && !idMatch && !patMatch) return false;
-        }
-
-        // 3. Nº Antigo / Série
-        if (qAntigo) {
-          const serialMatch = String(asset.specs?.serial || asset.specs?.['Nº DE SÉRIE'] || '').toLowerCase().includes(qAntigo);
-          const antigoMatch = String(asset.specs?.numero_antigo || asset.specs?.['Nº ANTIGO'] || '').toLowerCase().includes(qAntigo);
-          if (!serialMatch && !antigoMatch) return false;
-        }
-
-        // 4. Gerência
-        if (filterGerencia !== 'Todas') {
-          if (asset.sector !== filterGerencia) return false;
-        }
-
-        // 5. Unidade / Comarca
-        if (filterUnidade !== 'Todas') {
-          const comarca = String(asset.specs?.COMARCA || asset.specs?.comarca || '').toLowerCase();
-          const craai = String(asset.specs?.CRAAI || asset.specs?.craai || '').toLowerCase();
-          const loc = String(asset.location || '').toLowerCase();
-          const uTarget = filterUnidade.toLowerCase();
-          if (!comarca.includes(uTarget) && !craai.includes(uTarget) && !loc.includes(uTarget)) return false;
-        }
-
-        // 6. Setor / Sala / Centro de Custo
+        // Setor / Sala
         if (qSetor) {
           const loc = String(asset.location || '').toLowerCase();
           const sField = String(asset.specs?.setor || asset.specs?.SETOR || asset.specs?.sala || '').toLowerCase();
-          if (!loc.includes(qSetor) && !sField.includes(qSetor)) return false;
+          if (!loc.includes(qSetor.toLowerCase()) && !sField.includes(qSetor.toLowerCase())) return false;
         }
 
-        // 7. Tipo de Equipamento
-        if (qTipo !== 'Todos') {
-          const name = String(asset.name || '').toLowerCase();
-          const model = String(asset.specs?.model || asset.specs?.MODELO || '').toLowerCase();
-          const tField = String(asset.specs?.tipo || asset.specs?.TIPO || '').toLowerCase();
-          const tTarget = qTipo.toLowerCase();
-          if (!name.includes(tTarget) && !model.includes(tTarget) && !tField.includes(tTarget)) return false;
-        }
-
-        // 8. Fabricante / Modelo
+        // Fabricante / Modelo
         if (qFabMod) {
           const mfg = String(asset.specs?.manufacturer || asset.specs?.FABRICANTE || '').toLowerCase();
           const mdl = String(asset.specs?.model || asset.specs?.MODELO || '').toLowerCase();
-          if (!mfg.includes(qFabMod) && !mdl.includes(qFabMod)) return false;
+          if (!mfg.includes(qFabMod.toLowerCase()) && !mdl.includes(qFabMod.toLowerCase())) return false;
         }
 
         return true;
@@ -317,12 +252,10 @@ export default function AssetsView({
   const handleShowRecentAssets = async () => {
     setIsConsulting(true);
     try {
-      let pool = assets;
-      if (pool.length === 0) {
-        pool = await dbGetAssets();
-        setAssets(pool);
-      }
-      setConsultationResults(pool.slice(0, 25));
+      const recent = await dbSearchAssetsTargeted({
+        limitResults: 25
+      });
+      setConsultationResults(recent);
       setHasConsulted(true);
       setSelectedAsset(null);
       setConsultationTab('resultado');

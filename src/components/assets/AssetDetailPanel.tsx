@@ -404,7 +404,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
         ) : (
           <div className="space-y-4">
             {history.map((log) => {
-              const hasEnrichedDetails = !!(log.preventiveType || log.resultStatus || log.verifiedItemsText || log.nonConformItemsText || log.correctiveActionsText);
+              const hasEnrichedDetails = !!(log.preventiveType || log.resultStatus || log.verifiedItemsText || log.nonConformItemsText);
               const listVerified = log.verifiedItemsText ? log.verifiedItemsText.split(';').map(s => s.trim()).filter(Boolean) : [];
               const listFailed = log.nonConformItemsText ? log.nonConformItemsText.split(';').map(s => s.trim()).filter(Boolean) : [];
               
@@ -494,24 +494,23 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                         </div>
                       )}
 
-                      {/* Spawned Corrective action notes */}
-                      {log.correctiveActionsText && (
-                        <div className="bg-blue-50/55 p-2.5 rounded-lg border border-blue-100 font-medium text-[10px] text-blue-900 whitespace-pre-line">
-                          <span className="font-black text-blue-800 block mb-0.5">⚙️ Desdobramento e Ações Corretivas:</span>
-                          {log.correctiveActionsText}
-                        </div>
-                      )}
-
                     </div>
                   )}
 
                   {/* Technician observations */}
-                  {log.notes && (
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-slate-500 italic pl-3 relative mt-2 text-xs leading-relaxed">
-                      <span className="font-bold not-italic text-slate-700 block text-[10px] uppercase mb-0.5">Observações Adicionais:</span>
-                      "{log.notes}"
-                    </div>
-                  )}
+                  {(() => {
+                    const cleanNotes = (log.notes || '')
+                      .replace(/⚙️\s*Desdobramento[\s\S]*?(?=(📋|⚠|$))/gi, '')
+                      .replace(/⚙️[\s\S]*?(?=(📋|⚠|$))/gi, '')
+                      .trim();
+                    if (!cleanNotes) return null;
+                    return (
+                      <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-slate-500 italic pl-3 relative mt-2 text-xs leading-relaxed">
+                        <span className="font-bold not-italic text-slate-700 block text-[10px] uppercase mb-0.5">Observações do Técnico:</span>
+                        "{cleanNotes}"
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

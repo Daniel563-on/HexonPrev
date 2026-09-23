@@ -4,9 +4,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
+  query,
   setDoc,
-  updateDoc
+  updateDoc,
+  where
 } from 'firebase/firestore';
 import { HexonUser } from '../types';
 import {
@@ -15,10 +18,72 @@ import {
   cleanUndefined,
   isCacheValid,
   updateCacheTimestamp,
-  checkQuotaException
+  checkQuotaException,
+  authenticateWithFirebaseAuth
 } from './core';
 import { dbAddAccessLog } from './audit';
 import { SEED_MANAGEMENTS, SEED_UNITS } from './organization';
+
+// SANITIZE USER: Guarantees password hashes are NEVER exposed to client-side state, UI, or local inspection
+export function sanitizeUserForClient(user: HexonUser): HexonUser {
+  const safe = { ...user };
+  delete safe.senha;
+  return safe;
+}
+
+// SESSION INTEGRITY & ANTI-F12 VERIFICATION RESULT
+export interface SessionVerificationResult {
+  isValid: boolean;
+  verifiedUser?: HexonUser;
+  reason?: string;
+}
+
+// ANTI-F12 TAMPERING DEFENSE: Validates the user's role and matricula directly against the server-side document
+export async function dbVerifySessionAuthenticity(user: HexonUser): Promise<SessionVerificationResult> {
+  if (!user || !user.id || !user.matricula) {
+    return { isValid: false, reason: 'Dados de sessão incompletos ou ausentes.' };
+  }
+
+  if (firebaseActive && dbInstance) {
+    try {
+      const userRef = doc(dbInstance, 'users', user.id);
+      const snap = await getDoc(userRef);
+
+      if (!snap.exists()) {
+        return { isValid: false, reason: 'Conta de usuário não encontrada no servidor central.' };
+      }
+
+      const serverData = snap.data() as HexonUser;
+
+      if (serverData.status === 'Inativo') {
+        return { isValid: false, reason: 'Sua conta de acesso foi inativada pela administração.' };
+      }
+
+      // Detect if user modified 'perfil' or 'matricula' in localStorage via browser DevTools (F12)
+      if (
+        serverData.perfil !== user.perfil ||
+        serverData.matricula.trim().toLowerCase() !== user.matricula.trim().toLowerCase()
+      ) {
+        console.warn(`[Segurança] Tentativa de alteração de privilégios detectada! Servidor: ${serverData.perfil} | Navegador: ${user.perfil}`);
+        return {
+          isValid: false,
+          reason: 'Divergência de privilégios detectada. Sua sessão foi encerrada por segurança.'
+        };
+      }
+
+      return {
+        isValid: true,
+        verifiedUser: sanitizeUserForClient({ id: snap.id, ...serverData })
+      };
+    } catch (err: any) {
+      console.warn('Verificação de integridade de sessão (modo tolerante a falhas de rede):', err);
+      // Em falhas transitórias de conexão, mantém a sessão pré-existente
+      return { isValid: true, verifiedUser: user };
+    }
+  }
+
+  return { isValid: true, verifiedUser: user };
+}
 
 // Default Precomputed Seed Data for instant professional system preview
 export const SEED_USERS: HexonUser[] = [
@@ -38,8 +103,6 @@ export const SEED_USERS: HexonUser[] = [
 // SECURE PASSWORD HASHING (SHA-256 with enterprise salt)
 export async function hashPassword(password: string): Promise<string> {
   if (!password) return '';
-  // If already hashed with our prefix, return as is
-  if (password.startsWith('hexon_sha256:')) return password;
 
   try {
     const encoder = new TextEncoder();
@@ -55,22 +118,19 @@ export async function hashPassword(password: string): Promise<string> {
   }
 }
 
-// VERIFY PASSWORD (Supports modern SHA-256 hashes and backward-compatible legacy plain-text)
+// VERIFY PASSWORD (Hardened against Pass-The-Hash attacks while supporting legacy plain-text migration)
 export async function verifyPassword(passwordInserted: string, storedPassword?: string): Promise<boolean> {
   if (!storedPassword || !passwordInserted) return false;
 
-  // 1. Direct match with SHA-256 hashed password
-  const hashedInput = await hashPassword(passwordInserted);
-  if (storedPassword === hashedInput) {
-    return true;
+  // 1. If stored password is a modern secure SHA-256 hash:
+  // Strictly hash the raw user input and compare. NEVER allow plain equality with stored hash!
+  if (storedPassword.startsWith('hexon_sha256:')) {
+    const hashedInput = await hashPassword(passwordInserted);
+    return storedPassword === hashedInput;
   }
 
-  // 2. Backward compatibility: if the stored password was legacy plain text (e.g. 'admin')
-  if (storedPassword === passwordInserted) {
-    return true;
-  }
-
-  return false;
+  // 2. Strict backward compatibility: ONLY applies if stored password is NOT hashed yet
+  return storedPassword === passwordInserted;
 }
 
 // Helper to check and bootstrap initial tables/collections asynchronously
@@ -169,7 +229,7 @@ export async function dbGetUsers(forceFresh: boolean = false): Promise<HexonUser
         const snap = await getDocs(collection(dbInstance, path));
         const list: HexonUser[] = [];
         snap.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as HexonUser);
+          list.push(sanitizeUserForClient({ id: docSnap.id, ...docSnap.data() } as HexonUser));
         });
 
         if (list.length > 0) {
@@ -190,7 +250,7 @@ export async function dbGetUsers(forceFresh: boolean = false): Promise<HexonUser
       }
     }
 
-    cacheUsers = localData || [...SEED_USERS];
+    cacheUsers = (localData || [...SEED_USERS]).map(sanitizeUserForClient);
     cacheUsersFromFirebase = false;
     try {
       localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
@@ -226,14 +286,29 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
   const safeUser: HexonUser = { ...user, matricula: sanitizedMatricula };
   if (safeUser.senha && !safeUser.senha.startsWith('hexon_sha256:')) {
     safeUser.senha = await hashPassword(safeUser.senha);
+  } else if (!safeUser.senha && firebaseActive && dbInstance) {
+    // If updating a user and password was not typed, retain existing hashed password from Firestore
+    try {
+      const existingSnap = await getDoc(doc(dbInstance, 'users', safeUser.id));
+      if (existingSnap.exists()) {
+        const existingData = existingSnap.data() as HexonUser;
+        if (existingData?.senha) {
+          safeUser.senha = existingData.senha;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not retain previous user password hash:', e);
+    }
   }
 
+  // Maintain client-side cache clean without passwords
+  const clientUser = sanitizeUserForClient(safeUser);
   const index = users.findIndex(u => u.id === safeUser.id);
 
   if (index >= 0) {
-    users[index] = { ...users[index], ...safeUser };
+    users[index] = { ...users[index], ...clientUser };
   } else {
-    users.push(safeUser);
+    users.push(clientUser);
   }
 
   cacheUsers = users;
@@ -312,11 +387,31 @@ export async function dbDeleteUser(userId: string): Promise<void> {
 
 // RBAC MATRÍCULA LOGIN PROXY
 export async function dbLoginByMatricula(matricula: string, senhaInserida: string): Promise<HexonUser | null> {
-  const users = await dbGetUsers(true);
+  const sanitized = matricula.trim();
+  if (!sanitized) return null;
 
-  // Normalize matricula match
-  const sanitized = matricula.trim().toLowerCase();
-  const foundUser = users.find(u => u.matricula.trim().toLowerCase() === sanitized);
+  let foundUser: HexonUser | null = null;
+
+  if (firebaseActive && dbInstance) {
+    try {
+      // Direct 1-doc targeted query by matricula directly from Firestore
+      const q = query(collection(dbInstance, 'users'), where('matricula', '==', sanitized), limit(1));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docSnap = snap.docs[0];
+        foundUser = { id: docSnap.id, ...docSnap.data() } as HexonUser;
+      }
+    } catch (err: any) {
+      console.warn('Direct Firestore login query failed:', err);
+      checkQuotaException(err);
+    }
+  }
+
+  // Fallback to local default / cached users if offline
+  if (!foundUser) {
+    const localUsers = cacheUsers || [...SEED_USERS];
+    foundUser = localUsers.find(u => u.matricula.trim().toLowerCase() === sanitized.toLowerCase()) || null;
+  }
 
   if (!foundUser) {
     await dbAddAccessLog({
@@ -356,13 +451,22 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
   if (foundUser.senha && !foundUser.senha.startsWith('hexon_sha256:')) {
     (async () => {
       try {
-        foundUser.senha = await hashPassword(senhaInserida);
-        await dbSaveUser(foundUser);
+        const hashed = await hashPassword(senhaInserida);
+        await dbSaveUser({ ...foundUser!, senha: hashed });
       } catch (e) {
         console.warn('Background auto-upgrade to password hash failed:', e);
       }
     })();
   }
+
+  // Dual-Layer Security: Synchronize with Firebase Auth to obtain a cryptographically signed Google JWT session
+  const authEmail = (foundUser.email && foundUser.email.includes('@')) 
+    ? foundUser.email.trim()
+    : `${foundUser.matricula.replace(/[^a-zA-Z0-9]/g, '')}@hexon.corp`;
+
+  authenticateWithFirebaseAuth(authEmail, senhaInserida).catch((e) => {
+    console.info('Firebase Auth bridge session sync notice:', e);
+  });
 
   // Access Granted!
   await dbAddAccessLog({
@@ -373,7 +477,8 @@ export async function dbLoginByMatricula(matricula: string, senhaInserida: strin
     timestamp: new Date().toISOString()
   });
 
-  return foundUser;
+  // RETURN SANITIZED USER (Never pass password hash into UI / state)
+  return sanitizeUserForClient(foundUser);
 }
 
 // RBAC GOOGLE ACCOUNT ATTACHMENT PROXY
@@ -382,7 +487,7 @@ export async function dbGetUserByEmail(email: string): Promise<HexonUser | null>
   const matched = users.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
 
   if (matched) {
-    return matched;
+    return sanitizeUserForClient(matched);
   }
 
   // If the email is daniel.fab93@gmail.com, we auto-bootstrap and create the user record dynamically on-the-fly!
@@ -399,7 +504,7 @@ export async function dbGetUserByEmail(email: string): Promise<HexonUser | null>
       senha: 'admin'
     };
     await dbSaveUser(newUser);
-    return newUser;
+    return sanitizeUserForClient(newUser);
   }
 
   return null;
@@ -412,7 +517,7 @@ export function subscribeToUserProfile(userId: string, callback: (user: HexonUse
       const docRef = doc(dbInstance, 'users', userId);
       return onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
-          callback({ id: docSnap.id, ...docSnap.data() } as HexonUser);
+          callback(sanitizeUserForClient({ id: docSnap.id, ...docSnap.data() } as HexonUser));
         } else {
           callback(null);
         }

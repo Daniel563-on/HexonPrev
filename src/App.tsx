@@ -18,6 +18,7 @@ import {
   dbGetServiceOrders, 
   dbGetAssets,
   dbGetTemplates,
+  dbGetOrdersForTechnician,
   signInHexonAnonymously, 
   testFirebaseConnection,
   subscribeToAuth,
@@ -31,6 +32,8 @@ import {
   subscribeToUserProfile,
   dbSaveUser,
   dbUpdateUserSessionId,
+  dbVerifySessionAuthenticity,
+  signOutHexon,
   dbGetPlanningDeadlines,
   dbSavePlanningDeadline,
   dbCheckAndExpirePlanningOrders,
@@ -91,10 +94,7 @@ export default function App() {
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [tabId] = useState(() => 'tab_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9));
   
-  // 2. Visible Tab Auto-Sync & Hibernation states
-  const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
-
-  // 3. Sessão Única states
+  // 2. Sessão Única states
   const [sessionDisplaced, setSessionDisplaced] = useState<boolean>(false);
   
   // Custom User Profile State - strictly null unless active authenticated session exists on this browser
@@ -268,60 +268,8 @@ export default function App() {
     setIsDuplicate(false);
   };
 
-  // 2. Visible Tab Auto-Sync & Hibernation (Visibility API)
-  useEffect(() => {
-    if (!userProfile) return;
-
-    let intervalId: any = null;
-
-    const runSync = async () => {
-      console.log('Sincronização periódica em primeiro plano ativa...');
-      await loadServiceOrders();
-      await loadPermissions();
-      setLastSyncTime(Date.now());
-    };
-
-    const startTimer = () => {
-      if (intervalId) clearInterval(intervalId);
-      // Run auto-refresh every 5 minutes (300000ms)
-      intervalId = setInterval(runSync, 300000);
-    };
-
-    const stopTimer = () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        console.log('Aba do Hexon em segundo plano. Hibernando temporizadores de sincronia...');
-        stopTimer();
-      } else {
-        console.log('Aba do Hexon restaurada ao primeiro plano. Retomando temporizadores.');
-        startTimer();
-        
-        // If more than 5 minutes have passed since the last sync, trigger an immediate foreground sync
-        const elapsed = Date.now() - lastSyncTime;
-        if (elapsed >= 300000) {
-          runSync();
-        }
-      }
-    };
-
-    // Initialize timer on active profile
-    if (!document.hidden) {
-      startTimer();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      stopTimer();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [userProfile, lastSyncTime]);
+  // 2. Action-Driven Sync: No background periodic polling is executed when idle.
+  // Sincronização sob demanda estrita: tela parada consome 0 leituras no Firestore.
 
   // 3. Real-time Single Session per Account Sync
   useEffect(() => {
@@ -382,23 +330,41 @@ export default function App() {
   };
 
   // Load and refresh lists from DB
-  const loadServiceOrders = async () => {
+  const loadServiceOrders = async (targetUser?: HexonUser | null) => {
     try {
-      await dbCheckAndExpirePlanningOrders();
-      const [list, assetsList, templatesList] = await Promise.all([
-        dbGetServiceOrders(),
-        dbGetAssets().catch(() => []),
+      await dbCheckAndExpirePlanningOrders().catch(() => {});
+      const activeProfile = targetUser !== undefined ? targetUser : userProfile;
+
+      // STEP 1 OPTIMIZATION: If user is a field technician ('Profissional'), do NOT download 10,000+ assets or all orders!
+      // Strictly download only the technician's assigned orders and checklist templates.
+      if (activeProfile && activeProfile.perfil === 'Profissional') {
+        const [techOrders, templatesList] = await Promise.all([
+          dbGetOrdersForTechnician(activeProfile.name, activeProfile.matricula).catch(() => []),
+          dbGetTemplates().catch(() => [])
+        ]);
+        if (techOrders && techOrders.length > 0) {
+          setOrders(techOrders);
+        }
+        if (templatesList && templatesList.length > 0) {
+          setTemplates(templatesList);
+        }
+        return;
+      }
+
+      // Administrators, Super Admins, Managers and Supervisors load orders and templates
+      // NOTE: 10,000 assets are NOT downloaded here on boot; they are queried strictly on-demand when searched.
+      const [list, templatesList] = await Promise.all([
+        dbGetServiceOrders().catch(() => []),
         dbGetTemplates().catch(() => [])
       ]);
-      setOrders(list);
-      if (assetsList && assetsList.length > 0) {
-        setAssets(assetsList);
+      if (list && list.length > 0) {
+        setOrders(list);
       }
       if (templatesList && templatesList.length > 0) {
         setTemplates(templatesList);
       }
     } catch (err) {
-      console.error('Failed loading service orders and assets:', err);
+      console.warn('Silent sync error:', err);
     }
   };
 
@@ -538,6 +504,9 @@ export default function App() {
                         setCurrentTab(savedTab);
                       }
                     }
+                    await loadPermissions();
+                    await loadServiceOrders(synchronizedUser);
+                    return;
                   } else {
                     // Session was replaced by a newer login elsewhere
                     console.warn('Sessão remota não coincide com o ID local, efetuando logout.');
@@ -572,7 +541,37 @@ export default function App() {
     localStorage.removeItem('hexon_current_session_id');
     setUserProfile(null);
     setCurrentUser(null);
+    signOutHexon().catch(() => {});
   };
+
+  // 3. ANTI-F12 SERVER-SIDE SESSION INTEGRITY DEFENSE
+  // Actively verifies stored user profile against the official Firestore document on load
+  useEffect(() => {
+    if (!userProfile) return;
+    let isMounted = true;
+
+    dbVerifySessionAuthenticity(userProfile).then((result) => {
+      if (!isMounted) return;
+      if (!result.isValid) {
+        console.warn('[Segurança] Bloqueio de integridade acionado:', result.reason);
+        handleLogoutState();
+        alert(
+          result.reason ||
+          'Alerta de Segurança: A integridade da sua sessão não pôde ser confirmada pelo servidor. Faça login novamente.'
+        );
+      } else if (result.verifiedUser) {
+        // Enforce verified server-side attributes, overriding any tampered localStorage values
+        setUserProfile(result.verifiedUser);
+        try {
+          localStorage.setItem('hexon_cached_user', JSON.stringify(result.verifiedUser));
+        } catch {}
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLoginSuccess = async (profile: HexonUser) => {
     const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
@@ -606,7 +605,7 @@ export default function App() {
     }
 
     await loadPermissions();
-    await loadServiceOrders();
+    await loadServiceOrders(updatedUser);
   };
 
   // Set action triggers from other tabs

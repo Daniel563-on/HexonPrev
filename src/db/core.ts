@@ -2,6 +2,8 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import {
   getAuth,
   signInAnonymously,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -215,6 +217,65 @@ export async function signInHexonAnonymously(): Promise<any> {
     }
   }
   return { uid: 'local_technician_dt', isAnonymous: true, email: 'daniel.torres@hexon.com' };
+}
+
+// Enterprise Firebase Auth Login Proxy (bridges app credentials with cryptographically signed Google JWT)
+export async function authenticateWithFirebaseAuth(email: string, rawPassword: string):Promise<any> {
+  if (!firebaseActive || !authInstance || !email || !rawPassword) return null;
+
+  try {
+    const cred = await signInWithEmailAndPassword(authInstance, email, rawPassword);
+    return cred.user;
+  } catch (err: any) {
+    const code = err?.code || '';
+    // Auto-provision user account in Firebase Auth on the fly if valid credentials match
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+      try {
+        const newCred = await createUserWithEmailAndPassword(authInstance, email, rawPassword);
+        return newCred.user;
+      } catch (createErr: any) {
+        console.info('Firebase Auth automatic user creation notice:', createErr?.code || createErr);
+      }
+    } else if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
+      console.info(
+        '%c[Hexon Security] O provedor Email/Senha do Firebase Authentication pode ser ativado no Firebase Console para tokens nativos do Google.',
+        'color: #0284c7; font-size: 11px;'
+      );
+    } else {
+      console.warn('Firebase Auth sign-in notice:', code);
+    }
+    return null;
+  }
+}
+
+// Ensures Firebase Auth has completed initialization before attempting unauthenticated public reads
+export async function ensureFirebaseAuthReady(timeoutMs = 2500): Promise<void> {
+  if (!firebaseActive || !authInstance) return;
+  if (authInstance.currentUser) return;
+
+  try {
+    const authPromise = new Promise<void>((resolve) => {
+      const unsubscribe = onAuthStateChanged(authInstance, (user) => {
+        if (user) {
+          unsubscribe();
+          resolve();
+        }
+      });
+      // Also attempt anonymous sign in in parallel if none exists
+      signInHexonAnonymously().catch(() => {}).finally(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
+
+    await Promise.race([authPromise, timeoutPromise]);
+  } catch (e) {
+    console.warn('ensureFirebaseAuthReady finished with notice:', e);
+  }
 }
 
 // Expose standard Sign-out action

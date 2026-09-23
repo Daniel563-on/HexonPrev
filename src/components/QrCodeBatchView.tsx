@@ -18,6 +18,7 @@ import {
 } from '../types';
 import { 
   dbGetAssets, 
+  dbSearchAssetsTargeted,
   dbGetQrTemplates, 
   dbSaveQrTemplate, 
   dbDeleteQrTemplate 
@@ -151,13 +152,13 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
     return () => { isMounted = false; };
   }, []);
 
-  // Load assets on mount
+  // Load initial small sample of assets for immediate template preview (24 items only instead of 10,000)
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       setLoading(true);
       try {
-        const data = await dbGetAssets();
+        const data = await dbSearchAssetsTargeted({ limitResults: 35 });
         if (!isMounted) return;
         setAllAssets(data);
         const initialSelection = new Set<string>();
@@ -496,6 +497,12 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
           selectedAssetIds={selectedAssetIds}
           setSelectedAssetIds={setSelectedAssetIds}
           darkMode={darkMode}
+          onUpdateAssets={(newAssets) => {
+            setAllAssets(newAssets);
+            const initialSelection = new Set<string>();
+            newAssets.forEach(a => initialSelection.add(a.id));
+            setSelectedAssetIds(initialSelection);
+          }}
         />
       )}
 
