@@ -802,8 +802,10 @@ export default function App() {
         assetIdentifier={publicAssetParam}
         onGoToLogin={() => {
           setPublicAssetParam(null);
-          handleLogoutState();
           window.history.replaceState({}, document.title, window.location.pathname);
+          // Recarrega o app sem o parâmetro público: se houver sessão válida, o usuário
+          // continua logado; caso contrário, verá a tela de login. NÃO desloga ninguém.
+          window.location.reload();
         }}
       />
     );
