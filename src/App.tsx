@@ -17,10 +17,10 @@ import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } 
 import { 
   subscribeServiceOrders,
   subscribePendingSolicitations,
+  technicianCandidates,
   localMonthKey, 
   dbGetAssets,
   dbGetTemplates,
-  dbGetOrdersForTechnician,
   signInHexonAnonymously, 
   testFirebaseConnection,
   subscribeToAuth,
@@ -346,6 +346,14 @@ export default function App() {
     return subscribeServiceOrders({ sector: ordersScopeSector }, ordersMonth, setOrders);
   }, [userProfile?.id, userProfile?.perfil, ordersScopeSector, ordersMonth]);
 
+  // Técnico: OS em tempo real, só as atribuídas a ele (abertas + as que fechou no mês atual)
+  useEffect(() => {
+    if (!userProfile || userProfile.perfil !== 'Profissional') return;
+    const names = technicianCandidates(userProfile.name, userProfile.matricula);
+    if (names.length === 0) return;
+    return subscribeServiceOrders({ sector: null, technicianNames: names }, localMonthKey(), setOrders);
+  }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula]);
+
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
   const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
   useEffect(() => {
@@ -367,13 +375,8 @@ export default function App() {
       // STEP 1 OPTIMIZATION: If user is a field technician ('Profissional'), do NOT download 10,000+ assets or all orders!
       // Strictly download only the technician's assigned orders and checklist templates.
       if (activeProfile && activeProfile.perfil === 'Profissional') {
-        const [techOrders, templatesList] = await Promise.all([
-          dbGetOrdersForTechnician(activeProfile.name, activeProfile.matricula).catch(() => []),
-          dbGetTemplates().catch(() => [])
-        ]);
-        if (techOrders && techOrders.length > 0) {
-          setOrders(techOrders);
-        }
+        // As OS do técnico chegam em tempo real (subscribeServiceOrders); aqui só os modelos.
+        const templatesList = await dbGetTemplates().catch(() => []);
         if (templatesList && templatesList.length > 0) {
           setTemplates(templatesList);
         }

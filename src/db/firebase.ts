@@ -12,6 +12,7 @@ export * from './users';
 export * from './permissions';
 export * from './assets';
 export * from './serviceOrders';
+export * from './dispatchIndex';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';

@@ -7,6 +7,7 @@ import {
 } from './core';
 import { dbGetTemplates } from './templates';
 import { dbGetManagements } from './organization';
+import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
 
 // Forward references to service orders / assets functions
 // (will be resolved via dependency injection or direct barrel import)
@@ -331,7 +332,9 @@ export async function dbAutoGeneratePreventiveActivities(
   try {
     const [assets, orders, templates] = await Promise.all([
       getAssetsFn ? getAssetsFn() : Promise.resolve([]),
-      getServiceOrdersFn ? getServiceOrdersFn() : Promise.resolve([]),
+      // Não baixa as ordens existentes: "já disparada" é conferido pelo número fixo da OS
+      // no registro do disparo (dispatchIndex), logo antes de gravar.
+      Promise.resolve([] as ServiceOrder[]),
       dbGetTemplates()
     ]);
 
@@ -596,6 +599,10 @@ export async function dbAutoGeneratePreventiveActivities(
     // Never overwrite an OS that already exists in Firestore (it may already be assigned or signed)
     const savedOrders: ServiceOrder[] = [];
     if (ordersToSave.length > 0 && firebaseActive && dbInstance) {
+      // 1) Registro do disparo: poucas leituras, sem baixar as ordens
+      const dispatchedIds = await dbGetDispatchedIds(ordersToSave.map((o) => o.startDate || ''));
+      ordersToSave = ordersToSave.filter((o) => !dispatchedIds.has(o.id));
+      // 2) Segurança extra para OS gravadas antes do registro existir
       const existingIds = await findExistingOrderIds(ordersToSave.map((o) => o.id));
       ordersToSave = ordersToSave.filter((o) => !existingIds.has(o.id));
 
@@ -609,6 +616,8 @@ export async function dbAutoGeneratePreventiveActivities(
           for (const order of chunk) {
             batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(order));
           }
+          // Registra as OS disparadas no mesmo lote (grava tudo ou nada)
+          addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));
           await batch.commit();
           savedOrders.push(...chunk);
         } catch (err: any) {
