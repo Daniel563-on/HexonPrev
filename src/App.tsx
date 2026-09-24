@@ -16,7 +16,7 @@ import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
   subscribeServiceOrders,
-  localMonthKey,
+  localMonthKey, 
   dbGetAssets,
   dbGetTemplates,
   dbGetOrdersForTechnician,
