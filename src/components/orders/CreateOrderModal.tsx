@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Plus, X } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem } from '../../types';
-import { dbSaveServiceOrder } from '../../db/firebase';
+import { dbSaveServiceOrder, generateUniqueOrderId } from '../../db/firebase';
 
 export interface CreateOrderModalProps {
   isOpen: boolean;
@@ -90,7 +90,7 @@ export default function CreateOrderModal({
       observations: null
     }));
 
-    const newOSId = (28000 + Math.floor(Math.random() * 1000)).toString();
+    const newOSId = generateUniqueOrderId('OS');
 
     const newServiceOrder: ServiceOrder = {
       id: newOSId,

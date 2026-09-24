@@ -58,6 +58,14 @@ export function clearPlanningDeadlinesCache(): void {
   pendingPlanningDeadlinesPromise = null;
 }
 
+// Newest first. Sorts by creation date because OS numbers are no longer purely numeric
+// (e.g. "AS_GMMR_2702-MEN-20260901"), so numeric comparison would break the order.
+function compareOrdersNewestFirst(a: ServiceOrder, d: ServiceOrder): number {
+  const byCreatedAt = (d.createdAt || '').localeCompare(a.createdAt || '');
+  if (byCreatedAt !== 0) return byCreatedAt;
+  return String(d.id).localeCompare(String(a.id));
+}
+
 function processExpiredOrders(orders: ServiceOrder[]): ServiceOrder[] {
   const todayStr = new Date().toISOString().slice(0, 10);
   const processed = orders.map((o) => {
@@ -100,12 +108,12 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
 
   // Check if in-memory cache OR local storage cache is valid
   if (cacheServiceOrders !== null && (!hasUser || cacheServiceOrdersFromFirebase)) {
-    return processExpiredOrders([...cacheServiceOrders]).sort((a, d) => Number(d.id) - Number(a.id));
+    return processExpiredOrders([...cacheServiceOrders]).sort(compareOrdersNewestFirst);
   }
   if (isCacheValid('serviceOrders') && localData && localData.length > 0) {
     cacheServiceOrders = localData;
     cacheServiceOrdersFromFirebase = true;
-    return processExpiredOrders([...cacheServiceOrders]).sort((a, d) => Number(d.id) - Number(a.id));
+    return processExpiredOrders([...cacheServiceOrders]).sort(compareOrdersNewestFirst);
   }
 
   if (pendingOrdersPromise !== null) {
@@ -132,7 +140,7 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
           console.warn('LocalStorage limit service_orders:', lsErr);
         }
         pendingOrdersPromise = null;
-        return [...cacheServiceOrders].sort((a, d) => Number(d.id) - Number(a.id));
+        return [...cacheServiceOrders].sort(compareOrdersNewestFirst);
       } catch (err: any) {
         console.warn('Firestore fetch service_orders failed, utilizing offline fallback:', err);
         checkQuotaException(err);
@@ -147,7 +155,7 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
       console.warn('LocalStorage limit service_orders fallback:', lsErr);
     }
     pendingOrdersPromise = null;
-    return processExpiredOrders([...cacheServiceOrders]).sort((a, d) => Number(d.id) - Number(a.id));
+    return processExpiredOrders([...cacheServiceOrders]).sort(compareOrdersNewestFirst);
   })();
 
   return pendingOrdersPromise;
@@ -936,7 +944,7 @@ export async function dbGetOrdersForTechnician(
         console.warn('LocalStorage limit caching technician orders:', e);
       }
 
-      return processExpiredOrders(list).sort((a, d) => Number(d.id) - Number(a.id));
+      return processExpiredOrders(list).sort(compareOrdersNewestFirst);
     } catch (err: any) {
       console.warn('Firestore dbGetOrdersForTechnician failed, falling back to local storage:', err);
       checkQuotaException(err);

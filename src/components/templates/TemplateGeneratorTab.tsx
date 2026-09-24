@@ -124,7 +124,9 @@ export default function TemplateGeneratorTab({
       if (onTemplatesUpdated) onTemplatesUpdated();
     } catch (err: any) {
       console.error(err);
-      alert('Houve um erro técnico processando o seu agendamento programado.');
+      alert(err?.message || 'Houve um erro técnico processando o seu agendamento programado.');
+      // Parte das ordens pode ter sido gravada: atualiza a lista mesmo com erro
+      await onRefreshData().catch(() => {});
     } finally {
       setIsGenerating(false);
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, PlusCircle } from 'lucide-react';
 import { Asset, Management } from '../../types';
-import { dbSaveAsset } from '../../db/firebase';
+import { dbSaveAsset, randomIdToken } from '../../db/firebase';
 import { PeriodicityRule } from './AssetImportWizardModal';
 
 // ==========================================
@@ -446,7 +446,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const uniqueId = `as_${sector.toLowerCase().replace('/', '_')}_${Date.now().toString().slice(-4)}`;
+      const uniqueId = `as_${sector.toLowerCase().replace('/', '_')}_${Date.now().toString().slice(-4)}_${randomIdToken(4).toLowerCase()}`;
       const statusVal = dynamicFormValues['STATUS'] || 'Operando';
       const acqDateVal = dynamicFormValues['DATA DE AQUISIÇÃO'] || new Date().toISOString().split('T')[0];
 

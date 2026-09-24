@@ -1,4 +1,4 @@
-import { doc, writeBatch } from 'firebase/firestore';
+import { collection, doc, documentId, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate } from '../types';
 import {
   firebaseActive,
@@ -34,6 +34,66 @@ export interface AutoGenFilter {
   sector: string;
   startDate: string;
   endDate: string;
+}
+
+// DETERMINISTIC SERVICE ORDER IDS
+// O número da OS é derivado do ativo + periodicidade + início do período, então:
+// - nunca colide com outra OS (um ativo tem no máximo uma OS por periodicidade e período);
+// - disparar o mesmo período duas vezes não duplica nem sobrescreve OS existentes.
+const PERIODICITY_CODES: { [key: string]: string } = {
+  semanal: 'SEM',
+  quinzenal: 'QUI',
+  mensal: 'MEN',
+  bimestral: 'BIM',
+  trimestral: 'TRI',
+  semestral: 'SMT',
+  anual: 'ANU'
+};
+
+function toIdToken(value: string): string {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+}
+
+export function buildPreventiveOrderId(key: string, periodicity: string, periodStartDate: string): string {
+  const normalizedPeriodicity = toIdToken(periodicity).toLowerCase();
+  const periodicityCode = PERIODICITY_CODES[normalizedPeriodicity] || toIdToken(periodicity).slice(0, 4) || 'PER';
+  const periodToken = (periodStartDate || '').replace(/-/g, '');
+  return `${toIdToken(key)}-${periodicityCode}-${periodToken}`;
+}
+
+// Random uppercase token (A-Z, 0-9) using the browser's cryptographic generator.
+export function randomIdToken(length: number = 6): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
+// Unique ID for manually created orders (manual OS, quick corrective).
+// Ex.: "OS-260924-7K2Q9F" — date keeps it readable; 6 random chars (~2 bilhões de combinações por dia) avoid collisions.
+export function generateUniqueOrderId(prefix: string = 'OS'): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const datePart = `${String(now.getFullYear()).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  return `${prefix}-${datePart}-${randomIdToken(6)}`;
+}
+
+// Returns the subset of `ids` that already exist in the serviceOrders collection.
+async function findExistingOrderIds(ids: string[]): Promise<Set<string>> {
+  const existing = new Set<string>();
+  if (!firebaseActive || !dbInstance || ids.length === 0) return existing;
+  // Firestore limits "in" queries to 30 values
+  for (let i = 0; i < ids.length; i += 30) {
+    const chunk = ids.slice(i, i + 30);
+    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), where(documentId(), 'in', chunk)));
+    snap.forEach((d) => existing.add(d.id));
+  }
+  return existing;
 }
 
 // HELPERS FOR PREVENTIVE CYCLE MOTOR
@@ -263,6 +323,7 @@ export async function dbAutoGeneratePreventiveActivities(
   }
 
   let generatedCount = 0;
+  let writeFailureMessage: string | null = null;
 
   try {
     const [assets, orders, templates] = await Promise.all([
@@ -363,7 +424,7 @@ export async function dbAutoGeneratePreventiveActivities(
                   } as any));
 
                 const newSurvey: ServiceOrder = {
-                  id: (Math.floor(Math.random() * 800000) + 100000).toString(),
+                  id: buildPreventiveOrderId(`VST_${t.id}_${comarca}`, 'Semanal', pStartDate),
                   assetId: null,
                   assetName: 'S/V - Vistoria Periódica',
                   assetCode: 'PE-VISTORIA',
@@ -478,7 +539,7 @@ export async function dbAutoGeneratePreventiveActivities(
                   } as any));
 
                 const newOS: ServiceOrder = {
-                  id: (Math.floor(Math.random() * 800000) + 100000).toString(),
+                  id: buildPreventiveOrderId(asset.id, periodicity, pStartDate),
                   assetId: asset.id,
                   assetName: asset.name,
                   assetCode: asset.code,
@@ -514,31 +575,55 @@ export async function dbAutoGeneratePreventiveActivities(
       }
     }
 
-    // Sync in-memory cache and localStorage fallback for orders
-    if (appendServiceOrdersCacheFn && allNewOrders.length > 0) {
-      appendServiceOrdersCacheFn(allNewOrders);
-    }
+    // Remove duplicate IDs generated within this same run (e.g. overlapping filter rows)
+    const seenIds = new Set<string>();
+    let ordersToSave = allNewOrders.filter((o) => {
+      if (seenIds.has(o.id)) return false;
+      seenIds.add(o.id);
+      return true;
+    });
 
-    // Save in batch chunks to Firebase (only if active)
-    if (allNewOrders.length > 0 && firebaseActive && dbInstance) {
-      try {
-        const batchSize = 100;
-        for (let i = 0; i < allNewOrders.length; i += batchSize) {
-          const chunk = allNewOrders.slice(i, i + batchSize);
+    // Never overwrite an OS that already exists in Firestore (it may already be assigned or signed)
+    const savedOrders: ServiceOrder[] = [];
+    if (ordersToSave.length > 0 && firebaseActive && dbInstance) {
+      const existingIds = await findExistingOrderIds(ordersToSave.map((o) => o.id));
+      ordersToSave = ordersToSave.filter((o) => !existingIds.has(o.id));
+
+      let failedCount = 0;
+      let lastError = '';
+      const batchSize = 100;
+      for (let i = 0; i < ordersToSave.length; i += batchSize) {
+        const chunk = ordersToSave.slice(i, i + batchSize);
+        try {
           const batch = writeBatch(dbInstance);
           for (const order of chunk) {
             batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(order));
           }
           await batch.commit();
-          await new Promise((resolve) => setTimeout(resolve, 150));
+          savedOrders.push(...chunk);
+        } catch (err: any) {
+          failedCount += chunk.length;
+          lastError = err?.message || String(err);
+          console.warn('Could not write batch of generated service orders to Firestore:', err);
         }
-      } catch (err: any) {
-        console.warn('Could not write batch of generated service orders to Firestore:', err);
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
+
+      if (failedCount > 0) {
+        writeFailureMessage = `${savedOrders.length} ordens foram criadas, mas ${failedCount} NÃO foram gravadas no banco de dados. Tente disparar o mesmo período novamente: as ordens já criadas não serão duplicadas. Detalhe: ${lastError}`;
+      }
+    } else {
+      savedOrders.push(...ordersToSave);
+    }
+    generatedCount = savedOrders.length;
+
+    // Sync in-memory cache and localStorage fallback only with the orders actually saved
+    if (appendServiceOrdersCacheFn && savedOrders.length > 0) {
+      appendServiceOrdersCacheFn(savedOrders);
     }
 
     // Set 7-day deadlines for all managements
-    if (allNewOrders.length > 0 && saveDeadlineFn) {
+    if (savedOrders.length > 0 && saveDeadlineFn) {
       try {
         const mans = await dbGetManagements();
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -555,6 +640,12 @@ export async function dbAutoGeneratePreventiveActivities(
 
   } catch (error) {
     console.error('Error generating automated activities:', error);
+    writeFailureMessage = writeFailureMessage || `Não foi possível concluir o disparo: ${(error as any)?.message || String(error)}`;
+  }
+
+  // Report failures to the caller instead of silently returning a partial count
+  if (writeFailureMessage) {
+    throw new Error(writeFailureMessage);
   }
 
   return generatedCount;

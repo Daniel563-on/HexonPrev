@@ -9,7 +9,7 @@ import {
   Loader2 
 } from 'lucide-react';
 import { Asset, HexonUser, ServiceOrder } from '../../types';
-import { dbSaveServiceOrder } from '../../db/firebase';
+import { dbSaveServiceOrder, generateUniqueOrderId } from '../../db/firebase';
 
 interface QuickCorrectiveModalProps {
   isOpen: boolean;
@@ -77,7 +77,7 @@ export default function QuickCorrectiveModal({
 
     try {
       const now = new Date();
-      const generatedId = `OS-C${Date.now().toString().slice(-6)}`;
+      const generatedId = generateUniqueOrderId('OS-C');
       const dateStr = now.toISOString().split('T')[0];
 
       const newOrder: ServiceOrder = {
