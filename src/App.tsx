@@ -71,7 +71,6 @@ export default function App() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [scannedAssetId, setScannedAssetId] = useState<string | null>(null);
-  const [openCreateModalDirectly, setOpenCreateModalDirectly] = useState(false);
   const [highlightedOSId, setHighlightedOSId] = useState<string | null>(null);
 
   // Mobile device screen detection
@@ -334,8 +333,13 @@ export default function App() {
   // Load and refresh lists from DB
   const loadServiceOrders = async (targetUser?: HexonUser | null) => {
     try {
-      await dbCheckAndExpirePlanningOrders().catch(() => {});
       const activeProfile = targetUser !== undefined ? targetUser : userProfile;
+      // A atualização de prazos (Atrasada / Não Executada) é gravada por perfis de gestão.
+      // Técnicos não executam essa rotina: evita 175 aparelhos repetindo o mesmo trabalho;
+      // a tela deles já exibe o status recalculado.
+      if (activeProfile && activeProfile.perfil !== 'Profissional') {
+        await dbCheckAndExpirePlanningOrders().catch(() => {});
+      }
 
       // STEP 1 OPTIMIZATION: If user is a field technician ('Profissional'), do NOT download 10,000+ assets or all orders!
       // Strictly download only the technician's assigned orders and checklist templates.
@@ -620,16 +624,6 @@ export default function App() {
     await loadServiceOrders(updatedUser);
   };
 
-  // Set action triggers from other tabs
-  const handleNovaOSClick = () => {
-    if (!userHasActionPermission('create_order')) {
-      alert('Acesso Restrito: Seu perfil de atuação atual não possui permissões necessárias para registrar ou agendar preventivas.');
-      return;
-    }
-    setCurrentTab('service-orders');
-    setOpenCreateModalDirectly(true);
-  };
-
   const handleSelectScannedAsset = (assetId: string) => {
     setScannedAssetId(assetId);
     setCurrentTab('assets');
@@ -855,7 +849,6 @@ export default function App() {
         onChangeTab={setCurrentTab} 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
-        onNovaOS={handleNovaOSClick}
         orders={orders}
         userProfile={userProfile}
         userHasTabPermission={userHasTabPermission}
@@ -917,7 +910,6 @@ export default function App() {
               orders={filteredOrders} 
               onNavigateToOS={handleNavigateToOS}
               onNavigateToAssets={() => setCurrentTab('assets')}
-              onNovaOS={handleNovaOSClick}
               onNavigateToSolicitations={() => setCurrentTab('solicitations')}
               userProfile={userProfile}
             />
@@ -927,8 +919,6 @@ export default function App() {
             <ServiceOrdersView 
               orders={filteredOrders}
               onReload={loadServiceOrders}
-              openCreateModalDirectly={openCreateModalDirectly}
-              onCloseDirectCreateModal={() => setOpenCreateModalDirectly(false)}
               highlightOSId={highlightedOSId}
               userProfile={userProfile}
               userHasActionPermission={userHasActionPermission}

@@ -17,6 +17,7 @@ import {
   FileCheck
 } from 'lucide-react';
 import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
+import { formatOrderNumber } from '../utils/orderNumber';
 import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic } from '../db/firebase';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
@@ -368,7 +369,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                        OS #{ord.id}
+                        OS #{formatOrderNumber(ord.id)}
                       </span>
                       <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${
                         ord.status === 'Concluído'

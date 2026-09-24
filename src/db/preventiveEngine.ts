@@ -74,15 +74,6 @@ export function randomIdToken(length: number = 6): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-// Unique ID for manually created orders (manual OS, quick corrective).
-// Ex.: "OS-260924-7K2Q9F" — date keeps it readable; 6 random chars (~2 bilhões de combinações por dia) avoid collisions.
-export function generateUniqueOrderId(prefix: string = 'OS'): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const datePart = `${String(now.getFullYear()).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-  return `${prefix}-${datePart}-${randomIdToken(6)}`;
-}
-
 // Returns the subset of `ids` that already exist in the serviceOrders collection.
 async function findExistingOrderIds(ids: string[]): Promise<Set<string>> {
   const existing = new Set<string>();

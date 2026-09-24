@@ -66,25 +66,42 @@ function compareOrdersNewestFirst(a: ServiceOrder, d: ServiceOrder): number {
   return String(d.id).localeCompare(String(a.id));
 }
 
-function processExpiredOrders(orders: ServiceOrder[]): ServiceOrder[] {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const processed = orders.map((o) => {
-    if (o.status !== 'Concluída' && o.status !== 'Não Executada') {
-      // Check 1: Super Admin month limit SLA (endDate) has passed
-      const hasSlaExpired = !!(o.endDate && todayStr > o.endDate);
-      // Check 2: Scheduled execution window has passed without execution
-      const executionDeadline = o.scheduledEndDate || o.scheduledDate;
-      const hasExecutionWindowExpired = !!(executionDeadline && todayStr > executionDeadline);
+// Local date (yyyy-mm-dd). toISOString() would use UTC and flip to "tomorrow" at 21h in Brazil.
+function localTodayStr(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
-      if (hasSlaExpired || hasExecutionWindowExpired) {
-        return {
-          ...o,
-          status: 'Não Executada' as const,
-          updatedAt: new Date().toISOString()
-        };
-      }
-    }
-    return o;
+// REGRA DE PRAZOS DA OS
+// - Período do Super Admin (endDate) venceu sem conclusão  -> "Não Executada" (OS encerrada)
+// - Janela do técnico (scheduledEndDate/scheduledDate) venceu -> "Atrasada" (encarregado pode remarcar)
+// - OS "Atrasada" remarcada para uma janela futura           -> volta a "Planejada"
+// - OS "Não Executada" cujo período do Super Admin foi prorrogado -> reaberta
+// "Em Execução" não vira "Atrasada": o técnico já iniciou e pode concluir até o fim do período.
+export function computeDeadlineStatus(o: ServiceOrder, todayStr: string = localTodayStr()): ServiceOrder['status'] {
+  if (o.status === 'Concluída') return o.status;
+
+  const slaExpired = !!(o.endDate && todayStr > o.endDate);
+  if (slaExpired) return 'Não Executada';
+
+  const executionDeadline = o.scheduledEndDate || o.scheduledDate;
+  const windowExpired = !!(executionDeadline && todayStr > executionDeadline);
+
+  if (o.status === 'Não Executada') {
+    if (windowExpired) return 'Atrasada';
+    return o.scheduledDate ? 'Planejada' : 'Novo';
+  }
+  if (o.status === 'Planejada' && windowExpired) return 'Atrasada';
+  if (o.status === 'Atrasada' && !windowExpired) return executionDeadline ? 'Planejada' : 'Novo';
+  return o.status;
+}
+
+function processExpiredOrders(orders: ServiceOrder[]): ServiceOrder[] {
+  const todayStr = localTodayStr();
+  const processed = orders.map((o) => {
+    const status = computeDeadlineStatus(o, todayStr);
+    return status === o.status ? o : { ...o, status };
   });
 
   cacheServiceOrders = processed;
@@ -163,7 +180,8 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
 
 // Save or Update service order
 export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
-  const orderWithUpdate = { ...order, updatedAt: new Date().toISOString() };
+  // Grava sempre o status coerente com os prazos (ex.: remarcar uma OS "Atrasada" volta para "Planejada")
+  const orderWithUpdate = { ...order, status: computeDeadlineStatus(order), updatedAt: new Date().toISOString() };
 
   // If the status is completed 'Concluída', we must create an entry in the equipment history!
   if (order.status === 'Concluída') {
@@ -557,70 +575,46 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
   }
   lastExpireCheck = nowMs;
 
+  if (!firebaseActive || !dbInstance) return;
+
   try {
-    const [deadlines, orders] = await Promise.all([
-      dbGetPlanningDeadlines(),
-      dbGetServiceOrders()
-    ]);
+    // Lê do banco SOMENTE as OS em aberto, com o status realmente gravado.
+    // (A lista em memória já vem com o status recalculado para exibição, então
+    //  comparar com ela nunca detectava mudança e nada era gravado.)
+    const snap = await getDocs(query(
+      collection(dbInstance, 'serviceOrders'),
+      where('status', 'in', ['Novo', 'Planejada', 'Em Execução', 'Atrasada'])
+    ));
 
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const currentDateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const todayStr = localTodayStr();
+    const changes: { id: string; status: ServiceOrder['status'] }[] = [];
+    snap.forEach((d) => {
+      if (isMockOrLegacyId(d.id)) return;
+      const stored = { id: d.id, ...d.data() } as ServiceOrder;
+      const status = computeDeadlineStatus(stored, todayStr);
+      if (status !== stored.status) changes.push({ id: d.id, status });
+    });
 
-    const updatedOrders: ServiceOrder[] = [];
-    const nonUpdated: ServiceOrder[] = [];
-
-    for (const os of orders) {
-      const isSlaPassed = !!(os.endDate && os.endDate < currentDateStr);
-      const executionDeadline = os.scheduledEndDate || os.scheduledDate;
-      const isExecutionWindowPassed = !!(executionDeadline && executionDeadline < currentDateStr);
-      const isExpired = isSlaPassed || isExecutionWindowPassed;
-
-      if (os.status === 'Não Executada') {
-        if (!isExpired) {
-          // SELF-HEAL: Neither SLA nor execution window has passed! Revert status back to its correct state
-          const restoredStatus = os.scheduledDate ? 'Planejada' : 'Novo';
-          updatedOrders.push({
-            ...os,
-            status: restoredStatus,
-            updatedAt: new Date().toISOString()
-          });
-          continue;
+    if (changes.length > 0) {
+      console.log(`[Prazos] Atualizando o status de ${changes.length} ordens de serviço.`);
+      const updatedAt = new Date().toISOString();
+      const batchSize = 100;
+      for (let i = 0; i < changes.length; i += batchSize) {
+        const chunk = changes.slice(i, i + batchSize);
+        const batch = writeBatch(dbInstance);
+        for (const c of chunk) {
+          // Atualiza só o status, sem sobrescrever a OS inteira (evita apagar edições simultâneas)
+          batch.update(doc(dbInstance, 'serviceOrders', c.id), { status: c.status, updatedAt });
         }
-      } else if (os.status !== 'Concluída') {
-        if (isExpired) {
-          // EXPIRE: Transition when the SLA range or the scheduled window passes without completion
-          updatedOrders.push({
-            ...os,
-            status: 'Não Executada',
-            updatedAt: new Date().toISOString()
-          });
-          continue;
-        }
-      }
-      nonUpdated.push(os);
-    }
-
-    if (updatedOrders.length > 0) {
-      console.log(`[Auto-Expiration/Self-Heal] Updating ${updatedOrders.length} service orders status based on Super Admin active range!`);
-      // Update cache
-      cacheServiceOrders = [...nonUpdated, ...updatedOrders];
-      try {
-        localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
-      } catch (lsErr) {
-        console.warn('LocalStorage limit saving service orders:', lsErr);
+        await batch.commit();
       }
 
-      if (firebaseActive && dbInstance) {
-        const batchSize = 100;
-        for (let i = 0; i < updatedOrders.length; i += batchSize) {
-          const chunk = updatedOrders.slice(i, i + batchSize);
-          const batch = writeBatch(dbInstance);
-          for (const order of chunk) {
-            batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(order));
-          }
-          await batch.commit();
-        }
+      // Mantém o cache local coerente com o que foi gravado
+      if (cacheServiceOrders) {
+        const byId = new Map(changes.map((c) => [c.id, c.status]));
+        cacheServiceOrders = cacheServiceOrders.map((o) =>
+          byId.has(o.id) ? { ...o, status: byId.get(o.id)!, updatedAt } : o
+        );
       }
     }
   } catch (err) {
