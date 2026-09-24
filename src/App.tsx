@@ -16,6 +16,7 @@ import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
   subscribeServiceOrders,
+  subscribePendingSolicitations,
   localMonthKey, 
   dbGetAssets,
   dbGetTemplates,
@@ -344,6 +345,13 @@ export default function App() {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
     return subscribeServiceOrders({ sector: ordersScopeSector }, ordersMonth, setOrders);
   }, [userProfile?.id, userProfile?.perfil, ordersScopeSector, ordersMonth]);
+
+  // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
+  const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
+  useEffect(() => {
+    if (!userProfile || userProfile.perfil === 'Profissional') return;
+    return subscribePendingSolicitations({ sector: ordersScopeSector }, setPendingSolicitationOrders);
+  }, [userProfile?.id, userProfile?.perfil, ordersScopeSector]);
 
   // Load and refresh lists from DB
   const loadServiceOrders = async (targetUser?: HexonUser | null) => {
@@ -858,7 +866,7 @@ export default function App() {
         onChangeTab={setCurrentTab} 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
-        orders={orders}
+        pendingSolicitationsCount={pendingSolicitationOrders.length}
         userProfile={userProfile}
         userHasTabPermission={userHasTabPermission}
       />
@@ -954,7 +962,8 @@ export default function App() {
 
           {currentTab === 'solicitations' && (
             <SolicitationsView 
-              orders={filteredOrders}
+              pendingOrders={pendingSolicitationOrders}
+              scopeSector={ordersScopeSector}
               onNavigateToOS={handleNavigateToOS}
               onReload={loadServiceOrders}
               userProfile={userProfile}

@@ -64,6 +64,9 @@ export interface ServiceOrder {
   signature: string | null;      // Base64 drawing (no banco fica em "orderSignatures"; aqui só enquanto a OS está aberta na tela)
   hasSignature?: boolean;        // true quando a assinatura está gravada em "orderSignatures/{id}"
   closedMonth?: string;          // "AAAA-MM" da conclusão (Concluída) ou do fim do período (Não Executada); vazio se aberta
+  comarca?: string;              // comarca do ativo (ou da vistoria), gravada no disparo
+  craai?: string;                // CRAAI do ativo (ou da comarca da vistoria), gravado no disparo
+  solicitationStatus?: 'Pendente' | 'Resolvido' | 'Cancelado'; // situação da solicitação de corretiva (itens "Sim"); vazio se não houver
   signedBy: string | null;       // Client or technician name
   signedAt: string | null;       // ISO timestamp
   createdAt: string;

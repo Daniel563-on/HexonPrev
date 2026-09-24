@@ -7,7 +7,9 @@ import {
   getDocs,
   limit,
   onSnapshot,
+  orderBy,
   query,
+  startAfter,
   setDoc,
   where,
   writeBatch
@@ -93,6 +95,15 @@ function computeClosedMonth(o: ServiceOrder, status: ServiceOrder['status']): st
     return (o.endDate || '').slice(0, 7) || o.closedMonth || localMonthKey();
   }
   return undefined;
+}
+
+// Situação da solicitação de corretiva (itens do checklist respondidos "Sim"), gravada na OS:
+// permite buscar direto as solicitações pendentes, sem varrer as ordens.
+function computeSolicitationStatus(o: ServiceOrder): ServiceOrder['solicitationStatus'] {
+  const requested = (o.checklist || []).filter((item) => item.autoCreateCorrective === true && item.autoCorrectiveAnswer === 'Sim');
+  if (requested.length === 0) return undefined;
+  const withStatus = requested.find((item) => item.autoCorrectiveStatus);
+  return withStatus?.autoCorrectiveStatus || 'Pendente';
 }
 
 // REGRA DE PRAZOS DA OS
@@ -285,6 +296,100 @@ export function subscribeServiceOrders(
   };
 }
 
+// SOLICITAÇÕES DE CORRETIVA
+// Pendentes: carregadas em tempo real (são poucas; somem da lista assim que recebem uma ação).
+export function subscribePendingSolicitations(
+  scope: ServiceOrdersScope,
+  onChange: (orders: ServiceOrder[]) => void
+): () => void {
+  if (!firebaseActive || !dbInstance) {
+    onChange([]);
+    return () => {};
+  }
+  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  return onSnapshot(
+    query(collection(dbInstance, 'serviceOrders'), ...sectorFilter, where('solicitationStatus', '==', 'Pendente')),
+    (snap) => {
+      const list: ServiceOrder[] = [];
+      snap.forEach((d) => {
+        if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+      });
+      onChange(list.sort(compareOrdersNewestFirst));
+    },
+    (err) => {
+      console.warn('Firestore listen pending solicitations failed:', err);
+      checkQuotaException(err);
+      onChange([]);
+    }
+  );
+}
+
+// Com ação (confirmadas / canceladas): só quando o usuário filtra, em páginas, das mais recentes para as mais antigas.
+export interface SolicitationsPage {
+  orders: ServiceOrder[];
+  cursor: unknown; // passe de volta em "after" para buscar a próxima página
+  hasMore: boolean;
+}
+
+export async function dbGetHandledSolicitationsPage(
+  scope: ServiceOrdersScope,
+  statuses: Array<'Resolvido' | 'Cancelado'>,
+  pageSize: number,
+  after?: unknown
+): Promise<SolicitationsPage> {
+  if (!firebaseActive || !dbInstance || statuses.length === 0) {
+    return { orders: [], cursor: null, hasMore: false };
+  }
+  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  const constraints: any[] = [
+    ...sectorFilter,
+    where('solicitationStatus', 'in', statuses),
+    orderBy('updatedAt', 'desc'),
+    limit(pageSize)
+  ];
+  if (after) constraints.push(startAfter(after));
+
+  try {
+    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), ...constraints));
+    const list: ServiceOrder[] = [];
+    snap.forEach((d) => {
+      if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+    });
+    return {
+      orders: list,
+      cursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : after || null,
+      hasMore: snap.docs.length === pageSize
+    };
+  } catch (err: any) {
+    console.warn('Firestore fetch handled solicitations failed:', err);
+    checkQuotaException(err);
+    return { orders: [], cursor: after || null, hasMore: false };
+  }
+}
+
+// Totais por situação (consulta de contagem: não baixa as ordens)
+export async function dbCountSolicitations(
+  scope: ServiceOrdersScope
+): Promise<{ pendente: number; resolvido: number; cancelado: number }> {
+  const empty = { pendente: 0, resolvido: 0, cancelado: 0 };
+  if (!firebaseActive || !dbInstance) return empty;
+  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  const countOf = async (status: 'Pendente' | 'Resolvido' | 'Cancelado') => {
+    const snap = await getCountFromServer(
+      query(collection(dbInstance!, 'serviceOrders'), ...sectorFilter, where('solicitationStatus', '==', status))
+    );
+    return snap.data().count;
+  };
+  try {
+    const [pendente, resolvido, cancelado] = await Promise.all([countOf('Pendente'), countOf('Resolvido'), countOf('Cancelado')]);
+    return { pendente, resolvido, cancelado };
+  } catch (err: any) {
+    console.warn('Firestore count solicitations failed:', err);
+    checkQuotaException(err);
+    return empty;
+  }
+}
+
 // Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.
 export async function dbGetServiceOrderById(orderId: string): Promise<ServiceOrder | null> {
   if (!orderId) return null;
@@ -362,6 +467,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     ...signatureFields,
     status,
     closedMonth: computeClosedMonth(order, status),
+    solicitationStatus: computeSolicitationStatus(order),
     updatedAt: new Date().toISOString()
   };
 
