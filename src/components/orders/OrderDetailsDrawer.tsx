@@ -14,6 +14,7 @@ import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
 import { dbSaveServiceOrder } from '../../db/firebase';
 import SignatureCanvas from '../SignatureCanvas';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface OrderDetailsDrawerProps {
   isOpen: boolean;
@@ -477,7 +478,7 @@ export default function OrderDetailsDrawer({
                   Detalhes da Ordem de Serviço
                 </h3>
                 <p className="text-[10px] text-gray-400 font-mono">
-                  #{selectedOrder.id} • {selectedOrder.status}
+                  #{formatOrderNumber(selectedOrder.id)} • {selectedOrder.status}
                 </p>
               </div>
               

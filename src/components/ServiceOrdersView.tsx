@@ -13,7 +13,6 @@ import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, db
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
-import CreateOrderModal from './orders/CreateOrderModal';
 import DeleteOrderModal from './orders/DeleteOrderModal';
 import BulkRevertModal from './orders/BulkRevertModal';
 import PreventiveScanModal from './orders/PreventiveScanModal';
@@ -22,8 +21,6 @@ import OrdersCalendarPlanning from './orders/OrdersCalendarPlanning';
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
   onReload: () => void;
-  openCreateModalDirectly: boolean;
-  onCloseDirectCreateModal: () => void;
   highlightOSId?: string | null;
   userProfile?: HexonUser | null;
   userHasActionPermission?: (actionId: string) => boolean;
@@ -32,8 +29,6 @@ interface ServiceOrdersViewProps {
 export default function ServiceOrdersView({ 
   orders, 
   onReload, 
-  openCreateModalDirectly, 
-  onCloseDirectCreateModal, 
   highlightOSId,
   userProfile,
   userHasActionPermission
@@ -167,7 +162,6 @@ export default function ServiceOrdersView({
 
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
   const [initialOpenSignature, setInitialOpenSignature] = useState(false);
 
@@ -212,13 +206,6 @@ export default function ServiceOrdersView({
     });
   }, []);
 
-  // Handle direct creation triggers from parent view
-  useEffect(() => {
-    if (openCreateModalDirectly) {
-      setShowAddModal(true);
-      onCloseDirectCreateModal();
-    }
-  }, [openCreateModalDirectly]);
 
   // Handle auto-expansion/search for a specific OS highlighted from outside (e.g. from Solicitations)
   useEffect(() => {
@@ -780,15 +767,6 @@ export default function ServiceOrdersView({
       )}
 
       {/* EXTRACTED MODALS (STAGE 1) */}
-      <CreateOrderModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        assets={assets}
-        templates={templates}
-        onReload={onReload}
-        checkTechAssignment={checkTechAssignment}
-      />
-
       <DeleteOrderModal
         isOpen={!!orderIdToDelete}
         orderIds={orderIdToDelete ? [orderIdToDelete] : []}

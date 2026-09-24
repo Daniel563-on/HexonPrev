@@ -194,7 +194,7 @@ export default function OrdersFilterBar({
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Status da OS:</span>
           <div className="flex flex-wrap gap-1.5">
-            {['Todos', 'Planejada', 'Em Execução', 'Concluída', 'Não Executada'].map((sts) => {
+            {['Todos', 'Planejada', 'Atrasada', 'Em Execução', 'Concluída', 'Não Executada'].map((sts) => {
               const isActive = selectedStatus === sts;
               return (
                 <button

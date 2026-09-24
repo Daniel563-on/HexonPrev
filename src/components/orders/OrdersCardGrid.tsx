@@ -12,6 +12,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { ServiceOrder, formatDateBR, HexonUser } from '../../types';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface OrdersCardGridProps {
   paginatedOrders: ServiceOrder[];
@@ -168,7 +169,7 @@ export default function OrdersCardGrid({
                       className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
                     />
                     <span className="font-mono text-[#3525cd] font-black text-xs">
-                      #{os.id}
+                      #{formatOrderNumber(os.id)}
                     </span>
                     <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
                       Preventiva

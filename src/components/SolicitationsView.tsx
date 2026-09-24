@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../types';
 import { dbSaveServiceOrder, dbGetAssets } from '../db/firebase';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 export interface Solicitation {
   id: string; // original preventive ID
@@ -416,7 +417,7 @@ export default function SolicitationsView({
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-mono text-[9.5px] font-black text-rose-600 uppercase bg-rose-50 px-2 py-0.5 rounded border border-rose-100">
-                          OS Preventiva #{sol.id}
+                          OS Preventiva #{formatOrderNumber(sol.id)}
                         </span>
                         <span className="text-[9.5px] text-slate-400 font-bold font-mono">
                           {formatDateBR(sol.preventiveOS.scheduledDate)}

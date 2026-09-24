@@ -19,6 +19,7 @@ import {
 import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
 import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic } from '../db/firebase';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
+import { formatOrderNumber } from '../utils/orderNumber';
 
 interface PublicAssetViewProps {
   assetIdentifier: string; // pode ser o ID único ou o código/patrimônio (ex: "AR-001" ou "168548")
@@ -368,7 +369,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                        OS #{ord.id}
+                        OS #{formatOrderNumber(ord.id)}
                       </span>
                       <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${
                         ord.status === 'Concluído'

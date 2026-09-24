@@ -17,7 +17,6 @@ interface SidebarProps {
   onChangeTab: (tab: string) => void;
   isOpen?: boolean;
   onClose?: () => void;
-  onNovaOS?: () => void;
   orders?: ServiceOrder[];
   userProfile: HexonUser | null;
   userHasTabPermission: (tab: string) => boolean;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { dbDeleteServiceOrder } from '../../db/firebase';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface DeleteOrderModalProps {
   isOpen: boolean;
@@ -58,7 +59,7 @@ export default function DeleteOrderModal({
           ) : (
             <>
               Você está prestes a excluir permanentemente a preventiva{' '}
-              <strong className="font-black text-rose-700">#{singleId}</strong>. Essa ação não pode ser desfeita e
+              <strong className="font-black text-rose-700">#{formatOrderNumber(singleId)}</strong>. Essa ação não pode ser desfeita e
               removerá todos os dados do cronograma. Deseja continuar?
             </>
           )}

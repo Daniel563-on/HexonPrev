@@ -26,6 +26,7 @@ import {
   alignPeriodDates,
   defaultScopeInfo
 } from '../../utils/templateScheduler';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface TemplateGeneratorTabProps {
   templates: MaintenanceTemplate[];
@@ -935,7 +936,7 @@ export default function TemplateGeneratorTab({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-[9px] font-extrabold gap-1">
                       <span className="font-extrabold text-[#3525cd] bg-indigo-50 px-2 py-0.5 rounded shrink-0">
-                        ID: #{sim.id}
+                        ID: #{formatOrderNumber(sim.id)}
                       </span>
                       {sim.alreadyExists ? (
                         <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-bold border border-slate-200 truncate">

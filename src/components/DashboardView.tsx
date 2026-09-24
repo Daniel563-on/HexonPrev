@@ -7,7 +7,6 @@ import {
   Hourglass,
   Activity,
   ChevronRight,
-  Wrench,
   Clock,
   Flag,
   User,
@@ -90,7 +89,6 @@ interface DashboardViewProps {
   orders: ServiceOrder[];
   onNavigateToOS: (osId?: string) => void;
   onNavigateToAssets: () => void;
-  onNovaOS: () => void;
   onNavigateToSolicitations?: () => void;
   userProfile?: HexonUser | null;
 }
@@ -99,7 +97,6 @@ export default function DashboardView({
   orders,
   onNavigateToOS,
   onNavigateToAssets,
-  onNovaOS,
   onNavigateToSolicitations,
   userProfile
 }: DashboardViewProps) {
@@ -915,14 +912,6 @@ export default function DashboardView({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={onNovaOS}
-            className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-xs cursor-pointer transition-all active:scale-[0.98]"
-            title="Planejar nova preventiva diretamente no banco"
-          >
-            <Wrench className="w-3.5 h-3.5 shrink-0" />
-            <span>Planejar Preventiva</span>
-          </button>
 
           <button
             onClick={onNavigateToAssets}

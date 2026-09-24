@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../../types';
 import { dbSaveServiceOrder, PlanningDeadline } from '../../db/firebase';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface OrdersCalendarPlanningProps {
   orders: ServiceOrder[];
@@ -1030,7 +1031,7 @@ export default function OrdersCalendarPlanning({
                                       </span>
                                     </div>
                                     <span className="font-mono text-[10px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-                                      #{os.id}
+                                      #{formatOrderNumber(os.id)}
                                     </span>
                                   </div>
 
@@ -1225,7 +1226,7 @@ export default function OrdersCalendarPlanning({
                                     <div key={os.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
                                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                                         <div className="flex items-center gap-2">
-                                          <span className="font-mono text-xs font-black text-[#3525cd]">#{os.id}</span>
+                                          <span className="font-mono text-xs font-black text-[#3525cd]">#{formatOrderNumber(os.id)}</span>
                                           <span className="bg-slate-100 text-slate-705 text-[8.5px] font-black uppercase px-2 py-0.5 rounded">
                                             {os.sector}
                                           </span>
@@ -1387,7 +1388,7 @@ export default function OrdersCalendarPlanning({
                                     <div key={os.id} className="border border-emerald-200/80 rounded-xl p-4 bg-white shadow-2xs space-y-3">
                                       <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
                                         <div className="flex items-center gap-2">
-                                          <span className="font-mono text-xs font-black text-emerald-700">#{os.id}</span>
+                                          <span className="font-mono text-xs font-black text-emerald-700">#{formatOrderNumber(os.id)}</span>
                                           <span className="bg-slate-100 text-slate-705 text-[8.5px] font-black uppercase px-2 py-0.5 rounded">
                                             {os.sector}
                                           </span>
@@ -1544,7 +1545,7 @@ export default function OrdersCalendarPlanning({
                                     <div key={os.id} className="border border-rose-200/80 rounded-xl p-4 bg-white shadow-2xs space-y-3">
                                       <div className="flex items-center justify-between border-b border-rose-100 pb-2">
                                         <div className="flex items-center gap-2">
-                                          <span className="font-mono text-xs font-black text-rose-700">#{os.id}</span>
+                                          <span className="font-mono text-xs font-black text-rose-700">#{formatOrderNumber(os.id)}</span>
                                           <span className="bg-slate-100 text-slate-705 text-[8.5px] font-black uppercase px-2 py-0.5 rounded">
                                             {os.sector}
                                           </span>
