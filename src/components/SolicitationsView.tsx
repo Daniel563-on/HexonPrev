@@ -97,7 +97,7 @@ export function getSolicitations(orders: ServiceOrder[]): Solicitation[] {
 
 export default function SolicitationsView({ 
   pendingOrders, 
-  scopeSector,
+  scopeSector, 
   onNavigateToOS, 
   onReload,
   userProfile,
@@ -279,12 +279,13 @@ export default function SolicitationsView({
       };
 
       await dbSaveServiceOrder(updatedOrder);
-
+      
       // A lista de pendentes se atualiza sozinha; a de "com ação" é buscada de novo
       if (statusFilter !== 'Pendente') {
         await loadHandledPage(statusFilter, true);
       }
       refreshCounts();
+
       if (onReload) {
         onReload();
       }
