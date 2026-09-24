@@ -301,31 +301,16 @@ export async function adminResetUserPassword(userId: string): Promise<{ ok: bool
   }
 }
 
-// Ensures Firebase Auth has completed initialization before attempting unauthenticated public reads
+// Aguarda o Firebase restaurar a sessão salva. NÃO faz login anônimo aqui:
+// as leituras públicas (assets, histories, serviceOrders) não exigem login,
+// e um login anônimo neste ponto substituiria a sessão real do usuário no navegador.
 export async function ensureFirebaseAuthReady(timeoutMs = 2500): Promise<void> {
   if (!firebaseActive || !authInstance) return;
-  if (authInstance.currentUser) return;
-
   try {
-    const authPromise = new Promise<void>((resolve) => {
-      const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-        if (user) {
-          unsubscribe();
-          resolve();
-        }
-      });
-      // Also attempt anonymous sign in in parallel if none exists
-      signInHexonAnonymously().catch(() => {}).finally(() => {
-        unsubscribe();
-        resolve();
-      });
-    });
-
-    const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(resolve, timeoutMs);
-    });
-
-    await Promise.race([authPromise, timeoutPromise]);
+    await Promise.race([
+      authInstance.authStateReady(),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+    ]);
   } catch (e) {
     console.warn('ensureFirebaseAuthReady finished with notice:', e);
   }

@@ -87,20 +87,6 @@ export async function dbVerifySessionAuthenticity(user: HexonUser): Promise<Sess
   return { isValid: true, verifiedUser: user };
 }
 
-// Default Precomputed Seed Data for instant professional system preview
-export const SEED_USERS: HexonUser[] = [
-  {
-    id: 'daniel_fab93',
-    name: 'Daniel Fabre',
-    matricula: '1-0000',
-    email: 'daniel.fab93@gmail.com',
-    cargo: 'Super Administrador de Sistemas',
-    gerencia: 'Todas',
-    perfil: 'Super Administrador',
-    status: 'Ativo'
-  }
-];
-
 // SECURE PASSWORD HASHING (SHA-256 with enterprise salt)
 export async function hashPassword(password: string): Promise<string> {
   if (!password) return '';
@@ -139,24 +125,6 @@ async function bootstrapRBACCollectionsIfEmpty() {
   if (!firebaseActive || !dbInstance) return;
 
   try {
-    // 1. Seed users if empty
-    const usersSnap = await getDocs(collection(dbInstance, 'users'));
-    if (usersSnap.empty) {
-      console.log('Seeding default users into Firestore...');
-      for (const u of SEED_USERS) {
-        const secureUser = { ...u };
-        await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
-      }
-    } else {
-      // Ensure specific Super Admin user with Daniel Fabre exists/is up to date
-      const dDoc = await getDoc(doc(dbInstance, 'users', 'daniel_fab93'));
-      if (!dDoc.exists()) {
-        const u = SEED_USERS[0];
-        const secureUser = { ...u };
-        await setDoc(doc(dbInstance, 'users', secureUser.id), cleanUndefined(secureUser));
-      }
-    }
-
     // 2. Seed managements if empty
     const manSnap = await getDocs(collection(dbInstance, 'managements'));
     if (manSnap.empty) {
@@ -251,7 +219,7 @@ export async function dbGetUsers(forceFresh: boolean = false): Promise<HexonUser
       }
     }
 
-    cacheUsers = (localData || [...SEED_USERS]).map(sanitizeUserForClient);
+    cacheUsers = (localData || []).map(sanitizeUserForClient);
     cacheUsersFromFirebase = false;
     try {
       localStorage.setItem('hexon_users', JSON.stringify(cacheUsers));
