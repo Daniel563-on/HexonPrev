@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Sliders,
@@ -14,12 +14,11 @@ import {
 import {
   MaintenanceTemplate,
   Asset,
-  ServiceOrder,
   Management,
   formatDateBR
 } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbAutoGeneratePreventiveActivities } from '../../db/firebase';
+import { dbAutoGeneratePreventiveActivities, dbGetDispatchedIds, buildPreventiveOrderId } from '../../db/firebase';
 import {
   getPeriodKey,
   getAssetComarcaClean,
@@ -31,7 +30,6 @@ import {
 export interface TemplateGeneratorTabProps {
   templates: MaintenanceTemplate[];
   assets: Asset[];
-  existingOrders: ServiceOrder[];
   existingComarcas: string[];
   existingSectors: string[];
   managements: Management[];
@@ -42,7 +40,6 @@ export interface TemplateGeneratorTabProps {
 export default function TemplateGeneratorTab({
   templates,
   assets,
-  existingOrders,
   existingComarcas,
   existingSectors,
   managements,
@@ -122,57 +119,40 @@ export default function TemplateGeneratorTab({
       );
 
       await onRefreshData();
+      setDispatchRefreshToken((n) => n + 1);
       if (onTemplatesUpdated) onTemplatesUpdated();
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Houve um erro técnico processando o seu agendamento programado.');
       // Parte das ordens pode ter sido gravada: atualiza a lista mesmo com erro
       await onRefreshData().catch(() => {});
+      setDispatchRefreshToken((n) => n + 1);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // 1. High performance lookup sets for existing orders (O(1) lookups instead of scanning thousands of items)
-  const existingOrdersLookup = useMemo(() => {
-    const preventiveSet = new Set<string>();
-    const surveySet = new Set<string>();
-
-    for (let i = 0; i < existingOrders.length; i++) {
-      const o = existingOrders[i];
-      const dateStr = o.startDate || o.scheduledDate;
-      if (!dateStr) continue;
-
-      if (o.isSurvey) {
-        if (o.surveyLocation && o.title) {
-          const loc = o.surveyLocation.toLowerCase().trim();
-          const title = o.title.trim();
-          const periodKey = getPeriodKey(dateStr, 'Semanal');
-          surveySet.add(`${loc}|${title}|${periodKey}`);
-        }
-      } else if (o.assetId) {
-        const oPeriodicity =
-          o.periodicity ||
-          (o.title.includes('Mensal')
-            ? 'Mensal'
-            : o.title.includes('Semanal')
-            ? 'Semanal'
-            : o.title.includes('Trimestral')
-            ? 'Trimestral'
-            : o.title.includes('Semestral')
-            ? 'Semestral'
-            : o.title.includes('Anual')
-            ? 'Anual'
-            : '');
-        if (oPeriodicity) {
-          const periodKey = getPeriodKey(dateStr, oPeriodicity);
-          preventiveSet.add(`${o.assetId}|${oPeriodicity.toLowerCase().trim()}|${periodKey}`);
-        }
-      }
-    }
-
-    return { preventiveSet, surveySet };
-  }, [existingOrders]);
+  // 1. OS já disparadas: lidas do registro do disparo (poucos documentos), sem baixar as ordens.
+  //    O número da OS é fixo (ativo + periodicidade + início do período), então basta conferir o número.
+  const [dispatchedIds, setDispatchedIds] = useState<Set<string>>(new Set());
+  const [dispatchRefreshToken, setDispatchRefreshToken] = useState(0);
+  const periodStartDates = useMemo(() => {
+    const periodicities = new Set<string>(['Semanal']);
+    templates.forEach((t) => (t.periodicity || '').split(',').forEach((p) => p.trim() && periodicities.add(p.trim())));
+    const dates = new Set<string>();
+    filterRows.forEach((row) => periodicities.forEach((p) => dates.add(alignPeriodDates(row.startDate, p).startDate)));
+    return Array.from(dates).sort();
+  }, [filterRows, templates]);
+  const periodStartDatesKey = periodStartDates.join(',');
+  useEffect(() => {
+    let active = true;
+    dbGetDispatchedIds(periodStartDates).then((ids) => {
+      if (active) setDispatchedIds(ids);
+    });
+    return () => {
+      active = false;
+    };
+  }, [periodStartDatesKey, dispatchRefreshToken]);
 
   // 2. High performance assets grouped by comarca
   const assetsByComarca = useMemo(() => {
@@ -192,15 +172,12 @@ export default function TemplateGeneratorTab({
 
   const checkPreventiveAlreadyExists = (assetId: string, periodicity: string, startDateStr: string): boolean => {
     const dates = alignPeriodDates(startDateStr, periodicity);
-    const periodKey = getPeriodKey(dates.scheduledDate, periodicity);
-    return existingOrdersLookup.preventiveSet.has(`${assetId}|${periodicity.toLowerCase().trim()}|${periodKey}`);
+    return dispatchedIds.has(buildPreventiveOrderId(assetId, periodicity, dates.startDate));
   };
 
-  const checkSurveyAlreadyExists = (comarcaName: string, templateName: string, startDateStr: string): boolean => {
+  const checkSurveyAlreadyExists = (comarcaName: string, templateId: string, startDateStr: string): boolean => {
     const dates = alignPeriodDates(startDateStr, 'Semanal');
-    const title = `${templateName} - ${comarcaName}`;
-    const periodKey = getPeriodKey(dates.scheduledDate, 'Semanal');
-    return existingOrdersLookup.surveySet.has(`${comarcaName.toLowerCase().trim()}|${title.trim()}|${periodKey}`);
+    return dispatchedIds.has(buildPreventiveOrderId(`VST_${templateId}_${comarcaName}`, 'Semanal', dates.startDate));
   };
 
   // Helper to compute available Comarcas and Gerências for a filter row:
@@ -232,7 +209,7 @@ export default function TemplateGeneratorTab({
             const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
             if (tSector !== row.sector.toLowerCase().trim()) continue;
           }
-          const already = checkSurveyAlreadyExists(comarcaName, t.name, row.startDate);
+          const already = checkSurveyAlreadyExists(comarcaName, t.id, row.startDate);
           if (!already) {
             pendingForComarca++;
           }
@@ -286,7 +263,7 @@ export default function TemplateGeneratorTab({
           const comarcaName = existingComarcas[i];
           if (row.comarca !== 'all' && comarcaName.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) continue;
 
-          const already = checkSurveyAlreadyExists(comarcaName, t.name, row.startDate);
+          const already = checkSurveyAlreadyExists(comarcaName, t.id, row.startDate);
           if (!already) {
             sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
           }
@@ -349,7 +326,7 @@ export default function TemplateGeneratorTab({
       map.set(row.id, getRowScopeInfo(row));
     }
     return map;
-  }, [filterRows, templates, assets, existingOrdersLookup, assetsByComarca, existingComarcas]);
+  }, [filterRows, templates, assets, dispatchedIds, assetsByComarca, existingComarcas]);
 
   // FRONTEND SIMULATOR / DRY-RUN CALCULATOR
   const calculateDryRunSimulation = () => {
@@ -393,7 +370,7 @@ export default function TemplateGeneratorTab({
               : existingComarcas.filter((c) => c.toLowerCase().trim() === row.comarca.toLowerCase().trim());
 
           for (const comarca of targetComarcas) {
-            const alreadyExists = checkSurveyAlreadyExists(comarca, t.name, row.startDate);
+            const alreadyExists = checkSurveyAlreadyExists(comarca, t.id, row.startDate);
             const dates = alignPeriodDates(row.startDate, 'Semanal');
 
             previewList.push({
@@ -460,7 +437,7 @@ export default function TemplateGeneratorTab({
 
   const simulationRecords = useMemo(() => {
     return calculateDryRunSimulation();
-  }, [filterRows, templates, assets, existingOrdersLookup, rowScopeMap, assetsByComarca, existingComarcas]);
+  }, [filterRows, templates, assets, dispatchedIds, rowScopeMap, assetsByComarca, existingComarcas]);
 
   // Check for duplicate rows in filterRows
   const duplicateRowMap = useMemo(() => {

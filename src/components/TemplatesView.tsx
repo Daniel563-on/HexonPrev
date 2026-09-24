@@ -23,7 +23,6 @@ import {
   dbDeleteTemplate,
   dbGetAssets,
   dbGetManagements,
-  dbGetServiceOrders,
   getDatabaseMode
 } from '../db/firebase';
 
@@ -37,7 +36,6 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [managements, setManagements] = useState<Management[]>([]);
-  const [existingOrders, setExistingOrders] = useState<ServiceOrder[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<MaintenanceTemplate | null>(null);
 
   // Form states for creating a new Template
@@ -110,16 +108,14 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
 
   // Load backend configurations
   const loadData = async () => {
-    const [tList, aList, mList, oList] = await Promise.all([
+    const [tList, aList, mList] = await Promise.all([
       dbGetTemplates(),
       dbGetAssets(),
-      dbGetManagements(),
-      dbGetServiceOrders()
+      dbGetManagements()
     ]);
     setTemplates(tList);
     setAssets(aList);
     setManagements(mList);
-    setExistingOrders(oList);
 
     // Automatically select the first template if none is currently selected
     if (tList.length > 0 && !selectedTemplate) {
@@ -245,7 +241,6 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         <TemplateGeneratorTab
           templates={templates}
           assets={assets}
-          existingOrders={existingOrders}
           existingComarcas={existingComarcas}
           existingSectors={existingSectors}
           managements={managements}

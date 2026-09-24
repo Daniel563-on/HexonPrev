@@ -67,6 +67,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // 4c. REGISTRO DO DISPARO — números das OS já disparadas por período (evita duplicar sem ler as ordens)
+    match /dispatchIndex/{indexId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

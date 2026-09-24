@@ -25,6 +25,7 @@ import {
   ensureFirebaseAuthReady
 } from './core';
 import { isMockOrLegacyId } from './templates';
+import { dbRemoveFromDispatchIndex } from './dispatchIndex';
 
 export interface PlanningDeadline {
   id: string; // management ID (e.g., "GMMR", "GMEE", "GMC")
@@ -218,6 +219,20 @@ const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execu�
 
 export interface ServiceOrdersScope {
   sector: string | null; // gerência (campo "sector" da OS); null = todas as gerências
+  technicianNames?: string[]; // técnico: só as OS atribuídas a ele (variações do nome/matrícula)
+}
+
+// Variações do nome/matrícula com que a OS pode ter sido atribuída ao técnico (máx. 5)
+export function technicianCandidates(technicianName: string, matricula?: string): string[] {
+  const rawName = (technicianName || '').trim();
+  const rawMatricula = (matricula || '').trim();
+  return Array.from(new Set([
+    rawName,
+    rawName.toLowerCase(),
+    rawName.toUpperCase(),
+    rawMatricula,
+    rawMatricula.toLowerCase()
+  ])).filter(Boolean) as string[];
 }
 
 export function subscribeServiceOrders(
@@ -232,7 +247,11 @@ export function subscribeServiceOrders(
   }
 
   const ordersRef = collection(dbInstance, 'serviceOrders');
-  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  const sectorFilter = scope.technicianNames
+    ? [where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))]
+    : scope.sector
+    ? [where('sector', '==', scope.sector)]
+    : [];
   let openOrders: ServiceOrder[] | null = null;
   let closedOrders: ServiceOrder[] | null = null;
 
@@ -584,6 +603,8 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
     } catch (err) {
       console.warn('Firestore delete signature failed:', err);
     }
+    // Tira a OS do registro do disparo, para que o período possa ser disparado de novo
+    await dbRemoveFromDispatchIndex(orderId);
   }
 }
 
@@ -1106,16 +1127,7 @@ export async function dbGetOrdersForTechnician(
   technicianName: string,
   matricula?: string
 ): Promise<ServiceOrder[]> {
-  const rawName = (technicianName || '').trim();
-  const rawMatricula = (matricula || '').trim();
-
-  const candidates = Array.from(new Set([
-    rawName,
-    rawName.toLowerCase(),
-    rawName.toUpperCase(),
-    rawMatricula,
-    rawMatricula.toLowerCase()
-  ])).filter(Boolean) as string[];
+  const candidates = technicianCandidates(technicianName, matricula);
 
   if (candidates.length === 0) {
     return [];
@@ -1123,18 +1135,20 @@ export async function dbGetOrdersForTechnician(
 
   if (firebaseActive && dbInstance) {
     try {
-      // Query orders assigned to any of the candidate variations (limit 30 in array)
-      const q = query(
-        collection(dbInstance, 'serviceOrders'),
-        where('assignedTechnician', 'in', candidates.slice(0, 30))
-      );
-      const snap = await getDocs(q);
-      const list: ServiceOrder[] = [];
-      snap.forEach((d) => {
-        if (!isMockOrLegacyId(d.id)) {
-          list.push({ id: d.id, ...d.data() } as ServiceOrder);
-        }
+      // Só as OS abertas do técnico + as que ele fechou no mês atual (não baixa o histórico inteiro)
+      const byTechnician = where('assignedTechnician', 'in', candidates);
+      const [openSnap, closedSnap] = await Promise.all([
+        getDocs(query(collection(dbInstance, 'serviceOrders'), byTechnician, where('status', 'in', OPEN_STATUSES))),
+        getDocs(query(collection(dbInstance, 'serviceOrders'), byTechnician, where('closedMonth', '==', localMonthKey())))
+      ]);
+      const byId = new Map<string, ServiceOrder>();
+      closedSnap.forEach((d) => {
+        if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
       });
+      openSnap.forEach((d) => {
+        if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
+      });
+      const list = Array.from(byId.values());
 
       // Update local storage cache for offline protection
       try {
