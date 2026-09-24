@@ -6,10 +6,12 @@ import {
   Calendar, 
   Clock, 
   AlertTriangle, 
-  Check
+  Check,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../types';
-import { dbGetServiceOrders, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
+import { localMonthKey, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -21,6 +23,7 @@ import OrdersCalendarPlanning from './orders/OrdersCalendarPlanning';
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
   onReload: () => void;
+  onViewedMonthChange?: (month: string) => void; // mês (AAAA-MM) cujas OS fechadas devem ser carregadas
   highlightOSId?: string | null;
   userProfile?: HexonUser | null;
   userHasActionPermission?: (actionId: string) => boolean;
@@ -29,6 +32,7 @@ interface ServiceOrdersViewProps {
 export default function ServiceOrdersView({ 
   orders, 
   onReload, 
+  onViewedMonthChange,
   highlightOSId,
   userProfile,
   userHasActionPermission
@@ -187,6 +191,16 @@ export default function ServiceOrdersView({
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<boolean>(false);
   const [showBulkRevertModal, setShowBulkRevertModal] = useState<boolean>(false);
   const [bulkRevertScope, setBulkRevertScope] = useState<'period' | 'month'>('period');
+
+  // O mês visto no calendário / lista define quais OS fechadas são carregadas do banco
+  useEffect(() => {
+    onViewedMonthChange?.(localMonthKey(currentCalendarDate));
+  }, [currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()]);
+
+  // Ao sair da tela de OS, volta para o mês atual (o Dashboard mostra o mês corrente)
+  useEffect(() => {
+    return () => onViewedMonthChange?.(localMonthKey());
+  }, []);
 
   // Reset pagination to page 1 whenever search, filters, or orders list changes
   useEffect(() => {
@@ -700,6 +714,34 @@ export default function ServiceOrdersView({
         />
       ) : (
         <>
+          {/* MÊS DAS OS FECHADAS: as abertas aparecem sempre; Concluídas e Não Executadas são as deste mês */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-xs">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Concluídas e não executadas do mês
+            </span>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1))}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                title="Mês anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-black text-slate-800 min-w-[130px] text-center">
+                {monthNames[currentCalendarDate.getMonth()]}/{currentCalendarDate.getFullYear()}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1))}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                title="Próximo mês"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
           {/* SECTION: Smart Search & Filtros Inteligentes (EXTRACTED IN STAGE 3) */}
           <OrdersFilterBar
             smartSearch={smartSearch}

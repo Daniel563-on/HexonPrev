@@ -15,7 +15,8 @@ import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } from './types';
 import { 
-  dbGetServiceOrders, 
+  subscribeServiceOrders,
+  localMonthKey, 
   dbGetAssets,
   dbGetTemplates,
   dbGetOrdersForTechnician,
@@ -330,6 +331,20 @@ export default function App() {
     });
   };
 
+  // Mês cujas OS fechadas (Concluída / Não Executada) são carregadas; muda quando a tela de OS troca de mês
+  const [ordersMonth, setOrdersMonth] = useState<string>(() => localMonthKey());
+
+  // Gestão (Administrador / Super Admin): OS em tempo real, só da gerência do usuário.
+  // Todas as abertas + as fechadas do mês visto; o banco envia apenas o que mudar.
+  const ordersScopeSector =
+    userProfile && userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
+      ? userProfile.gerencia
+      : null;
+  useEffect(() => {
+    if (!userProfile || userProfile.perfil === 'Profissional') return;
+    return subscribeServiceOrders({ sector: ordersScopeSector }, ordersMonth, setOrders);
+  }, [userProfile?.id, userProfile?.perfil, ordersScopeSector, ordersMonth]);
+
   // Load and refresh lists from DB
   const loadServiceOrders = async (targetUser?: HexonUser | null) => {
     try {
@@ -357,15 +372,9 @@ export default function App() {
         return;
       }
 
-      // Administrators, Super Admins, Managers and Supervisors load orders and templates
+      // Administrators and Super Admins: as OS chegam em tempo real (subscribeServiceOrders); aqui só os modelos.
       // NOTE: 10,000 assets are NOT downloaded here on boot; they are queried strictly on-demand when searched.
-      const [list, templatesList] = await Promise.all([
-        dbGetServiceOrders().catch(() => []),
-        dbGetTemplates().catch(() => [])
-      ]);
-      if (list && list.length > 0) {
-        setOrders(list);
-      }
+      const templatesList = await dbGetTemplates().catch(() => []);
       if (templatesList && templatesList.length > 0) {
         setTemplates(templatesList);
       }
@@ -919,6 +928,7 @@ export default function App() {
             <ServiceOrdersView 
               orders={filteredOrders}
               onReload={loadServiceOrders}
+              onViewedMonthChange={setOrdersMonth}
               highlightOSId={highlightedOSId}
               userProfile={userProfile}
               userHasActionPermission={userHasActionPermission}

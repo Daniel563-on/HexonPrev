@@ -63,6 +63,7 @@ export interface ServiceOrder {
   notes: string;
   signature: string | null;      // Base64 drawing (no banco fica em "orderSignatures"; aqui só enquanto a OS está aberta na tela)
   hasSignature?: boolean;        // true quando a assinatura está gravada em "orderSignatures/{id}"
+  closedMonth?: string;          // "AAAA-MM" da conclusão (Concluída) ou do fim do período (Não Executada); vazio se aberta
   signedBy: string | null;       // Client or technician name
   signedAt: string | null;       // ISO timestamp
   createdAt: string;
