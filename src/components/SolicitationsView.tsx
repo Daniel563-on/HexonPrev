@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
-import { dbSaveServiceOrder, dbGetAssets } from '../db/firebase';
+import { dbSaveServiceOrder, dbGetAssets, randomIdToken } from '../db/firebase';
 
 export interface Solicitation {
   id: string; // original preventive ID
@@ -163,7 +163,10 @@ export default function SolicitationsView({
     setIsCreatingOS(true);
     try {
       const prev = sol.preventiveOS;
-      const correctiveId = (30000 + Math.floor(Math.random() * 10000)).toString();
+      // Número único: data + 6 caracteres aleatórios (o sorteio antigo entre 30000 e 39999 podia repetir e sobrescrever outra OS)
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const correctiveId = `OS-C-${String(now.getFullYear()).slice(2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${randomIdToken(6)}`;
       const correctiveTitle = `Manutenção Corretiva Assistida - ${prev.assetName || 'Ativo'}`;
       
       const failedTexts = sol.failedItems.map(item => `${item.task} (Justificativa: ${item.observations})`).join('; ');

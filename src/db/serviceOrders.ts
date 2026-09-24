@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   query,
   setDoc,
   where,
@@ -73,6 +74,25 @@ function localTodayStr(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// Mês local no formato AAAA-MM (ex.: "2026-09"). Usado para buscar as OS fechadas de um mês.
+export function localMonthKey(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Mês de encerramento gravado na OS (campo closedMonth):
+// - Concluída: mês da conclusão (mantém o que já estava gravado)
+// - Não Executada: mês em que terminou o período do Super Admin (uma OS de setembro conta em setembro)
+// - Aberta: nenhum (o campo é removido, ex.: OS reaberta)
+function computeClosedMonth(o: ServiceOrder, status: ServiceOrder['status']): string | undefined {
+  if (status === 'Concluída') {
+    return o.status === 'Concluída' && o.closedMonth ? o.closedMonth : localMonthKey();
+  }
+  if (status === 'Não Executada') {
+    return (o.endDate || '').slice(0, 7) || o.closedMonth || localMonthKey();
+  }
+  return undefined;
 }
 
 // REGRA DE PRAZOS DA OS
@@ -180,6 +200,91 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
   return pendingOrdersPromise;
 }
 
+// ORDENS EM TEMPO REAL (lista e calendário da gestão)
+// Carrega só o necessário: TODAS as OS abertas da gerência + as fechadas do mês visto.
+// Depois da primeira carga, o banco envia apenas as OS que mudarem (ex.: técnico concluiu).
+const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
+
+export interface ServiceOrdersScope {
+  sector: string | null; // gerência (campo "sector" da OS); null = todas as gerências
+}
+
+export function subscribeServiceOrders(
+  scope: ServiceOrdersScope,
+  month: string,
+  onChange: (orders: ServiceOrder[]) => void
+): () => void {
+  if (!firebaseActive || !dbInstance) {
+    // Sem banco: usa os dados guardados neste navegador
+    dbGetServiceOrders().then(onChange).catch(() => onChange([]));
+    return () => {};
+  }
+
+  const ordersRef = collection(dbInstance, 'serviceOrders');
+  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  let openOrders: ServiceOrder[] | null = null;
+  let closedOrders: ServiceOrder[] | null = null;
+
+  const toList = (snap: { forEach: (cb: (d: any) => void) => void }): ServiceOrder[] => {
+    const list: ServiceOrder[] = [];
+    snap.forEach((d) => {
+      if (!isMockOrLegacyId(d.id)) {
+        list.push({ id: d.id, ...d.data() } as ServiceOrder);
+      }
+    });
+    return list;
+  };
+
+  // Junta as duas buscas (a aberta prevalece) e mostra o status recalculado pelos prazos
+  const emit = () => {
+    if (openOrders === null || closedOrders === null) return;
+    const byId = new Map<string, ServiceOrder>();
+    for (const o of closedOrders) byId.set(o.id, o);
+    for (const o of openOrders) byId.set(o.id, o);
+    const todayStr = localTodayStr();
+    const list = Array.from(byId.values())
+      .map((o) => {
+        const status = computeDeadlineStatus(o, todayStr);
+        return status === o.status ? o : { ...o, status };
+      })
+      .sort(compareOrdersNewestFirst);
+    onChange(list);
+  };
+
+  const unsubscribeOpen = onSnapshot(
+    query(ordersRef, ...sectorFilter, where('status', 'in', OPEN_STATUSES)),
+    (snap) => {
+      openOrders = toList(snap);
+      emit();
+    },
+    (err) => {
+      console.warn('Firestore listen open service orders failed:', err);
+      checkQuotaException(err);
+      openOrders = openOrders || [];
+      emit();
+    }
+  );
+
+  const unsubscribeClosed = onSnapshot(
+    query(ordersRef, ...sectorFilter, where('closedMonth', '==', month)),
+    (snap) => {
+      closedOrders = toList(snap);
+      emit();
+    },
+    (err) => {
+      console.warn('Firestore listen closed service orders failed:', err);
+      checkQuotaException(err);
+      closedOrders = closedOrders || [];
+      emit();
+    }
+  );
+
+  return () => {
+    unsubscribeOpen();
+    unsubscribeClosed();
+  };
+}
+
 // Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.
 export async function dbGetServiceOrderById(orderId: string): Promise<ServiceOrder | null> {
   if (!orderId) return null;
@@ -251,10 +356,12 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
   }
 
   // Grava sempre o status coerente com os prazos (ex.: remarcar uma OS "Atrasada" volta para "Planejada")
+  const status = computeDeadlineStatus(order);
   const orderWithUpdate: ServiceOrder = {
     ...order,
     ...signatureFields,
-    status: computeDeadlineStatus(order),
+    status,
+    closedMonth: computeClosedMonth(order, status),
     updatedAt: new Date().toISOString()
   };
 
@@ -576,12 +683,12 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
     ));
 
     const todayStr = localTodayStr();
-    const changes: { id: string; status: ServiceOrder['status'] }[] = [];
+    const changes: { id: string; status: ServiceOrder['status']; closedMonth?: string }[] = [];
     snap.forEach((d) => {
       if (isMockOrLegacyId(d.id)) return;
       const stored = { id: d.id, ...d.data() } as ServiceOrder;
       const status = computeDeadlineStatus(stored, todayStr);
-      if (status !== stored.status) changes.push({ id: d.id, status });
+      if (status !== stored.status) changes.push({ id: d.id, status, closedMonth: computeClosedMonth(stored, status) });
     });
 
     if (changes.length > 0) {
@@ -592,8 +699,11 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
         const chunk = changes.slice(i, i + batchSize);
         const batch = writeBatch(dbInstance);
         for (const c of chunk) {
-          // Atualiza só o status, sem sobrescrever a OS inteira (evita apagar edições simultâneas)
-          batch.update(doc(dbInstance, 'serviceOrders', c.id), { status: c.status, updatedAt });
+          // Atualiza só o status, sem sobrescrever a OS inteira (evita apagar edições simultâneas).
+          // Ao virar "Não Executada", grava também o mês de encerramento (closedMonth).
+          const fields: { status: ServiceOrder['status']; updatedAt: string; closedMonth?: string } = { status: c.status, updatedAt };
+          if (c.closedMonth) fields.closedMonth = c.closedMonth;
+          batch.update(doc(dbInstance, 'serviceOrders', c.id), fields);
         }
         await batch.commit();
       }
