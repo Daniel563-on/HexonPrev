@@ -1456,7 +1456,7 @@ export default function OrdersCalendarPlanning({
                                           <User className="w-3.5 h-3.5 text-emerald-600" />
                                           <span>Técnico Executor: <strong className="text-slate-800">{os.assignedTechnician || 'Não especificado'}</strong></span>
                                         </div>
-                                        {os.signature ? (
+                                        {(os.signature || os.hasSignature) ? (
                                           <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                                             <FileSignature className="w-3 h-3 text-emerald-700" />
                                             Assinada

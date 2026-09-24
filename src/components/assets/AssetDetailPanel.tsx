@@ -10,12 +10,14 @@ import {
   Info,
   History,
   AlertCircle,
-  Edit
+  Edit,
+  FileSearch
 } from 'lucide-react';
 import { Asset, MaintenanceLog, formatDateBR } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { downloadAssetQrCode, printAssetTag } from '../../utils/qrUtils';
 import { dbGetAssetHistory } from '../../db/firebase';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface AssetDetailPanelProps {
   asset: Asset;
@@ -25,6 +27,7 @@ export interface AssetDetailPanelProps {
   onDeleteAsset: (asset: Asset) => void;
   onQuickScan: (asset: Asset) => void;
   onEditAsset?: (asset: Asset) => void;
+  onViewOrder?: (orderId: string) => void; // abre a OS completa (checklist, observações, assinatura e PDF)
 }
 
 export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
@@ -34,7 +37,8 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   onBackToMobileList,
   onDeleteAsset,
   onQuickScan,
-  onEditAsset
+  onEditAsset,
+  onViewOrder
 }) => {
   const [internalHistory, setInternalHistory] = useState<MaintenanceLog[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -418,10 +422,23 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                     <div>
                       <span className="font-extrabold text-[#0b1c30] text-sm block sm:inline">{log.osTitle}</span>
                       <span className="font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] font-bold ml-0 sm:ml-2">
-                        #OS-{log.osId}
+                        #{formatOrderNumber(log.osId)}
                       </span>
                     </div>
-                    <span className="font-mono text-gray-400 text-[10px] font-bold">{formatDateBR(log.date)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-gray-400 text-[10px] font-bold">{formatDateBR(log.date)}</span>
+                      {onViewOrder && log.osId && (
+                        <button
+                          type="button"
+                          onClick={() => onViewOrder(log.osId)}
+                          className="py-1 px-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[9px] font-black text-indigo-700 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                          title="Abrir a ordem de serviço completa: checklist, observações, assinatura e PDF"
+                        >
+                          <FileSearch className="w-3 h-3 text-indigo-600" />
+                          VER OS COMPLETA
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Diagnostics grid */}

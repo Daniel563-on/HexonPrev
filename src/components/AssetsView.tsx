@@ -35,8 +35,9 @@ import { AssetImportWizardModal } from './assets/AssetImportWizardModal';
 import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
 import { AssetConsultationTable } from './assets/AssetConsultationTable';
+import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
-import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management } from '../types';
+import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
 import { 
   dbGetAssets, 
   dbSearchAssetsTargeted,
@@ -47,7 +48,9 @@ import {
   dbGetPeriodicityRules,
   dbSavePeriodicityRules,
   dbGetCustomDynamicFields,
-  dbSaveCustomDynamicFields
+  dbSaveCustomDynamicFields,
+  dbGetServiceOrderById,
+  dbGetTemplates
 } from '../db/firebase';
 
 interface AssetsViewProps {
@@ -70,6 +73,9 @@ export default function AssetsView({
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
+  // OS completa aberta a partir do histórico do ativo (buscada no banco pelo número, 1 leitura)
+  const [historyOrder, setHistoryOrder] = useState<ServiceOrder | null>(null);
+  const [historyTemplates, setHistoryTemplates] = useState<MaintenanceTemplate[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSector, setSelectedSector] = useState('Todos');
   const [managements, setManagements] = useState<Management[]>([]);
@@ -297,6 +303,19 @@ export default function AssetsView({
       }
     }
   }, [scannedAssetId, assets]);
+
+  // Abre a OS completa de um registro do histórico (qualquer data, mesmo fora das listas)
+  const handleViewHistoryOrder = async (orderId: string) => {
+    const order = await dbGetServiceOrderById(orderId);
+    if (!order) {
+      alert(`Ordem de serviço #${orderId} não encontrada no banco de dados.`);
+      return;
+    }
+    if (historyTemplates.length === 0) {
+      setHistoryTemplates(await dbGetTemplates().catch(() => []));
+    }
+    setHistoryOrder(order);
+  };
 
   // Edit and Delete handler functions
   const handleOpenEditModal = (asset: Asset) => {
@@ -682,6 +701,7 @@ export default function AssetsView({
               onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}
               onQuickScan={(asset) => triggerQuickScan(asset)}
               onEditAsset={(asset) => handleOpenEditModal(asset)}
+              onViewOrder={handleViewHistoryOrder}
             />
           ) : (
             <AssetConsultationTable
@@ -698,6 +718,20 @@ export default function AssetsView({
           )}
         </div>
       )}
+
+      {/* OS COMPLETA ABERTA PELO HISTÓRICO DO ATIVO (somente consulta) */}
+      <OrderDetailsDrawer
+        isOpen={!!historyOrder}
+        order={historyOrder}
+        onClose={() => setHistoryOrder(null)}
+        onReload={() => {}}
+        assets={selectedAsset ? [selectedAsset] : []}
+        templates={historyTemplates}
+        userProfile={userProfile}
+        userHasActionPermission={userHasActionPermission}
+        canRevertUnexecutedOrder={() => false}
+        currentCalendarDate={new Date()}
+      />
 
       {/* SCANNER QR CODE MODAL (EXTRAÍDO NA ETAPA 1) */}
       <AssetScannerModal
