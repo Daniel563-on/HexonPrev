@@ -87,6 +87,18 @@ async function findExistingOrderIds(ids: string[]): Promise<Set<string>> {
   return existing;
 }
 
+// Comarca e CRAAI do ativo. São copiados para a OS no disparo, para que consultas e
+// relatórios filtrem as OS por comarca/CRAAI sem precisar baixar os ativos.
+function getAssetComarca(asset: Asset): string {
+  const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location);
+  return typeof c === 'string' ? c.trim() : '';
+}
+
+function getAssetCraai(asset: Asset): string {
+  const c = asset.specs?.CRAAI || asset.specs?.craai;
+  return typeof c === 'string' ? c.trim() : '';
+}
+
 // HELPERS FOR PREVENTIVE CYCLE MOTOR
 export function getYearWeek(dateStr: string): string {
   if (!dateStr) return '';
@@ -338,10 +350,13 @@ export async function dbAutoGeneratePreventiveActivities(
 
     // Extract unique comarcas from registered assets
     const comarcas = new Set<string>();
+    const craaiByComarca = new Map<string, string>(); // CRAAI de cada comarca (gravado nas vistorias sem ativo)
     assets.forEach((asset) => {
-      const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location);
-      if (c && typeof c === 'string' && c.trim() !== '') {
-        comarcas.add(c.trim());
+      const c = getAssetComarca(asset);
+      if (c !== '') {
+        comarcas.add(c);
+        const craai = getAssetCraai(asset);
+        if (craai && !craaiByComarca.has(c)) craaiByComarca.set(c, craai);
       }
     });
     if (comarcas.size === 0) {
@@ -439,6 +454,8 @@ export async function dbAutoGeneratePreventiveActivities(
                   isSurvey: true,
                   surveyType: t.targetSectorOrType || 'Comarcas',
                   surveyLocation: comarca,
+                  comarca: comarca,
+                  craai: craaiByComarca.get(comarca) || undefined,
                   periodicity: 'Semanal'
                 };
 
@@ -551,7 +568,9 @@ export async function dbAutoGeneratePreventiveActivities(
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   photoEvidence: null,
-                  periodicity: periodicity
+                  periodicity: periodicity,
+                  comarca: getAssetComarca(asset) || undefined,
+                  craai: getAssetCraai(asset) || undefined
                 };
 
                 allNewOrders.push(newOS);

@@ -9,15 +9,14 @@ import {
   QrCode,
   X 
 } from 'lucide-react';
-import { ServiceOrder, HexonUser, isSectorInGerencia } from '../types';
-import { getSolicitations } from './SolicitationsView';
+import { HexonUser } from '../types';
 
 interface SidebarProps {
   currentTab: string;
   onChangeTab: (tab: string) => void;
   isOpen?: boolean;
   onClose?: () => void;
-  orders?: ServiceOrder[];
+  pendingSolicitationsCount?: number; // solicitações de corretiva pendentes de ação (já filtradas pela gerência)
   userProfile: HexonUser | null;
   userHasTabPermission: (tab: string) => boolean;
 }
@@ -27,26 +26,11 @@ export default function Sidebar({
   onChangeTab, 
   isOpen = false, 
   onClose, 
-  orders = [],
+  pendingSolicitationsCount = 0,
   userProfile,
   userHasTabPermission
 }: SidebarProps) {
-  const solicitations = getSolicitations(orders);
-  
-  // Filter solicitations based on profile gerência or professional ownership
-  const getFilteredSolicitationsCount = () => {
-    let list = solicitations;
-    if (userProfile) {
-      if (userProfile.perfil === 'Profissional') {
-        list = list.filter(o => o.preventiveOS.assignedTechnician === userProfile.name);
-      } else if (userProfile.perfil === 'Administrador' && userProfile.gerencia !== 'Todas') {
-        list = list.filter(o => isSectorInGerencia(o.preventiveOS.sector, userProfile.gerencia));
-      }
-    }
-    return list.filter(s => s.status !== 'Resolvido').length;
-  };
-
-  const activeSolicitationsCount = getFilteredSolicitationsCount();
+  const activeSolicitationsCount = pendingSolicitationsCount;
 
   const isSuperAdmin = userProfile?.perfil === 'Super Administrador';
   const isProfessional = userProfile?.perfil === 'Profissional';

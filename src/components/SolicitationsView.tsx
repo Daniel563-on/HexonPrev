@@ -20,9 +20,13 @@ import {
   RefreshCw,
   FileText
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../types';
+import { ServiceOrder, HexonUser, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
-import { dbSaveServiceOrder, dbGetAssets, randomIdToken } from '../db/firebase';
+import { dbSaveServiceOrder, randomIdToken, dbGetHandledSolicitationsPage, dbCountSolicitations } from '../db/firebase';
+
+// Filtro da tela: por padrão só as pendentes de ação; as que já tiveram ação só aparecem quando filtradas
+type SolicitationFilter = 'Pendente' | 'Com Acao' | 'Resolvido' | 'Cancelado';
+const HANDLED_PAGE_SIZE = 20;
 
 export interface Solicitation {
   id: string; // original preventive ID
@@ -33,7 +37,8 @@ export interface Solicitation {
 }
 
 interface SolicitationsViewProps {
-  orders: ServiceOrder[];
+  pendingOrders: ServiceOrder[]; // OS com solicitação pendente de ação (tempo real, já filtradas pela gerência)
+  scopeSector: string | null;    // gerência do usuário; null = todas
   onNavigateToOS: (osId?: string) => void;
   onReload?: () => void;
   userProfile?: HexonUser | null;
@@ -91,17 +96,62 @@ export function getSolicitations(orders: ServiceOrder[]): Solicitation[] {
 }
 
 export default function SolicitationsView({ 
-  orders, 
+  pendingOrders, 
+  scopeSector, 
   onNavigateToOS, 
   onReload,
   userProfile,
   userHasActionPermission
 }: SolicitationsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<SolicitationFilter>('Pendente');
   const [selectedSolicitation, setSelectedSolicitation] = useState<Solicitation | null>(null);
   const [isCreatingOS, setIsCreatingOS] = useState(false);
-  const [assets, setAssets] = useState<Asset[]>([]);
+
+  // Solicitações que já tiveram ação: buscadas só quando filtradas, em páginas
+  const [handledOrders, setHandledOrders] = useState<ServiceOrder[]>([]);
+  const [handledCursor, setHandledCursor] = useState<unknown>(null);
+  const [handledHasMore, setHandledHasMore] = useState(false);
+  const [loadingHandled, setLoadingHandled] = useState(false);
+  const [counts, setCounts] = useState({ pendente: 0, resolvido: 0, cancelado: 0 });
+
+  const handledStatuses = (filter: SolicitationFilter): Array<'Resolvido' | 'Cancelado'> =>
+    filter === 'Resolvido' ? ['Resolvido'] : filter === 'Cancelado' ? ['Cancelado'] : ['Resolvido', 'Cancelado'];
+
+  const loadHandledPage = async (filter: SolicitationFilter, reset: boolean) => {
+    if (filter === 'Pendente') return;
+    setLoadingHandled(true);
+    try {
+      const page = await dbGetHandledSolicitationsPage(
+        { sector: scopeSector },
+        handledStatuses(filter),
+        HANDLED_PAGE_SIZE,
+        reset ? undefined : handledCursor
+      );
+      setHandledOrders((prev) => (reset ? page.orders : [...prev, ...page.orders]));
+      setHandledCursor(page.cursor);
+      setHandledHasMore(page.hasMore);
+    } finally {
+      setLoadingHandled(false);
+    }
+  };
+
+  const refreshCounts = () => {
+    dbCountSolicitations({ sector: scopeSector }).then(setCounts).catch(() => {});
+  };
+
+  // Troca de filtro: pendentes já estão na memória; as demais são buscadas (1ª página)
+  useEffect(() => {
+    setHandledOrders([]);
+    setHandledCursor(null);
+    setHandledHasMore(false);
+    loadHandledPage(statusFilter, true);
+  }, [statusFilter, scopeSector]);
+
+  // Totais dos cartões (contagem no servidor): ao abrir e quando as pendentes mudam
+  useEffect(() => {
+    refreshCounts();
+  }, [pendingOrders.length, scopeSector]);
 
   const hasManagePermission = (): boolean => {
     if (!userProfile) return true; // Fail-open fallback
@@ -112,30 +162,11 @@ export default function SolicitationsView({
     return userProfile.perfil === 'Administrador';
   };
 
-  useEffect(() => {
-    let active = true;
-    dbGetAssets().then((data) => {
-      if (active) {
-        setAssets(data || []);
-      }
-    }).catch(err => {
-      console.error("Erro ao carregar ativos para solicitações:", err);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Helper to determine the comarca of an order
+  // Comarca da OS: gravada na própria OS no disparo (não precisa baixar os ativos)
   const getOrderComarca = (os: ServiceOrder) => {
+    if (os.comarca) return os.comarca;
     if (os.isSurvey && os.surveyLocation) {
       return os.surveyLocation;
-    }
-    if (os.assetId && assets.length > 0) {
-      const asset = assets.find(a => a.id === os.assetId);
-      if (asset) {
-        return asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral';
-      }
     }
     if (os.description && os.description.includes('Comarca:')) {
       const match = os.description.match(/Comarca:\s*([^.]+)/);
@@ -144,19 +175,13 @@ export default function SolicitationsView({
     return os.surveyLocation || 'Geral';
   };
 
-  // Helper to determine the CRAAI of an order
+  // CRAAI da OS: gravado na própria OS no disparo
   const getOrderCRAAI = (os: ServiceOrder) => {
-    if (os.assetId && assets.length > 0) {
-      const asset = assets.find(a => a.id === os.assetId);
-      if (asset) {
-        return asset.specs?.CRAAI || asset.specs?.craai || os.sector || 'Geral';
-      }
-    }
-    return os.sector || 'Geral';
+    return os.craai || os.sector || 'Geral';
   };
 
-  // Compute solicitations dynamically from current orders list
-  const solicitations = getSolicitations(orders);
+  // Solicitações da lista atual: pendentes (tempo real) ou as que já tiveram ação (páginas buscadas)
+  const solicitations = getSolicitations(statusFilter === 'Pendente' ? pendingOrders : handledOrders);
 
   const handleCreateSpawnedCorrective = async (sol: Solicitation) => {
     if (isCreatingOS) return;
@@ -223,16 +248,14 @@ export default function SolicitationsView({
       sol.preventiveOS.assignedTechnician.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (sol.spawnedOS && sol.spawnedOS.id.includes(searchTerm));
       
-    const matchesStatus = statusFilter === 'all' || sol.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
-  // Calculate Statistics
-  const countTotal = solicitations.length;
-  const countPendente = solicitations.filter(s => s.status === 'Pendente').length;
-  const countResolvido = solicitations.filter(s => s.status === 'Resolvido').length;
-  const countCancelado = solicitations.filter(s => s.status === 'Cancelado').length;
+  // Totais (contagem no servidor, de todas as datas)
+  const countPendente = counts.pendente;
+  const countResolvido = counts.resolvido;
+  const countCancelado = counts.cancelado;
+  const countTotal = countPendente + countResolvido + countCancelado;
 
   const handleUpdateStatus = async (sol: Solicitation, newStatus: 'Pendente' | 'Resolvido' | 'Cancelado') => {
     try {
@@ -257,6 +280,12 @@ export default function SolicitationsView({
 
       await dbSaveServiceOrder(updatedOrder);
       
+      // A lista de pendentes se atualiza sozinha; a de "com ação" é buscada de novo
+      if (statusFilter !== 'Pendente') {
+        await loadHandledPage(statusFilter, true);
+      }
+      refreshCounts();
+
       if (onReload) {
         onReload();
       }
@@ -362,11 +391,11 @@ export default function SolicitationsView({
           <SlidersHorizontal className="w-4 h-4 text-slate-400" />
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => setStatusFilter(e.target.value as SolicitationFilter)}
             className="text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-white rounded-lg px-3 py-2.5 cursor-pointer text-slate-700 transition-colors focus:outline-none focus:ring-1 focus:ring-slate-300"
           >
-            <option value="all">Ver Todos os Status</option>
-            <option value="Pendente">Apenas Pendentes</option>
+            <option value="Pendente">Pendentes de Ação</option>
+            <option value="Com Acao">Com Ação (Confirmados e Cancelados)</option>
             <option value="Resolvido">Apenas Confirmados</option>
             <option value="Cancelado">Apenas Cancelados</option>
           </select>
@@ -596,6 +625,20 @@ export default function SolicitationsView({
           })
         )}
       </div>
+
+      {/* Próxima página das solicitações com ação */}
+      {statusFilter !== 'Pendente' && (handledHasMore || loadingHandled) && (
+        <div className="flex justify-center -mt-4 pb-6">
+          <button
+            type="button"
+            disabled={loadingHandled}
+            onClick={() => loadHandledPage(statusFilter, false)}
+            className="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-xs font-black text-slate-700 uppercase tracking-wider rounded-xl shadow-3xs cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+          >
+            {loadingHandled ? 'Carregando...' : `Carregar mais ${HANDLED_PAGE_SIZE}`}
+          </button>
+        </div>
+      )}
 
       {/* Bottom Footer Attribution */}
       <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
