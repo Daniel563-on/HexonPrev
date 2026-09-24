@@ -368,8 +368,8 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
     try {
       // Apaga também a assinatura, se existir (apagar documento inexistente não gera erro)
       await deleteDoc(doc(dbInstance, 'orderSignatures', orderId));
-    } catch (err: any) {
-      console.warn('Firestore delete order signature failed:', err);
+    } catch (err) {
+      console.warn('Firestore delete signature failed:', err);
     }
   }
 }
