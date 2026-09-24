@@ -227,6 +227,9 @@ export default function App() {
   
   // 1. Same-Browser Duplicate Tab Protection
   useEffect(() => {
+    // Consulta pública (QR Code) não participa da proteção de abas duplicadas
+    if (publicAssetParam) return;
+
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
 
     const channel = new BroadcastChannel('hexon_tabs_channel');
@@ -256,7 +259,7 @@ export default function App() {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [tabId]);
+  }, [tabId, publicAssetParam]);
 
   const handleHijackedClaim = () => {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -689,7 +692,7 @@ export default function App() {
   const filteredOrders = getFilteredOrders();
 
   // 1. Same-Browser Duplicate Tab Blocker Overlay
-  if (isDuplicate) {
+  if (isDuplicate && !publicAssetParam) {
     return (
       <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
         <div className="max-w-md w-full bg-[#0A101D] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
