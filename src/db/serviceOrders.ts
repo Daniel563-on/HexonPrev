@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getCountFromServer,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -32,9 +33,11 @@ let cacheServiceOrders: ServiceOrder[] | null = null;
 let cacheServiceOrdersFromFirebase = false;
 let pendingOrdersPromise: Promise<ServiceOrder[]> | null = null;
 
+// Históricos gravados nesta sessão (usados só como reserva quando o banco está indisponível)
 let cacheAllHistories: MaintenanceLog[] | null = null;
-let cacheAllHistoriesFromFirebase = false;
-let pendingHistoriesPromise: Promise<MaintenanceLog[]> | null = null;
+
+// Assinaturas já baixadas nesta sessão (a imagem fica em "orderSignatures", fora da OS)
+const signatureCache = new Map<string, string>();
 
 let cachePlanningDeadlines: PlanningDeadline[] | null = null;
 let cachePlanningDeadlinesFromFirebase = false;
@@ -44,12 +47,11 @@ export function clearServiceOrdersCache(): void {
   cacheServiceOrders = null;
   cacheServiceOrdersFromFirebase = false;
   pendingOrdersPromise = null;
+  signatureCache.clear();
 }
 
 export function clearHistoriesCache(): void {
   cacheAllHistories = null;
-  cacheAllHistoriesFromFirebase = false;
-  pendingHistoriesPromise = null;
 }
 
 export function clearPlanningDeadlinesCache(): void {
@@ -178,10 +180,83 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
   return pendingOrdersPromise;
 }
 
+// Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.
+export async function dbGetServiceOrderById(orderId: string): Promise<ServiceOrder | null> {
+  if (!orderId) return null;
+
+  if (firebaseActive && dbInstance) {
+    try {
+      const snap = await getDoc(doc(dbInstance, 'serviceOrders', orderId));
+      if (!snap.exists()) return null;
+      const order = { id: snap.id, ...snap.data() } as ServiceOrder;
+      return { ...order, status: computeDeadlineStatus(order) };
+    } catch (err: any) {
+      console.warn('Firestore fetch single service order failed:', err);
+      checkQuotaException(err);
+    }
+  }
+
+  return (cacheServiceOrders || []).find((o) => o.id === orderId) || null;
+}
+
+// ASSINATURA DA OS
+// A imagem da assinatura fica em "orderSignatures/{id}" e não dentro da OS:
+// as listas de OS ficam leves e a imagem só é baixada ao abrir a OS ou gerar o PDF.
+export async function dbGetOrderSignature(orderId: string): Promise<string | null> {
+  if (!orderId) return null;
+  const cached = signatureCache.get(orderId);
+  if (cached) return cached;
+
+  if (firebaseActive && dbInstance) {
+    try {
+      const snap = await getDoc(doc(dbInstance, 'orderSignatures', orderId));
+      const signature = snap.exists() ? (snap.data().signature as string) || null : null;
+      if (signature) signatureCache.set(orderId, signature);
+      return signature;
+    } catch (err: any) {
+      console.warn('Firestore fetch order signature failed:', err);
+      checkQuotaException(err);
+    }
+  }
+  return null;
+}
+
+// Grava a assinatura em "orderSignatures". Retorna false se não conseguiu (a OS então mantém a imagem consigo).
+async function saveOrderSignature(orderId: string, signature: string): Promise<boolean> {
+  if (!firebaseActive || !dbInstance) return false;
+  try {
+    await setDoc(doc(dbInstance, 'orderSignatures', orderId), {
+      orderId,
+      signature,
+      savedAt: new Date().toISOString()
+    });
+    signatureCache.set(orderId, signature);
+    return true;
+  } catch (err: any) {
+    console.warn('Firestore write order signature failed, keeping it inside the order:', err);
+    checkQuotaException(err);
+    return false;
+  }
+}
+
 // Save or Update service order
 export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
+  // Assinatura nova: vai para "orderSignatures" e sai do documento da OS
+  let signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = {
+    signature: order.signature,
+    hasSignature: order.hasSignature
+  };
+  if (order.signature && (await saveOrderSignature(order.id, order.signature))) {
+    signatureFields = { signature: null, hasSignature: true };
+  }
+
   // Grava sempre o status coerente com os prazos (ex.: remarcar uma OS "Atrasada" volta para "Planejada")
-  const orderWithUpdate = { ...order, status: computeDeadlineStatus(order), updatedAt: new Date().toISOString() };
+  const orderWithUpdate: ServiceOrder = {
+    ...order,
+    ...signatureFields,
+    status: computeDeadlineStatus(order),
+    updatedAt: new Date().toISOString()
+  };
 
   // If the status is completed 'Concluída', we must create an entry in the equipment history!
   if (order.status === 'Concluída') {
@@ -241,23 +316,20 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     await dbAddHistoryLog(historyEntry);
   }
 
-  // Ensure cache is initialized
-  if (cacheServiceOrders === null) {
-    await dbGetServiceOrders();
-  }
+  // Atualiza a lista em memória, se ela já foi carregada (não baixa todas as ordens só para salvar uma)
+  if (cacheServiceOrders !== null) {
+    const idx = cacheServiceOrders.findIndex((o) => o.id === order.id);
+    if (idx >= 0) {
+      cacheServiceOrders[idx] = orderWithUpdate;
+    } else {
+      cacheServiceOrders.push(orderWithUpdate);
+    }
 
-  // Optimistically update cache instantly
-  const idx = cacheServiceOrders!.findIndex((o) => o.id === order.id);
-  if (idx >= 0) {
-    cacheServiceOrders![idx] = orderWithUpdate;
-  } else {
-    cacheServiceOrders!.push(orderWithUpdate);
-  }
-
-  try {
-    localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
-  } catch (lsErr) {
-    console.warn('LocalStorage limit saving service order:', lsErr);
+    try {
+      localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
+    } catch (lsErr) {
+      console.warn('LocalStorage limit saving service order:', lsErr);
+    }
   }
 
   if (firebaseActive && dbInstance) {
@@ -272,19 +344,17 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
 
 // Delete service order from memory cache, local storage, and database
 export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
-  // Ensure cache is initialized
-  if (cacheServiceOrders === null) {
-    await dbGetServiceOrders();
-  }
+  // Remove da lista em memória, se ela já foi carregada (não baixa todas as ordens só para excluir uma)
+  if (cacheServiceOrders !== null) {
+    cacheServiceOrders = cacheServiceOrders.filter((o) => o.id !== orderId);
 
-  // Remove from cache list
-  cacheServiceOrders = cacheServiceOrders!.filter((o) => o.id !== orderId);
-
-  try {
-    localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
-  } catch (lsErr) {
-    console.warn('LocalStorage limit deleting service order:', lsErr);
+    try {
+      localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
+    } catch (lsErr) {
+      console.warn('LocalStorage limit deleting service order:', lsErr);
+    }
   }
+  signatureCache.delete(orderId);
 
   // Delete from Firestore if signed-in
   if (firebaseActive && dbInstance) {
@@ -293,67 +363,27 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
     } catch (err: any) {
       console.warn('Firestore delete service order failed:', err);
       checkQuotaException(err);
+      return;
+    }
+    try {
+      // Apaga também a assinatura, se existir (apagar documento inexistente não gera erro)
+      await deleteDoc(doc(dbInstance, 'orderSignatures', orderId));
+    } catch (err: any) {
+      console.warn('Firestore delete order signature failed:', err);
     }
   }
-}
-
-// Helper to dynamically enrich history logs using matching service orders details
-function enrichHistoryList(histories: MaintenanceLog[], orders: ServiceOrder[]): MaintenanceLog[] {
-  if (!orders || orders.length === 0) return histories;
-
-  return histories.map(h => {
-    const matchingOrder = orders.find(o => o.id === h.osId);
-    if (!matchingOrder || !matchingOrder.checklist) return h;
-
-    // Build clean observations sections (without polluting with desdobramento/ações corretivas)
-    let correctiveActionsText = '';
-    const sections: string[] = [];
-
-    // Items with observations
-    const itemsWithObs = matchingOrder.checklist.filter(c => c.observations && c.observations.trim());
-
-    if (itemsWithObs.length > 0) {
-      const details = itemsWithObs.map(i => {
-        const statusLabel = i.statusCheck ? ` [Status: ${i.statusCheck}]` : (!i.checked ? ' [Não Conforme]' : '');
-        return `• ${i.task}${statusLabel}:\n   ↳ Relato Técnico: "${i.observations!.trim()}"`;
-      }).join('\n');
-      sections.push(`📋 Observações e Apontamentos do Checklist:\n${details}`);
-    }
-
-    if (sections.length > 0) {
-      correctiveActionsText = sections.join('\n\n');
-    } else {
-      correctiveActionsText = 'Equipamento operando em conformidade técnica.';
-    }
-
-    return {
-      ...h,
-      correctiveActionsText
-    };
-  });
 }
 
 // Get maintenance logs for a specific asset
+// Busca no banco SÓ o histórico deste ativo (antes baixava o histórico de todos os ativos).
 export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog[]> {
-  const hasUser = !!(firebaseActive && dbInstance);
+  if (!assetId) return [];
 
-  // Try retrieving from local storage fallback first
-  let localData: MaintenanceLog[] | null = null;
-  try {
-    const saved = localStorage.getItem('hexon_histories');
-    if (saved) {
-      localData = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.warn('Error reading maintenance logs:', e);
-  }
-
-  const orders = cacheServiceOrders || [];
-
-  // Helper function to deduplicate maintenance logs by OS ID (preferring the most recent entry)
-  const deduplicateLogs = (items: MaintenanceLog[]): MaintenanceLog[] => {
+  // Uma entrada por OS (a mais recente), da mais nova para a mais antiga
+  const sortAndDeduplicate = (items: MaintenanceLog[]): MaintenanceLog[] => {
+    const sorted = [...items].sort((a, d) => (d.date || '').localeCompare(a.date || ''));
     const map = new Map<string, MaintenanceLog>();
-    for (const item of items) {
+    for (const item of sorted) {
       const key = item.osId ? `os_${item.osId}` : item.id;
       if (!map.has(key)) {
         map.set(key, item);
@@ -362,74 +392,33 @@ export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog
     return Array.from(map.values());
   };
 
-  if (cacheAllHistories !== null && (!hasUser || cacheAllHistoriesFromFirebase)) {
-    const filtered = cacheAllHistories
-      .filter((h) => h.assetId === assetId)
-      .sort((a, d) => d.date.localeCompare(a.date));
-    return enrichHistoryList(deduplicateLogs(filtered), orders);
-  }
-  if (isCacheValid('histories') && localData && localData.length > 0) {
-    cacheAllHistories = localData;
-    cacheAllHistoriesFromFirebase = true;
-    const filtered = cacheAllHistories
-      .filter((h) => h.assetId === assetId)
-      .sort((a, d) => d.date.localeCompare(a.date));
-    return enrichHistoryList(deduplicateLogs(filtered), orders);
-  }
-  if (pendingHistoriesPromise !== null) {
-    const list = await pendingHistoriesPromise;
-    const filtered = list
-      .filter((h) => h.assetId === assetId)
-      .sort((a, d) => d.date.localeCompare(a.date));
-    const loadedOrders = await dbGetServiceOrders();
-    return enrichHistoryList(deduplicateLogs(filtered), loadedOrders);
-  }
-
-  pendingHistoriesPromise = (async () => {
-    if (firebaseActive && dbInstance) {
-      const path = 'histories';
-      try {
-        const historiesRef = collection(dbInstance, 'histories');
-        const snap = await getDocs(historiesRef);
-        const list: MaintenanceLog[] = [];
-        snap.forEach((docSnap) => {
-          if (!isMockOrLegacyId(docSnap.id)) {
-            list.push({ id: docSnap.id, ...docSnap.data() } as MaintenanceLog);
-          }
-        });
-        cacheAllHistories = [...list];
-        cacheAllHistoriesFromFirebase = true;
-        updateCacheTimestamp('histories');
-        try {
-          localStorage.setItem('hexon_histories', JSON.stringify(cacheAllHistories));
-        } catch (lsErr) {
-          console.warn('LocalStorage limit histories:', lsErr);
-        }
-        pendingHistoriesPromise = null;
-        return cacheAllHistories;
-      } catch (err: any) {
-        console.warn('Firestore fetch histories failed, utilizing offline fallback:', err);
-        checkQuotaException(err);
-      }
-    }
-
-    cacheAllHistories = localData || [];
-    cacheAllHistoriesFromFirebase = false;
+  if (firebaseActive && dbInstance) {
     try {
-      localStorage.setItem('hexon_histories', JSON.stringify(cacheAllHistories));
-    } catch (lsErr) {
-      console.warn('LocalStorage limit histories fallback:', lsErr);
+      const snap = await getDocs(query(collection(dbInstance, 'histories'), where('assetId', '==', assetId)));
+      const list: MaintenanceLog[] = [];
+      snap.forEach((docSnap) => {
+        if (!isMockOrLegacyId(docSnap.id)) {
+          list.push({ id: docSnap.id, ...docSnap.data() } as MaintenanceLog);
+        }
+      });
+      return sortAndDeduplicate(list);
+    } catch (err: any) {
+      console.warn('Firestore fetch asset history failed, utilizing offline fallback:', err);
+      checkQuotaException(err);
     }
-    pendingHistoriesPromise = null;
-    return cacheAllHistories;
-  })();
+  }
 
-  const list = await pendingHistoriesPromise;
-  const filtered = list
-    .filter((h) => h.assetId === assetId)
-    .sort((a, d) => d.date.localeCompare(a.date));
-  const loadedOrders = await dbGetServiceOrders();
-  return enrichHistoryList(deduplicateLogs(filtered), loadedOrders);
+  // Reserva offline: históricos gravados neste navegador
+  let localData: MaintenanceLog[] = cacheAllHistories || [];
+  if (localData.length === 0) {
+    try {
+      const saved = localStorage.getItem('hexon_histories');
+      if (saved) localData = JSON.parse(saved);
+    } catch (e) {
+      console.warn('Error reading maintenance logs:', e);
+    }
+  }
+  return sortAndDeduplicate(localData.filter((h) => h.assetId === assetId));
 }
 
 // Adds an entry to the history log

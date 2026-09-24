@@ -59,6 +59,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // 4b. ASSINATURAS DAS ORDENS — fora da OS para deixar as listas leves; só a equipe vê
+    match /orderSignatures/{orderId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && request.resource.data.keys().hasAll(['orderId', 'signature'])
+        && request.resource.data.orderId == orderId;
+      allow delete: if isAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

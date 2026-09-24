@@ -12,8 +12,9 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder } from '../../db/firebase';
+import { dbSaveServiceOrder, dbGetOrderSignature } from '../../db/firebase';
 import SignatureCanvas from '../SignatureCanvas';
+import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
 
 export interface OrderDetailsDrawerProps {
@@ -1302,7 +1303,7 @@ export default function OrderDetailsDrawer({
               </div>
 
               {/* Display closed digital signature badge if completed */}
-              {selectedOrder.status === 'Concluída' && selectedOrder.signature && (
+              {selectedOrder.status === 'Concluída' && (selectedOrder.signature || selectedOrder.hasSignature) && (
                 <div className="space-y-2 p-4 bg-emerald-50/30 rounded-lg border border-emerald-200">
                   <p className="text-[10px] text-emerald-800 font-extrabold uppercase">
                     Laudo Selado e Assinado
@@ -1314,9 +1315,9 @@ export default function OrderDetailsDrawer({
                       <p className="text-[10px] text-gray-400">Data de Encerramento: {formatDateBR(selectedOrder.signedAt)}</p>
                     </div>
 
-                    <img 
-                      src={selectedOrder.signature} 
-                      alt="Assinatura técnica digital" 
+                    <OrderSignatureImage
+                      order={selectedOrder}
+                      alt="Assinatura técnica digital"
                       className="max-h-16 border rounded bg-white p-1 max-w-[120px] mix-blend-multiply"
                     />
                   </div>
@@ -1393,9 +1394,13 @@ export default function OrderDetailsDrawer({
                     type="button"
                     onClick={async () => {
                       try {
+                        // A assinatura fica gravada à parte: busca antes de montar o PDF
+                        const orderForPdf = !selectedOrder.signature && selectedOrder.hasSignature
+                          ? { ...selectedOrder, signature: await dbGetOrderSignature(selectedOrder.id) }
+                          : selectedOrder;
                         const { blobUrl } = await generateFilledPdf(
                           matchingTpl.pdfTemplate,
-                          selectedOrder,
+                          orderForPdf,
                           assetObj,
                           matchingTpl
                         );

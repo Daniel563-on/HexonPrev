@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, Management } from '../types';
 import { dbGetAssets, dbGetManagements } from '../db/firebase';
+import OrderSignatureImage from './orders/OrderSignatureImage';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -1688,14 +1689,13 @@ export default function DashboardView({
                               <div className="lg:col-span-3 space-y-4">
                                 <div>
                                   <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-1">Assinatura Digital de Conformidade</span>
-                                  {o.signature ? (
+                                  {(o.signature || o.hasSignature) ? (
                                     <div className="bg-white dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80 space-y-2">
                                       <div className="bg-slate-50 dark:bg-slate-850 p-2 rounded-lg border border-slate-150 dark:border-slate-800 flex justify-center">
-                                        <img
-                                          src={o.signature}
+                                        <OrderSignatureImage
+                                          order={o}
                                           alt="Assinatura Digital de Encerramento"
                                           className="h-14 object-contain max-w-[200px]"
-                                          referrerPolicy="no-referrer"
                                         />
                                       </div>
                                       <div className="space-y-0.5 text-[10px]">

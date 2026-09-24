@@ -38,6 +38,11 @@ export default function CreateTemplateModal({
 
   if (!isOpen) return null;
 
+  // Gerências disponíveis para a vistoria sem ativo (padrão: DOM, responsável pelas rondas)
+  const surveyManagementOptions = managements.filter(m => m.name !== 'Todas').map(m => m.name);
+  const defaultSurveyManagement =
+    surveyManagementOptions.find(name => name.trim().toUpperCase() === 'DOM') || surveyManagementOptions[0] || 'DOM';
+
   const handleAssetTypeChange = (type: string) => {
     setNewTemplateAssetType(type);
     if (type) {
@@ -180,7 +185,7 @@ export default function CreateTemplateModal({
                     }
                     setNewTemplatePeriodicities(['Mensal']);
                   } else {
-                    setNewTemplateTargetSector('Comarcas');
+                    setNewTemplateTargetSector(defaultSurveyManagement);
                     setNewTemplateAssetType('');
                     setNewTemplatePeriodicities(['Semanal']);
                   }
@@ -288,6 +293,29 @@ export default function CreateTemplateModal({
                       ))}
                     </span>
                   </span>
+                </div>
+
+                {/* GERÊNCIA RESPONSÁVEL PELAS ORDENS DA VISTORIA */}
+                <div>
+                  <label className="block text-[10px] font-extrabold text-[#3525cd] uppercase mb-1">
+                    Gerência Responsável*
+                  </label>
+                  <select
+                    value={newTemplateTargetSector}
+                    onChange={(e) => setNewTemplateTargetSector(e.target.value)}
+                    required
+                    className="w-full text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-bold"
+                  >
+                    {!surveyManagementOptions.includes(newTemplateTargetSector) && (
+                      <option value={newTemplateTargetSector}>{newTemplateTargetSector}</option>
+                    )}
+                    {surveyManagementOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[8px] text-slate-400 mt-1 block">As ordens desta vistoria aparecem para o encarregado desta gerência.</span>
                 </div>
 
                 <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2 text-[11px] font-medium text-emerald-800">

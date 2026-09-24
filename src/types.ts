@@ -61,7 +61,8 @@ export interface ServiceOrder {
   assignedTechnician: string;
   checklist: ChecklistItem[];
   notes: string;
-  signature: string | null;      // Base64 drawing
+  signature: string | null;      // Base64 drawing (no banco fica em "orderSignatures"; aqui só enquanto a OS está aberta na tela)
+  hasSignature?: boolean;        // true quando a assinatura está gravada em "orderSignatures/{id}"
   signedBy: string | null;       // Client or technician name
   signedAt: string | null;       // ISO timestamp
   createdAt: string;
