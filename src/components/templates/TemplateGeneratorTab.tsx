@@ -14,7 +14,6 @@ import {
 import {
   MaintenanceTemplate,
   Asset,
-  ServiceOrder,
   Management,
   formatDateBR
 } from '../../types';
