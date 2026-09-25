@@ -34,7 +34,7 @@ import {
   FileText
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, Management } from '../types';
-import { dbGetAssets, dbGetManagements } from '../db/firebase';
+import { dbGetAssets, dbGetManagements, dbGetMonthlySummaries, localMonthKey, StatRow } from '../db/firebase';
 import OrderSignatureImage from './orders/OrderSignatureImage';
 import {
   ResponsiveContainer,
@@ -126,6 +126,100 @@ export default function DashboardView({
 
   // Interactive schedule calendar state
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+
+  // GRÁFICOS: meses fechados vêm dos resumos congelados (monthlySummaries);
+  // o mês atual é calculado ao vivo com as OS carregadas. O mês de cada OS é o do fim do período (endDate).
+  const [statsPeriod, setStatsPeriod] = useState<'12m' | 'this-year' | 'last-year'>('12m');
+  const [selectedCraai, setSelectedCraai] = useState<string>('Todos');
+  const [summaryRows, setSummaryRows] = useState<StatRow[]>([]);
+  const currentMonth = localMonthKey();
+  const fixedGerencia =
+    userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
+      ? userProfile.gerencia
+      : null;
+
+  const periodMonths = useMemo(() => {
+    const [y, m] = currentMonth.split('-').map(Number);
+    const key = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
+    if (statsPeriod === 'this-year') return Array.from({ length: m }, (_, i) => key(y, i + 1));
+    if (statsPeriod === 'last-year') return Array.from({ length: 12 }, (_, i) => key(y - 1, i + 1));
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(y, m - 12 + i, 1);
+      return key(d.getFullYear(), d.getMonth() + 1);
+    });
+  }, [statsPeriod, currentMonth]);
+
+  useEffect(() => {
+    const pastMonths = periodMonths.filter((month) => month < currentMonth);
+    const sectors = fixedGerencia ? [fixedGerencia] : managements.filter((m) => m.name !== 'Todas').map((m) => m.name);
+    let active = true;
+    dbGetMonthlySummaries(pastMonths, sectors).then((rows) => {
+      if (active) setSummaryRows(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [periodMonths.join(','), managements, fixedGerencia, currentMonth]);
+
+  // Mês atual ao vivo (mesma regra do fechamento): P = no prazo, A = em atraso, N = não realizada, L = em aberto
+  const liveRows = useMemo<StatRow[]>(() => {
+    if (!periodMonths.includes(currentMonth)) return [];
+    const resultOf = (o: ServiceOrder): StatRow['r'] => {
+      if (o.status === 'Não Executada') return 'N';
+      if (o.status !== 'Concluída') return 'L';
+      const exec = o.signedAt ? o.signedAt.slice(0, 10) : '';
+      if (!exec) return 'N';
+      const inRange = o.startDate && o.endDate ? exec >= o.startDate && exec <= o.endDate : true;
+      if (!inRange) return 'N';
+      return o.scheduledDate && exec === o.scheduledDate ? 'P' : 'A';
+    };
+    return orders
+      .filter((o) => (o.endDate || '').slice(0, 7) === currentMonth)
+      .map((o) => ({
+        month: currentMonth,
+        sector: o.sector || 'Sem gerência',
+        p: o.periodicity || '',
+        t: o.assignedTechnician || '',
+        c: o.craai || '',
+        m: o.comarca || o.surveyLocation || '',
+        r: resultOf(o),
+        n: 1
+      }));
+  }, [orders, periodMonths, currentMonth]);
+
+  const allStatRows = useMemo(() => [...summaryRows, ...liveRows], [summaryRows, liveRows]);
+
+  const statRows = useMemo(
+    () =>
+      allStatRows.filter((row) => {
+        if (selectedGerencia !== 'Todas' && row.sector !== selectedGerencia) return false;
+        if (selectedCraai !== 'Todos' && row.c !== selectedCraai) return false;
+        if (selectedPeriodicity !== 'Todas' && row.p !== selectedPeriodicity) return false;
+        if (selectedTechnician !== 'Todos' && row.t !== selectedTechnician) return false;
+        return true;
+      }),
+    [allStatRows, selectedGerencia, selectedCraai, selectedPeriodicity, selectedTechnician]
+  );
+
+  const craaiOptions = useMemo(
+    () => Array.from(new Set<string>(allStatRows.map((row) => row.c).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [allStatRows]
+  );
+
+  // Soma as linhas por um agrupamento: total, realizadas (P + A) e eficazes (P)
+  const groupStats = (rows: StatRow[], keyOf: (row: StatRow) => string) => {
+    const map = new Map<string, { name: string; total: number; realizadas: number; eficazes: number }>();
+    rows.forEach((row) => {
+      const name = keyOf(row);
+      const item = map.get(name) || { name, total: 0, realizadas: 0, eficazes: 0 };
+      item.total += row.n;
+      if (row.r === 'P' || row.r === 'A') item.realizadas += row.n;
+      if (row.r === 'P') item.eficazes += row.n;
+      map.set(name, item);
+    });
+    return Array.from(map.values());
+  };
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 
   // Load backend configs from Firebase
   useEffect(() => {
@@ -347,14 +441,10 @@ export default function DashboardView({
     return Array.from(sectors).sort();
   }, [orders, selectedGerencia]);
 
-  // Generate unique technician list
+  // Técnicos presentes nos dados dos gráficos (meses fechados + mês atual)
   const technicianOptions = useMemo(() => {
-    const techs = new Set<string>();
-    orders.forEach((o) => {
-      if (o.assignedTechnician) techs.add(o.assignedTechnician);
-    });
-    return Array.from(techs).sort();
-  }, [orders]);
+    return Array.from(new Set(allStatRows.map((row) => row.t).filter(Boolean))).sort();
+  }, [allStatRows]);
 
   // APPLY FILTERS CONSOLIDATION
   const filteredData = useMemo(() => {
@@ -364,10 +454,9 @@ export default function DashboardView({
       if (startDate && itemDate && itemDate < startDate) return false;
       if (endDate && itemDate && itemDate > endDate) return false;
 
-      // 2. Gerência filter
+      // 2. Gerência filter (o setor da OS é o nome da gerência)
       if (selectedGerencia !== 'Todas') {
-        const itemG = getOrderGerencia(o);
-        if (!isGerenciaMatch(itemG, selectedGerencia)) return false;
+        if ((o.sector || '').trim() !== selectedGerencia && !isGerenciaMatch(getOrderGerencia(o), selectedGerencia)) return false;
       }
 
       // 3. Sector filter
@@ -413,6 +502,8 @@ export default function DashboardView({
 
   // Reset Filters
   const handleResetFilters = () => {
+    setStatsPeriod('12m');
+    setSelectedCraai('Todos');
     setDatePreset('all');
     setStartDate('');
     setEndDate('');
@@ -429,41 +520,21 @@ export default function DashboardView({
     setSelectedCalendarDate(null);
   };
 
-  // Stats Breakdown metrics on filteredData
+  // Indicadores dos gráficos (resumos mensais + mês atual)
   const metrics = useMemo(() => {
-    const total = filteredData.length;
+    let total = 0;
     let completedOnTime = 0;
     let completedLate = 0;
     let uncompleted = 0;
     let planned = 0;
-    let totalRealizadas = 0;
-    let totalEficazes = 0;
-
-    filteredData.forEach((o) => {
-      const enquadramento = getEnquadramentoStatus(o);
-      const audit = getOrderAuditMetrics(o);
-
-      if (enquadramento === 'Concluída no Prazo') {
-        completedOnTime++;
-      } else if (enquadramento === 'Concluídas em Atraso') {
-        completedLate++;
-      } else if (enquadramento === 'Não Realizada') {
-        uncompleted++;
-      } else if (enquadramento === 'Planejada' || o.status === 'Em Execução') {
-        planned++;
-      }
-
-      if (audit.realizado) {
-        totalRealizadas++;
-      }
-      if (audit.eficaz) {
-        totalEficazes++;
-      }
+    statRows.forEach((row) => {
+      total += row.n;
+      if (row.r === 'P') completedOnTime += row.n;
+      else if (row.r === 'A') completedLate += row.n;
+      else if (row.r === 'N') uncompleted += row.n;
+      else planned += row.n;
     });
-
-    const efficiencyRate = total > 0 ? Math.round((totalRealizadas / total) * 100) : 0;
-    const efficacyRate = totalRealizadas > 0 ? Math.round((totalEficazes / totalRealizadas) * 100) : 0;
-
+    const totalRealizadas = completedOnTime + completedLate;
     return {
       total,
       completedOnTime,
@@ -471,11 +542,11 @@ export default function DashboardView({
       uncompleted,
       planned,
       totalRealizadas,
-      totalEficazes,
-      efficiencyRate,
-      efficacyRate
+      totalEficazes: completedOnTime,
+      efficiencyRate: pct(totalRealizadas, total),
+      efficacyRate: pct(completedOnTime, totalRealizadas)
     };
-  }, [filteredData]);
+  }, [statRows]);
 
   // UPCOMING 7 DAYS CALENDAR SLIDER
   const next7Days = useMemo(() => {
@@ -514,199 +585,85 @@ export default function DashboardView({
     setCurrentPage(1);
   };
 
-  // PREPARE CHART DATA 1: Monthly Evolution Trend (Efficiency and Efficacy)
+  // PREPARE CHART DATA 1: Evolução mensal (eficiência e eficácia) no período escolhido
   const monthlyTrendData = useMemo(() => {
-    const monthsData: {
-      [key: string]: { label: string; total: number; realizadas: number; eficazes: number; order: string };
-    } = {};
-    const monthsKeys: string[] = [];
-
-    // Gather last 12 months in order
-    const today = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 15);
-      const label = d
+    return periodMonths.map((month) => {
+      const [item] = groupStats(statRows.filter((row) => row.month === month), () => month);
+      const total = item?.total || 0;
+      const realizadas = item?.realizadas || 0;
+      const eficazes = item?.eficazes || 0;
+      const name = new Date(`${month}-15T12:00:00`)
         .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
         .replace('.', '')
         .toUpperCase();
-      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthsData[label] = { label, total: 0, realizadas: 0, eficazes: 0, order: sortKey };
-      monthsKeys.push(label);
-    }
-
-    filteredData.forEach((o) => {
-      const dateStr = o.scheduledDate || o.startDate || o.createdAt || '';
-      if (!dateStr || !dateStr.includes('-')) return;
-
-      const date = new Date(dateStr.slice(0, 10) + 'T12:00:00');
-      if (isNaN(date.getTime())) return;
-
-      const label = date
-        .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
-        .replace('.', '')
-        .toUpperCase();
-
-      if (monthsData[label]) {
-        monthsData[label].total++;
-        const audit = getOrderAuditMetrics(o);
-        if (audit.realizado) {
-          monthsData[label].realizadas++;
-        }
-        if (audit.eficaz) {
-          monthsData[label].eficazes++;
-        }
-      }
-    });
-
-    return monthsKeys.map((key) => {
-      const item = monthsData[key];
-      const total = item.total;
-      const realizadas = item.realizadas;
-      const eficazes = item.eficazes;
-
-      const eficiencia = total > 0 ? Math.round((realizadas / total) * 100) : 0;
-      const eficacia = realizadas > 0 ? Math.round((eficazes / realizadas) * 100) : 0;
-
       return {
-        name: item.label,
+        name,
         'Volume Total': total,
-        'Eficiência (%)': eficiencia,
-        'Eficácia (%)': eficacia
+        'Eficiência (%)': pct(realizadas, total),
+        'Eficácia (%)': pct(eficazes, realizadas)
       };
     });
-  }, [filteredData]);
+  }, [statRows, periodMonths]);
 
   // PREPARE CHART DATA 2: Status Distribution (Donut Chart)
   const statusDistributionData = useMemo(() => {
-    let onTime = 0;
-    let late = 0;
-    let uncompleted = 0;
-    let planned = 0;
-
-    filteredData.forEach((o) => {
-      const eq = getEnquadramentoStatus(o);
-      if (eq === 'Concluída no Prazo') onTime++;
-      else if (eq === 'Concluídas em Atraso') late++;
-      else if (eq === 'Não Realizada') uncompleted++;
-      else planned++;
-    });
-
     return [
-      { name: 'No Prazo', value: onTime, color: '#10b981' },
-      { name: 'Em Atraso', value: late, color: '#f59e0b' },
-      { name: 'Não Realizadas', value: uncompleted, color: '#f43f5e' },
-      { name: 'Planejadas', value: planned, color: '#6366f1' }
+      { name: 'No Prazo', value: metrics.completedOnTime, color: '#10b981' },
+      { name: 'Em Atraso', value: metrics.completedLate, color: '#f59e0b' },
+      { name: 'Não Realizadas', value: metrics.uncompleted, color: '#f43f5e' },
+      { name: 'Planejadas', value: metrics.planned, color: '#6366f1' }
     ].filter((item) => item.value > 0);
-  }, [filteredData]);
+  }, [metrics]);
 
-  // PREPARE CHART DATA 3: Management Performance Comparison
+  // PREPARE CHART DATA 3: Comparativo por gerência
   const managementPerformanceData = useMemo(() => {
-    const groups = {
-      GMMR: { name: 'GMMR (Mecânica)', total: 0, realizadas: 0, eficazes: 0 },
-      GMEE: { name: 'GMEE (Elétrica)', total: 0, realizadas: 0, eficazes: 0 },
-      GMC: { name: 'GMC (Civil/Geral)', total: 0, realizadas: 0, eficazes: 0 }
-    };
-
-    filteredData.forEach((o) => {
-      const g = getOrderGerencia(o);
-      if (g === 'GMMR' || g === 'GMEE' || g === 'GMC') {
-        groups[g].total++;
-        const audit = getOrderAuditMetrics(o);
-        if (audit.realizado) {
-          groups[g].realizadas++;
-        }
-        if (audit.eficaz) {
-          groups[g].eficazes++;
-        }
-      }
-    });
-
-    return Object.values(groups).map((g) => ({
-      ...g,
-      'Eficiência (%)': g.total > 0 ? Math.round((g.realizadas / g.total) * 100) : 0,
-      'Eficácia (%)': g.realizadas > 0 ? Math.round((g.eficazes / g.realizadas) * 100) : 0
-    }));
-  }, [filteredData]);
+    return groupStats(statRows, (row) => row.sector || 'Sem gerência')
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((g) => ({
+        ...g,
+        'Eficiência (%)': pct(g.realizadas, g.total),
+        'Eficácia (%)': pct(g.eficazes, g.realizadas)
+      }));
+  }, [statRows]);
 
   // PREPARE CHART DATA 4: Technical Productivity Performance (Top 8)
   const technicianPerformanceData = useMemo(() => {
-    const techMap: { [key: string]: { name: string; total: number; realizadas: number; eficazes: number } } = {};
-
-    filteredData.forEach((o) => {
-      const tech = o.assignedTechnician || 'Não Atribuído';
-      if (!techMap[tech]) {
-        techMap[tech] = { name: tech, total: 0, realizadas: 0, eficazes: 0 };
-      }
-      techMap[tech].total++;
-      const audit = getOrderAuditMetrics(o);
-      if (audit.realizado) {
-        techMap[tech].realizadas++;
-      }
-      if (audit.eficaz) {
-        techMap[tech].eficazes++;
-      }
-    });
-
-    return Object.values(techMap)
+    return groupStats(statRows, (row) => row.t || 'Não Atribuído')
       .sort((a, b) => b.total - a.total)
       .slice(0, 8)
       .map((t) => ({
         ...t,
-        'Eficiência (%)': t.total > 0 ? Math.round((t.realizadas / t.total) * 100) : 0,
-        'Eficácia (%)': t.realizadas > 0 ? Math.round((t.eficazes / t.realizadas) * 100) : 0
+        'Eficiência (%)': pct(t.realizadas, t.total),
+        'Eficácia (%)': pct(t.eficazes, t.realizadas)
       }));
-  }, [filteredData]);
+  }, [statRows]);
 
   // PREPARE CHART DATA 6: Periodicity Performance
   const periodicityPerformanceData = useMemo(() => {
-    const periodicityMap: { [key: string]: { name: string; total: number; realizadas: number } } = {};
-
-    filteredData.forEach((o) => {
-      const p = o.periodicity || 'Mensal';
-      if (!periodicityMap[p]) {
-        periodicityMap[p] = { name: p, total: 0, realizadas: 0 };
-      }
-      periodicityMap[p].total++;
-      const audit = getOrderAuditMetrics(o);
-      if (audit.realizado) {
-        periodicityMap[p].realizadas++;
-      }
-    });
-
-    return Object.values(periodicityMap)
+    return groupStats(statRows, (row) => row.p || 'Sem periodicidade')
       .sort((a, b) => b.total - a.total)
       .map((item) => ({
-        ...item,
+        name: item.name,
+        total: item.total,
+        realizadas: item.realizadas,
         Volume: item.total,
-        'Eficiência (%)': item.total > 0 ? Math.round((item.realizadas / item.total) * 100) : 0
+        'Eficiência (%)': pct(item.realizadas, item.total)
       }));
-  }, [filteredData]);
+  }, [statRows]);
 
-  // PREPARE CHART DATA 7: Sector Workload (Top 6 Sectors)
+  // PREPARE CHART DATA 7: Volume por gerência (Top 6)
   const sectorPerformanceData = useMemo(() => {
-    const sectorMap: { [key: string]: { name: string; total: number; realizadas: number } } = {};
-
-    filteredData.forEach((o) => {
-      const sector = o.sector || 'Geral';
-      if (!sectorMap[sector]) {
-        sectorMap[sector] = { name: sector, total: 0, realizadas: 0 };
-      }
-      sectorMap[sector].total++;
-      const audit = getOrderAuditMetrics(o);
-      if (audit.realizado) {
-        sectorMap[sector].realizadas++;
-      }
-    });
-
-    return Object.values(sectorMap)
+    return groupStats(statRows, (row) => row.sector || 'Geral')
       .sort((a, b) => b.total - a.total)
       .slice(0, 6)
       .map((item) => ({
-        ...item,
+        name: item.name,
+        total: item.total,
+        realizadas: item.realizadas,
         'Volume OS': item.total,
-        'Eficiência (%)': item.total > 0 ? Math.round((item.realizadas / item.total) * 100) : 0
+        'Eficiência (%)': pct(item.realizadas, item.total)
       }));
-  }, [filteredData]);
+  }, [statRows]);
 
   // NATIVE EXCEL EXPORTER
   const handleExportXLSX = () => {
@@ -951,51 +908,29 @@ export default function DashboardView({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Horizon Preset */}
+          {/* Período dos gráficos (meses fechados + mês atual) */}
           <div className="space-y-1">
-            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Período Temporal</label>
+            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Período dos Gráficos</label>
             <select
-              value={datePreset}
-              onChange={(e) => setDatePreset(e.target.value)}
+              value={statsPeriod}
+              onChange={(e) => setStatsPeriod(e.target.value as typeof statsPeriod)}
               className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-bold"
             >
-              <option value="all">Todo o Histórico (Sem data inicial)</option>
-              <option value="this-month">Este Mês</option>
-              <option value="last-3-months">Últimos 3 Meses</option>
-              <option value="last-6-months">Últimos 6 Meses</option>
-              <option value="this-year">Ano de Execução Atual (2026)</option>
-              <option value="custom">Período Customizado (De / Até)</option>
+              <option value="12m">Últimos 12 meses</option>
+              <option value="this-year">Ano atual</option>
+              <option value="last-year">Ano anterior</option>
             </select>
           </div>
 
-          {/* Start Date */}
+          {/* CRAAI */}
           <div className="space-y-1">
-            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Início da Amostragem (De)</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setDatePreset('custom');
-                setSelectedCalendarDate(null);
-              }}
-              className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-            />
-          </div>
-
-          {/* End Date */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Término da Amostragem (Até)</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setDatePreset('custom');
-                setSelectedCalendarDate(null);
-              }}
-              className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-            />
+            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">CRAAI</label>
+            <select value={selectedCraai} onChange={(e) => setSelectedCraai(e.target.value)} className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-bold">
+              <option value="Todos">Todos os CRAAIs ({craaiOptions.length})</option>
+              {craaiOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
 
           {/* Gerência Select Filter */}
@@ -1015,30 +950,17 @@ export default function DashboardView({
                 className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-bold"
               >
                 <option value="Todas">Todas as Gerências</option>
-                <option value="GMMR">GMMR - Mecânica/Refrigeração</option>
-                <option value="GMEE">GMEE - Elétrica/Eletrônica</option>
-                <option value="GMC">GMC - Civil/Predial/Geral</option>
+                {managements
+                  .filter((m) => m.name !== 'Todas')
+                  .map((m) => (
+                    <option key={m.id} value={m.name}>{m.name}</option>
+                  ))}
               </select>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-          {/* Sector Select */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Setor Operacional</label>
-            <select
-              value={selectedSector}
-              onChange={(e) => setSelectedSector(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-medium"
-            >
-              <option value="Todos">Todos os Setores ({sectorOptions.length})</option>
-              {sectorOptions.map((sec) => (
-                <option key={sec} value={sec}>{sec}</option>
-              ))}
-            </select>
-          </div>
-
           {/* Periodicity Select */}
           <div className="space-y-1">
             <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Periodicidade</label>
