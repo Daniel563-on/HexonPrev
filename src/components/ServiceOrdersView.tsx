@@ -12,7 +12,7 @@ import {
   FileSearch
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../types';
-import { localMonthKey, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
+import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -110,59 +110,27 @@ export default function ServiceOrdersView({
     }
   }, [userProfile, hasDismissedTemp]);
 
-  // Regra estrita: Só pode reverter para Novo / alterar Não Executada se:
-  // 1. O status for "Não Executada"
-  // 2. Pertencer à gerência permitida para o usuário (se Administrador com gerência específica)
-  // 3. Respeitar o prazo da criação em lote (ex: startDate 01/09/2026 até endDate 30/09/2026):
-  //    - Se foi criado de 01/09/2026 até 30/09/2026, pode fazer a alteração das não executadas enquanto estiver dentro desse prazo da criação em lote!
+  // Regra de reagendamento:
+  // - Só a OS "Atrasada" (passou do período do encarregado) pode voltar para "Novo" e ser reagendada.
+  // - Ela precisa estar dentro do prazo do Super Administrador (início e fim da OS).
+  // - "Não Executada" (passou do prazo do Super Administrador) fica bloqueada: ninguém reverte.
   const canRevertUnexecutedOrder = (os: ServiceOrder, targetMonthDate: Date = currentCalendarDate): boolean => {
-    if (os.status !== 'Não Executada') return false;
-
-    // Gerência permitida para o usuário logado
+    if (os.status !== 'Atrasada') return false;
     if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
       if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
     }
-
-    // Prazo da criação em lote (startDate até endDate, ex: 01/09/2026 até 30/09/2026)
-    let batchStart = os.startDate;
-    let batchEnd = os.endDate;
-
-    // Fallback se não tiver startDate/endDate explícitos: deduz o mês a partir da data agendada ou do mês trabalhado
-    if (!batchStart || !batchEnd) {
-      const baseDate = os.scheduledDate ? new Date(os.scheduledDate) : targetMonthDate;
-      if (baseDate && !isNaN(baseDate.getTime())) {
-        const y = baseDate.getFullYear();
-        const m = baseDate.getMonth();
-        const lastD = new Date(y, m + 1, 0);
-        if (!batchStart) batchStart = `${y}-${String(m + 1).padStart(2, '0')}-01`;
-        if (!batchEnd) batchEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastD.getDate()).padStart(2, '0')}`;
-      }
-    }
-
-    if (!batchEnd) return false;
-
-    // Data atual do sistema no formato YYYY-MM-DD (ex: 2026-09-14)
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    // Se a data de hoje já ultrapassou o término do prazo da criação em lote (ex: após 30/09/2026),
-    // o prazo da criação em lote expirou e não pode mais alterar!
-    if (todayStr > batchEnd) {
-      return false;
-    }
-
-    // Se targetMonthDate estiver definido, garante que a janela da criação em lote sobrepõe o mês sendo visualizado
+    // Prazo do Super Administrador ainda aberto
+    if (os.endDate && localTodayStr() > os.endDate) return false;
+    // O prazo da OS precisa cruzar o mês em exibição
     if (targetMonthDate) {
       const y = targetMonthDate.getFullYear();
       const m = targetMonthDate.getMonth();
       const mStart = `${y}-${String(m + 1).padStart(2, '0')}-01`;
       const lastDayOfMonth = new Date(y, m + 1, 0);
       const mEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDayOfMonth.getDate()).padStart(2, '0')}`;
-
-      // A janela da criação em lote precisa ter intersecção com o mês em exibição
-      if (batchStart && batchStart > mEnd) return false;
-      if (batchEnd < mStart) return false;
+      if (os.startDate && os.startDate > mEnd) return false;
+      if (os.endDate && os.endDate < mStart) return false;
     }
-
     return true;
   };
 

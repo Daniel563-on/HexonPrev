@@ -267,13 +267,13 @@ export default function OrdersCardGrid({
                   </span>
 
                   <div className="flex justify-end items-center gap-1.5">
-                    {isNotExecuted && userProfile?.perfil !== 'Profissional' && (() => {
+                    {(isDelayed || isNotExecuted) && userProfile?.perfil !== 'Profissional' && (() => {
                       const canRevertThis = canRevertUnexecutedOrder(os, currentCalendarDate);
                       if (!canRevertThis) {
                         return (
                           <span
                             className="text-[8.5px] font-black uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded border border-slate-200"
-                            title="O prazo da criação em lote expirou ou não corresponde a este período. Reagendamento bloqueado."
+                            title="Passou do prazo do Super Administrador. Reagendamento bloqueado."
                           >
                             Prazo Expirado
                           </span>

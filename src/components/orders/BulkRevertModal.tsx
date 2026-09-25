@@ -70,7 +70,7 @@ export default function BulkRevertModal({
       onClose();
     } catch (err) {
       console.error('Failed to bulk revert unexecuted orders:', err);
-      alert('Erro ao reverter preventivas não executadas. Tente novamente.');
+      alert('Erro ao reverter preventivas atrasadas. Tente novamente.');
     } finally {
       setIsBulkReverting(false);
     }
@@ -85,7 +85,7 @@ export default function BulkRevertModal({
           </div>
           <div>
             <h3 className="font-extrabold text-[#0b1c30] text-sm tracking-tight uppercase">
-              Reverter Preventivas Não Executadas
+              Reverter Preventivas Atrasadas
             </h3>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
               {bulkRevertScope === 'period' && selectedCalendarDay !== null
@@ -98,7 +98,7 @@ export default function BulkRevertModal({
         <div className="space-y-3 mb-6">
           <p className="text-xs text-slate-700 leading-relaxed font-medium">
             Você está prestes a reverter <strong className="font-black text-amber-800">{unexecutedList.length}</strong>{' '}
-            {unexecutedList.length === 1 ? 'preventiva não executada' : 'preventivas não executadas'} válidas dentro do SLA
+            {unexecutedList.length === 1 ? 'preventiva atrasada' : 'preventivas atrasadas'} (dentro do prazo do Super Administrador)
             de volta para o status <strong className="font-bold text-indigo-700">"Novo"</strong>.
           </p>
 
@@ -110,8 +110,8 @@ export default function BulkRevertModal({
             <ul className="list-disc list-inside space-y-1 text-[10.5px] text-amber-850 pl-1">
               <li>As preventivas terão a data agendada e técnico anterior desvinculados.</li>
               <li>Retornarão à aba de <strong>"Aguardando Agendamento" (Novas)</strong> no painel de planejamento.</li>
-              <li>O encarregado poderá reprogramar a data e o técnico novamente ainda dentro do mês.</li>
-              <li>Preventivas cujo prazo da criação em lote já expirou permanecem como Não Executadas e não são revertidas.</li>
+              <li>O encarregado poderá agendar nova data (a partir de hoje) e técnico, dentro do prazo do Super Administrador.</li>
+              <li>Preventivas que passaram do prazo do Super Administrador ficam como Não Executadas e não são revertidas.</li>
             </ul>
           </div>
         </div>
