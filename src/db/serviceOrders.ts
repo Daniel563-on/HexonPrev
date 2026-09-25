@@ -409,6 +409,38 @@ export async function dbCountSolicitations(
   }
 }
 
+// CONSULTA DE OS (ordens encerradas de um mês)
+// O banco filtra por mês + gerência + UM filtro principal (CRAAI, comarca ou técnico);
+// status e texto são refinados na tela. Sem filtro principal, o resultado é limitado.
+export type OrdersSearchField = 'craai' | 'comarca' | 'assignedTechnician';
+
+export interface OrdersSearchParams {
+  month: string;              // "AAAA-MM" (obrigatório)
+  sector: string | null;      // gerência; null = todas
+  field: OrdersSearchField | null;
+  value: string;
+}
+
+export const ORDERS_SEARCH_LIMIT = 500;
+
+export async function dbSearchClosedOrders(
+  params: OrdersSearchParams
+): Promise<{ orders: ServiceOrder[]; limited: boolean }> {
+  if (!params.month || !firebaseActive || !dbInstance) return { orders: [], limited: false };
+  const constraints: any[] = [];
+  if (params.sector) constraints.push(where('sector', '==', params.sector));
+  constraints.push(where('closedMonth', '==', params.month));
+  if (params.field && params.value) constraints.push(where(params.field, '==', params.value));
+  constraints.push(limit(ORDERS_SEARCH_LIMIT));
+
+  const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), ...constraints));
+  const list: ServiceOrder[] = [];
+  snap.forEach((d) => {
+    if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+  });
+  return { orders: list.sort(compareOrdersNewestFirst), limited: snap.docs.length >= ORDERS_SEARCH_LIMIT };
+}
+
 // Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.
 export async function dbGetServiceOrderById(orderId: string): Promise<ServiceOrder | null> {
   if (!orderId) return null;
