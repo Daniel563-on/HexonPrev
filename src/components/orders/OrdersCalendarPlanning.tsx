@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder, PlanningDeadline } from '../../db/firebase';
+import { dbSaveServiceOrder, localTodayStr, PlanningDeadline } from '../../db/firebase';
 
 export interface OrdersCalendarPlanningProps {
   orders: ServiceOrder[];
@@ -87,7 +87,7 @@ export default function OrdersCalendarPlanning({
   const [planOnlyCompatible, setPlanOnlyCompatible] = useState(true);
   const [planAssignedTechs, setPlanAssignedTechs] = useState<{ [key: string]: string }>({});
   const [planActiveTab, setPlanActiveTab] = useState<'novas' | 'agendadas'>('novas');
-  const [scheduledSubTab, setScheduledSubTab] = useState<'planejadas' | 'concluidas' | 'nao_executadas'>('planejadas');
+  const [scheduledSubTab, setScheduledSubTab] = useState<'planejadas' | 'atrasadas' | 'concluidas' | 'nao_executadas'>('planejadas');
   const [deplanConfirmOrderId, setDeplanConfirmOrderId] = useState<string | null>(null);
   const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
 
@@ -495,61 +495,34 @@ export default function OrdersCalendarPlanning({
                   </div>
                 </div>
 
-                {/* Banner de Reversão de Não Executadas do Mês para Novo / Reagendamento (Somente dentro do prazo da criação em lote) */}
+                {/* Banner das Atrasadas do Mês: podem voltar para "Novo" e ser reagendadas (dentro do prazo do Super Administrador) */}
                 {(() => {
-                  const unexecutedThisMonth = orders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
-                  
-                  // Total de não executadas cadastradas com data agendada no mês
-                  const totalUnexecutedInMonth = orders.filter(os => {
-                    if (os.status !== 'Não Executada') return false;
-                    if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-                      if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
-                    }
-                    if (!os.scheduledDate) return false;
-                    const d = new Date(os.scheduledDate);
-                    return !isNaN(d.getTime()) && d.getMonth() === currentCalendarDate.getMonth() && d.getFullYear() === currentCalendarDate.getFullYear();
-                  });
-
-                  const expiredCount = totalUnexecutedInMonth.length - unexecutedThisMonth.length;
-
-                  if (unexecutedThisMonth.length === 0 && expiredCount === 0) return null;
+                  const lateThisMonth = orders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
+                  if (lateThisMonth.length === 0) return null;
 
                   return (
-                    <div className="mt-3 space-y-2">
-                      {unexecutedThisMonth.length > 0 && (
-                        <div className="p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-fadeIn">
-                          <div className="flex items-center gap-2 text-left min-w-0">
-                            <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0">
-                              <RotateCcw className="w-4 h-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-black text-amber-900 uppercase tracking-wide">
-                                {unexecutedThisMonth.length} {unexecutedThisMonth.length === 1 ? 'Preventiva Não Executada' : 'Preventivas Não Executadas'} com Prazo Aberto
-                              </p>
-                              <p className="text-[9px] text-amber-700 font-semibold leading-tight">
-                                Dentro do prazo da criação em lote ({monthNames[currentCalendarDate.getMonth()]}). Reverta para "Novo" para permitir o reagendamento.
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onOpenBulkRevertModal('month')}
-                            className="w-full sm:w-auto px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shrink-0 shadow-3xs cursor-pointer transition-all active:scale-95"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Reverter para Novo ({unexecutedThisMonth.length})
-                          </button>
+                    <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-fadeIn">
+                      <div className="flex items-center gap-2 text-left min-w-0">
+                        <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0">
+                          <RotateCcw className="w-4 h-4" />
                         </div>
-                      )}
-
-                      {expiredCount > 0 && (
-                        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2 text-left text-slate-500">
-                          <AlertTriangle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <p className="text-[9.5px] font-medium leading-snug">
-                            <strong className="text-slate-700">{expiredCount}</strong> {expiredCount === 1 ? 'preventiva não executada está' : 'preventivas não executadas estão'} com o prazo da criação em lote expirado e permanecerão bloqueadas sem possibilidade de reagendamento.
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-amber-900 uppercase tracking-wide">
+                            {lateThisMonth.length} {lateThisMonth.length === 1 ? 'Preventiva Atrasada' : 'Preventivas Atrasadas'} para Reagendar
+                          </p>
+                          <p className="text-[9px] text-amber-700 font-semibold leading-tight">
+                            Passaram do período do encarregado, mas ainda estão no prazo do Super Administrador. Reverta para "Novo" e agende uma nova data.
                           </p>
                         </div>
-                      )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenBulkRevertModal('month')}
+                        className="w-full sm:w-auto px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shrink-0 shadow-3xs cursor-pointer transition-all active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Reverter para Novo ({lateThisMonth.length})
+                      </button>
                     </div>
                   );
                 })()}
@@ -583,11 +556,14 @@ export default function OrdersCalendarPlanning({
 
               // Sub-divisão das agendadas no período: Planejadas, Concluídas e Não Executadas
               // Conforme as planejadas vão sendo feitas, aumenta as concluídas e diminui as planejadas
-              const dayPlannedOrders = dayScheduledOrders.filter(os => os.status !== 'Não Executada' && os.status !== 'Concluída');
+              const dayPlannedOrders = dayScheduledOrders.filter(os => os.status !== 'Não Executada' && os.status !== 'Concluída' && os.status !== 'Atrasada');
+              const dayLateOrders = dayScheduledOrders.filter(os => os.status === 'Atrasada');
               const dayCompletedOrders = dayScheduledOrders.filter(os => os.status === 'Concluída');
               const dayUnexecutedOrders = dayScheduledOrders.filter(os => os.status === 'Não Executada');
-              const revertibleUnexecutedInPeriod = dayUnexecutedOrders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
-              const expiredUnexecutedInPeriod = dayUnexecutedOrders.filter(os => !canRevertUnexecutedOrder(os, currentCalendarDate));
+              const revertibleLateInPeriod = dayLateOrders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
+
+              // Não se agenda nada antes de hoje: dias passados ficam só para consulta
+              const isPastSelection = selectedDateStr < localTodayStr();
 
               // 2. Get all 'Novo' preventives awaiting scheduling, filtered by criteria
               const rawNewOrders = orders.filter(os => {
@@ -720,6 +696,14 @@ export default function OrdersCalendarPlanning({
                     {/* Render TAB: Novas Preventivas / Awaiting Planning */}
                     {planActiveTab === 'novas' && (
                       <div className="space-y-4">
+                        {isPastSelection && (
+                          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-left">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            <p className="text-[10.5px] font-bold text-rose-800 leading-snug">
+                              O período selecionado começa antes de hoje ({formatDateBR(localTodayStr())}). Não é possível agendar em datas passadas. Selecione hoje ou um dia futuro no calendário.
+                            </p>
+                          </div>
+                        )}
                         {/* 1. SELETOR DE COMARCA & BUSCA RÁPIDA */}
                         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
                           <div className="flex items-center justify-between">
@@ -830,7 +814,7 @@ export default function OrdersCalendarPlanning({
                         </div>
 
                         {/* 2. AGENDAMENTO EM BLOCO (POR COMARCA OU SELEÇÃO) */}
-                        {filteredNewOrders.length > 0 && (
+                        {filteredNewOrders.length > 0 && !isPastSelection && (
                           <div className="bg-gradient-to-br from-indigo-50/70 via-indigo-50/40 to-white p-3.5 rounded-xl border border-indigo-200/80 shadow-2xs space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
@@ -1006,6 +990,7 @@ export default function OrdersCalendarPlanning({
                               if (os.startDate && os.endDate) {
                                 isCompatible = (selectedDateStr >= os.startDate && selectedDateStr <= os.endDate);
                               }
+                              const canSchedule = isCompatible && !isPastSelection;
                               
                               const assignedTechName = planAssignedTechs[os.id] || '';
                               const osComarca = getOrderComarca(os) || 'Sem comarca definida';
@@ -1082,9 +1067,9 @@ export default function OrdersCalendarPlanning({
 
                                     <button
                                       type="button"
-                                      disabled={!isCompatible}
+                                      disabled={!canSchedule}
                                       onClick={async () => {
-                                        if (!isCompatible) return;
+                                        if (!canSchedule) return;
                                         const proceed = checkTechAssignment(assignedTechName, selectedDateStr, os);
                                         if (!proceed) return;
 
@@ -1105,7 +1090,7 @@ export default function OrdersCalendarPlanning({
                                         }
                                       }}
                                       className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs shrink-0 ${
-                                        isCompatible 
+                                        canSchedule
                                           ? 'bg-[#3525cd] hover:bg-[#281bbb] text-white' 
                                           : 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed'
                                       }`}
@@ -1144,6 +1129,25 @@ export default function OrdersCalendarPlanning({
                                 scheduledSubTab === 'planejadas' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
                               }`}>
                                 {dayPlannedOrders.length}
+                              </span>
+                            </button>
+
+                            {/* 1b. Atrasadas (passaram do período do encarregado; podem ser reagendadas) */}
+                            <button
+                              type="button"
+                              onClick={() => setScheduledSubTab('atrasadas')}
+                              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                                scheduledSubTab === 'atrasadas'
+                                  ? 'bg-amber-600 text-white shadow-3xs'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                              }`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Atrasadas
+                              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                scheduledSubTab === 'atrasadas' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {dayLateOrders.length}
                               </span>
                             </button>
 
@@ -1197,10 +1201,10 @@ export default function OrdersCalendarPlanning({
                                   onOpenBulkRevertModal('month');
                                 }}
                                 className="text-[9.5px] font-black text-amber-700 hover:text-amber-800 uppercase tracking-wider flex items-center justify-center sm:justify-end gap-1 cursor-pointer transition-colors py-1 px-2 rounded-lg hover:bg-amber-50"
-                                title="Reverter todas as não executadas do mês dentro do SLA"
+                                title="Reverter para Novo todas as atrasadas do mês (dentro do prazo do Super Administrador)"
                               >
                                 <RotateCcw className="w-3 h-3" />
-                                Mês: {unexecutedInMonth.length} não executadas elegíveis
+                                Mês: {unexecutedInMonth.length} atrasadas para reagendar
                               </button>
                             );
                           })()}
@@ -1322,6 +1326,7 @@ export default function OrdersCalendarPlanning({
                                                     ...os,
                                                     status: 'Novo' as const,
                                                     scheduledDate: '',
+                                                    scheduledEndDate: undefined,
                                                     assignedTechnician: '',
                                                     updatedAt: new Date().toISOString()
                                                   };
@@ -1487,38 +1492,27 @@ export default function OrdersCalendarPlanning({
                           </div>
                         )}
 
-                        {/* SUB-VIEW 3: Não Executadas (com botão Reverter Todas para Novo) */}
-                        {scheduledSubTab === 'nao_executadas' && (
+                        {/* SUB-VIEW 3: Atrasadas (reverter para Novo e reagendar) e Não Executadas (bloqueadas, só consulta) */}
+                        {(scheduledSubTab === 'atrasadas' || scheduledSubTab === 'nao_executadas') && (() => {
+                          const isLateTab = scheduledSubTab === 'atrasadas';
+                          const tabOrders = isLateTab ? dayLateOrders : dayUnexecutedOrders;
+                          return (
                           <div className="space-y-3">
-                            {/* Barra de Ação de Reversão em Massa das Não Executadas */}
-                            {dayUnexecutedOrders.length > 0 && (
+                            {isLateTab && dayLateOrders.length > 0 && (
                               <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-2">
                                     <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
                                     <span className="text-xs font-black text-amber-950 uppercase tracking-tight">
-                                      {dayUnexecutedOrders.length} preventiva{dayUnexecutedOrders.length > 1 ? 's' : ''} não executada{dayUnexecutedOrders.length > 1 ? 's' : ''} neste período
+                                      {dayLateOrders.length} preventiva{dayLateOrders.length > 1 ? 's' : ''} atrasada{dayLateOrders.length > 1 ? 's' : ''} neste período
                                     </span>
                                   </div>
                                   <p className="text-[10.5px] text-amber-800 font-medium">
-                                    {revertibleUnexecutedInPeriod.length > 0 ? (
-                                      <span>
-                                        <strong className="font-black text-emerald-800">{revertibleUnexecutedInPeriod.length}</strong> apta{revertibleUnexecutedInPeriod.length > 1 ? 's' : ''} para reversão (dentro do prazo da criação em lote).
-                                        {expiredUnexecutedInPeriod.length > 0 && (
-                                          <span className="text-rose-700 font-bold ml-1">
-                                            ({expiredUnexecutedInPeriod.length} com prazo da criação em lote expirado).
-                                          </span>
-                                        )}
-                                      </span>
-                                    ) : (
-                                      <span className="text-rose-700 font-bold">
-                                        Prazo da criação em lote expirado. Não é mais permitido alterar ou reagendar estas preventivas.
-                                      </span>
-                                    )}
+                                    Reverta para "Novo" e agende uma nova data em "Aguardando Agendamento" (a partir de hoje e dentro do prazo do Super Administrador).
                                   </p>
                                 </div>
 
-                                {revertibleUnexecutedInPeriod.length > 0 && (
+                                {revertibleLateInPeriod.length > 0 && (
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -1527,19 +1521,30 @@ export default function OrdersCalendarPlanning({
                                     className="w-full md:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-sm shrink-0 border border-amber-700"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
-                                    Reverter todas as não executadas para Nova ({revertibleUnexecutedInPeriod.length})
+                                    Reverter todas as atrasadas para Novo ({revertibleLateInPeriod.length})
                                   </button>
                                 )}
                               </div>
                             )}
 
-                            {dayUnexecutedOrders.length === 0 ? (
+                            {!isLateTab && dayUnexecutedOrders.length > 0 && (
+                              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-2 text-left">
+                                <AlertTriangle className="w-4 h-4 text-slate-500 shrink-0" />
+                                <p className="text-[10.5px] font-bold text-slate-600">
+                                  Passaram do prazo do Super Administrador. Ficam bloqueadas e não podem ser revertidas nem reagendadas.
+                                </p>
+                              </div>
+                            )}
+
+                            {tabOrders.length === 0 ? (
                               <div className="text-center py-12 text-slate-400 text-xs italic bg-white border border-dashed border-slate-200 rounded-xl font-medium">
-                                Nenhuma preventiva com status "Não Executada" neste período selecionado.
+                                {isLateTab
+                                  ? 'Nenhuma preventiva atrasada neste período selecionado.'
+                                  : 'Nenhuma preventiva com status "Não Executada" neste período selecionado.'}
                               </div>
                             ) : (
                               <div className="space-y-3">
-                                {dayUnexecutedOrders.map((os) => {
+                                {tabOrders.map((os) => {
                                   const canRevertThis = canRevertUnexecutedOrder(os, currentCalendarDate);
                                   return (
                                     <div key={os.id} className="border border-rose-200/80 rounded-xl p-4 bg-white shadow-2xs space-y-3">
@@ -1551,7 +1556,7 @@ export default function OrdersCalendarPlanning({
                                           </span>
                                         </div>
                                         <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide bg-rose-50 text-rose-700 border border-rose-200">
-                                          Não Executada
+                                          {os.status}
                                         </span>
                                       </div>
 
@@ -1580,9 +1585,9 @@ export default function OrdersCalendarPlanning({
                                       <div className="text-[9.5px] font-black text-slate-500 uppercase tracking-wider flex flex-wrap items-center justify-between gap-1 bg-rose-50/40 p-2 rounded border border-rose-100/60">
                                         <span>
                                           {os.scheduledEndDate ? (
-                                            <>Data Não Executada: <span className="text-rose-700 font-black">{formatDateBR(os.scheduledDate)} até {formatDateBR(os.scheduledEndDate)}</span></>
+                                            <>{isLateTab ? 'Período Perdido' : 'Data Não Executada'}: <span className="text-rose-700 font-black">{formatDateBR(os.scheduledDate)} até {formatDateBR(os.scheduledEndDate)}</span></>
                                           ) : (
-                                            <>Data Não Executada: <span className="text-rose-700 font-black">{formatDateBR(os.scheduledDate)}</span></>
+                                            <>{isLateTab ? 'Período Perdido' : 'Data Não Executada'}: <span className="text-rose-700 font-black">{formatDateBR(os.scheduledDate)}</span></>
                                           )}
                                         </span>
                                         {os.startDate && os.endDate && (
@@ -1606,7 +1611,7 @@ export default function OrdersCalendarPlanning({
                                           deplanConfirmOrderId === os.id ? (
                                             <div className="flex flex-col gap-2 p-2 bg-amber-50 rounded-lg border border-amber-200 animate-fadeIn">
                                               <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wide text-center">
-                                                Reverter esta preventiva não executada para "Novo" para reprogramar?
+                                                Reverter esta preventiva atrasada para "Novo" para reagendar?
                                               </p>
                                               <div className="flex items-center gap-2">
                                                 <button
@@ -1649,7 +1654,7 @@ export default function OrdersCalendarPlanning({
                                           )
                                         ) : (
                                           <div className="text-center py-2 px-3 bg-slate-100 text-slate-500 rounded-lg text-[9.5px] font-bold uppercase tracking-wider border border-slate-200">
-                                            Bloqueado: Prazo da criação em lote expirou para esta preventiva
+                                            Bloqueado: passou do prazo do Super Administrador
                                           </div>
                                         )}
                                       </div>
@@ -1660,7 +1665,8 @@ export default function OrdersCalendarPlanning({
                               </div>
                             )}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     )}
 

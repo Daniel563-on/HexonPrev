@@ -626,7 +626,7 @@ export default function OrderDetailsDrawer({
                     <span className="font-extrabold text-slate-400 italic">Não agendado</span>
                   </div>
                 ) : null}
-                {selectedOrder.status === 'Não Executada' && (() => {
+                {(selectedOrder.status === 'Não Executada' || selectedOrder.status === 'Atrasada') && (() => {
                   const canRevertThis = canRevertUnexecutedOrder(selectedOrder, currentCalendarDate);
                   return (
                     <div className={`mt-2.5 p-3 border rounded-xl font-bold text-[10.5px] space-y-2.5 ${
@@ -638,8 +638,8 @@ export default function OrderDetailsDrawer({
                         <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${canRevertThis ? 'text-amber-600' : 'text-rose-600'}`} />
                         <span>
                           {canRevertThis 
-                            ? 'Esta preventiva não foi executada na data agendada. Como ainda está dentro do prazo da criação em lote (ex: 01/09 a 30/09), você pode revertê-la para o status "Novo" para realizar um novo agendamento no período permitido.' 
-                            : 'Esta preventiva expirou sem execução e o prazo da criação em lote já encerrou. O reagendamento está bloqueado e a ordem permanecerá definitivamente como "Não Executada".'}
+                            ? 'Esta preventiva passou do período agendado pelo encarregado, mas ainda está dentro do prazo do Super Administrador. Reverta para "Novo" para agendar uma nova data (a partir de hoje).' 
+                            : 'Esta preventiva passou do prazo do Super Administrador. O reagendamento está bloqueado e a ordem permanecerá definitivamente como "Não Executada".'}
                         </span>
                       </div>
                       {canRevertThis && userProfile?.perfil !== 'Profissional' && (

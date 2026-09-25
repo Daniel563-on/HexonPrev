@@ -73,7 +73,7 @@ function compareOrdersNewestFirst(a: ServiceOrder, d: ServiceOrder): number {
 }
 
 // Local date (yyyy-mm-dd). toISOString() would use UTC and flip to "tomorrow" at 21h in Brazil.
-function localTodayStr(): string {
+export function localTodayStr(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
