@@ -172,7 +172,7 @@ export function canUseAssetSync(): boolean {
 // Inicia (uma vez por usuário) e aguarda a cópia local estar pronta
 export function ensureAssetSync(): Promise<void> {
   if (!canUseAssetSync()) return Promise.reject(new Error('Sincronização de ativos indisponível'));
-  const uid = authInstance.currentUser.uid as string;
+  const uid = authInstance!.currentUser!.uid as string;
   if (activeUid === uid && readyPromise) return readyPromise;
 
   stopAssetSync();
@@ -257,3 +257,4 @@ export function subscribeLocalAssets(cb: (list: Asset[]) => void): () => void {
     subscribers.delete(cb);
   };
 }
+

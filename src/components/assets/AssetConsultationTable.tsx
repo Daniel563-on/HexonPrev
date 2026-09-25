@@ -42,7 +42,6 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset to page 1 whenever results change
   React.useEffect(() => {
     setCurrentPage(1);
   }, [resetKey ?? results]);
