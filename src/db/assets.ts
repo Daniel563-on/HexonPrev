@@ -7,6 +7,7 @@ import {
   getDocs,
   limit,
   query,
+  serverTimestamp,
   setDoc,
   where,
   writeBatch
@@ -24,6 +25,14 @@ import {
   ensureFirebaseAuthReady
 } from './core';
 import { isMockOrLegacyId } from './templates';
+import {
+  canUseAssetSync,
+  ensureAssetSync,
+  getLocalAssets,
+  stopAssetSync,
+  upsertLocalAssets,
+  removeLocalAssets
+} from './assetSync';
 
 // In-Memory Asset Cache
 let cacheAssets: Asset[] | null = null;
@@ -34,10 +43,28 @@ export function clearAssetsCache(): void {
   cacheAssets = null;
   cacheAssetsFromFirebase = false;
   pendingAssetsPromise = null;
+  stopAssetSync();
+}
+
+// Atualiza a cópia antiga (modo sem login) SOMENTE se já estiver carregada; nunca baixa a coleção para gravar 1 ativo
+function updateLoadedAssetsCache(change: (list: Asset[]) => Asset[]): void {
+  if (cacheAssets === null) return;
+  cacheAssets = change(cacheAssets);
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
 }
 
 // Get all assets
 export async function dbGetAssets(): Promise<Asset[]> {
+  // Usuário logado: cópia local sincronizada (baixa tudo 1 vez por aparelho; depois só o que muda)
+  if (canUseAssetSync()) {
+    try {
+      await ensureAssetSync();
+      return getLocalAssets();
+    } catch (e) {
+      console.warn('Cópia local de ativos indisponível; usando leitura direta:', e);
+    }
+  }
+
   const hasUser = !!(firebaseActive && dbInstance);
 
   // 1. Check in-memory cache
@@ -369,36 +396,23 @@ export async function dbSearchAssetsTargeted(criteria: AssetSearchCriteria): Pro
 }
 
 // Save or Update asset
+// Toda gravação leva syncAt (horário do servidor): é por ele que os outros computadores recebem a alteração.
 export async function dbSaveAsset(asset: Asset): Promise<void> {
-  // Ensure cache is initialized
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
   // Ensure asset is lightweight: never persist base64 QR images
   const cleanAsset: Asset = { ...asset };
   if (cleanAsset.qrCode) {
     delete cleanAsset.qrCode;
   }
 
-  // Optimistically update cache instantly
-  const idx = cacheAssets!.findIndex((a) => a.id === cleanAsset.id);
-  if (idx >= 0) {
-    cacheAssets![idx] = { ...cleanAsset };
-  } else {
-    cacheAssets!.push({ ...cleanAsset });
-  }
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+  upsertLocalAssets([cleanAsset]);
+  updateLoadedAssetsCache((list) => {
+    const idx = list.findIndex((a) => a.id === cleanAsset.id);
+    return idx >= 0 ? list.map((a, i) => (i === idx ? { ...cleanAsset } : a)) : [...list, { ...cleanAsset }];
+  });
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'assets', cleanAsset.id), cleanUndefined(cleanAsset));
+      await setDoc(doc(dbInstance, 'assets', cleanAsset.id), { ...cleanUndefined(cleanAsset), syncAt: serverTimestamp() });
     } catch (err: any) {
       console.warn('Firestore write asset failed, utilizing local fallback state:', err);
       checkQuotaException(err);
@@ -408,32 +422,22 @@ export async function dbSaveAsset(asset: Asset): Promise<void> {
 
 // Save or Update multiple assets at once (e.g. from bulk import)
 export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
-  // Ensure cache is initialized
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
   const cleanedAssets = assets.map((a) => {
     const clean = { ...a };
     if (clean.qrCode) delete clean.qrCode;
     return clean;
   });
 
-  for (const asset of cleanedAssets) {
-    const idx = cacheAssets!.findIndex((a) => a.id === asset.id || a.code === asset.code);
-    if (idx >= 0) {
-      cacheAssets![idx] = { ...cacheAssets![idx], ...asset };
-    } else {
-      cacheAssets!.push({ ...asset });
+  upsertLocalAssets(cleanedAssets);
+  updateLoadedAssetsCache((list) => {
+    const next = [...list];
+    for (const asset of cleanedAssets) {
+      const idx = next.findIndex((a) => a.id === asset.id);
+      if (idx >= 0) next[idx] = { ...next[idx], ...asset };
+      else next.push({ ...asset });
     }
-  }
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+    return next;
+  });
 
   if (firebaseActive && dbInstance) {
     try {
@@ -442,7 +446,7 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
         const chunk = cleanedAssets.slice(i, i + batchSize);
         const batch = writeBatch(dbInstance);
         for (const asset of chunk) {
-          batch.set(doc(dbInstance, 'assets', asset.id), cleanUndefined(asset));
+          batch.set(doc(dbInstance, 'assets', asset.id), { ...cleanUndefined(asset), syncAt: serverTimestamp() });
         }
         await batch.commit();
         // Give the write stream queue a brief moment to process and drain
@@ -451,44 +455,47 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
     } catch (err: any) {
       console.warn('Firestore bulk write asset failed:', err);
       checkQuotaException(err);
+      throw err;
+    }
+  }
+}
+
+// Exclui ativos e registra cada exclusão em assetDeletions (os outros computadores tiram da cópia local)
+async function deleteAssetsWithRecord(ids: string[]): Promise<void> {
+  removeLocalAssets(ids);
+  const idSet = new Set(ids);
+  updateLoadedAssetsCache((list) => list.filter((a) => !idSet.has(a.id)));
+
+  if (firebaseActive && dbInstance) {
+    try {
+      const pairSize = 200; // 200 exclusões + 200 registros = 400 operações por lote
+      for (let i = 0; i < ids.length; i += pairSize) {
+        const batch = writeBatch(dbInstance);
+        ids.slice(i, i + pairSize).forEach((id) => {
+          batch.delete(doc(dbInstance!, 'assets', id));
+          batch.set(doc(dbInstance!, 'assetDeletions', id), { assetId: id, syncAt: serverTimestamp() });
+        });
+        await batch.commit();
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    } catch (err: any) {
+      console.warn('Firestore delete asset failed:', err);
+      checkQuotaException(err);
+      throw err;
     }
   }
 }
 
 // DELETE SINGLE ASSET
 export async function dbDeleteAsset(assetId: string): Promise<void> {
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
-  cacheAssets = cacheAssets!.filter((a) => a.id !== assetId);
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await deleteDoc(doc(dbInstance, 'assets', assetId));
-    } catch (err: any) {
-      console.warn('Firestore delete asset failed:', err);
-      checkQuotaException(err);
-    }
-  }
+  await deleteAssetsWithRecord([assetId]);
 }
 
 // DELETE ALL ASSETS BY SECTOR
 export async function dbDeleteAssetsBySector(sectorName: string): Promise<void> {
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
+  const target = sectorName.toLowerCase();
   const isMatch = (sec: string) => {
     const s = (sec || '').toLowerCase();
-    const target = sectorName.toLowerCase();
 
     // Normalizing synonyms in Portuguese and old types
     if (target === 'mecânica/refrigeração' || target === 'mecânica / refrigeração') {
@@ -503,30 +510,7 @@ export async function dbDeleteAssetsBySector(sectorName: string): Promise<void> 
     return s === target;
   };
 
-  const assetsToDelete = cacheAssets!.filter((a) => isMatch(a.sector));
-  cacheAssets = cacheAssets!.filter((a) => !isMatch(a.sector));
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      const batchSize = 100;
-      for (let i = 0; i < assetsToDelete.length; i += batchSize) {
-        const chunk = assetsToDelete.slice(i, i + batchSize);
-        const batch = writeBatch(dbInstance);
-        for (const asset of chunk) {
-          batch.delete(doc(dbInstance, 'assets', asset.id));
-        }
-        await batch.commit();
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-    } catch (err: any) {
-      console.warn('Could not delete batch of assets by sector in Firestore:', err);
-    }
-  }
+  // A lista vem da cópia local (sem nova leitura da coleção)
+  const all = await dbGetAssets();
+  await deleteAssetsWithRecord(all.filter((a) => isMatch(a.sector)).map((a) => a.id));
 }

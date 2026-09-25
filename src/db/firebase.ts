@@ -11,6 +11,7 @@ export * from './preventiveEngine';
 export * from './users';
 export * from './permissions';
 export * from './assets';
+export * from './assetSync';
 export * from './serviceOrders';
 export * from './dispatchIndex';
 export * from './addresses';

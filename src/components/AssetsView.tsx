@@ -39,8 +39,9 @@ import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
 import { 
-  dbGetAssets, 
-  dbSearchAssetsTargeted,
+  dbGetAddresses,
+  subscribeLocalAssets,
+  forceFullAssetResync,
   dbGetAssetHistory, 
   dbDeleteAsset, 
   dbDeleteAssetsBySector, 
@@ -83,21 +84,16 @@ export default function AssetsView({
   const [showScanSimulator, setShowScanSimulator] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
 
-  // Consultation navigation and filter states (Inspirado no modelo de Consulta Geral do MP)
-  const [consultationTab, setConsultationTab] = useState<'consulta' | 'resultado'>('consulta');
-  const [filterTipoBem, setFilterTipoBem] = useState<'Ativo' | 'Em Manutenção' | 'Baixado' | 'Todos'>('Todos');
-  const [filterPatrimonio, setFilterPatrimonio] = useState('');
-  const [filterNumeroAntigo, setFilterNumeroAntigo] = useState('');
+  // Filtros da lista (aplicados na hora sobre a cópia local de todos os ativos)
+  const [searchText, setSearchText] = useState('');
+  const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Todos'>('Todos');
   const [filterGerencia, setFilterGerencia] = useState('Todas');
+  const [filterCraai, setFilterCraai] = useState('Todas');
   const [filterUnidade, setFilterUnidade] = useState('Todas');
-  const [filterSetor, setFilterSetor] = useState('');
   const [filterTipoEquipamento, setFilterTipoEquipamento] = useState('Todos');
-  const [filterFabricanteModelo, setFilterFabricanteModelo] = useState('');
-  
-  // Consultation results & pagination
-  const [hasConsulted, setHasConsulted] = useState(false);
-  const [isConsulting, setIsConsulting] = useState(false);
-  const [consultationResults, setConsultationResults] = useState<Asset[]>([]);
+  const [assetsReady, setAssetsReady] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [addressCraais, setAddressCraais] = useState<{ craai: string; comarca: string }[]>([]);
 
   // Dynamic custom fields mapped from XLSX columns
   const [customDynamicFields, setCustomDynamicFields] = useState<string[]>([]);
@@ -144,129 +140,77 @@ export default function AssetsView({
     // Assets remain empty until the user triggers a targeted search/consultation
   };
 
-  // Derived unique units/comarcas for dropdown filter
+  // Cópia local de todos os ativos (sincronizada em tempo real, só o que muda)
+  useEffect(() => {
+    const unsubscribe = subscribeLocalAssets((list) => {
+      setAssets(list);
+      setAssetsReady(true);
+    });
+    dbGetAddresses().then((list) => setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca }))));
+    return unsubscribe;
+  }, []);
+
+  // Listas dos filtros: CRAAI e Comarca do cadastro de Endereços; Tipo com os valores reais dos ativos
+  const craaiOptions = React.useMemo(
+    () => ['Todas', ...Array.from(new Set<string>(addressCraais.map((a) => a.craai).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [addressCraais]
+  );
   const availableUnits = React.useMemo(() => {
-    const set = new Set<string>();
-    managements.forEach(m => {
-      (m.units || []).forEach(u => {
-        if (u.name) set.add(u.name);
-        if (u.comarca) set.add(u.comarca);
-      });
-    });
-    assets.forEach(a => {
-      const c = a.specs?.COMARCA || a.specs?.comarca;
-      if (c && typeof c === 'string') set.add(c);
-      const cr = a.specs?.CRAAI || a.specs?.craai;
-      if (cr && typeof cr === 'string') set.add(cr);
-      if (a.location) {
-        const firstPart = a.location.split(' - ')[0];
-        if (firstPart && firstPart.length > 2) set.add(firstPart.trim());
-      }
-    });
-    return ['Todas', ...Array.from(set).filter(Boolean).sort()];
-  }, [managements, assets]);
+    const list = addressCraais.filter((a) => filterCraai === 'Todas' || a.craai === filterCraai).map((a) => a.comarca);
+    return ['Todas', ...Array.from(new Set<string>(list.filter(Boolean))).sort((a, b) => a.localeCompare(b))];
+  }, [addressCraais, filterCraai]);
+  const commonEquipmentTypes = React.useMemo(
+    () => ['Todos', ...Array.from(new Set<string>(assets.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [assets]
+  );
 
-  const commonEquipmentTypes = [
-    'Todos',
-    'Ar Condicionado',
-    'Bomba Hidráulica',
-    'Chiller',
-    'Quadro Elétrico',
-    'Extintor de Incêndio',
-    'Transformador',
-    'Gerador',
-    'Predial / Civil'
-  ];
+  // Lista filtrada na hora: a busca procura em patrimônio, nome, série, sala, fabricante e modelo
+  const consultationResults = React.useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    const has = (value: any) => String(value || '').toLowerCase().includes(q);
+    return assets
+      .filter((a) => {
+        if (filterTipoBem !== 'Todos' && a.status !== filterTipoBem) return false;
+        if (filterGerencia !== 'Todas' && a.sector !== filterGerencia) return false;
+        if (filterCraai !== 'Todas' && String(a.specs?.CRAAI || '') !== filterCraai) return false;
+        if (filterUnidade !== 'Todas' && String(a.specs?.COMARCA || '') !== filterUnidade) return false;
+        if (filterTipoEquipamento !== 'Todos' && String(a.specs?.TIPO || '').trim() !== filterTipoEquipamento) return false;
+        if (!q) return true;
+        return [
+          a.code, a.id, a.name, a.location,
+          a.specs?.PATRIMONIO, a.specs?.serialNumber, a.specs?.['Nº DE SÉRIE'],
+          a.specs?.setor, a.specs?.SETOR, a.specs?.sala,
+          a.specs?.manufacturer, a.specs?.MARCA, a.specs?.model, a.specs?.MODELO, a.specs?.TIPO
+        ].some(has);
+      })
+      .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+  }, [assets, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
 
-  // Execute consultation matching all criteria via targeted query (ZERO full-collection reads)
-  const handleExecuteConsultation = async () => {
-    setIsConsulting(true);
-    try {
-      const qPatrimonio = filterPatrimonio.trim();
-      const qAntigo = filterNumeroAntigo.trim();
-      const qSetor = filterSetor.trim();
-      const qFabMod = filterFabricanteModelo.trim();
-      const qTipo = filterTipoEquipamento;
+  const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
+  const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
 
-      // Executa consulta pontual no Firestore: busca apenas os ativos que batem com o filtro
-      const targetedResults = await dbSearchAssetsTargeted({
-        codeOrPatrimonio: qPatrimonio || qAntigo,
-        sector: filterGerencia !== 'Todas' ? filterGerencia : undefined,
-        unitOrComarca: filterUnidade !== 'Todas' ? filterUnidade : undefined,
-        tipo: qTipo !== 'Todos' ? qTipo : undefined,
-        limitResults: 60
-      });
-
-      // Refinamento em memória apenas dos resultados pontuais trazidos (se houver filtros adicionais)
-      const filtered = targetedResults.filter(asset => {
-        // Status
-        if (filterTipoBem !== 'Todos') {
-          const assetStatus = (asset.specs?.STATUS || asset.specs?.status || 'Ativo').toLowerCase();
-          const targetStatus = filterTipoBem.toLowerCase();
-          if (targetStatus === 'ativo' && !assetStatus.includes('ativo') && assetStatus !== 'em operação') {
-            return false;
-          }
-          if (targetStatus === 'em manutenção' && !assetStatus.includes('manuten') && !assetStatus.includes('reparo')) {
-            return false;
-          }
-          if (targetStatus === 'baixado' && !assetStatus.includes('baix') && !assetStatus.includes('desativ')) {
-            return false;
-          }
-        }
-
-        // Setor / Sala
-        if (qSetor) {
-          const loc = String(asset.location || '').toLowerCase();
-          const sField = String(asset.specs?.setor || asset.specs?.SETOR || asset.specs?.sala || '').toLowerCase();
-          if (!loc.includes(qSetor.toLowerCase()) && !sField.includes(qSetor.toLowerCase())) return false;
-        }
-
-        // Fabricante / Modelo
-        if (qFabMod) {
-          const mfg = String(asset.specs?.manufacturer || asset.specs?.FABRICANTE || '').toLowerCase();
-          const mdl = String(asset.specs?.model || asset.specs?.MODELO || '').toLowerCase();
-          if (!mfg.includes(qFabMod.toLowerCase()) && !mdl.includes(qFabMod.toLowerCase())) return false;
-        }
-
-        return true;
-      });
-
-      setConsultationResults(filtered);
-      setHasConsulted(true);
-      setConsultationTab('resultado');
-      setSelectedAsset(null);
-    } finally {
-      setIsConsulting(false);
-    }
-  };
+  const selectClass = 'text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
 
   const handleClearFilters = () => {
+    setSearchText('');
     setFilterTipoBem('Todos');
-    setFilterPatrimonio('');
-    setFilterNumeroAntigo('');
     setFilterGerencia('Todas');
+    setFilterCraai('Todas');
     setFilterUnidade('Todas');
-    setFilterSetor('');
     setFilterTipoEquipamento('Todos');
-    setFilterFabricanteModelo('');
-    setConsultationResults([]);
-    setHasConsulted(false);
     setSelectedAsset(null);
-    setConsultationTab('consulta');
   };
 
-  const handleShowRecentAssets = async () => {
-    setIsConsulting(true);
+  // Recuperação manual: baixa todos os ativos de novo
+  const handleFullResync = async () => {
+    if (!window.confirm('Baixar novamente todos os ativos do banco? Use só se a lista parecer desatualizada.')) return;
+    setIsResyncing(true);
     try {
-      const recent = await dbSearchAssetsTargeted({
-        limitResults: 25
-      });
-      setConsultationResults(recent);
-      setHasConsulted(true);
-      setSelectedAsset(null);
-      setConsultationTab('resultado');
+      await forceFullAssetResync();
+    } catch (err: any) {
+      alert(`Não foi possível sincronizar: ${err?.message || err}`);
     } finally {
-      setIsConsulting(false);
+      setIsResyncing(false);
     }
   };
 
@@ -365,9 +309,6 @@ export default function AssetsView({
 
     if (match) {
       setSelectedAsset(match);
-      setConsultationResults([match]);
-      setHasConsulted(true);
-      setConsultationTab('resultado');
       onSelectScannedAsset(match.id);
       setShowScanSimulator(false);
       setMobileView('detail');
@@ -380,9 +321,6 @@ export default function AssetsView({
   // Trigger quick scan from QR image click
   const triggerQuickScan = (asset: Asset) => {
     setSelectedAsset(asset);
-    setConsultationResults([asset]);
-    setHasConsulted(true);
-    setConsultationTab('resultado');
     onSelectScannedAsset(asset.id);
     setMobileView('detail');
   };
@@ -402,10 +340,22 @@ export default function AssetsView({
             <span className="text-xs text-slate-500 font-medium">Gestão & Inventário de Bens</span>
           </div>
           <h1 className="text-2xl font-black text-[#0b1c30] tracking-tight flex items-center gap-2">
-            Movimentação - Consulta Geral
+            Ativos
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Localize e consulte equipamentos por número patrimonial, série, gerência ou unidade.
+          <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-2">
+            {assetsReady
+              ? `${assets.length} ativos na cópia local · atualizada em tempo real`
+              : 'Preparando a cópia local dos ativos...'}
+            {assetsReady && userProfile?.perfil !== 'Profissional' && (
+              <button
+                type="button"
+                onClick={handleFullResync}
+                disabled={isResyncing}
+                className="text-[#3525cd] hover:underline cursor-pointer disabled:opacity-50"
+              >
+                {isResyncing ? 'Sincronizando...' : 'Sincronizar tudo'}
+              </button>
+            )}
           </p>
         </div>
 
@@ -449,73 +399,70 @@ export default function AssetsView({
         </div>
       </div>
 
-      {/* TOP TAB NAVIGATION: Consultation Mode vs Results */}
-      <div className="flex items-center gap-2 border-b border-gray-200">
-        <button
-          type="button"
-          id="tab-consulta"
-          onClick={() => setConsultationTab('consulta')}
-          className={`pb-3 px-4 text-xs font-black flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
-            consultationTab === 'consulta'
-              ? 'border-[#3525cd] text-[#3525cd]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Filter className="w-4 h-4" />
-          <span>Consulta</span>
-        </button>
-
-        <button
-          type="button"
-          id="tab-resultado"
-          onClick={() => {
-            if (!hasConsulted && consultationResults.length === 0) {
-              handleExecuteConsultation();
-            } else {
-              setConsultationTab('resultado');
-            }
-          }}
-          className={`pb-3 px-4 text-xs font-black flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
-            consultationTab === 'resultado'
-              ? 'border-[#3525cd] text-[#3525cd]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Resultado da consulta</span>
-          {hasConsulted && (
-            <span className="ml-1.5 px-2 py-0.5 text-[10px] font-black rounded-full bg-slate-100 text-slate-700">
-              {consultationResults.length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* CONSULTATION TAB CONTENT */}
-      {consultationTab === 'consulta' && (
-        <div className="space-y-6">
-          {/* Card Detalhamento da Consulta */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-black text-[#0b1c30] uppercase tracking-wide mb-4 pb-2 border-b border-gray-100 flex items-center gap-2">
-              <Filter className="w-4 h-4 text-[#3525cd]" />
-              Detalhamento Da Consulta
-            </h3>
-
-            {/* Tipo de Bem Selector (Radio Pills) */}
-            <div className="mb-6">
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Situação / Tipo do Bem:
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {(['Todos', 'Ativo', 'Em Manutenção', 'Baixado'] as const).map(option => (
+      {selectedAsset ? (
+        <AssetDetailPanel
+          asset={selectedAsset}
+          history={history}
+          onBackToList={() => setSelectedAsset(null)}
+          onBackToMobileList={() => setMobileView('list')}
+          onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}
+          onQuickScan={(asset) => triggerQuickScan(asset)}
+          onEditAsset={(asset) => handleOpenEditModal(asset)}
+          onViewOrder={handleViewHistoryOrder}
+        />
+      ) : (
+        <>
+          {/* FILTROS (aplicados na hora) */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Buscar patrimônio, nome, série, sala, fabricante, modelo..."
+                className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
+              />
+            </div>
+            <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
+                <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
+                  <option value="Todas">Gerência: Todas</option>
+                  {managements.map((m) => (
+                    <option key={m.id} value={m.name}>{m.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterCraai}
+                  onChange={(e) => {
+                    setFilterCraai(e.target.value);
+                    setFilterUnidade('Todas');
+                  }}
+                  className={selectClass}
+                >
+                  {craaiOptions.map((c) => (
+                    <option key={c} value={c}>{c === 'Todas' ? 'CRAAI: Todas' : c}</option>
+                  ))}
+                </select>
+                <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className={selectClass}>
+                  {availableUnits.map((u) => (
+                    <option key={u} value={u}>{u === 'Todas' ? 'Comarca: Todas' : u}</option>
+                  ))}
+                </select>
+                <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
+                  {commonEquipmentTypes.map((t) => (
+                    <option key={t} value={t}>{t === 'Todos' ? 'Tipo: Todos' : t}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
+                {(['Todos', 'Operando', 'Em Manutenção', 'Parado'] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
                     onClick={() => setFilterTipoBem(option)}
-                    className={`py-2 px-3.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                      filterTipoBem === option
-                        ? 'bg-[#0b1c30] text-white border-[#0b1c30] shadow-xs'
-                        : 'bg-white text-slate-700 border-gray-200 hover:bg-slate-50'
+                    className={`py-1 px-2.5 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      filterTipoBem === option ? 'bg-[#0b1c30] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
                     }`}
                   >
                     {option}
@@ -523,200 +470,37 @@ export default function AssetsView({
                 ))}
               </div>
             </div>
-
-            {/* Grid of Search Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Nº Patrimonial */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nº Patrimonial / Código:
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={filterPatrimonio}
-                    onChange={(e) => setFilterPatrimonio(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleExecuteConsultation()}
-                    placeholder="Ex: 88721, REFRIG-001..."
-                    className="w-full text-xs font-medium py-2 px-3 pl-8 bg-white border border-gray-300 rounded-lg text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                  />
-                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-3" />
-                </div>
-              </div>
-
-              {/* Nº Antigo / Nº Série */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nº Antigo / Série:
-                </label>
-                <input
-                  type="text"
-                  value={filterNumeroAntigo}
-                  onChange={(e) => setFilterNumeroAntigo(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleExecuteConsultation()}
-                  placeholder="Número antigo ou série..."
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                />
-              </div>
-
-              {/* Gerência / Coordenação */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Gerência / Coordenação:
-                </label>
-                <select
-                  value={filterGerencia}
-                  onChange={(e) => setFilterGerencia(e.target.value)}
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                >
-                  <option value="Todas">Todas as Gerências</option>
-                  {managements.map(m => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Unidade / Comarca */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Unidade / Comarca:
-                </label>
-                <select
-                  value={filterUnidade}
-                  onChange={(e) => setFilterUnidade(e.target.value)}
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                >
-                  {availableUnits.map(u => (
-                    <option key={u} value={u}>{u}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Setor / Sala / Centro de Custo */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Setor / Sala / Localização:
-                </label>
-                <input
-                  type="text"
-                  value={filterSetor}
-                  onChange={(e) => setFilterSetor(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleExecuteConsultation()}
-                  placeholder="Ex: Sala 402, Bloco B, CPD..."
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                />
-              </div>
-
-              {/* Tipo de Equipamento */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Tipo de Equipamento:
-                </label>
-                <select
-                  value={filterTipoEquipamento}
-                  onChange={(e) => setFilterTipoEquipamento(e.target.value)}
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                >
-                  {commonEquipmentTypes.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Fabricante / Modelo */}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Fabricante / Marca / Modelo:
-                </label>
-                <input
-                  type="text"
-                  value={filterFabricanteModelo}
-                  onChange={(e) => setFilterFabricanteModelo(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleExecuteConsultation()}
-                  placeholder="Ex: Carrier, Daikin, WEG, Schneider..."
-                  className="w-full text-xs font-medium py-2 px-3 bg-white border border-gray-300 rounded-lg text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons Bar */}
-            <div className="mt-6 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <div className="flex justify-end">
                 <button
                   type="button"
-                  id="btn-execute-consultation"
-                  onClick={handleExecuteConsultation}
-                  disabled={isConsulting}
-                  className="py-2.5 px-6 bg-[#3525cd] hover:bg-[#2a1da6] text-white text-xs font-black rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:shadow disabled:opacity-50"
-                >
-                  {isConsulting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Consultando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4" />
-                      <span>Consultar Ativos</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  id="btn-clear-filters"
                   onClick={handleClearFilters}
-                  className="py-2.5 px-4 bg-white border border-gray-300 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer"
+                  className="text-[11px] font-bold text-slate-500 hover:text-[#3525cd] flex items-center gap-1 cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Limpar Filtros</span>
+                  <RotateCcw className="w-3 h-3" /> Limpar filtros
                 </button>
               </div>
-
-              <div>
-                <button
-                  type="button"
-                  id="btn-show-recent"
-                  onClick={handleShowRecentAssets}
-                  className="py-2.5 px-4 bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer"
-                >
-                  <Clock className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Ver 25 Mais Recentes</span>
-                </button>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      )}
 
-      {/* RESULTS TAB CONTENT */}
-      {consultationTab === 'resultado' && (
-        <div className="space-y-6">
-          {selectedAsset ? (
-            <AssetDetailPanel
-              asset={selectedAsset}
-              history={history}
-              onBackToList={() => setSelectedAsset(null)}
-              onBackToMobileList={() => setMobileView('list')}
-              onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}
-              onQuickScan={(asset) => triggerQuickScan(asset)}
-              onEditAsset={(asset) => handleOpenEditModal(asset)}
-              onViewOrder={handleViewHistoryOrder}
-            />
+          {/* RESULTADO */}
+          {!assetsReady ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Preparando a cópia local dos ativos...
+            </div>
           ) : (
             <AssetConsultationTable
               results={consultationResults}
+              resetKey={filtersKey}
               onSelectAsset={(asset) => setSelectedAsset(asset)}
               onEditAsset={(asset) => handleOpenEditModal(asset)}
               onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}
-              onNewSearch={() => setConsultationTab('consulta')}
-              onShowRecent={handleShowRecentAssets}
               userHasActionPermission={userHasActionPermission}
               userProfile={userProfile}
-              pageSize={25}
+              pageSize={50}
             />
           )}
-        </div>
+        </>
       )}
 
       {/* OS COMPLETA ABERTA PELO HISTÓRICO DO ATIVO (somente consulta) */}
@@ -738,7 +522,7 @@ export default function AssetsView({
         isOpen={showScanSimulator}
         onClose={() => setShowScanSimulator(false)}
         onScanSuccess={handleQrCodeDetected}
-        assets={assets}
+        assets={consultationResults.slice(0, 30)}
       />
 
       {/* EDIT ASSET FORM MODAL (EXTRAÍDO NA ETAPA 3) */}
@@ -763,8 +547,6 @@ export default function AssetsView({
         onConfirmSectorDelete={async (targetSector) => {
           try {
             await dbDeleteAssetsBySector(targetSector);
-            const allAssets = await dbGetAssets();
-            setAssets(allAssets);
             setSelectedAsset(null);
             setShowSectorDeleteModal(false);
             alert(`Todos os itens do setor "${targetSector}" foram eliminados com sucesso.`);
@@ -785,8 +567,6 @@ export default function AssetsView({
         onConfirmDelete={async (targetAsset) => {
           try {
             await dbDeleteAsset(targetAsset.id);
-            const allAssets = await dbGetAssets();
-            setAssets(allAssets);
             setSelectedAsset(null);
             setShowDeleteAssetModal(false);
             setAssetToDelete(null);
