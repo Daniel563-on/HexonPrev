@@ -74,6 +74,8 @@ export const getAssetComarcaClean = (asset: Asset): string => {
 };
 
 export const isAssetCompatibleWithTemplate = (asset: Asset, t: MaintenanceTemplate): boolean => {
+  // Ativo baixado não recebe novas preventivas
+  if (asset.status === 'Baixado') return false;
   if (t.type !== 'preventive') return false;
   const tAssetType = (t.targetAssetType || '').toLowerCase().trim();
   const assetTipoSpec = (asset.specs?.TIPO || asset.specs?.tipo || '').toLowerCase().trim();

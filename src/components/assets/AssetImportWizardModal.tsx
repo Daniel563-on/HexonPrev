@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Asset, Management } from '../../types';
-import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets } from '../../db/firebase';
+import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets, dbCancelOpenOrdersForAssets } from '../../db/firebase';
 
 export interface PeriodicityRule {
   keyword: string;
@@ -61,12 +61,19 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
     newCount: number;
     updatedCount: number;
     unchangedCount: number;
+    retiredCount: number;
+    cancelledOrders: number;
   }>({
     totalProcessed: 0,
     newCount: 0,
     updatedCount: 0,
-    unchangedCount: 0
+    unchangedCount: 0,
+    retiredCount: 0,
+    cancelledOrders: 0
   });
+
+  // Resumo antes de gravar (passo 4): o que será gravado e quais ativos da gerência serão baixados
+  const [pendingImport, setPendingImport] = useState<{ toSave: Asset[]; toRetire: Asset[]; sectorTotal: number } | null>(null);
 
   const [newRuleKeyword, setNewRuleKeyword] = useState<string>('');
   const [newRulePeriodicities, setNewRulePeriodicities] = useState<('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[]>(['Mensal']);
@@ -404,7 +411,8 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
             status: rawStatus,
             specs: assetSpecs,
             periodicities: targetPeriodicities,
-            updatedAt: nowString
+            updatedAt: nowString,
+            retiredAt: undefined // se estava baixado e voltou na planilha, volta a valer
           };
 
           parsedAssets.push(updatedAsset);
@@ -449,26 +457,66 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         }
       }
 
+      // Ativos da gerência importada que NÃO vieram na planilha: serão baixados (após confirmação)
+      const sheetCodes = new Set(
+        importRows.map((row) => String(row[columnMappings['code']] || '').trim().toUpperCase()).filter(Boolean)
+      );
+      const sameSector = (a: Asset) => (a.sector || '').trim().toLowerCase() === importTargetSector.trim().toLowerCase();
+      const sectorAssets = savedAssets.filter(sameSector);
+      const toRetire = sectorAssets.filter(
+        (a) => a.status !== 'Baixado' && !sheetCodes.has((a.code || '').trim().toUpperCase())
+      );
+
       setImportStats({
         totalProcessed: importRows.length,
         newCount,
         updatedCount,
-        unchangedCount
+        unchangedCount,
+        retiredCount: toRetire.length,
+        cancelledOrders: 0
       });
 
-      if (parsedAssets.length === 0) {
+      if (parsedAssets.length === 0 && toRetire.length === 0) {
         if (unchangedCount > 0) {
           setImportStep(3);
-          setIsProcessingImport(false);
           return;
         }
         alert('Nenhum ativo válido pôde ser extraído da planilha.');
-        setIsProcessingImport(false);
         return;
       }
 
-      // Save only new or modified assets in database
-      await dbSaveAssetsBulk(parsedAssets);
+      // Nada é gravado ainda: mostra o resumo para o usuário confirmar
+      setPendingImport({ toSave: parsedAssets, toRetire, sectorTotal: sectorAssets.length });
+      setImportStep(4);
+    } catch (err) {
+      console.error('Import error:', err);
+      alert('Houve um erro técnico ao analisar a planilha. Entre em contato com o suporte.');
+    } finally {
+      setIsProcessingImport(false);
+    }
+  };
+
+  // Grava depois da confirmação: novos/alterados, baixas e cancelamento das OS abertas dos baixados
+  const handleApplyImport = async () => {
+    if (!pendingImport) return;
+    setIsProcessingImport(true);
+    try {
+      const nowString = new Date().toISOString();
+      if (pendingImport.toSave.length > 0) {
+        await dbSaveAssetsBulk(pendingImport.toSave);
+      }
+
+      let cancelledOrders = 0;
+      if (pendingImport.toRetire.length > 0) {
+        await dbSaveAssetsBulk(
+          pendingImport.toRetire.map((a) => ({ ...a, status: 'Baixado' as const, retiredAt: nowString, updatedAt: nowString }))
+        );
+        cancelledOrders = await dbCancelOpenOrdersForAssets(
+          pendingImport.toRetire.map((a) => a.id),
+          'Ativo baixado: não constava na planilha de importação da gerência'
+        );
+      }
+      setImportStats((prev) => ({ ...prev, cancelledOrders }));
 
       // Save dynamic custom fields from import headers
       const defaultFields = [
@@ -487,13 +535,13 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
       localStorage.setItem('HEXON_CUSTOM_FIELDS', JSON.stringify(defaultFields));
       setCustomDynamicFields(defaultFields);
 
+      setPendingImport(null);
       setImportStep(3);
       await onReloadAssets();
-      
-      if (parsedAssets.length > 0) {
-        onImportSuccess(parsedAssets[0]);
-      }
 
+      if (pendingImport.toSave.length > 0) {
+        onImportSuccess(pendingImport.toSave[0]);
+      }
     } catch (err) {
       console.error('Import error:', err);
       alert('Houve um erro técnico realizando a gravação em lote. Entre em contato com o suporte.');
@@ -1005,6 +1053,65 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
             </div>
           )}
 
+          {/* STEP 4: RESUMO ANTES DE GRAVAR (proteção contra planilha incompleta) */}
+          {importStep === 4 && pendingImport && (() => {
+            const retirePct = pendingImport.sectorTotal > 0 ? Math.round((pendingImport.toRetire.length / pendingImport.sectorTotal) * 100) : 0;
+            return (
+              <div className="space-y-4 animate-fade-in">
+                <div>
+                  <h3 className="font-black text-sm text-[#0b1c30]">Confira antes de gravar</h3>
+                  <p className="text-xs text-gray-500">
+                    Gerência: <strong>{importTargetSector}</strong>. Nada foi gravado ainda.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50">
+                    <p className="text-lg font-black text-emerald-700">{importStats.newCount}</p>
+                    <p className="text-[10px] font-bold uppercase text-emerald-800">Novos</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-blue-200 bg-blue-50">
+                    <p className="text-lg font-black text-blue-700">{importStats.updatedCount}</p>
+                    <p className="text-[10px] font-bold uppercase text-blue-800">Atualizados</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                    <p className="text-lg font-black text-slate-600">{importStats.unchangedCount}</p>
+                    <p className="text-[10px] font-bold uppercase text-slate-600">Sem alteração</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50">
+                    <p className="text-lg font-black text-rose-700">{pendingImport.toRetire.length}</p>
+                    <p className="text-[10px] font-bold uppercase text-rose-800">Serão baixados</p>
+                  </div>
+                </div>
+
+                {retirePct >= 20 && (
+                  <div className="p-3 rounded-xl border-2 border-rose-300 bg-rose-50 text-xs font-bold text-rose-800">
+                    ⚠️ Atenção: {retirePct}% dos ativos da gerência {importTargetSector} serão baixados. Confira se a planilha está completa e se a gerência escolhida está correta.
+                  </div>
+                )}
+
+                {pendingImport.toRetire.length > 0 && (
+                  <div className="border border-rose-200 rounded-xl overflow-hidden">
+                    <p className="px-3 py-2 bg-rose-50 text-[11px] font-bold text-rose-800">
+                      Não vieram na planilha: serão marcados como <strong>Baixado</strong> e as OS abertas deles serão <strong>canceladas</strong>.
+                    </p>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 text-[11px]">
+                      {pendingImport.toRetire.slice(0, 200).map((a) => (
+                        <div key={a.id} className="px-3 py-1.5 flex gap-3">
+                          <span className="font-mono font-bold text-indigo-700 w-24 shrink-0">{a.code}</span>
+                          <span className="text-slate-700 truncate flex-1">{a.name}</span>
+                          <span className="text-slate-400 shrink-0">{a.specs?.COMARCA || ''}</span>
+                        </div>
+                      ))}
+                      {pendingImport.toRetire.length > 200 && (
+                        <p className="px-3 py-1.5 text-slate-400 italic">... e mais {pendingImport.toRetire.length - 200} ativo(s).</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* STEP 3: SUCCESS PANEL */}
           {importStep === 3 && (
             <div className="py-8 text-center space-y-4 animate-fade-in">
@@ -1036,9 +1143,17 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                   <span>Idênticos (Sem regravação):</span>
                   <strong className="font-bold">{importStats.unchangedCount}</strong>
                 </div>
+                <div className="flex justify-between text-rose-700">
+                  <span>Ativos Baixados:</span>
+                  <strong className="font-bold">{importStats.retiredCount}</strong>
+                </div>
+                <div className="flex justify-between text-rose-700">
+                  <span>OS Abertas Canceladas:</span>
+                  <strong className="font-bold">{importStats.cancelledOrders}</strong>
+                </div>
                 <div className="pt-1.5 border-t border-gray-200 flex justify-between text-[10px]">
                   <span className="text-slate-400">Gravações no Banco:</span>
-                  <strong className="text-emerald-600 font-bold">{importStats.newCount + importStats.updatedCount} ({importStats.unchangedCount} poupadas)</strong>
+                  <strong className="text-emerald-600 font-bold">{importStats.newCount + importStats.updatedCount + importStats.retiredCount} ({importStats.unchangedCount} poupadas)</strong>
                 </div>
               </div>
             </div>
@@ -1087,13 +1202,42 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                   {isProcessingImport ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      Gravando Ativos...
+                      Analisando...
                     </>
                   ) : (
-                    'Confirmar Importação de Ativos'
+                    'Analisar Planilha'
                   )}
                 </button>
               </div>
+            </>
+          ) : importStep === 4 ? (
+            <>
+              <button
+                type="button"
+                disabled={isProcessingImport}
+                onClick={() => {
+                  setPendingImport(null);
+                  setImportStep(2);
+                }}
+                className="px-4 py-2 border border-gray-250 rounded-lg text-gray-500 hover:bg-gray-100 transition-all font-bold disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyImport}
+                disabled={isProcessingImport}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-sm border border-emerald-600"
+              >
+                {isProcessingImport ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    Gravando...
+                  </>
+                ) : (
+                  'Confirmar e Gravar'
+                )}
+              </button>
             </>
           ) : (
             <button 

@@ -34,10 +34,11 @@ import { AssetScannerModal, AssetDeleteModal, AssetSectorDeleteModal } from './a
 import { AssetImportWizardModal } from './assets/AssetImportWizardModal';
 import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
+import { AddressDetailPanel } from './assets/AddressDetailPanel';
 import { AssetConsultationTable } from './assets/AssetConsultationTable';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
-import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
+import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address } from '../types';
 import { 
   dbGetAddresses,
   subscribeLocalAssets,
@@ -86,7 +87,7 @@ export default function AssetsView({
 
   // Filtros da lista (aplicados na hora sobre a cópia local de todos os ativos)
   const [searchText, setSearchText] = useState('');
-  const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Todos'>('Todos');
+  const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Baixado' | 'Todos'>('Todos');
   const [filterGerencia, setFilterGerencia] = useState('Todas');
   const [filterCraai, setFilterCraai] = useState('Todas');
   const [filterUnidade, setFilterUnidade] = useState('Todas');
@@ -94,6 +95,7 @@ export default function AssetsView({
   const [assetsReady, setAssetsReady] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
   const [addressCraais, setAddressCraais] = useState<{ craai: string; comarca: string }[]>([]);
+  const [addressList, setAddressList] = useState<Address[]>([]);
 
   // Dynamic custom fields mapped from XLSX columns
   const [customDynamicFields, setCustomDynamicFields] = useState<string[]>([]);
@@ -146,7 +148,10 @@ export default function AssetsView({
       setAssets(list);
       setAssetsReady(true);
     });
-    dbGetAddresses().then((list) => setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca }))));
+    dbGetAddresses().then((list) => {
+      setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca })));
+      setAddressList(list);
+    });
     return unsubscribe;
   }, []);
 
@@ -159,37 +164,89 @@ export default function AssetsView({
     const list = addressCraais.filter((a) => filterCraai === 'Todas' || a.craai === filterCraai).map((a) => a.comarca);
     return ['Todas', ...Array.from(new Set<string>(list.filter(Boolean))).sort((a, b) => a.localeCompare(b))];
   }, [addressCraais, filterCraai]);
+
+  // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
+  const addressItems = React.useMemo<Asset[]>(
+    () =>
+      addressList.map((ad) => ({
+        id: `addr:${ad.id}`,
+        kind: 'address',
+        addressId: ad.id,
+        code: ad.code,
+        name: ad.address,
+        sector: 'DOM',
+        location: `${ad.comarca} · ${ad.craai}`,
+        status: ad.active ? 'Operando' : 'Baixado',
+        specs: { CRAAI: ad.craai, COMARCA: ad.comarca, TIPO: 'IMÓVEL / ENDEREÇO', STATUS: ad.active ? 'Ativo' : 'Inativo' },
+        createdAt: ad.createdAt,
+        updatedAt: ad.updatedAt
+      })),
+    [addressList]
+  );
+  const allItems = React.useMemo(() => [...assets, ...addressItems], [assets, addressItems]);
+
   const commonEquipmentTypes = React.useMemo(
-    () => ['Todos', ...Array.from(new Set<string>(assets.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
-    [assets]
+    () => ['Todos', ...Array.from(new Set<string>(allItems.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [allItems]
   );
 
   // Lista filtrada na hora: a busca procura em patrimônio, nome, série, sala, fabricante e modelo
-  const consultationResults = React.useMemo(() => {
+  const matchesSearch = (a: Asset, q: string) =>
+    !q ||
+    [
+      a.code, a.id, a.name, a.location,
+      a.specs?.PATRIMONIO, a.specs?.serialNumber, a.specs?.['Nº DE SÉRIE'],
+      a.specs?.setor, a.specs?.SETOR, a.specs?.sala,
+      a.specs?.manufacturer, a.specs?.MARCA, a.specs?.model, a.specs?.MODELO, a.specs?.TIPO
+    ].some((value) => String(value || '').toLowerCase().includes(q));
+
+  // Resultado + contagem inteligente: cada opção mostra quantos ativos teria, respeitando os OUTROS filtros
+  type FacetKey = 'status' | 'gerencia' | 'craai' | 'comarca' | 'tipo';
+  const { consultationResults, facetCounts } = React.useMemo(() => {
+    const FACETS: FacetKey[] = ['status', 'gerencia', 'craai', 'comarca', 'tipo'];
     const q = searchText.trim().toLowerCase();
-    const has = (value: any) => String(value || '').toLowerCase().includes(q);
-    return assets
-      .filter((a) => {
-        if (filterTipoBem !== 'Todos' && a.status !== filterTipoBem) return false;
-        if (filterGerencia !== 'Todas' && a.sector !== filterGerencia) return false;
-        if (filterCraai !== 'Todas' && String(a.specs?.CRAAI || '') !== filterCraai) return false;
-        if (filterUnidade !== 'Todas' && String(a.specs?.COMARCA || '') !== filterUnidade) return false;
-        if (filterTipoEquipamento !== 'Todos' && String(a.specs?.TIPO || '').trim() !== filterTipoEquipamento) return false;
-        if (!q) return true;
-        return [
-          a.code, a.id, a.name, a.location,
-          a.specs?.PATRIMONIO, a.specs?.serialNumber, a.specs?.['Nº DE SÉRIE'],
-          a.specs?.setor, a.specs?.SETOR, a.specs?.sala,
-          a.specs?.manufacturer, a.specs?.MARCA, a.specs?.model, a.specs?.MODELO, a.specs?.TIPO
-        ].some(has);
-      })
-      .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
-  }, [assets, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
+    const counts = Object.fromEntries(FACETS.map((f) => [f, new Map<string, number>()])) as Record<FacetKey, Map<string, number>>;
+    const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, craai: 0, comarca: 0, tipo: 0 };
+    const list: Asset[] = [];
+    for (const a of allItems) {
+      if (!matchesSearch(a, q)) continue;
+      const v: Record<FacetKey, string> = {
+        status: a.status,
+        gerencia: a.sector,
+        craai: String(a.specs?.CRAAI || ''),
+        comarca: String(a.specs?.COMARCA || ''),
+        tipo: String(a.specs?.TIPO || '').trim()
+      };
+      const ok: Record<FacetKey, boolean> = {
+        status: filterTipoBem === 'Todos' || v.status === filterTipoBem,
+        gerencia: filterGerencia === 'Todas' || v.gerencia === filterGerencia,
+        craai: filterCraai === 'Todas' || v.craai === filterCraai,
+        comarca: filterUnidade === 'Todas' || v.comarca === filterUnidade,
+        tipo: filterTipoEquipamento === 'Todos' || v.tipo === filterTipoEquipamento
+      };
+      for (const f of FACETS) {
+        if (FACETS.every((o) => o === f || ok[o])) {
+          counts[f].set(v[f], (counts[f].get(v[f]) || 0) + 1);
+          totals[f]++;
+        }
+      }
+      if (FACETS.every((f) => ok[f])) list.push(a);
+    }
+    list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
+    return { consultationResults: list, facetCounts: { counts, totals } };
+  }, [allItems, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
+
+  // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
+  const countOf = (f: FacetKey, value: string) => facetCounts.counts[f].get(value) || 0;
+  const optionLabel = (label: string, n: number) => `${label} (${n.toLocaleString('pt-BR')})`;
+  const visibleOptions = (f: FacetKey, values: string[], selected: string) =>
+    values.filter((v) => v === selected || countOf(f, v) > 0);
 
   const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
   const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
 
-  const selectClass = 'text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
+  const selectClass = 'w-full text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
+  const labelClass = 'block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1';
 
   const handleClearFilters = () => {
     setSearchText('');
@@ -230,7 +287,7 @@ export default function AssetsView({
 
   // Update selected asset and load history when selection shifts
   useEffect(() => {
-    if (selectedAsset) {
+    if (selectedAsset && selectedAsset.kind !== 'address') {
       dbGetAssetHistory(selectedAsset.id).then((hist) => {
         setHistory(hist);
       });
@@ -344,7 +401,7 @@ export default function AssetsView({
           </h1>
           <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-2">
             {assetsReady
-              ? `${assets.length} ativos na cópia local · atualizada em tempo real`
+              ? `${assets.length} ativos e ${addressItems.length} endereços · atualizado em tempo real`
               : 'Preparando a cópia local dos ativos...'}
             {assetsReady && userProfile?.perfil !== 'Profissional' && (
               <button
@@ -399,7 +456,9 @@ export default function AssetsView({
         </div>
       </div>
 
-      {selectedAsset ? (
+      {selectedAsset?.kind === 'address' ? (
+        <AddressDetailPanel asset={selectedAsset} onBackToList={() => setSelectedAsset(null)} onViewOrder={handleViewHistoryOrder} />
+      ) : selectedAsset ? (
         <AssetDetailPanel
           asset={selectedAsset}
           history={history}
@@ -414,24 +473,40 @@ export default function AssetsView({
         <>
           {/* FILTROS (aplicados na hora) */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Buscar patrimônio, nome, série, sala, fabricante, modelo..."
-                className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-              />
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Buscar patrimônio, nome, série, sala, fabricante, modelo..."
+                  className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
+                />
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="text-[11px] font-bold text-slate-500 hover:text-[#3525cd] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                >
+                  <RotateCcw className="w-3 h-3" /> Limpar filtros
+                </button>
+              )}
             </div>
-            <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
+            {/* Filtros de lista: largura total, nome acima de cada um */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+              <label className="block min-w-0">
+                <span className={labelClass}>Gerência</span>
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
-                  <option value="Todas">Gerência: Todas</option>
-                  {managements.map((m) => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.gerencia)}</option>
+                  {visibleOptions('gerencia', Array.from(new Set([...managements.map((m) => m.name), 'DOM'])), filterGerencia).map((name) => (
+                    <option key={name} value={name}>{optionLabel(name, countOf('gerencia', name))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>CRAAI</span>
                 <select
                   value={filterCraai}
                   onChange={(e) => {
@@ -440,47 +515,40 @@ export default function AssetsView({
                   }}
                   className={selectClass}
                 >
-                  {craaiOptions.map((c) => (
-                    <option key={c} value={c}>{c === 'Todas' ? 'CRAAI: Todas' : c}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.craai)}</option>
+                  {visibleOptions('craai', craaiOptions.filter((c) => c !== 'Todas'), filterCraai).map((c) => (
+                    <option key={c} value={c}>{optionLabel(c, countOf('craai', c))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Comarca</span>
                 <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className={selectClass}>
-                  {availableUnits.map((u) => (
-                    <option key={u} value={u}>{u === 'Todas' ? 'Comarca: Todas' : u}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.comarca)}</option>
+                  {visibleOptions('comarca', availableUnits.filter((u) => u !== 'Todas'), filterUnidade).map((u) => (
+                    <option key={u} value={u}>{optionLabel(u, countOf('comarca', u))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Tipo</span>
                 <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
-                  {commonEquipmentTypes.map((t) => (
-                    <option key={t} value={t}>{t === 'Todos' ? 'Tipo: Todos' : t}</option>
+                  <option value="Todos">{optionLabel('Todos', facetCounts.totals.tipo)}</option>
+                  {visibleOptions('tipo', commonEquipmentTypes.filter((t) => t !== 'Todos'), filterTipoEquipamento).map((t) => (
+                    <option key={t} value={t}>{optionLabel(t, countOf('tipo', t))}</option>
                   ))}
                 </select>
-              </div>
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
-                {(['Todos', 'Operando', 'Em Manutenção', 'Parado'] as const).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setFilterTipoBem(option)}
-                    className={`py-1 px-2.5 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                      filterTipoBem === option ? 'bg-[#0b1c30] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
-                    }`}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Status</span>
+                <select value={filterTipoBem} onChange={(e) => setFilterTipoBem(e.target.value as typeof filterTipoBem)} className={selectClass}>
+                  <option value="Todos">{optionLabel('Todos', facetCounts.totals.status)}</option>
+                  {visibleOptions('status', ['Operando', 'Em Manutenção', 'Parado', 'Baixado'], filterTipoBem).map((st) => (
+                    <option key={st} value={st}>{optionLabel(st, countOf('status', st))}</option>
+                  ))}
+                </select>
+              </label>
             </div>
-            {hasActiveFilters && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleClearFilters}
-                  className="text-[11px] font-bold text-slate-500 hover:text-[#3525cd] flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" /> Limpar filtros
-                </button>
-              </div>
-            )}
           </div>
 
           {/* RESULTADO */}

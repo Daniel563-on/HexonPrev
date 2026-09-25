@@ -175,7 +175,7 @@ export default function DashboardView({
       return o.scheduledDate && exec === o.scheduledDate ? 'P' : 'A';
     };
     return orders
-      .filter((o) => (o.endDate || '').slice(0, 7) === currentMonth)
+      .filter((o) => (o.endDate || '').slice(0, 7) === currentMonth && o.status !== 'Cancelada')
       .map((o) => ({
         month: currentMonth,
         sector: o.sector || 'Sem gerência',

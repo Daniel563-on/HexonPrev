@@ -179,15 +179,7 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onPrintAssetTag ? onPrintAssetTag(asset) : printAssetTag(asset)}
-                        title="Imprimir Etiqueta QR"
-                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Tag className="w-3.5 h-3.5" />
-                      </button>
-                      {(!userHasActionPermission || userHasActionPermission('create_asset')) && onEditAsset && (
+                      {asset.kind !== 'address' && (!userHasActionPermission || userHasActionPermission('create_asset')) && onEditAsset && (
                         <button
                           type="button"
                           onClick={() => onEditAsset(asset)}
@@ -197,7 +189,7 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {userProfile?.perfil === 'Super Administrador' && onDeleteAsset && (
+                      {asset.kind !== 'address' && userProfile?.perfil === 'Super Administrador' && onDeleteAsset && (
                         <button
                           type="button"
                           onClick={() => onDeleteAsset(asset)}
