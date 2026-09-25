@@ -507,7 +507,6 @@ export default function OrdersCalendarPlanning({
                 {(() => {
                   const lateThisMonth = orders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
                   if (lateThisMonth.length === 0) return null;
-
                   return (
                     <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-fadeIn">
                       <div className="flex items-center gap-2 text-left min-w-0">
@@ -572,6 +571,8 @@ export default function OrdersCalendarPlanning({
 
               // Não se agenda nada antes de hoje: dias passados ficam só para consulta
               const isPastSelection = selectedDateStr < localTodayStr();
+              const revertibleUnexecutedInPeriod = revertibleLateInPeriod;
+              const expiredUnexecutedInPeriod = dayUnexecutedOrders.filter(os => !canRevertUnexecutedOrder(os, currentCalendarDate));
 
               // 2. Get all 'Novo' preventives awaiting scheduling, filtered by criteria
               const rawNewOrders = orders.filter(os => {
@@ -712,6 +713,7 @@ export default function OrdersCalendarPlanning({
                             </p>
                           </div>
                         )}
+
                         {/* 1. SELETOR DE COMARCA & BUSCA RÁPIDA */}
                         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
                           <div className="flex items-center justify-between">
@@ -1098,7 +1100,7 @@ export default function OrdersCalendarPlanning({
                                         }
                                       }}
                                       className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs shrink-0 ${
-                                        canSchedule
+                                        canSchedule 
                                           ? 'bg-[#3525cd] hover:bg-[#281bbb] text-white' 
                                           : 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed'
                                       }`}
@@ -1197,7 +1199,6 @@ export default function OrdersCalendarPlanning({
                               </span>
                             </button>
                           </div>
-
                         </div>
 
                         {/* SUB-VIEW 1: Planejadas */}
@@ -1509,7 +1510,6 @@ export default function OrdersCalendarPlanning({
                                 )}
                               </div>
                             )}
-
                             {!isLateTab && dayUnexecutedOrders.length > 0 && (
                               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-2 text-left">
                                 <AlertTriangle className="w-4 h-4 text-slate-500 shrink-0" />
@@ -1518,12 +1518,9 @@ export default function OrdersCalendarPlanning({
                                 </p>
                               </div>
                             )}
-
                             {tabOrders.length === 0 ? (
                               <div className="text-center py-12 text-slate-400 text-xs italic bg-white border border-dashed border-slate-200 rounded-xl font-medium">
-                                {isLateTab
-                                  ? 'Nenhuma preventiva atrasada neste período selecionado.'
-                                  : 'Nenhuma preventiva com status "Não Executada" neste período selecionado.'}
+                                {isLateTab ? 'Nenhuma preventiva atrasada neste período selecionado.' : 'Nenhuma preventiva com status "Não Executada" neste período selecionado.'}
                               </div>
                             ) : (
                               <div className="space-y-3">

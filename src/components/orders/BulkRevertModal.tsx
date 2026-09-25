@@ -69,7 +69,7 @@ export default function BulkRevertModal({
       onSuccess();
       onClose();
     } catch (err) {
-      console.error('Failed to bulk revert late orders:', err);
+      console.error('Failed to bulk revert unexecuted orders:', err);
       alert('Erro ao reverter preventivas atrasadas. Tente novamente.');
     } finally {
       setIsBulkReverting(false);

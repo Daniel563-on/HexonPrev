@@ -116,15 +116,11 @@ export default function ServiceOrdersView({
   // - "Não Executada" (passou do prazo do Super Administrador) fica bloqueada: ninguém reverte.
   const canRevertUnexecutedOrder = (os: ServiceOrder, targetMonthDate: Date = currentCalendarDate): boolean => {
     if (os.status !== 'Atrasada') return false;
-
-    // Gerência permitida para o usuário logado
     if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
       if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
     }
-
     // Prazo do Super Administrador ainda aberto
     if (os.endDate && localTodayStr() > os.endDate) return false;
-
     // O prazo da OS precisa cruzar o mês em exibição
     if (targetMonthDate) {
       const y = targetMonthDate.getFullYear();
@@ -135,7 +131,6 @@ export default function ServiceOrdersView({
       if (os.startDate && os.startDate > mEnd) return false;
       if (os.endDate && os.endDate < mStart) return false;
     }
-
     return true;
   };
 
