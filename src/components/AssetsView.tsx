@@ -165,26 +165,56 @@ export default function AssetsView({
   );
 
   // Lista filtrada na hora: a busca procura em patrimônio, nome, série, sala, fabricante e modelo
-  const consultationResults = React.useMemo(() => {
+  const matchesSearch = (a: Asset, q: string) =>
+    !q ||
+    [
+      a.code, a.id, a.name, a.location,
+      a.specs?.PATRIMONIO, a.specs?.serialNumber, a.specs?.['Nº DE SÉRIE'],
+      a.specs?.setor, a.specs?.SETOR, a.specs?.sala,
+      a.specs?.manufacturer, a.specs?.MARCA, a.specs?.model, a.specs?.MODELO, a.specs?.TIPO
+    ].some((value) => String(value || '').toLowerCase().includes(q));
+
+  // Resultado + contagem inteligente: cada opção mostra quantos ativos teria, respeitando os OUTROS filtros
+  type FacetKey = 'status' | 'gerencia' | 'craai' | 'comarca' | 'tipo';
+  const { consultationResults, facetCounts } = React.useMemo(() => {
+    const FACETS: FacetKey[] = ['status', 'gerencia', 'craai', 'comarca', 'tipo'];
     const q = searchText.trim().toLowerCase();
-    const has = (value: any) => String(value || '').toLowerCase().includes(q);
-    return assets
-      .filter((a) => {
-        if (filterTipoBem !== 'Todos' && a.status !== filterTipoBem) return false;
-        if (filterGerencia !== 'Todas' && a.sector !== filterGerencia) return false;
-        if (filterCraai !== 'Todas' && String(a.specs?.CRAAI || '') !== filterCraai) return false;
-        if (filterUnidade !== 'Todas' && String(a.specs?.COMARCA || '') !== filterUnidade) return false;
-        if (filterTipoEquipamento !== 'Todos' && String(a.specs?.TIPO || '').trim() !== filterTipoEquipamento) return false;
-        if (!q) return true;
-        return [
-          a.code, a.id, a.name, a.location,
-          a.specs?.PATRIMONIO, a.specs?.serialNumber, a.specs?.['Nº DE SÉRIE'],
-          a.specs?.setor, a.specs?.SETOR, a.specs?.sala,
-          a.specs?.manufacturer, a.specs?.MARCA, a.specs?.model, a.specs?.MODELO, a.specs?.TIPO
-        ].some(has);
-      })
-      .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+    const counts = Object.fromEntries(FACETS.map((f) => [f, new Map<string, number>()])) as Record<FacetKey, Map<string, number>>;
+    const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, craai: 0, comarca: 0, tipo: 0 };
+    const list: Asset[] = [];
+    for (const a of assets) {
+      if (!matchesSearch(a, q)) continue;
+      const v: Record<FacetKey, string> = {
+        status: a.status,
+        gerencia: a.sector,
+        craai: String(a.specs?.CRAAI || ''),
+        comarca: String(a.specs?.COMARCA || ''),
+        tipo: String(a.specs?.TIPO || '').trim()
+      };
+      const ok: Record<FacetKey, boolean> = {
+        status: filterTipoBem === 'Todos' || v.status === filterTipoBem,
+        gerencia: filterGerencia === 'Todas' || v.gerencia === filterGerencia,
+        craai: filterCraai === 'Todas' || v.craai === filterCraai,
+        comarca: filterUnidade === 'Todas' || v.comarca === filterUnidade,
+        tipo: filterTipoEquipamento === 'Todos' || v.tipo === filterTipoEquipamento
+      };
+      for (const f of FACETS) {
+        if (FACETS.every((o) => o === f || ok[o])) {
+          counts[f].set(v[f], (counts[f].get(v[f]) || 0) + 1);
+          totals[f]++;
+        }
+      }
+      if (FACETS.every((f) => ok[f])) list.push(a);
+    }
+    list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
+    return { consultationResults: list, facetCounts: { counts, totals } };
   }, [assets, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
+
+  // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
+  const countOf = (f: FacetKey, value: string) => facetCounts.counts[f].get(value) || 0;
+  const optionLabel = (label: string, n: number) => `${label} (${n.toLocaleString('pt-BR')})`;
+  const visibleOptions = (f: FacetKey, values: string[], selected: string) =>
+    values.filter((v) => v === selected || countOf(f, v) > 0);
 
   const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
   const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
@@ -427,9 +457,9 @@ export default function AssetsView({
             <div className="flex flex-col lg:flex-row lg:items-center gap-2">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
-                  <option value="Todas">Gerência: Todas</option>
-                  {managements.map((m) => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
+                  <option value="Todas">{optionLabel('Gerência: Todas', facetCounts.totals.gerencia)}</option>
+                  {visibleOptions('gerencia', managements.map((m) => m.name), filterGerencia).map((name) => (
+                    <option key={name} value={name}>{optionLabel(name, countOf('gerencia', name))}</option>
                   ))}
                 </select>
                 <select
@@ -440,18 +470,21 @@ export default function AssetsView({
                   }}
                   className={selectClass}
                 >
-                  {craaiOptions.map((c) => (
-                    <option key={c} value={c}>{c === 'Todas' ? 'CRAAI: Todas' : c}</option>
+                  <option value="Todas">{optionLabel('CRAAI: Todas', facetCounts.totals.craai)}</option>
+                  {visibleOptions('craai', craaiOptions.filter((c) => c !== 'Todas'), filterCraai).map((c) => (
+                    <option key={c} value={c}>{optionLabel(c, countOf('craai', c))}</option>
                   ))}
                 </select>
                 <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className={selectClass}>
-                  {availableUnits.map((u) => (
-                    <option key={u} value={u}>{u === 'Todas' ? 'Comarca: Todas' : u}</option>
+                  <option value="Todas">{optionLabel('Comarca: Todas', facetCounts.totals.comarca)}</option>
+                  {visibleOptions('comarca', availableUnits.filter((u) => u !== 'Todas'), filterUnidade).map((u) => (
+                    <option key={u} value={u}>{optionLabel(u, countOf('comarca', u))}</option>
                   ))}
                 </select>
                 <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
-                  {commonEquipmentTypes.map((t) => (
-                    <option key={t} value={t}>{t === 'Todos' ? 'Tipo: Todos' : t}</option>
+                  <option value="Todos">{optionLabel('Tipo: Todos', facetCounts.totals.tipo)}</option>
+                  {visibleOptions('tipo', commonEquipmentTypes.filter((t) => t !== 'Todos'), filterTipoEquipamento).map((t) => (
+                    <option key={t} value={t}>{optionLabel(t, countOf('tipo', t))}</option>
                   ))}
                 </select>
               </div>
@@ -465,7 +498,10 @@ export default function AssetsView({
                       filterTipoBem === option ? 'bg-[#0b1c30] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
                     }`}
                   >
-                    {option}
+                    {option}{' '}
+                    <span className="opacity-60">
+                      {(option === 'Todos' ? facetCounts.totals.status : countOf('status', option)).toLocaleString('pt-BR')}
+                    </span>
                   </button>
                 ))}
               </div>
