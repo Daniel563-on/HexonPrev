@@ -8,6 +8,7 @@ import TemplatesView from './components/TemplatesView';
 import SolicitationsView from './components/SolicitationsView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
+import AddressesView from './components/AddressesView';
 import QrCodeBatchView from './components/QrCodeBatchView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
@@ -972,6 +973,10 @@ export default function App() {
               userProfile={userProfile}
               userHasActionPermission={userHasActionPermission}
             />
+          )}
+
+          {currentTab === 'addresses' && userProfile?.perfil === 'Super Administrador' && (
+            <AddressesView />
           )}
 
           {currentTab === 'user-control' && (

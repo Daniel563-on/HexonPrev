@@ -14,11 +14,12 @@ import {
 import {
   MaintenanceTemplate,
   Asset,
+  Address,
   Management,
   formatDateBR
 } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbAutoGeneratePreventiveActivities, dbGetDispatchedIds, buildPreventiveOrderId } from '../../db/firebase';
+import { dbAutoGeneratePreventiveActivities, dbGetDispatchedIds, buildPreventiveOrderId, buildSurveyTargets } from '../../db/firebase';
 import {
   getPeriodKey,
   getAssetComarcaClean,
@@ -33,6 +34,7 @@ export interface TemplateGeneratorTabProps {
   existingComarcas: string[];
   existingSectors: string[];
   managements: Management[];
+  addresses?: Address[]; // endereços cadastrados: as rondas são geradas 1 por endereço ativo
   onRefreshData: () => Promise<void>;
   onTemplatesUpdated?: () => void;
 }
@@ -43,6 +45,7 @@ export default function TemplateGeneratorTab({
   existingComarcas,
   existingSectors,
   managements,
+  addresses = [],
   onRefreshData,
   onTemplatesUpdated
 }: TemplateGeneratorTabProps) {
@@ -175,9 +178,16 @@ export default function TemplateGeneratorTab({
     return dispatchedIds.has(buildPreventiveOrderId(assetId, periodicity, dates.startDate));
   };
 
-  const checkSurveyAlreadyExists = (comarcaName: string, templateId: string, startDateStr: string): boolean => {
+  const checkSurveyAlreadyExists = (targetKey: string, templateId: string, startDateStr: string): boolean => {
     const dates = alignPeriodDates(startDateStr, 'Semanal');
-    return dispatchedIds.has(buildPreventiveOrderId(`VST_${templateId}_${comarcaName}`, 'Semanal', dates.startDate));
+    return dispatchedIds.has(buildPreventiveOrderId(`VST_${templateId}_${targetKey}`, 'Semanal', dates.startDate));
+  };
+
+  // Onde as rondas são geradas: 1 por endereço ativo (ou 1 por comarca, se não houver endereços cadastrados)
+  const surveyTargets = useMemo(() => buildSurveyTargets(addresses, existingComarcas), [addresses, existingComarcas]);
+  const targetsInComarca = (comarcaName: string) => {
+    const c = comarcaName.toLowerCase().trim();
+    return surveyTargets.filter((target) => target.comarca.toLowerCase().trim() === c);
   };
 
   // Helper to compute available Comarcas and Gerências for a filter row:
@@ -209,9 +219,10 @@ export default function TemplateGeneratorTab({
             const tSector = (t.targetSectorOrType || '').toLowerCase().trim();
             if (tSector !== row.sector.toLowerCase().trim()) continue;
           }
-          const already = checkSurveyAlreadyExists(comarcaName, t.id, row.startDate);
-          if (!already) {
-            pendingForComarca++;
+          for (const target of targetsInComarca(comarcaName)) {
+            if (!checkSurveyAlreadyExists(target.key, t.id, row.startDate)) {
+              pendingForComarca++;
+            }
           }
         } else if (t.type === 'preventive') {
           const comarcaAssets = assetsByComarca.get(comarcaLower) || [];
@@ -259,12 +270,10 @@ export default function TemplateGeneratorTab({
       const t = targetTemplates[j];
       if (t.type === 'survey') {
         const sectorName = t.targetSectorOrType || 'GMMR';
-        for (let i = 0; i < existingComarcas.length; i++) {
-          const comarcaName = existingComarcas[i];
-          if (row.comarca !== 'all' && comarcaName.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) continue;
+        for (const target of surveyTargets) {
+          if (row.comarca !== 'all' && target.comarca.toLowerCase().trim() !== row.comarca.toLowerCase().trim()) continue;
 
-          const already = checkSurveyAlreadyExists(comarcaName, t.id, row.startDate);
-          if (!already) {
+          if (!checkSurveyAlreadyExists(target.key, t.id, row.startDate)) {
             sectorStats[sectorName] = (sectorStats[sectorName] || 0) + 1;
           }
         }
@@ -326,7 +335,7 @@ export default function TemplateGeneratorTab({
       map.set(row.id, getRowScopeInfo(row));
     }
     return map;
-  }, [filterRows, templates, assets, dispatchedIds, assetsByComarca, existingComarcas]);
+  }, [filterRows, templates, assets, dispatchedIds, assetsByComarca, existingComarcas, surveyTargets]);
 
   // FRONTEND SIMULATOR / DRY-RUN CALCULATOR
   const calculateDryRunSimulation = () => {
@@ -364,20 +373,21 @@ export default function TemplateGeneratorTab({
             if (tSector !== rowSector) continue;
           }
 
-          const targetComarcas =
+          const targets =
             row.comarca === 'all'
-              ? existingComarcas
-              : existingComarcas.filter((c) => c.toLowerCase().trim() === row.comarca.toLowerCase().trim());
+              ? surveyTargets
+              : surveyTargets.filter((target) => target.comarca.toLowerCase().trim() === row.comarca.toLowerCase().trim());
 
-          for (const comarca of targetComarcas) {
-            const alreadyExists = checkSurveyAlreadyExists(comarca, t.id, row.startDate);
+          for (const target of targets) {
+            const comarca = target.comarca;
+            const alreadyExists = checkSurveyAlreadyExists(target.key, t.id, row.startDate);
             const dates = alignPeriodDates(row.startDate, 'Semanal');
 
             previewList.push({
               id: idCounter++,
-              assetName: `Área Geral / Predial (${comarca})`,
-              assetCode: 'VISTORIA-PREDIAL',
-              title: `${t.name} - ${comarca}`,
+              assetName: target.address ? target.address.address : `Área Geral / Predial (${comarca})`,
+              assetCode: target.address ? target.address.code : 'VISTORIA-PREDIAL',
+              title: target.address ? `${t.name} - ${comarca} - ${target.address.address}` : `${t.name} - ${comarca}`,
               periodicity: 'Semanal',
               scheduledDate: dates.scheduledDate,
               startDate: dates.startDate,
@@ -437,7 +447,7 @@ export default function TemplateGeneratorTab({
 
   const simulationRecords = useMemo(() => {
     return calculateDryRunSimulation();
-  }, [filterRows, templates, assets, dispatchedIds, rowScopeMap, assetsByComarca, existingComarcas]);
+  }, [filterRows, templates, assets, dispatchedIds, rowScopeMap, assetsByComarca, existingComarcas, surveyTargets]);
 
   // Check for duplicate rows in filterRows
   const duplicateRowMap = useMemo(() => {

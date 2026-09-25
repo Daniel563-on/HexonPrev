@@ -10,6 +10,7 @@ import {
   TemplateChangeLog,
   Asset,
   Management,
+  Address,
   ServiceOrder,
   PdfTemplateConfig
 } from '../types';
@@ -23,6 +24,7 @@ import {
   dbDeleteTemplate,
   dbGetAssets,
   dbGetManagements,
+  dbGetAddresses,
   getDatabaseMode
 } from '../db/firebase';
 
@@ -36,6 +38,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
   const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [managements, setManagements] = useState<Management[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<MaintenanceTemplate | null>(null);
 
   // Form states for creating a new Template
@@ -84,11 +87,15 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         comarcas.add(c.trim());
       }
     });
+    // Comarcas dos endereços ativos cadastrados (rondas da DOM)
+    addresses.forEach((a) => {
+      if (a.active && a.comarca && a.comarca.trim() !== '') comarcas.add(a.comarca.trim());
+    });
     if (comarcas.size === 0) {
       comarcas.add('Comarca Capital');
     }
     return Array.from(comarcas).sort((a, b) => a.localeCompare(b));
-  }, [assets]);
+  }, [assets, addresses]);
 
   // Dynamically extract unique sectors from assets and template configurations
   const existingSectors = useMemo(() => {
@@ -108,14 +115,16 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
 
   // Load backend configurations
   const loadData = async () => {
-    const [tList, aList, mList] = await Promise.all([
+    const [tList, aList, mList, adList] = await Promise.all([
       dbGetTemplates(),
       dbGetAssets(),
-      dbGetManagements()
+      dbGetManagements(),
+      dbGetAddresses(true)
     ]);
     setTemplates(tList);
     setAssets(aList);
     setManagements(mList);
+    setAddresses(adList);
 
     // Automatically select the first template if none is currently selected
     if (tList.length > 0 && !selectedTemplate) {
@@ -244,6 +253,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
           existingComarcas={existingComarcas}
           existingSectors={existingSectors}
           managements={managements}
+          addresses={addresses}
           onRefreshData={loadData}
           onTemplatesUpdated={onTemplatesUpdated}
         />

@@ -8,6 +8,7 @@ import {
 import { dbGetTemplates } from './templates';
 import { dbGetManagements } from './organization';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
+import { dbGetAddresses, buildSurveyTargets } from './addresses';
 
 // Forward references to service orders / assets functions
 // (will be resolved via dependency injection or direct barrel import)
@@ -367,6 +368,9 @@ export async function dbAutoGeneratePreventiveActivities(
     }
     const comarcaList = Array.from(comarcas).sort((a, b) => a.localeCompare(b));
 
+    // Rondas (vistorias sem ativo): 1 por endereço ativo cadastrado (ou 1 por comarca, se não houver cadastro)
+    const surveyTargets = buildSurveyTargets(await dbGetAddresses().catch(() => []), comarcaList);
+
     for (const filter of filters) {
       const { templateId, comarca: filterComarca, sector: filterSector, startDate: filterStartDate, endDate: filterEndDate } = filter;
 
@@ -389,12 +393,13 @@ export async function dbAutoGeneratePreventiveActivities(
             if (tSector !== filterSector.toLowerCase().trim()) continue;
           }
 
-          const targetComarcas = comarcaList.filter((comarca) => {
-            if (filterComarca !== 'all' && comarca.toLowerCase().trim() !== filterComarca.toLowerCase().trim()) return false;
+          const targets = surveyTargets.filter((target) => {
+            if (filterComarca !== 'all' && target.comarca.toLowerCase().trim() !== filterComarca.toLowerCase().trim()) return false;
             return true;
           });
 
-          for (const comarca of targetComarcas) {
+          for (const target of targets) {
+            const comarca = target.comarca;
             let i = 0;
             const limit = 100; // safety brake to prevent infinite loops
             while (i < limit) {
@@ -408,7 +413,7 @@ export async function dbAutoGeneratePreventiveActivities(
                 break;
               }
 
-              const title = `${t.name} - ${comarca}`;
+              const title = target.address ? `${t.name} - ${comarca} - ${target.address.address}` : `${t.name} - ${comarca}`;
 
               // EXTREME SAFETY CODES: Enforce Duplication Prevention & Weekly Boundaries using unified helper
               const alreadyExists = orders.some((o) => {
@@ -433,13 +438,13 @@ export async function dbAutoGeneratePreventiveActivities(
                   } as any));
 
                 const newSurvey: ServiceOrder = {
-                  id: buildPreventiveOrderId(`VST_${t.id}_${comarca}`, 'Semanal', pStartDate),
+                  id: buildPreventiveOrderId(`VST_${t.id}_${target.key}`, 'Semanal', pStartDate),
                   assetId: null,
                   assetName: 'S/V - Vistoria Periódica',
                   assetCode: 'PE-VISTORIA',
                   sector: filterSector !== 'all' ? filterSector : (t.targetSectorOrType || 'Vistoria'),
                   title: title,
-                  description: `Vistoria de rotina programada. Comarca: ${comarca}. Procedimento autônomo sem vinculação com ativos de engenharia.`,
+                  description: `Vistoria de rotina programada. Comarca: ${comarca}.${target.address ? ` Endereço: ${target.address.address}.` : ''} Procedimento autônomo sem vinculação com ativos de engenharia.`,
                   priority: 'Baixa',
                   status: 'Novo',
                   scheduledDate: '',
@@ -458,7 +463,9 @@ export async function dbAutoGeneratePreventiveActivities(
                   surveyType: t.targetSectorOrType || 'Comarcas',
                   surveyLocation: comarca,
                   comarca: comarca,
-                  craai: craaiByComarca.get(comarca) || undefined,
+                  craai: target.craai || craaiByComarca.get(comarca) || undefined,
+                  addressId: target.address?.id,
+                  addressText: target.address?.address,
                   periodicity: 'Semanal'
                 };
 
