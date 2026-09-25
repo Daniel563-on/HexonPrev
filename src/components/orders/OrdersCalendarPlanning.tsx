@@ -302,7 +302,9 @@ export default function OrdersCalendarPlanning({
 
               {/* Day grid */}
               <div className="grid grid-cols-7 gap-1.5">
-                {getMonthDays().map((day, dIdx) => {
+                {(() => { const todayStr = localTodayStr(); return getMonthDays().map((day, dIdx) => {
+                  // Dia que já passou: fica cinza (só consulta, sem agendamento)
+                  const isPastDay = day.isCurrentMonth && day.dateString < todayStr;
                   const isCurrentDay = day.isCurrentMonth && day.dayNum === new Date().getDate() && currentCalendarDate.getMonth() === new Date().getMonth() && currentCalendarDate.getFullYear() === new Date().getFullYear();
                   const isStart = day.isCurrentMonth && selectedCalendarDay === day.dayNum;
                   const isEnd = day.isCurrentMonth && selectedCalendarEndDay === day.dayNum;
@@ -318,7 +320,8 @@ export default function OrdersCalendarPlanning({
                   const totalCount = dayOrders.length;
                   const completedCount = dayOrders.filter(o => o.status === 'Concluída').length;
                   const unexecutedCount = dayOrders.filter(o => o.status === 'Não Executada').length;
-                  const pendingCount = totalCount - completedCount - unexecutedCount;
+                  const lateCount = dayOrders.filter(o => o.status === 'Atrasada').length;
+                  const pendingCount = totalCount - completedCount - unexecutedCount - lateCount;
 
                   return (
                     <button
@@ -360,7 +363,7 @@ export default function OrdersCalendarPlanning({
                       }}
                       className={`min-h-[64px] border rounded-xl p-1.5 flex flex-col justify-between transition-all duration-200 relative text-left w-full ${
                         day.isCurrentMonth 
-                          ? 'bg-white border-slate-200 hover:border-[#3525cd] hover:shadow-xs cursor-pointer' 
+                          ? `${isPastDay ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200'} hover:border-[#3525cd] hover:shadow-xs cursor-pointer` 
                           : 'bg-slate-50/40 border-slate-100 text-slate-350 cursor-not-allowed pointer-events-none'
                       } ${
                         isSingle 
@@ -391,7 +394,7 @@ export default function OrdersCalendarPlanning({
                                   ? 'text-indigo-900 font-extrabold'
                                   : isCurrentDay 
                                     ? 'text-[#3525cd] bg-indigo-50/80 px-1.5 py-0.5 rounded-md border border-indigo-100' 
-                                    : 'text-slate-800') 
+                                    : isPastDay ? 'text-slate-400' : 'text-slate-800') 
                             : 'text-slate-350'
                         }`}>
                           {day.dayNum}
@@ -412,6 +415,11 @@ export default function OrdersCalendarPlanning({
                           <span className="bg-[#3525cd]/10 text-[#3525cd] text-[8.5px] font-black rounded px-1 py-0.2 select-none">
                             {totalCount} OS Pl.
                           </span>
+                          {lateCount > 0 && (
+                            <span className="bg-orange-500 text-white text-[7px] font-black rounded px-1 py-0.1 select-none text-center" title="Preventivas atrasadas: podem ser reagendadas">
+                              {lateCount} atras.
+                            </span>
+                          )}
                           {unexecutedCount > 0 && (
                             <span className="bg-rose-100 text-rose-800 text-[7px] font-black rounded px-1 py-0.1 select-none text-center">
                               {unexecutedCount} não exec.
@@ -421,7 +429,7 @@ export default function OrdersCalendarPlanning({
                             <span className="bg-amber-100 text-amber-800 text-[7px] font-black rounded px-1 py-0.1 select-none text-center">
                               {pendingCount} pend
                             </span>
-                          ) : unexecutedCount === 0 ? (
+                          ) : unexecutedCount === 0 && lateCount === 0 ? (
                             <span className="bg-emerald-100 text-emerald-800 text-[7px] font-black rounded px-1 py-0.1 select-none flex items-center justify-center text-center">
                               ✓ Concl.
                             </span>
@@ -436,7 +444,7 @@ export default function OrdersCalendarPlanning({
                       )}
                     </button>
                   );
-                })}
+                }); })()}
               </div>
 
               {/* Range selection helper instruction */}
@@ -1481,29 +1489,22 @@ export default function OrdersCalendarPlanning({
                           return (
                           <div className="space-y-3">
                             {isLateTab && dayLateOrders.length > 0 && (
-                              <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                                    <span className="text-xs font-black text-amber-950 uppercase tracking-tight">
-                                      {dayLateOrders.length} preventiva{dayLateOrders.length > 1 ? 's' : ''} atrasada{dayLateOrders.length > 1 ? 's' : ''} neste período
-                                    </span>
-                                  </div>
-                                  <p className="text-[10.5px] text-amber-800 font-medium">
-                                    Reverta para "Novo" e agende uma nova data em "Aguardando Agendamento" (a partir de hoje e dentro do prazo do Super Administrador).
-                                  </p>
-                                </div>
-
+                              <div
+                                className="bg-amber-50 px-3 py-2 rounded-xl border border-amber-200 flex items-center justify-between gap-2"
+                                title='Reverta para "Novo" e agende nova data em "Aguardando Agendamento" (a partir de hoje e dentro do prazo do Super Administrador).'
+                              >
+                                <span className="text-[10.5px] font-black text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                  {dayLateOrders.length} atrasada{dayLateOrders.length > 1 ? 's' : ''} no período
+                                </span>
                                 {revertibleLateInPeriod.length > 0 && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      onOpenBulkRevertModal('period');
-                                    }}
-                                    className="w-full md:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-sm shrink-0 border border-amber-700"
+                                    onClick={() => onOpenBulkRevertModal('period')}
+                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wide flex items-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0 whitespace-nowrap"
                                   >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Reverter todas as atrasadas para Novo ({revertibleLateInPeriod.length})
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reverter todas ({revertibleLateInPeriod.length})
                                   </button>
                                 )}
                               </div>
