@@ -86,7 +86,7 @@ export default function AssetsView({
 
   // Filtros da lista (aplicados na hora sobre a cópia local de todos os ativos)
   const [searchText, setSearchText] = useState('');
-  const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Todos'>('Todos');
+  const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Baixado' | 'Todos'>('Todos');
   const [filterGerencia, setFilterGerencia] = useState('Todas');
   const [filterCraai, setFilterCraai] = useState('Todas');
   const [filterUnidade, setFilterUnidade] = useState('Todas');
@@ -456,7 +456,7 @@ export default function AssetsView({
                 </select>
               </div>
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
-                {(['Todos', 'Operando', 'Em Manutenção', 'Parado'] as const).map((option) => (
+                {(['Todos', 'Operando', 'Em Manutenção', 'Parado', 'Baixado'] as const).map((option) => (
                   <button
                     key={option}
                     type="button"

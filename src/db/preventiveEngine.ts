@@ -483,6 +483,7 @@ export async function dbAutoGeneratePreventiveActivities(
         if (t.type === 'preventive') {
           // Find matching assets across the set comarca and sector
           const matchingAssets = assets.filter((asset) => {
+            if (asset.status === 'Baixado') return false; // ativo baixado não recebe novas preventivas
             const assetComarca = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location);
             if (filterComarca !== 'all' && assetComarca.toLowerCase().trim() !== filterComarca.toLowerCase().trim()) return false;
 

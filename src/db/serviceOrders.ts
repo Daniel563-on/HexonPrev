@@ -95,6 +95,9 @@ function computeClosedMonth(o: ServiceOrder, status: ServiceOrder['status']): st
   if (status === 'Não Executada') {
     return (o.endDate || '').slice(0, 7) || o.closedMonth || localMonthKey();
   }
+  if (status === 'Cancelada') {
+    return o.closedMonth || localMonthKey();
+  }
   return undefined;
 }
 
@@ -114,7 +117,7 @@ function computeSolicitationStatus(o: ServiceOrder): ServiceOrder['solicitationS
 // - OS "Não Executada" cujo período do Super Admin foi prorrogado -> reaberta
 // "Em Execução" não vira "Atrasada": o técnico já iniciou e pode concluir até o fim do período.
 export function computeDeadlineStatus(o: ServiceOrder, todayStr: string = localTodayStr()): ServiceOrder['status'] {
-  if (o.status === 'Concluída') return o.status;
+  if (o.status === 'Concluída' || o.status === 'Cancelada') return o.status;
 
   const slaExpired = !!(o.endDate && todayStr > o.endDate);
   if (slaExpired) return 'Não Executada';
@@ -216,6 +219,28 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
 // Carrega só o necessário: TODAS as OS abertas da gerência + as fechadas do mês visto.
 // Depois da primeira carga, o banco envia apenas as OS que mudarem (ex.: técnico concluiu).
 const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
+
+// Cancela as OS abertas dos ativos baixados (busca as OS de 30 ativos por vez).
+// Só altera status e datas; a OS continua guardada para consulta.
+export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: string): Promise<number> {
+  if (!firebaseActive || !dbInstance || assetIds.length === 0) return 0;
+  const now = new Date().toISOString();
+  const month = localMonthKey();
+  let cancelled = 0;
+  for (let i = 0; i < assetIds.length; i += 30) {
+    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), where('assetId', 'in', assetIds.slice(i, i + 30))));
+    const open = snap.docs.filter((d) => OPEN_STATUSES.includes(d.data().status));
+    for (let j = 0; j < open.length; j += 400) {
+      const batch = writeBatch(dbInstance);
+      open.slice(j, j + 400).forEach((d) =>
+        batch.update(d.ref, { status: 'Cancelada', closedMonth: month, cancelReason: reason, cancelledAt: now, updatedAt: now })
+      );
+      await batch.commit();
+    }
+    cancelled += open.length;
+  }
+  return cancelled;
+}
 
 export interface ServiceOrdersScope {
   sector: string | null; // gerência (campo "sector" da OS); null = todas as gerências

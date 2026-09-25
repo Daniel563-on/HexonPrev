@@ -37,11 +37,12 @@ export interface Asset {
   sector: 'HVAC' | 'Elétrica' | 'Hidráulica' | 'Civil' | string;
   location: string;
   specs: AssetSpecs;
-  status: 'Operando' | 'Em Manutenção' | 'Parado';
+  status: 'Operando' | 'Em Manutenção' | 'Parado' | 'Baixado';
   createdAt: string;
   updatedAt?: string;
   periodicities?: ('Semanal' | 'Quinzenal' | 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[];
   qrCode?: string; // Base64 data URL
+  retiredAt?: string; // data da baixa (não veio na planilha da gerência)
 }
 
 export interface ServiceOrder {
@@ -53,7 +54,7 @@ export interface ServiceOrder {
   title: string;
   description: string;
   priority: 'Baixa' | 'Média' | 'Alta' | 'Urgente';
-  status: 'Novo' | 'Planejada' | 'Em Execução' | 'Concluída' | 'Atrasada' | 'Não Executada';
+  status: 'Novo' | 'Planejada' | 'Em Execução' | 'Concluída' | 'Atrasada' | 'Não Executada' | 'Cancelada';
   scheduledDate: string;
   scheduledEndDate?: string; // Optional end of execution period assigned by manager, e.g. "2026-09-11"
   startDate?: string;   // date window start, e.g. "2026-06-01"
@@ -67,6 +68,8 @@ export interface ServiceOrder {
   comarca?: string;              // comarca do ativo (ou da vistoria), gravada no disparo
   craai?: string;                // CRAAI do ativo (ou da comarca da vistoria), gravado no disparo
   solicitationStatus?: 'Pendente' | 'Resolvido' | 'Cancelado'; // situação da solicitação de corretiva (itens "Sim"); vazio se não houver
+  cancelReason?: string; // motivo do cancelamento (ex.: ativo baixado na importação)
+  cancelledAt?: string;
   addressId?: string;            // endereço cadastrado (rondas da DOM geradas por endereço)
   addressText?: string;          // endereço por extenso, gravado no disparo
   signedBy: string | null;       // Client or technician name
