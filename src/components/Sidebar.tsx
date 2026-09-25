@@ -7,6 +7,7 @@ import {
   Sliders, 
   ShieldCheck, 
   QrCode,
+  MapPin,
   X 
 } from 'lucide-react';
 import { HexonUser } from '../types';
@@ -212,6 +213,26 @@ export default function Sidebar({
                 currentTab === 'qr-codes' ? 'text-white scale-110' : 'text-indigo-400'
               }`} />
               <span className="text-sm font-semibold tracking-tight">QR-CODES</span>
+            </button>
+          )}
+
+          {/* CONTROLE DE ENDEREÇOS: Super Administrador ONLY */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => {
+                onChangeTab('addresses');
+                if (onClose) onClose();
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl duration-200 text-left active:scale-[0.98] transition-all cursor-pointer ${
+                currentTab === 'addresses'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <MapPin className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                currentTab === 'addresses' ? 'text-white scale-110' : 'text-indigo-400'
+              }`} />
+              <span className="text-sm font-semibold tracking-tight">Endereços</span>
             </button>
           )}
 

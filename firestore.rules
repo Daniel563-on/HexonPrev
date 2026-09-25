@@ -73,6 +73,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 4d. ENDEREÇOS — cadastro das unidades que recebem ronda; só o Super Administrador altera
+    match /addresses/{addressId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

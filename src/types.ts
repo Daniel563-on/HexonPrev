@@ -67,6 +67,8 @@ export interface ServiceOrder {
   comarca?: string;              // comarca do ativo (ou da vistoria), gravada no disparo
   craai?: string;                // CRAAI do ativo (ou da comarca da vistoria), gravado no disparo
   solicitationStatus?: 'Pendente' | 'Resolvido' | 'Cancelado'; // situação da solicitação de corretiva (itens "Sim"); vazio se não houver
+  addressId?: string;            // endereço cadastrado (rondas da DOM geradas por endereço)
+  addressText?: string;          // endereço por extenso, gravado no disparo
   signedBy: string | null;       // Client or technician name
   signedAt: string | null;       // ISO timestamp
   createdAt: string;
@@ -76,6 +78,19 @@ export interface ServiceOrder {
   surveyType?: string;           // e.g., "Inspeção de Ambientes", "Casa de Máquinas", "Quadro Elétrico"
   surveyLocation?: string;       // Location/room name for independent surveys
   periodicity?: string;          // e.g., "Semanal", "Quinzenal", "Mensal"
+}
+
+// ENDEREÇO CADASTRADO (Controle de Endereços): cada endereço ativo recebe sua ronda semanal
+export interface Address {
+  id: string;       // igual ao código, ex.: "END-015"
+  code: string;     // "END-" + ITEM da planilha
+  craai: string;
+  comarca: string;
+  address: string;  // endereço por extenso
+  active: boolean;  // inativo: não recebe rondas; o histórico continua guardado
+  createdAt: string;
+  updatedAt: string;
+  inactivatedAt?: string | null;
 }
 
 export interface MaintenanceLog {
