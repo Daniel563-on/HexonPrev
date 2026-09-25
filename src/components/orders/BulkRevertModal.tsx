@@ -34,7 +34,7 @@ export default function BulkRevertModal({
 
   const monthRevertible = orders.filter((os) => canRevertUnexecutedOrder(os, currentCalendarDate));
 
-  // Se o escopo for período, filtra as atrasadas que sobrepõem o período selecionado e que são revertíveis
+  // Se o escopo for período, filtra as não executadas que sobrepõem o período selecionado e que são revertíveis
   let unexecutedList = monthRevertible;
   if (bulkRevertScope === 'period' && selectedCalendarDay !== null) {
     const startStr = `${currentCalendarDate.getFullYear()}-${String(currentCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDay).padStart(2, '0')}`;
