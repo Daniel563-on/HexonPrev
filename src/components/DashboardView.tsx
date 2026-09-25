@@ -34,7 +34,7 @@ import {
   FileText
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, Management } from '../types';
-import { dbGetAssets, dbGetManagements, dbGetMonthlySummaries, localMonthKey, StatRow } from '../db/firebase';
+import { dbGetAssets, dbGetManagements, dbGetMonthlySummaries, dbGetAddresses, localMonthKey, StatRow } from '../db/firebase';
 import OrderSignatureImage from './orders/OrderSignatureImage';
 import {
   ResponsiveContainer,
@@ -132,6 +132,7 @@ export default function DashboardView({
   const [statsPeriod, setStatsPeriod] = useState<'12m' | 'this-year' | 'last-year'>('12m');
   const [selectedCraai, setSelectedCraai] = useState<string>('Todos');
   const [summaryRows, setSummaryRows] = useState<StatRow[]>([]);
+  const [addressCraais, setAddressCraais] = useState<string[]>([]);
   const currentMonth = localMonthKey();
   const fixedGerencia =
     userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
@@ -201,9 +202,18 @@ export default function DashboardView({
     [allStatRows, selectedGerencia, selectedCraai, selectedPeriodicity, selectedTechnician]
   );
 
+  // CRAAIs: os do cadastro de Endereços + os gravados nas OS
+  useEffect(() => {
+    dbGetAddresses()
+      .then((list) => setAddressCraais(list.map((a) => a.craai).filter(Boolean)))
+      .catch(() => {});
+  }, []);
   const craaiOptions = useMemo(
-    () => Array.from(new Set<string>(allStatRows.map((row) => row.c).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [allStatRows]
+    () =>
+      Array.from(new Set<string>([...addressCraais, ...allStatRows.map((row) => row.c)].filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [allStatRows, addressCraais]
   );
 
   // Soma as linhas por um agrupamento: total, realizadas (P + A) e eficazes (P)
@@ -907,7 +917,7 @@ export default function DashboardView({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Período dos gráficos (meses fechados + mês atual) */}
           <div className="space-y-1">
             <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Período dos Gráficos</label>
@@ -960,7 +970,7 @@ export default function DashboardView({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
           {/* Periodicity Select */}
           <div className="space-y-1">
             <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Periodicidade</label>
