@@ -8,7 +8,8 @@ import {
   AlertTriangle, 
   Check,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileSearch
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../types';
 import { localMonthKey, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
@@ -19,6 +20,7 @@ import DeleteOrderModal from './orders/DeleteOrderModal';
 import BulkRevertModal from './orders/BulkRevertModal';
 import PreventiveScanModal from './orders/PreventiveScanModal';
 import OrdersCalendarPlanning from './orders/OrdersCalendarPlanning';
+import OrdersSearchPanel from './orders/OrdersSearchPanel';
 
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
@@ -179,7 +181,7 @@ export default function ServiceOrdersView({
 
   // New subTabs & calendar state
   const [users, setUsers] = useState<HexonUser[]>([]);
-  const [subTab, setSubTab] = useState<'realizacao' | 'planejamento'>(userProfile?.perfil === 'Profissional' ? 'realizacao' : 'planejamento');
+  const [subTab, setSubTab] = useState<'realizacao' | 'planejamento' | 'consulta'>(userProfile?.perfil === 'Profissional' ? 'realizacao' : 'planejamento');
   const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number | null>(null);
   const [selectedCalendarEndDay, setSelectedCalendarEndDay] = useState<number | null>(null);
@@ -676,6 +678,18 @@ export default function ServiceOrdersView({
               <Wrench className="w-3.5 h-3.5" />
               <span>Realização & Execução</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('consulta')}
+              className={`flex-1 py-2 px-3 sm:px-4 rounded-lg text-[11px] md:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all duration-205 cursor-pointer ${
+                subTab === 'consulta'
+                  ? 'bg-[#3525cd] text-white shadow-sm'
+                  : 'text-slate-650 hover:bg-slate-200/50 hover:text-[#0b1c30]'
+              }`}
+            >
+              <FileSearch className="w-3.5 h-3.5" />
+              <span>Consulta de OS</span>
+            </button>
           </div>
 
           <div className="text-[10px] text-slate-450 font-bold hidden sm:flex items-center gap-1.5 pr-2 uppercase tracking-wider">
@@ -711,6 +725,13 @@ export default function ServiceOrdersView({
             setBulkRevertScope(scope);
             setShowBulkRevertModal(true);
           }}
+        />
+      ) : subTab === 'consulta' && userProfile?.perfil !== 'Profissional' ? (
+        <OrdersSearchPanel
+          userProfile={userProfile}
+          assets={assets}
+          templates={templates}
+          userHasActionPermission={userHasActionPermission}
         />
       ) : (
         <>
