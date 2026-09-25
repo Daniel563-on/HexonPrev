@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Asset, Management } from '../../types';
-import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbFindAssetsByCodes } from '../../db/firebase';
+import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets } from '../../db/firebase';
 
 export interface PeriodicityRule {
   keyword: string;
@@ -275,13 +275,10 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         return str;
       };
 
-      // Busca no banco os ativos que já existem com os patrimônios da planilha (atualiza em vez de duplicar)
-      const sheetCodes = importRows
-        .map((row) => String(row[columnMappings['code']] || '').trim().toUpperCase())
-        .filter(Boolean);
-      const alreadySaved = await dbFindAssetsByCodes(sheetCodes);
+      // Compara com a cópia local de TODOS os ativos (sem leituras extras): grava só o que é novo ou mudou
+      const savedAssets = await dbGetAssets();
       const existingMap = new Map<string, Asset>();
-      for (const a of [...assets, ...alreadySaved]) {
+      for (const a of [...assets, ...savedAssets]) {
         if (a.code) {
           existingMap.set(a.code.toUpperCase().trim(), a);
         }

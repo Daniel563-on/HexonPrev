@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Filter,
   Download,
@@ -18,19 +19,10 @@ export interface AssetConsultationTableProps {
   onEditAsset?: (asset: Asset) => void;
   onDeleteAsset?: (asset: Asset) => void;
   onNewSearch: () => void;
+  onShowRecent: () => void;
   userHasActionPermission?: (action: string) => boolean;
   userProfile?: { perfil?: string } | null;
-  // Paginação no banco: 50 por página, a próxima só é lida ao avançar
-  totalFound: number;
-  pageIndex: number;
-  totalPages: number;
-  isLoadingPage: boolean;
-  isExporting: boolean;
-  pageFilter: string;
-  onPageFilterChange: (value: string) => void;
-  onPrevPage: () => void;
-  onNextPage: () => void;
-  onExportExcel: () => void;
+  pageSize?: number;
 }
 
 export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
@@ -40,20 +32,46 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
   onEditAsset,
   onDeleteAsset,
   onNewSearch,
+  onShowRecent,
   userHasActionPermission,
   userProfile,
-  totalFound,
-  pageIndex,
-  totalPages,
-  isLoadingPage,
-  isExporting,
-  pageFilter,
-  onPageFilterChange,
-  onPrevPage,
-  onNextPage,
-  onExportExcel
+  pageSize = 10
 }) => {
-  if (totalFound === 0) {
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 whenever results change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [results]);
+
+  const totalPages = Math.ceil(results.length / pageSize) || 1;
+
+  const paginatedResults = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return results.slice(start, start + pageSize);
+  }, [results, currentPage, pageSize]);
+
+  const handleExportExcel = () => {
+    if (results.length === 0) return;
+    const rows = results.map((a) => ({
+      'Nº PATRIMONIAL': a.code,
+      'EQUIPAMENTO': a.name,
+      'GERÊNCIA': a.sector,
+      'LOCALIZAÇÃO': a.location,
+      'COMARCA': a.specs?.COMARCA || a.specs?.comarca || '',
+      'CRAAI': a.specs?.CRAAI || a.specs?.craai || '',
+      'FABRICANTE': a.specs?.manufacturer || '',
+      'MODELO': a.specs?.model || '',
+      'Nº DE SÉRIE': a.specs?.serial || a.specs?.serialNumber || a.specs?.['Nº DE SÉRIE'] || '',
+      'STATUS': a.specs?.STATUS || a.status || 'Ativo'
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Consulta_Ativos');
+    XLSX.writeFile(workbook, `Consulta_Ativos_Hexon_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  if (results.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400 font-sans shadow-sm">
         <Filter className="w-12 h-12 text-indigo-300 mx-auto mb-3" />
@@ -69,6 +87,13 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
           >
             Ir Para Consulta
           </button>
+          <button
+            type="button"
+            onClick={onShowRecent}
+            className="py-2 px-4 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-all shadow-2xs"
+          >
+            Ver 25 Recentes
+          </button>
         </div>
       </div>
     );
@@ -83,28 +108,17 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
             Resultado da Consulta:
           </span>{' '}
           <span className="text-xs font-extrabold text-indigo-700">
-            {totalFound} bem(ns) encontrado(s)
+            {results.length} bem(ns) encontrado(s)
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-            <input
-              type="text"
-              value={pageFilter}
-              onChange={(e) => onPageFilterChange(e.target.value)}
-              placeholder="Procurar nesta página (sala, fabricante, modelo...)"
-              className="w-64 text-xs py-1.5 pl-8 pr-2 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-none"
-            />
-          </div>
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onExportExcel}
-            disabled={isExporting}
-            className="py-1.5 px-3 bg-white border border-gray-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors disabled:opacity-50"
+            onClick={handleExportExcel}
+            className="py-1.5 px-3 bg-white border border-gray-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{isExporting ? 'Exportando...' : `Baixar Excel (${totalFound})`}</span>
+            <span>Exportar Excel</span>
           </button>
           <button
             type="button"
@@ -132,12 +146,7 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {results.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-xs text-slate-400 italic">Nenhum ativo desta página corresponde à busca.</td>
-              </tr>
-            )}
-            {results.map((asset) => {
+            {paginatedResults.map((asset) => {
               const status = asset.specs?.STATUS || asset.specs?.status || asset.status || 'Ativo';
               return (
                 <tr key={asset.id} className="hover:bg-slate-50 transition-colors">
@@ -222,29 +231,34 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
       </div>
 
       {/* Pagination Bar */}
-      <div className="p-4 bg-slate-50 border-t border-gray-200 flex items-center justify-between">
-        <span className="text-xs text-slate-500 font-medium">
-          Página {pageIndex + 1} de {totalPages} ({totalFound} bens)
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={pageIndex === 0 || isLoadingPage}
-            onClick={onPrevPage}
-            className="py-1 px-3 bg-white border border-gray-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none cursor-pointer shadow-2xs"
-          >
-            Anterior
-          </button>
-          <button
-            type="button"
-            disabled={pageIndex + 1 >= totalPages || isLoadingPage}
-            onClick={onNextPage}
-            className="py-1 px-3 bg-white border border-gray-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none cursor-pointer shadow-2xs"
-          >
-            {isLoadingPage ? 'Carregando...' : 'Próxima'}
-          </button>
+      {totalPages > 1 && (
+        <div className="p-4 bg-slate-50 border-t border-gray-200 flex items-center justify-between">
+          <span className="text-xs text-slate-500 font-medium">
+            Mostrando {(currentPage - 1) * pageSize + 1} a {Math.min(currentPage * pageSize, results.length)} de {results.length} bens
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              className="py-1 px-3 bg-white border border-gray-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none cursor-pointer shadow-2xs"
+            >
+              Anterior
+            </button>
+            <span className="text-xs font-bold text-slate-700 px-2">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              className="py-1 px-3 bg-white border border-gray-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none cursor-pointer shadow-2xs"
+            >
+              Próxima
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

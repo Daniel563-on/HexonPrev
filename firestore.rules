@@ -85,9 +85,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 4f. LISTA DE TIPOS DE EQUIPAMENTO — montada na importação/cadastro de ativos
-    match /assetMeta/{docId} {
-      allow read, write: if isStaff();
+    // 4f. REGISTRO DE EXCLUSÃO DE ATIVOS — avisa os outros computadores para tirar o ativo da cópia local
+    match /assetDeletions/{assetId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
     // 5. MODELOS DE CHECKLIST
