@@ -975,7 +975,7 @@ export default function App() {
             />
           )}
 
-          {currentTab === 'addresses' && userProfile.perfil === 'Super Administrador' && (
+          {currentTab === 'addresses' && userProfile?.perfil === 'Super Administrador' && (
             <AddressesView />
           )}
 

@@ -106,7 +106,7 @@ export default function AddressesView() {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
-      const norm = (k: string) => k.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+      const norm = (k: string) => k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
       const rows = raw
         .map((r) => {
           const byKey: Record<string, any> = {};
