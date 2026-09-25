@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { 
   Asset, 
+  Address,
   HexonUser, 
   FieldKey, 
   SheetConfig, 
@@ -17,8 +18,9 @@ import {
   SavedQrTemplate 
 } from '../types';
 import { 
-  dbGetAssets, 
-  dbSearchAssetsTargeted,
+  subscribeLocalAssets,
+  dbGetAddresses,
+  dbGetManagements,
   dbGetQrTemplates, 
   dbSaveQrTemplate, 
   dbDeleteQrTemplate 
@@ -29,6 +31,7 @@ import {
   DEFAULT_PLACARD_CONFIG, 
   DEFAULT_SAVED_TEMPLATES 
 } from '../utils/qrDefaults';
+import { addressToAssetItem } from '../db/firebase';
 import QrTemplateModals from './qrcode/QrTemplateModals';
 import QrAssetSelectionTab from './qrcode/QrAssetSelectionTab';
 import QrSheetPrintPreviewTab from './qrcode/QrSheetPrintPreviewTab';
@@ -152,27 +155,22 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
     return () => { isMounted = false; };
   }, []);
 
-  // Load initial small sample of assets for immediate template preview (24 items only instead of 10,000)
+  // Ativos da cópia local (sincronizada, sem leitura extra) + endereços como "Imóvel". Nada vem marcado.
+  const [localAssets, setLocalAssets] = useState<Asset[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [managementNames, setManagementNames] = useState<string[]>([]);
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const data = await dbSearchAssetsTargeted({ limitResults: 35 });
-        if (!isMounted) return;
-        setAllAssets(data);
-        const initialSelection = new Set<string>();
-        data.slice(0, 24).forEach(a => initialSelection.add(a.id));
-        setSelectedAssetIds(initialSelection);
-      } catch (err) {
-        console.error('Erro ao carregar ativos para impressão de QR codes:', err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
+    const unsubscribe = subscribeLocalAssets((list) => {
+      setLocalAssets(list);
+      setLoading(false);
+    });
+    dbGetAddresses().then(setAddresses).catch(() => {});
+    dbGetManagements().then((list) => setManagementNames(list.map((m) => m.name))).catch(() => {});
+    return unsubscribe;
   }, []);
+  useEffect(() => {
+    setAllAssets([...localAssets, ...addresses.map(addressToAssetItem)]);
+  }, [localAssets, addresses]);
 
   // Template actions
   const handleLoadTemplate = (id: string) => {
@@ -497,12 +495,8 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
           selectedAssetIds={selectedAssetIds}
           setSelectedAssetIds={setSelectedAssetIds}
           darkMode={darkMode}
-          onUpdateAssets={(newAssets) => {
-            setAllAssets(newAssets);
-            const initialSelection = new Set<string>();
-            newAssets.forEach(a => initialSelection.add(a.id));
-            setSelectedAssetIds(initialSelection);
-          }}
+          addresses={addresses}
+          managementNames={managementNames}
         />
       )}
 

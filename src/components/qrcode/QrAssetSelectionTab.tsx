@@ -9,8 +9,9 @@ import {
   QrCode,
   Loader2
 } from 'lucide-react';
-import { Asset } from '../../types';
-import { dbSearchAssetsTargeted } from '../../db/firebase';
+import { Asset, Address } from '../../types';
+import { useAssetFilters } from '../../hooks/useAssetFilters';
+import { AssetFilterBar } from '../assets/AssetFilterBar';
 
 export interface QrAssetSelectionTabProps {
   allAssets: Asset[];
@@ -18,7 +19,8 @@ export interface QrAssetSelectionTabProps {
   selectedAssetIds: Set<string>;
   setSelectedAssetIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   darkMode: boolean;
-  onUpdateAssets?: (newAssets: Asset[]) => void;
+  addresses: Address[]; // listas de CRAAI e Comarca
+  managementNames: string[];
 }
 
 const ITEMS_PER_TABLE_PAGE = 35;
@@ -29,87 +31,20 @@ export default function QrAssetSelectionTab({
   selectedAssetIds,
   setSelectedAssetIds,
   darkMode,
-  onUpdateAssets
+  addresses,
+  managementNames
 }: QrAssetSelectionTabProps) {
-  // Local filter states
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedComarca, setSelectedComarca] = useState<string>('Todas');
-  const [selectedSector, setSelectedSector] = useState<string>('Todos');
-  const [selectedStatus, setSelectedStatus] = useState<string>('Todos');
-  const [isSearchingServer, setIsSearchingServer] = useState<boolean>(false);
-
-  // Trigger targeted server query without downloading full database
-  const handleServerSearch = async () => {
-    if (!onUpdateAssets) return;
-    setIsSearchingServer(true);
-    try {
-      const results = await dbSearchAssetsTargeted({
-        codeOrPatrimonio: searchTerm.trim() || undefined,
-        sector: selectedSector !== 'Todos' ? selectedSector : undefined,
-        unitOrComarca: selectedComarca !== 'Todas' ? selectedComarca : undefined,
-        limitResults: 100
-      });
-      onUpdateAssets(results);
-    } catch (e) {
-      console.warn('Erro ao pesquisar ativos direcionados:', e);
-    } finally {
-      setIsSearchingServer(false);
-    }
-  };
+  // Mesmos filtros da tela de Ativos, sobre a cópia local (ativos + endereços), sem leitura no banco
+  const filters = useAssetFilters(allAssets, addresses, managementNames);
+  const filteredAssets = filters.results;
 
   // Table pagination state
   const [tablePage, setTablePage] = useState<number>(1);
 
-  // Extract unique comarcas and sectors
-  const uniqueComarcas = useMemo(() => {
-    const set = new Set<string>();
-    allAssets.forEach(a => {
-      const c = a.specs?.COMARCA || a.specs?.comarca || (a.location ? a.location.split(' - ')[0] : '');
-      if (c && c.trim()) set.add(c.trim());
-    });
-    return Array.from(set).sort();
-  }, [allAssets]);
-
-  const uniqueSectors = useMemo(() => {
-    const set = new Set<string>();
-    allAssets.forEach(a => {
-      if (a.sector) set.add(a.sector);
-    });
-    return Array.from(set).sort();
-  }, [allAssets]);
-
-  // Filtered assets
-  const filteredAssets = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return allAssets.filter(asset => {
-      if (q) {
-        const matchCode = (asset.code || '').toLowerCase().includes(q);
-        const matchName = (asset.name || '').toLowerCase().includes(q);
-        const matchLoc = (asset.location || '').toLowerCase().includes(q);
-        const matchSerial = (asset.specs?.serialNumber || asset.specs?.['Nº DE SÉRIE'] || '').toLowerCase().includes(q);
-        const matchModel = (asset.specs?.model || asset.specs?.MODELO || '').toLowerCase().includes(q);
-        if (!matchCode && !matchName && !matchLoc && !matchSerial && !matchModel) {
-          return false;
-        }
-      }
-      if (selectedComarca !== 'Todas') {
-        const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location ? asset.location.split(' - ')[0] : '');
-        if (c !== selectedComarca) return false;
-      }
-      if (selectedSector !== 'Todos') {
-        if (asset.sector !== selectedSector) return false;
-      }
-      if (selectedStatus !== 'Todos') {
-        if (asset.status !== selectedStatus) return false;
-      }
-      return true;
-    });
-  }, [allAssets, searchTerm, selectedComarca, selectedSector, selectedStatus]);
-
   // Reset pagination on filter changes
   useEffect(() => {
     setTablePage(1);
-  }, [searchTerm, selectedComarca, selectedSector, selectedStatus]);
+  }, [filters.filtersKey]);
 
   const totalTablePages = Math.max(1, Math.ceil(filteredAssets.length / ITEMS_PER_TABLE_PAGE));
   const paginatedAssets = useMemo(() => {
@@ -125,9 +60,11 @@ export default function QrAssetSelectionTab({
     setSelectedAssetIds(next);
   };
 
+  // Baixados só entram quando o filtro de Status for "Baixado" (não imprime etiqueta de ativo que saiu)
+  const selectableFiltered = filters.status === 'Baixado' ? filteredAssets : filteredAssets.filter((a) => a.status !== 'Baixado');
   const handleSelectAllFiltered = () => {
     const next = new Set(selectedAssetIds);
-    filteredAssets.forEach(a => next.add(a.id));
+    selectableFiltered.forEach(a => next.add(a.id));
     setSelectedAssetIds(next);
   };
 
@@ -145,89 +82,7 @@ export default function QrAssetSelectionTab({
     <div className="space-y-4">
       {/* FILTER BAR */}
       <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por código, nome, local..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className={`w-full pl-9 pr-3 py-2 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium ${
-                darkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-            />
-          </div>
-
-          <div>
-            <select
-              value={selectedComarca}
-              onChange={(e) => setSelectedComarca(e.target.value)}
-              className={`w-full px-3 py-2 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-semibold ${
-                darkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-            >
-              <option value="Todas">Comarca: Todas ({uniqueComarcas.length})</option>
-              {uniqueComarcas.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <select
-              value={selectedSector}
-              onChange={(e) => setSelectedSector(e.target.value)}
-              className={`w-full px-3 py-2 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-semibold ${
-                darkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-            >
-              <option value="Todos">Setor: Todos ({uniqueSectors.length})</option>
-              {uniqueSectors.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className={`w-full px-3 py-2 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-semibold ${
-                darkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-            >
-              <option value="Todos">Status: Todos</option>
-              <option value="Operando">Operando</option>
-              <option value="Em Manutenção">Em Manutenção</option>
-              <option value="Parado">Parado</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Action button to execute targeted search */}
-        {onUpdateAssets && (
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={handleServerSearch}
-              disabled={isSearchingServer}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
-            >
-              {isSearchingServer ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Consultando servidor...</span>
-                </>
-              ) : (
-                <>
-                  <Search className="w-3.5 h-3.5" />
-                  <span>Buscar Ativos Filtrados</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
+        <AssetFilterBar f={filters} />
 
         {/* Mass Selection Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800">
@@ -238,7 +93,7 @@ export default function QrAssetSelectionTab({
               className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <CheckSquare className="w-3.5 h-3.5" />
-              Selecionar Todos Filtrados ({filteredAssets.length})
+              Selecionar Todos Filtrados ({selectableFiltered.length})
             </button>
 
             <button

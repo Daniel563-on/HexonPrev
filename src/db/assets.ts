@@ -12,7 +12,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { Asset, MaintenanceLog } from '../types';
+import { Address, Asset, MaintenanceLog } from '../types';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { sanitizePublicAsset, sanitizePublicLog } from '../utils/lgpdUtils';
 import {
@@ -25,6 +25,7 @@ import {
   ensureFirebaseAuthReady
 } from './core';
 import { isMockOrLegacyId } from './templates';
+import { addressToAssetItem } from './addresses';
 import {
   canUseAssetSync,
   ensureAssetSync,
@@ -179,6 +180,18 @@ export async function dbGetSingleAssetPublic(assetIdentifier: string): Promise<A
   const rawId = cleanLower.startsWith('hexon_preventiva_asset_id_')
     ? clean.substring('hexon_preventiva_asset_id_'.length).trim()
     : clean;
+
+  // QR Code de endereço (imóvel): "addr:END-015" -> lê o cadastro de Endereços
+  if (rawId.toLowerCase().startsWith('addr:') && firebaseActive && dbInstance) {
+    try {
+      await ensureFirebaseAuthReady(2000);
+      const snap = await getDoc(doc(dbInstance, 'addresses', rawId.substring(5).trim()));
+      return snap.exists() ? addressToAssetItem({ id: snap.id, ...snap.data() } as Address) : null;
+    } catch (err: any) {
+      console.warn('Endereço do QR Code não pôde ser lido:', err);
+      return null;
+    }
+  }
 
   if (firebaseActive && dbInstance) {
     try {

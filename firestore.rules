@@ -74,8 +74,9 @@ service cloud.firestore {
     }
 
     // 4d. ENDEREÇOS — cadastro das unidades que recebem ronda; só o Super Administrador altera
+    // Leitura pública: o QR Code do imóvel abre a ficha do endereço sem login (só código, CRAAI, comarca e endereço)
     match /addresses/{addressId} {
-      allow read: if isStaff();
+      allow read: if true;
       allow write: if isSuperAdmin();
     }
 

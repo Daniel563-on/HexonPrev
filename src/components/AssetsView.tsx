@@ -41,6 +41,7 @@ import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address } from '../types';
 import { 
   dbGetAddresses,
+  addressToAssetItem,
   subscribeLocalAssets,
   forceFullAssetResync,
   dbGetAssetHistory, 
@@ -166,23 +167,7 @@ export default function AssetsView({
   }, [addressCraais, filterCraai]);
 
   // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
-  const addressItems = React.useMemo<Asset[]>(
-    () =>
-      addressList.map((ad) => ({
-        id: `addr:${ad.id}`,
-        kind: 'address',
-        addressId: ad.id,
-        code: ad.code,
-        name: ad.address,
-        sector: 'DOM',
-        location: `${ad.comarca} · ${ad.craai}`,
-        status: ad.active ? 'Operando' : 'Baixado',
-        specs: { CRAAI: ad.craai, COMARCA: ad.comarca, TIPO: 'IMÓVEL / ENDEREÇO', STATUS: ad.active ? 'Ativo' : 'Inativo' },
-        createdAt: ad.createdAt,
-        updatedAt: ad.updatedAt
-      })),
-    [addressList]
-  );
+  const addressItems = React.useMemo<Asset[]>(() => addressList.map(addressToAssetItem), [addressList]);
   const allItems = React.useMemo(() => [...assets, ...addressItems], [assets, addressItems]);
 
   const commonEquipmentTypes = React.useMemo(
@@ -296,14 +281,14 @@ export default function AssetsView({
 
   // Handle external QR code scanning triggers from App routing
   useEffect(() => {
-    if (scannedAssetId && assets.length > 0) {
-      const match = assets.find(a => a.id === scannedAssetId);
+    if (scannedAssetId && allItems.length > 0) {
+      const match = allItems.find(a => a.id === scannedAssetId);
       if (match) {
         setSelectedAsset(match);
         setMobileView('detail');
       }
     }
-  }, [scannedAssetId, assets]);
+  }, [scannedAssetId, allItems]);
 
   // Abre a OS completa de um registro do histórico (qualquer data, mesmo fora das listas)
   const handleViewHistoryOrder = async (orderId: string) => {
@@ -357,7 +342,7 @@ export default function AssetsView({
     const normalized = decodedText.trim();
     const cleanValue = parseScannedQrCode(normalized);
 
-    const match = assets.find(
+    const match = allItems.find(
       (a) => a.id.toLowerCase() === cleanValue.toLowerCase() || 
              a.code.toLowerCase() === cleanValue.toLowerCase() || 
              a.id.toLowerCase() === normalized.toLowerCase() || 

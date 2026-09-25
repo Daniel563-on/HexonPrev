@@ -1,5 +1,5 @@
 import { collection, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
-import { Address } from '../types';
+import { Address, Asset } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
 // CONTROLE DE ENDEREÇOS
@@ -88,4 +88,21 @@ export function buildSurveyTargets(addresses: Address[], comarcas: string[]): Su
     return active.map((a) => ({ key: a.code, comarca: a.comarca, craai: a.craai, address: a }));
   }
   return comarcas.map((c) => ({ key: c, comarca: c }));
+}
+
+// Endereço (vistorias da DOM) mostrado como item "Imóvel" — montado do cadastro de Endereços, sem cópia
+export function addressToAssetItem(ad: Address): Asset {
+  return {
+    id: `addr:${ad.id}`,
+    kind: 'address',
+    addressId: ad.id,
+    code: ad.code,
+    name: ad.address,
+    sector: 'DOM',
+    location: `${ad.comarca} · ${ad.craai}`,
+    status: ad.active ? 'Operando' : 'Baixado',
+    specs: { CRAAI: ad.craai, COMARCA: ad.comarca, TIPO: 'IMÓVEL / ENDEREÇO', STATUS: ad.active ? 'Ativo' : 'Inativo' } as any,
+    createdAt: ad.createdAt,
+    updatedAt: ad.updatedAt
+  };
 }
