@@ -1111,13 +1111,13 @@ export default function OrdersCalendarPlanning({
                     {planActiveTab === 'agendadas' && (
                       <div className="space-y-4">
                         {/* Sub-Tabs: Planejadas, Concluídas e Não Executadas */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200">
-                          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200 w-full sm:w-auto overflow-x-auto">
+                        <div className="pb-2 border-b border-slate-200">
+                          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200 w-full">
                             {/* 1. Planejadas */}
                             <button
                               type="button"
                               onClick={() => setScheduledSubTab('planejadas')}
-                              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                              className={`flex-1 min-w-[120px] px-2 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-150 whitespace-nowrap ${
                                 scheduledSubTab === 'planejadas'
                                   ? 'bg-[#3525cd] text-white shadow-3xs'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -1136,7 +1136,7 @@ export default function OrdersCalendarPlanning({
                             <button
                               type="button"
                               onClick={() => setScheduledSubTab('atrasadas')}
-                              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                              className={`flex-1 min-w-[120px] px-2 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-150 whitespace-nowrap ${
                                 scheduledSubTab === 'atrasadas'
                                   ? 'bg-amber-600 text-white shadow-3xs'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -1155,7 +1155,7 @@ export default function OrdersCalendarPlanning({
                             <button
                               type="button"
                               onClick={() => setScheduledSubTab('concluidas')}
-                              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                              className={`flex-1 min-w-[120px] px-2 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-150 whitespace-nowrap ${
                                 scheduledSubTab === 'concluidas'
                                   ? 'bg-emerald-600 text-white shadow-3xs'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -1174,7 +1174,7 @@ export default function OrdersCalendarPlanning({
                             <button
                               type="button"
                               onClick={() => setScheduledSubTab('nao_executadas')}
-                              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                              className={`flex-1 min-w-[120px] px-2 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-150 whitespace-nowrap ${
                                 scheduledSubTab === 'nao_executadas'
                                   ? 'bg-rose-600 text-white shadow-3xs'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -1190,24 +1190,6 @@ export default function OrdersCalendarPlanning({
                             </button>
                           </div>
 
-                          {/* Seletor rápido de revertíveis do mês / botão complementar se houver não executadas no mês */}
-                          {(() => {
-                            const unexecutedInMonth = orders.filter(os => canRevertUnexecutedOrder(os, currentCalendarDate));
-                            if (unexecutedInMonth.length === 0) return null;
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onOpenBulkRevertModal('month');
-                                }}
-                                className="text-[9.5px] font-black text-amber-700 hover:text-amber-800 uppercase tracking-wider flex items-center justify-center sm:justify-end gap-1 cursor-pointer transition-colors py-1 px-2 rounded-lg hover:bg-amber-50"
-                                title="Reverter para Novo todas as atrasadas do mês (dentro do prazo do Super Administrador)"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                Mês: {unexecutedInMonth.length} atrasadas para reagendar
-                              </button>
-                            );
-                          })()}
                         </div>
 
                         {/* SUB-VIEW 1: Planejadas */}
