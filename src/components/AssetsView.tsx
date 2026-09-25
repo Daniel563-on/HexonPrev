@@ -219,7 +219,8 @@ export default function AssetsView({
   const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
   const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
 
-  const selectClass = 'text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
+  const selectClass = 'w-full text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
+  const labelClass = 'block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1';
 
   const handleClearFilters = () => {
     setSearchText('');
@@ -454,14 +455,19 @@ export default function AssetsView({
                 className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
               />
             </div>
-            <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
+            {/* Filtros de lista: largura total, nome acima de cada um */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <label className="block min-w-0">
+                <span className={labelClass}>Gerência</span>
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
-                  <option value="Todas">{optionLabel('Gerência: Todas', facetCounts.totals.gerencia)}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.gerencia)}</option>
                   {visibleOptions('gerencia', managements.map((m) => m.name), filterGerencia).map((name) => (
                     <option key={name} value={name}>{optionLabel(name, countOf('gerencia', name))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>CRAAI</span>
                 <select
                   value={filterCraai}
                   onChange={(e) => {
@@ -470,25 +476,35 @@ export default function AssetsView({
                   }}
                   className={selectClass}
                 >
-                  <option value="Todas">{optionLabel('CRAAI: Todas', facetCounts.totals.craai)}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.craai)}</option>
                   {visibleOptions('craai', craaiOptions.filter((c) => c !== 'Todas'), filterCraai).map((c) => (
                     <option key={c} value={c}>{optionLabel(c, countOf('craai', c))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Comarca</span>
                 <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className={selectClass}>
-                  <option value="Todas">{optionLabel('Comarca: Todas', facetCounts.totals.comarca)}</option>
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.comarca)}</option>
                   {visibleOptions('comarca', availableUnits.filter((u) => u !== 'Todas'), filterUnidade).map((u) => (
                     <option key={u} value={u}>{optionLabel(u, countOf('comarca', u))}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Tipo</span>
                 <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
-                  <option value="Todos">{optionLabel('Tipo: Todos', facetCounts.totals.tipo)}</option>
+                  <option value="Todos">{optionLabel('Todos', facetCounts.totals.tipo)}</option>
                   {visibleOptions('tipo', commonEquipmentTypes.filter((t) => t !== 'Todos'), filterTipoEquipamento).map((t) => (
                     <option key={t} value={t}>{optionLabel(t, countOf('tipo', t))}</option>
                   ))}
                 </select>
-              </div>
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
+              </label>
+            </div>
+
+            {/* Status + limpar filtros */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
                 {(['Todos', 'Operando', 'Em Manutenção', 'Parado', 'Baixado'] as const).map((option) => (
                   <button
                     key={option}
@@ -505,9 +521,7 @@ export default function AssetsView({
                   </button>
                 ))}
               </div>
-            </div>
-            {hasActiveFilters && (
-              <div className="flex justify-end">
+              {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={handleClearFilters}
@@ -515,8 +529,8 @@ export default function AssetsView({
                 >
                   <RotateCcw className="w-3 h-3" /> Limpar filtros
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* RESULTADO */}
