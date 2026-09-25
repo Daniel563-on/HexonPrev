@@ -22,7 +22,7 @@ export function summarySectorToken(value: string): string {
   return (
     String(value || 'SEM_GERENCIA')
       .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^A-Za-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .toUpperCase() || 'SEM_GERENCIA'
