@@ -14,6 +14,7 @@ export * from './assets';
 export * from './serviceOrders';
 export * from './dispatchIndex';
 export * from './addresses';
+export * from './monthlySummaries';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';
