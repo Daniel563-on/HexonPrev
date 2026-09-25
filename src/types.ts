@@ -43,6 +43,8 @@ export interface Asset {
   periodicities?: ('Semanal' | 'Quinzenal' | 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[];
   qrCode?: string; // Base64 data URL
   retiredAt?: string; // data da baixa (não veio na planilha da gerência)
+  kind?: 'address'; // 'address' = endereço (imóvel) mostrado na lista de ativos; não é gravado como ativo
+  addressId?: string;
 }
 
 export interface ServiceOrder {

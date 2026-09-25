@@ -34,10 +34,11 @@ import { AssetScannerModal, AssetDeleteModal, AssetSectorDeleteModal } from './a
 import { AssetImportWizardModal } from './assets/AssetImportWizardModal';
 import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
+import { AddressDetailPanel } from './assets/AddressDetailPanel';
 import { AssetConsultationTable } from './assets/AssetConsultationTable';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
-import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
+import { Asset, Address, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
 import { 
   dbGetAddresses,
   subscribeLocalAssets,
@@ -94,6 +95,7 @@ export default function AssetsView({
   const [assetsReady, setAssetsReady] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
   const [addressCraais, setAddressCraais] = useState<{ craai: string; comarca: string }[]>([]);
+  const [addressList, setAddressList] = useState<Address[]>([]);
 
   // Dynamic custom fields mapped from XLSX columns
   const [customDynamicFields, setCustomDynamicFields] = useState<string[]>([]);
@@ -146,7 +148,10 @@ export default function AssetsView({
       setAssets(list);
       setAssetsReady(true);
     });
-    dbGetAddresses().then((list) => setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca }))));
+    dbGetAddresses().then((list) => {
+      setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca })));
+      setAddressList(list);
+    });
     return unsubscribe;
   }, []);
 
@@ -159,9 +164,29 @@ export default function AssetsView({
     const list = addressCraais.filter((a) => filterCraai === 'Todas' || a.craai === filterCraai).map((a) => a.comarca);
     return ['Todas', ...Array.from(new Set<string>(list.filter(Boolean))).sort((a, b) => a.localeCompare(b))];
   }, [addressCraais, filterCraai]);
+  // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
+  const addressItems = React.useMemo<Asset[]>(
+    () =>
+      addressList.map((ad) => ({
+        id: `addr:${ad.id}`,
+        kind: 'address',
+        addressId: ad.id,
+        code: ad.code,
+        name: ad.address,
+        sector: 'DOM',
+        location: `${ad.comarca} · ${ad.craai}`,
+        status: ad.active ? 'Operando' : 'Baixado',
+        specs: { CRAAI: ad.craai, COMARCA: ad.comarca, TIPO: 'IMÓVEL / ENDEREÇO', STATUS: ad.active ? 'Ativo' : 'Inativo' },
+        createdAt: ad.createdAt,
+        updatedAt: ad.updatedAt
+      })),
+    [addressList]
+  );
+  const allItems = React.useMemo(() => [...assets, ...addressItems], [assets, addressItems]);
+
   const commonEquipmentTypes = React.useMemo(
-    () => ['Todos', ...Array.from(new Set<string>(assets.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
-    [assets]
+    () => ['Todos', ...Array.from(new Set<string>(allItems.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [allItems]
   );
 
   // Lista filtrada na hora: a busca procura em patrimônio, nome, série, sala, fabricante e modelo
@@ -182,7 +207,7 @@ export default function AssetsView({
     const counts = Object.fromEntries(FACETS.map((f) => [f, new Map<string, number>()])) as Record<FacetKey, Map<string, number>>;
     const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, craai: 0, comarca: 0, tipo: 0 };
     const list: Asset[] = [];
-    for (const a of assets) {
+    for (const a of allItems) {
       if (!matchesSearch(a, q)) continue;
       const v: Record<FacetKey, string> = {
         status: a.status,
@@ -208,7 +233,7 @@ export default function AssetsView({
     }
     list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
     return { consultationResults: list, facetCounts: { counts, totals } };
-  }, [assets, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
+  }, [allItems, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
 
   // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
   const countOf = (f: FacetKey, value: string) => facetCounts.counts[f].get(value) || 0;
@@ -261,7 +286,7 @@ export default function AssetsView({
 
   // Update selected asset and load history when selection shifts
   useEffect(() => {
-    if (selectedAsset) {
+    if (selectedAsset && selectedAsset.kind !== 'address') {
       dbGetAssetHistory(selectedAsset.id).then((hist) => {
         setHistory(hist);
       });
@@ -375,7 +400,7 @@ export default function AssetsView({
           </h1>
           <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-2">
             {assetsReady
-              ? `${assets.length} ativos na cópia local · atualizada em tempo real`
+              ? `${assets.length} ativos e ${addressItems.length} endereços · atualizado em tempo real`
               : 'Preparando a cópia local dos ativos...'}
             {assetsReady && userProfile?.perfil !== 'Profissional' && (
               <button
@@ -430,7 +455,9 @@ export default function AssetsView({
         </div>
       </div>
 
-      {selectedAsset ? (
+      {selectedAsset?.kind === 'address' ? (
+        <AddressDetailPanel asset={selectedAsset} onBackToList={() => setSelectedAsset(null)} onViewOrder={handleViewHistoryOrder} />
+      ) : selectedAsset ? (
         <AssetDetailPanel
           asset={selectedAsset}
           history={history}
@@ -472,7 +499,7 @@ export default function AssetsView({
                 <span className={labelClass}>Gerência</span>
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
                   <option value="Todas">{optionLabel('Todas', facetCounts.totals.gerencia)}</option>
-                  {visibleOptions('gerencia', managements.map((m) => m.name), filterGerencia).map((name) => (
+                  {visibleOptions('gerencia', Array.from(new Set([...managements.map((m) => m.name), 'DOM'])), filterGerencia).map((name) => (
                     <option key={name} value={name}>{optionLabel(name, countOf('gerencia', name))}</option>
                   ))}
                 </select>

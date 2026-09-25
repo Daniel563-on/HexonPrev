@@ -220,6 +220,15 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
 // Depois da primeira carga, o banco envia apenas as OS que mudarem (ex.: técnico concluiu).
 const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
 
+// Histórico das vistorias de um endereço (as mais recentes primeiro, até 100)
+export async function dbGetAddressVistorias(addressId: string): Promise<ServiceOrder[]> {
+  if (!firebaseActive || !dbInstance || !addressId) return [];
+  const snap = await getDocs(
+    query(collection(dbInstance, 'serviceOrders'), where('addressId', '==', addressId), orderBy('endDate', 'desc'), limit(100))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data(), signature: null } as ServiceOrder));
+}
+
 // Cancela as OS abertas dos ativos baixados (busca as OS de 30 ativos por vez).
 // Só altera status e datas; a OS continua guardada para consulta.
 export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: string): Promise<number> {
