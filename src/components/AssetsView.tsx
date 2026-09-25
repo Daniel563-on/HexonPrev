@@ -38,7 +38,7 @@ import { AddressDetailPanel } from './assets/AddressDetailPanel';
 import { AssetConsultationTable } from './assets/AssetConsultationTable';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
-import { Asset, Address, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate } from '../types';
+import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address } from '../types';
 import { 
   dbGetAddresses,
   subscribeLocalAssets,
@@ -164,6 +164,7 @@ export default function AssetsView({
     const list = addressCraais.filter((a) => filterCraai === 'Todas' || a.craai === filterCraai).map((a) => a.comarca);
     return ['Todas', ...Array.from(new Set<string>(list.filter(Boolean))).sort((a, b) => a.localeCompare(b))];
   }, [addressCraais, filterCraai]);
+
   // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
   const addressItems = React.useMemo<Asset[]>(
     () =>
