@@ -1,13 +1,18 @@
 import {
+  arrayUnion,
   collection,
   deleteDoc,
   deleteField,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   limit,
+  orderBy,
   query,
+  QueryDocumentSnapshot,
   setDoc,
+  startAfter,
   where,
   writeBatch
 } from 'firebase/firestore';
@@ -34,6 +39,18 @@ export function clearAssetsCache(): void {
   cacheAssets = null;
   cacheAssetsFromFirebase = false;
   pendingAssetsPromise = null;
+}
+
+// Atualiza a cópia local SOMENTE se ela já estiver carregada (nunca baixa a coleção inteira para gravar 1 ativo)
+function updateLoadedAssetsCache(change: (list: Asset[]) => Asset[]): void {
+  if (cacheAssets === null) return;
+  cacheAssets = change(cacheAssets);
+  idbSet('hexon_assets', cacheAssets).catch(() => {});
+  try {
+    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
+  } catch (lsErr) {
+    // Handled by IndexedDB
+  }
 }
 
 // Get all assets
@@ -370,35 +387,21 @@ export async function dbSearchAssetsTargeted(criteria: AssetSearchCriteria): Pro
 
 // Save or Update asset
 export async function dbSaveAsset(asset: Asset): Promise<void> {
-  // Ensure cache is initialized
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
   // Ensure asset is lightweight: never persist base64 QR images
   const cleanAsset: Asset = { ...asset };
   if (cleanAsset.qrCode) {
     delete cleanAsset.qrCode;
   }
 
-  // Optimistically update cache instantly
-  const idx = cacheAssets!.findIndex((a) => a.id === cleanAsset.id);
-  if (idx >= 0) {
-    cacheAssets![idx] = { ...cleanAsset };
-  } else {
-    cacheAssets!.push({ ...cleanAsset });
-  }
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+  updateLoadedAssetsCache((list) => {
+    const idx = list.findIndex((a) => a.id === cleanAsset.id);
+    return idx >= 0 ? list.map((a, i) => (i === idx ? { ...cleanAsset } : a)) : [...list, { ...cleanAsset }];
+  });
 
   if (firebaseActive && dbInstance) {
     try {
       await setDoc(doc(dbInstance, 'assets', cleanAsset.id), cleanUndefined(cleanAsset));
+      await registerAssetTypes([String(cleanAsset.specs?.TIPO || '')]);
     } catch (err: any) {
       console.warn('Firestore write asset failed, utilizing local fallback state:', err);
       checkQuotaException(err);
@@ -408,32 +411,21 @@ export async function dbSaveAsset(asset: Asset): Promise<void> {
 
 // Save or Update multiple assets at once (e.g. from bulk import)
 export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
-  // Ensure cache is initialized
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
   const cleanedAssets = assets.map((a) => {
     const clean = { ...a };
     if (clean.qrCode) delete clean.qrCode;
     return clean;
   });
 
-  for (const asset of cleanedAssets) {
-    const idx = cacheAssets!.findIndex((a) => a.id === asset.id || a.code === asset.code);
-    if (idx >= 0) {
-      cacheAssets![idx] = { ...cacheAssets![idx], ...asset };
-    } else {
-      cacheAssets!.push({ ...asset });
+  updateLoadedAssetsCache((list) => {
+    const next = [...list];
+    for (const asset of cleanedAssets) {
+      const idx = next.findIndex((a) => a.id === asset.id || a.code === asset.code);
+      if (idx >= 0) next[idx] = { ...next[idx], ...asset };
+      else next.push({ ...asset });
     }
-  }
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+    return next;
+  });
 
   if (firebaseActive && dbInstance) {
     try {
@@ -448,6 +440,7 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
         // Give the write stream queue a brief moment to process and drain
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
+      await registerAssetTypes(cleanedAssets.map((a) => String(a.specs?.TIPO || '')));
     } catch (err: any) {
       console.warn('Firestore bulk write asset failed:', err);
       checkQuotaException(err);
@@ -457,18 +450,7 @@ export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
 
 // DELETE SINGLE ASSET
 export async function dbDeleteAsset(assetId: string): Promise<void> {
-  if (cacheAssets === null) {
-    await dbGetAssets();
-  }
-
-  cacheAssets = cacheAssets!.filter((a) => a.id !== assetId);
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+  updateLoadedAssetsCache((list) => list.filter((a) => a.id !== assetId));
 
   if (firebaseActive && dbInstance) {
     try {
@@ -482,51 +464,164 @@ export async function dbDeleteAsset(assetId: string): Promise<void> {
 
 // DELETE ALL ASSETS BY SECTOR
 export async function dbDeleteAssetsBySector(sectorName: string): Promise<void> {
-  if (cacheAssets === null) {
-    await dbGetAssets();
+  // Nomes equivalentes (antigos e atuais) da mesma gerência
+  const target = sectorName.toLowerCase();
+  let names = [sectorName];
+  if (target === 'mecânica/refrigeração' || target === 'mecânica / refrigeração') {
+    names = ['Mecânica/Refrigeração', 'Mecânica / Refrigeração', 'HVAC', sectorName];
+  } else if (target === 'elétrica/eletrônica' || target === 'elétrica / eletrônica') {
+    names = ['Elétrica/Eletrônica', 'Elétrica / Eletrônica', 'Elétrica', sectorName];
+  } else if (target === 'civil') {
+    names = ['Civil', 'Civil / Predial', 'Hidráulica', sectorName];
   }
+  names = Array.from(new Set(names));
+  const nameSet = new Set(names.map((n) => n.toLowerCase()));
 
-  const isMatch = (sec: string) => {
-    const s = (sec || '').toLowerCase();
-    const target = sectorName.toLowerCase();
-
-    // Normalizing synonyms in Portuguese and old types
-    if (target === 'mecânica/refrigeração' || target === 'mecânica / refrigeração') {
-      return s === 'mecânica/refrigeração' || s === 'mecânica / refrigeração' || s === 'hvac';
-    }
-    if (target === 'elétrica/eletrônica' || target === 'elétrica / eletrônica') {
-      return s === 'elétrica/eletrônica' || s === 'elétrica / eletrônica' || s === 'elétrica';
-    }
-    if (target === 'civil') {
-      return s === 'civil' || s === 'civil / predial' || s === 'hidráulica';
-    }
-    return s === target;
-  };
-
-  const assetsToDelete = cacheAssets!.filter((a) => isMatch(a.sector));
-  cacheAssets = cacheAssets!.filter((a) => !isMatch(a.sector));
-
-  idbSet('hexon_assets', cacheAssets).catch(() => {});
-  try {
-    localStorage.setItem('hexon_assets', JSON.stringify(cacheAssets));
-  } catch (lsErr) {
-    // Handled by IndexedDB
-  }
+  updateLoadedAssetsCache((list) => list.filter((a) => !nameSet.has((a.sector || '').toLowerCase())));
 
   if (firebaseActive && dbInstance) {
     try {
+      // Busca só os ativos desse setor (não a coleção inteira)
+      const snap = await getDocs(query(collection(dbInstance, 'assets'), where('sector', 'in', names)));
+      const ids = snap.docs.map((d) => d.id);
       const batchSize = 100;
-      for (let i = 0; i < assetsToDelete.length; i += batchSize) {
-        const chunk = assetsToDelete.slice(i, i + batchSize);
+      for (let i = 0; i < ids.length; i += batchSize) {
         const batch = writeBatch(dbInstance);
-        for (const asset of chunk) {
-          batch.delete(doc(dbInstance, 'assets', asset.id));
-        }
+        ids.slice(i, i + batchSize).forEach((id) => batch.delete(doc(dbInstance!, 'assets', id)));
         await batch.commit();
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
     } catch (err: any) {
       console.warn('Could not delete batch of assets by sector in Firestore:', err);
+      checkQuotaException(err);
+      throw err;
     }
+  }
+}
+
+// ===== CONSULTA PAGINADA DE ATIVOS =====
+// Um filtro principal vai ao banco (Patrimônio, Comarca, CRAAI ou Gerência), mais Status e Tipo opcionais.
+// Cada página traz 50 ativos, ordenados pelo patrimônio; a próxima página só é lida quando o usuário avança.
+export type AssetMainFilter = 'todos' | 'patrimonio' | 'comarca' | 'craai' | 'gerencia';
+
+export interface AssetPageCriteria {
+  main: AssetMainFilter;
+  value?: string;
+  status?: string;
+  tipo?: string;
+}
+
+export const ASSETS_PAGE_SIZE = 50;
+
+function readAssetDoc(d: { id: string; data: () => any }): Asset {
+  const data = d.data();
+  if (data.qrCode) delete data.qrCode;
+  return { id: d.id, ...data } as Asset;
+}
+
+function assetPageConstraints(c: AssetPageCriteria): any[] {
+  const list: any[] = [];
+  const value = (c.value || '').trim();
+  if (c.main === 'comarca' && value) list.push(where('specs.COMARCA', '==', value));
+  if (c.main === 'craai' && value) list.push(where('specs.CRAAI', '==', value));
+  if (c.main === 'gerencia' && value) list.push(where('sector', '==', value));
+  if (c.status) list.push(where('status', '==', c.status));
+  if (c.tipo) list.push(where('specs.TIPO', '==', c.tipo));
+  return list;
+}
+
+// Patrimônio: busca exata (número do documento, código ou campo PATRIMONIO). Não achou = lista vazia.
+export async function dbFindAssetByPatrimonio(value: string): Promise<Asset | null> {
+  const clean = decodeURIComponent(value || '').trim();
+  if (!clean || !firebaseActive || !dbInstance) return null;
+  const rawId = clean.toLowerCase().startsWith('hexon_preventiva_asset_id_')
+    ? clean.substring('hexon_preventiva_asset_id_'.length).trim()
+    : clean;
+  try {
+    const byId = await getDoc(doc(dbInstance, 'assets', rawId));
+    if (byId.exists()) return readAssetDoc(byId);
+    const candidates = Array.from(new Set([rawId, rawId.toUpperCase()]));
+    for (const field of ['code', 'specs.PATRIMONIO']) {
+      for (const v of candidates) {
+        const snap = await getDocs(query(collection(dbInstance, 'assets'), where(field, '==', v), limit(1)));
+        if (!snap.empty) return readAssetDoc(snap.docs[0]);
+      }
+    }
+  } catch (err: any) {
+    console.warn('dbFindAssetByPatrimonio error:', err);
+    checkQuotaException(err);
+  }
+  return null;
+}
+
+export async function dbCountAssets(c: AssetPageCriteria): Promise<number> {
+  if (!firebaseActive || !dbInstance) return 0;
+  const snap = await getCountFromServer(query(collection(dbInstance, 'assets'), ...assetPageConstraints(c)));
+  return snap.data().count;
+}
+
+export async function dbGetAssetsPage(
+  c: AssetPageCriteria,
+  after: QueryDocumentSnapshot | null,
+  pageSize: number = ASSETS_PAGE_SIZE
+): Promise<{ assets: Asset[]; lastDoc: QueryDocumentSnapshot | null }> {
+  if (!firebaseActive || !dbInstance) return { assets: [], lastDoc: null };
+  const constraints = [...assetPageConstraints(c), orderBy('code')];
+  if (after) constraints.push(startAfter(after));
+  constraints.push(limit(pageSize));
+  const snap = await getDocs(query(collection(dbInstance, 'assets'), ...constraints));
+  const docs = snap.docs.filter((d) => !isMockOrLegacyId(d.id));
+  return {
+    assets: docs.map(readAssetDoc),
+    lastDoc: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null
+  };
+}
+
+// Exportação para Excel: lê todos os ativos do filtro, de 500 em 500 (só quando o usuário pede)
+export async function dbGetAllAssetsForExport(c: AssetPageCriteria): Promise<Asset[]> {
+  const all: Asset[] = [];
+  let after: QueryDocumentSnapshot | null = null;
+  for (;;) {
+    const page = await dbGetAssetsPage(c, after, 500);
+    all.push(...page.assets);
+    if (!page.lastDoc || page.assets.length < 500) break;
+    after = page.lastDoc;
+  }
+  return all;
+}
+
+// Importação: acha os ativos já cadastrados pelos patrimônios da planilha (de 30 em 30), sem baixar a coleção
+export async function dbFindAssetsByCodes(codes: string[]): Promise<Asset[]> {
+  if (!firebaseActive || !dbInstance) return [];
+  const unique = Array.from(new Set(codes.map((c) => c.trim()).filter(Boolean)));
+  const found: Asset[] = [];
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(query(collection(dbInstance, 'assets'), where('code', 'in', unique.slice(i, i + 30))));
+    snap.forEach((d) => found.push(readAssetDoc(d)));
+  }
+  return found;
+}
+
+// Lista de tipos de equipamento (montada na importação e ao salvar um ativo)
+export async function registerAssetTypes(types: string[]): Promise<void> {
+  if (!firebaseActive || !dbInstance) return;
+  const clean = Array.from(new Set(types.map((t) => t.trim()).filter((t) => t && t !== 'Outros')));
+  if (clean.length === 0) return;
+  try {
+    await setDoc(doc(dbInstance, 'assetMeta', 'types'), { list: arrayUnion(...clean) }, { merge: true });
+  } catch (err) {
+    console.warn('Não foi possível atualizar a lista de tipos de equipamento:', err);
+  }
+}
+
+export async function dbGetAssetTypes(): Promise<string[]> {
+  if (!firebaseActive || !dbInstance) return [];
+  try {
+    const snap = await getDoc(doc(dbInstance, 'assetMeta', 'types'));
+    const list = (snap.exists() ? snap.data().list : []) as string[];
+    return Array.isArray(list) ? [...list].sort((a, b) => a.localeCompare(b)) : [];
+  } catch (err) {
+    console.warn('Não foi possível ler a lista de tipos de equipamento:', err);
+    return [];
   }
 }

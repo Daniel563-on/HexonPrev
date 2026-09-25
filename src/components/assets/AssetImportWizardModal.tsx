@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Asset, Management } from '../../types';
-import { dbSaveAssetsBulk, dbSavePeriodicityRules } from '../../db/firebase';
+import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbFindAssetsByCodes } from '../../db/firebase';
 
 export interface PeriodicityRule {
   keyword: string;
@@ -275,9 +275,13 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         return str;
       };
 
-      // Build quick lookup map of existing assets by code
+      // Busca no banco os ativos que já existem com os patrimônios da planilha (atualiza em vez de duplicar)
+      const sheetCodes = importRows
+        .map((row) => String(row[columnMappings['code']] || '').trim().toUpperCase())
+        .filter(Boolean);
+      const alreadySaved = await dbFindAssetsByCodes(sheetCodes);
       const existingMap = new Map<string, Asset>();
-      for (const a of assets) {
+      for (const a of [...assets, ...alreadySaved]) {
         if (a.code) {
           existingMap.set(a.code.toUpperCase().trim(), a);
         }
@@ -444,6 +448,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
           };
 
           parsedAssets.push(newAsset);
+          existingMap.set(rawCodeUpper, newAsset); // patrimônio repetido na planilha atualiza o mesmo ativo
         }
       }
 
