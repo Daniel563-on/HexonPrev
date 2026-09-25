@@ -16,6 +16,15 @@ guardar o código do servidor e permitir republicá-lo.
 - Roda com a conta de serviço `hexon-functions@core-philosophy-lr5vm.iam.gserviceaccount.com`,
   que tem somente `roles/datastore.user` e `roles/firebaseauth.admin`.
 
+## Funções agendadas (rodam sozinhas, horário de Brasília)
+
+- `dailyDeadlines` — todo dia às **02:00**: marca "Atrasada" e "Não Executada" (mesma regra do app,
+  `computeDeadlineStatus`) e grava `closedMonth` nas que viram "Não Executada".
+- `monthlyClosing` — todo dia **1º às 03:30**: grava o resumo congelado do mês anterior em
+  `monthlySummaries/{AAAA-MM}__{GERENCIA}` (contagens por periodicidade, técnico, CRAAI, comarca e resultado).
+  O mês da OS é o mês do fim do período do Super Admin (`endDate`). Precisa do índice `serviceOrders.endDate`.
+- Para rodar na hora (teste): Google Cloud Console → **Cloud Scheduler** → job da função → **Forçar execução**.
+
 ## Como republicar (Google Cloud Shell)
 
 1. Abra o Cloud Shell em https://console.cloud.google.com (projeto `core-philosophy-lr5vm`).
