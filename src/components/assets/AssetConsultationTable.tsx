@@ -18,8 +18,10 @@ export interface AssetConsultationTableProps {
   onPrintAssetTag?: (asset: Asset) => void;
   onEditAsset?: (asset: Asset) => void;
   onDeleteAsset?: (asset: Asset) => void;
-  onNewSearch: () => void;
-  onShowRecent: () => void;
+  onNewSearch?: () => void;
+  onShowRecent?: () => void;
+  // Volta para a página 1 só quando os filtros mudam (não a cada ativo recebido em tempo real)
+  resetKey?: string;
   userHasActionPermission?: (action: string) => boolean;
   userProfile?: { perfil?: string } | null;
   pageSize?: number;
@@ -35,6 +37,7 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
   onShowRecent,
   userHasActionPermission,
   userProfile,
+  resetKey,
   pageSize = 10
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,9 +45,12 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
   // Reset to page 1 whenever results change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [results]);
+  }, [resetKey ?? results]);
 
   const totalPages = Math.ceil(results.length / pageSize) || 1;
+  React.useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const paginatedResults = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -74,27 +80,9 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
   if (results.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400 font-sans shadow-sm">
-        <Filter className="w-12 h-12 text-indigo-300 mx-auto mb-3" />
-        <p className="text-sm font-bold text-[#0b1c30]">Nenhum Ativo Consultado</p>
-        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          Preencha os campos na aba <strong>Consulta</strong> e clique em <strong>Consultar Ativos</strong> para visualizar os resultados com total rapidez.
-        </p>
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={onNewSearch}
-            className="py-2 px-4 bg-[#3525cd] text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-[#2a1da6] transition-all shadow-xs"
-          >
-            Ir Para Consulta
-          </button>
-          <button
-            type="button"
-            onClick={onShowRecent}
-            className="py-2 px-4 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-all shadow-2xs"
-          >
-            Ver 25 Recentes
-          </button>
-        </div>
+        <Filter className="w-10 h-10 text-indigo-300 mx-auto mb-3" />
+        <p className="text-sm font-bold text-[#0b1c30]">Nenhum ativo encontrado</p>
+        <p className="text-xs text-slate-500 mt-1">Ajuste a busca ou os filtros acima.</p>
       </div>
     );
   }
@@ -104,11 +92,8 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
       {/* Results Header */}
       <div className="p-4 bg-slate-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <span className="text-xs font-bold text-[#0b1c30]">
-            Resultado da Consulta:
-          </span>{' '}
           <span className="text-xs font-extrabold text-indigo-700">
-            {results.length} bem(ns) encontrado(s)
+            {results.length} ativo(s) encontrado(s)
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -118,16 +103,18 @@ export const AssetConsultationTable: React.FC<AssetConsultationTableProps> = ({
             className="py-1.5 px-3 bg-white border border-gray-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Exportar Excel</span>
+            <span>Baixar Excel ({results.length})</span>
           </button>
-          <button
-            type="button"
-            onClick={onNewSearch}
-            className="py-1.5 px-3 bg-white border border-gray-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-          >
-            <Search className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Nova Consulta</span>
-          </button>
+          {onNewSearch && (
+            <button
+              type="button"
+              onClick={onNewSearch}
+              className="py-1.5 px-3 bg-white border border-gray-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            >
+              <Search className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Nova Consulta</span>
+            </button>
+          )}
         </div>
       </div>
 
