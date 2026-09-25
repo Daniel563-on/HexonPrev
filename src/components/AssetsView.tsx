@@ -445,18 +445,29 @@ export default function AssetsView({
         <>
           {/* FILTROS (aplicados na hora) */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Buscar patrimônio, nome, série, sala, fabricante, modelo..."
-                className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
-              />
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Buscar patrimônio, nome, série, sala, fabricante, modelo..."
+                  className="w-full text-sm font-medium py-2.5 pl-10 pr-3 bg-slate-50 border border-gray-300 rounded-xl text-slate-800 placeholder-gray-400 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd]"
+                />
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="text-[11px] font-bold text-slate-500 hover:text-[#3525cd] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                >
+                  <RotateCcw className="w-3 h-3" /> Limpar filtros
+                </button>
+              )}
             </div>
             {/* Filtros de lista: largura total, nome acima de cada um */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
               <label className="block min-w-0">
                 <span className={labelClass}>Gerência</span>
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
@@ -500,36 +511,15 @@ export default function AssetsView({
                   ))}
                 </select>
               </label>
-            </div>
-
-            {/* Status + limpar filtros */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-                {(['Todos', 'Operando', 'Em Manutenção', 'Parado', 'Baixado'] as const).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setFilterTipoBem(option)}
-                    className={`py-1 px-2.5 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                      filterTipoBem === option ? 'bg-[#0b1c30] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
-                    }`}
-                  >
-                    {option}{' '}
-                    <span className="opacity-60">
-                      {(option === 'Todos' ? facetCounts.totals.status : countOf('status', option)).toLocaleString('pt-BR')}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={handleClearFilters}
-                  className="text-[11px] font-bold text-slate-500 hover:text-[#3525cd] flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" /> Limpar filtros
-                </button>
-              )}
+              <label className="block min-w-0">
+                <span className={labelClass}>Status</span>
+                <select value={filterTipoBem} onChange={(e) => setFilterTipoBem(e.target.value as typeof filterTipoBem)} className={selectClass}>
+                  <option value="Todos">{optionLabel('Todos', facetCounts.totals.status)}</option>
+                  {visibleOptions('status', ['Operando', 'Em Manutenção', 'Parado', 'Baixado'], filterTipoBem).map((st) => (
+                    <option key={st} value={st}>{optionLabel(st, countOf('status', st))}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 
