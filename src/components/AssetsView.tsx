@@ -189,6 +189,8 @@ export default function AssetsView({
   const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
   const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
 
+  const selectClass = 'text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
+
   const handleClearFilters = () => {
     setSearchText('');
     setFilterTipoBem('Todos');
@@ -424,7 +426,7 @@ export default function AssetsView({
             </div>
             <div className="flex flex-col lg:flex-row lg:items-center gap-2">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
-                <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className="text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer">
+                <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
                   <option value="Todas">Gerência: Todas</option>
                   {managements.map((m) => (
                     <option key={m.id} value={m.name}>{m.name}</option>
@@ -436,18 +438,18 @@ export default function AssetsView({
                     setFilterCraai(e.target.value);
                     setFilterUnidade('Todas');
                   }}
-                  className="text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer"
+                  className={selectClass}
                 >
                   {craaiOptions.map((c) => (
                     <option key={c} value={c}>{c === 'Todas' ? 'CRAAI: Todas' : c}</option>
                   ))}
                 </select>
-                <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className="text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer">
+                <select value={filterUnidade} onChange={(e) => setFilterUnidade(e.target.value)} className={selectClass}>
                   {availableUnits.map((u) => (
                     <option key={u} value={u}>{u === 'Todas' ? 'Comarca: Todas' : u}</option>
                   ))}
                 </select>
-                <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className="text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer">
+                <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
                   {commonEquipmentTypes.map((t) => (
                     <option key={t} value={t}>{t === 'Todos' ? 'Tipo: Todos' : t}</option>
                   ))}
