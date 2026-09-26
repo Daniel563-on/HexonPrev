@@ -83,7 +83,6 @@ export default function QrAssetSelectionTab({
       {/* FILTER BAR */}
       <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
         <AssetFilterBar f={filters} />
-
       </div>
 
       {/* ASSET TABLE WITH INSTANT PAGINATION */}
