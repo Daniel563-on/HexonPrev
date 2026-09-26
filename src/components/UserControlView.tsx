@@ -16,6 +16,7 @@ import {
   adminResetUserPassword
 } from '../db/firebase';
 import { HexonUser, Management, SystemPermission } from '../types';
+import LaborRatesTab from './users/LaborRatesTab';
 
 interface UserControlViewProps {
   currentUserProfile: HexonUser;
@@ -23,7 +24,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'laborRates'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -72,7 +73,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const loadAllData = async (force: boolean = false) => {
     setIsLoading(true);
     try {
-      if (activeSubTab === 'users') {
+      if (activeSubTab === 'users' || activeSubTab === 'laborRates') {
         const uList = await dbGetUsers(force);
         setUsers(uList);
         const mList = await dbGetManagements();
@@ -485,10 +486,23 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           <span className="material-symbols-outlined text-base">shield_lock</span>
           Painel de Permissões
         </button>
+        {currentUserProfile.perfil === 'Super Administrador' && (
+          <button
+            onClick={() => { setActiveSubTab('laborRates'); setSearchQuery(''); }}
+            className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'laborRates'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">payments</span>
+            Custo Homem-Hora
+          </button>
+        )}
       </div>
 
       {/* SEARCH AND FILTER BAR */}
-      {activeSubTab !== 'permissions' && (
+      {activeSubTab !== 'permissions' && activeSubTab !== 'laborRates' && (
         <div className="flex relative">
           <span className={`material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             search
@@ -694,6 +708,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               </div>
 
             </div>
+          )}
+
+          {/* TAB 4: CUSTO HOMEM-HORA (somente Super Administrador) */}
+          {activeSubTab === 'laborRates' && currentUserProfile.perfil === 'Super Administrador' && (
+            <LaborRatesTab users={users} currentUserProfile={currentUserProfile} darkMode={darkMode} />
           )}
 
           {/* TAB 3: PAINEL DE PERMISSÕES */}
