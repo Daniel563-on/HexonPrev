@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
-import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic } from '../db/firebase';
+import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic, dbGetAddressVistorias } from '../db/firebase';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
 interface PublicAssetViewProps {
@@ -67,7 +67,10 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
         // Busca paralela e estrita apenas dos dados deste ativo (sem baixar banco geral)
         const [hist, orders] = await Promise.all([
           dbGetAssetHistoryPublic(found.id).catch(() => []),
-          dbGetAssetOrdersPublic(found.id, found.code).catch(() => [])
+          (found.kind === 'address'
+            ? dbGetAddressVistorias(found.addressId || '') // QR do endereço: vistorias do local
+            : dbGetAssetOrdersPublic(found.id, found.code)
+          ).catch(() => [])
         ]);
 
         if (active) {
@@ -170,7 +173,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
                 Hexon Manutenção Preventiva
               </h1>
               <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">
-                Consulta Pública de Equipamento
+                {asset?.kind === 'address' ? 'Consulta Pública do Imóvel' : 'Consulta Pública de Equipamento'}
               </span>
             </div>
           </div>
@@ -352,7 +355,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-indigo-600" />
                 <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                  Preventivas Programadas no Sistema ({linkedOrders.length})
+                  {asset.kind === 'address' ? 'Vistorias do Local' : 'Preventivas Programadas no Sistema'} ({linkedOrders.length})
                 </h3>
               </div>
               <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
