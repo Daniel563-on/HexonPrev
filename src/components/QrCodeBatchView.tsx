@@ -32,7 +32,6 @@ import {
   DEFAULT_PLACARD_CONFIG, 
   DEFAULT_SAVED_TEMPLATES 
 } from '../utils/qrDefaults';
-import { addressToAssetItem } from '../db/firebase';
 import QrTemplateModals from './qrcode/QrTemplateModals';
 import QrAssetSelectionTab from './qrcode/QrAssetSelectionTab';
 import QrSheetPrintPreviewTab from './qrcode/QrSheetPrintPreviewTab';
