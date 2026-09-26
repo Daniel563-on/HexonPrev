@@ -21,6 +21,7 @@ import {
   subscribeLocalAssets,
   dbGetAddresses,
   dbGetManagements,
+  addressToAssetItem,
   dbGetQrTemplates, 
   dbSaveQrTemplate, 
   dbDeleteQrTemplate 
