@@ -372,114 +372,87 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
   return (
     <div className={`w-full max-w-[1600px] mx-auto space-y-5 font-sans pb-10 ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>
       
-      {/* HEADER BAR */}
-      <div className={`rounded-2xl border transition-all overflow-hidden ${darkMode ? 'bg-slate-900/70 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
-        <div className="p-5 sm:p-6 pb-4 sm:pb-4">
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-            {/* Title & Info */}
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <div className="p-2 rounded-xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 shrink-0">
-                  <QrCode className="w-5 h-5 sm:w-6 sm:h-6" />
-                </div>
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white uppercase">
-                  Central de Etiquetas &amp; QR-Codes em Lote
-                </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 font-mono shrink-0">
-                  <ShieldCheck className="w-3 h-3" />
-                  Super Administrador
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-                Configure margens milimétricas livres, personalize cada campo individualmente com cores, fontes e tamanhos, e salve modelos reutilizáveis.
+      {/* CABEÇALHO: título, contadores e impressão + etapas */}
+      <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-900/70 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
+        <div className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0 shadow-sm">
+              <QrCode className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">Etiquetas e QR Codes</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Selecione os ativos, ajuste o modelo da etiqueta e imprima em lote.
               </p>
             </div>
+          </div>
 
-            {/* Metrics & Main Print Action - Organized side by side */}
-            <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap">
-              <div className={`flex items-center divide-x divide-slate-200 dark:divide-slate-700/80 rounded-xl border px-3.5 py-1.5 shadow-2xs ${
-                darkMode ? 'bg-slate-800/70 border-slate-700/80' : 'bg-slate-50/80 border-slate-200/80'
-              }`}>
-                <div className="pr-3 text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono">Fila</span>
-                  <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono">
-                    {selectedAssetsToPrint.length} <span className="text-[10px] font-normal text-slate-400">/ {allAssets.length}</span>
-                  </span>
-                </div>
-                <div className="pl-3 text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono">Folhas</span>
-                  <span className="text-sm font-black text-slate-700 dark:text-slate-200 font-mono">
-                    {totalPages} <span className="text-[10px] font-normal text-slate-400">{sheetConfig.paperType}</span>
-                  </span>
-                </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className={`flex items-center gap-4 rounded-xl border px-4 py-2 ${darkMode ? 'bg-slate-800/70 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <div>
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Selecionados</span>
+                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">
+                  {selectedAssetsToPrint.length.toLocaleString('pt-BR')}
+                  <span className="text-[11px] font-semibold text-slate-400"> de {allAssets.length.toLocaleString('pt-BR')}</span>
+                </span>
               </div>
-
-              <button
-                onClick={handlePrintBatch}
-                disabled={selectedAssetsToPrint.length === 0 || isPrinting}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white rounded-xl font-black text-xs tracking-wider shadow-md shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all whitespace-nowrap"
-              >
-                <Printer className="w-4 h-4 animate-pulse" />
-                <span>{isPrinting ? 'Processando...' : 'IMPRIMIR LOTE'}</span>
-              </button>
+              <div className="w-px h-8 bg-slate-200 dark:bg-slate-700" />
+              <div>
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Folhas</span>
+                <span className="text-sm font-black text-slate-700 dark:text-slate-200">
+                  {totalPages} <span className="text-[11px] font-semibold text-slate-400">{sheetConfig.paperType}</span>
+                </span>
+              </div>
             </div>
+            <button
+              onClick={handlePrintBatch}
+              disabled={selectedAssetsToPrint.length === 0 || isPrinting}
+              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white rounded-xl font-black text-xs tracking-wide shadow-md shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all whitespace-nowrap"
+            >
+              <Printer className="w-4 h-4" />
+              <span>{isPrinting ? 'Processando...' : 'Imprimir lote'}</span>
+            </button>
           </div>
         </div>
 
-        {/* Integrated Navigation Tab Bar with active context */}
-        <div className={`px-5 sm:px-6 pt-1 border-t flex flex-wrap items-center justify-between gap-2 ${
-          darkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/80 border-slate-200/70'
-        }`}>
-          <div className="flex items-center gap-1 sm:gap-3 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('selection')}
-              className={`py-2.5 px-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'selection'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-              }`}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>1. Seleção de Ativos</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                activeTab === 'selection'
-                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
-                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-              }`}>
-                {selectedAssetsToPrint.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('layout')}
-              className={`py-2.5 px-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'layout'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>2. Margens, Campos &amp; Estilo Individual</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('preview')}
-              className={`py-2.5 px-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'preview'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>3. Pré-visualização da Folha</span>
-              <span className="text-[10px] font-mono text-slate-400">
-                (Pág {previewPage}/{totalPages})
-              </span>
-            </button>
+        {/* Etapas */}
+        <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-2 ${darkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/70 border-slate-200'}`}>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {([
+              { key: 'selection', n: 1, label: 'Seleção', icon: CheckSquare, extra: `${selectedAssetsToPrint.length}` },
+              { key: 'layout', n: 2, label: 'Modelo da etiqueta', icon: Sliders, extra: '' },
+              { key: 'preview', n: 3, label: 'Pré-visualização', icon: Eye, extra: `${previewPage}/${totalPages}` }
+            ] as const).map((step) => {
+              const active = activeTab === step.key;
+              return (
+                <button
+                  key={step.key}
+                  onClick={() => setActiveTab(step.key)}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                    active
+                      ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-indigo-200 dark:border-indigo-800'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 border border-transparent'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                    active ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                  }`}>
+                    {step.n}
+                  </span>
+                  <span>{step.label}</span>
+                  {step.extra && (
+                    <span className={`px-1.5 rounded-full text-[10px] font-bold ${
+                      active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    }`}>
+                      {step.extra}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-
-          <div className="hidden md:flex items-center gap-2 py-1 text-xs text-slate-400 font-medium">
-            <span className="text-[10px] uppercase font-bold tracking-wider font-mono text-slate-400">Modelo:</span>
+          <div className="hidden md:flex items-center gap-1.5 text-xs">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Modelo:</span>
             <span className="text-slate-700 dark:text-slate-300 font-bold truncate max-w-xs">
               {savedTemplates.find(t => t.id === selectedTemplateId)?.name || 'Padrão'}
             </span>
