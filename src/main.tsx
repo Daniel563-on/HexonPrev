@@ -1,6 +1,5 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
 import './index.css';
 
 // Intercept and suppress noisy browser extension/MetaMask console errors in the iframe
@@ -84,8 +83,33 @@ if (typeof window !== 'undefined') {
   };
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// QR Code externo (?public_asset=...): carrega SÓ a página pública, sem baixar o sistema inteiro
+// (painéis, gráficos, Excel, PDF...). Fica muito mais rápido no celular.
+const root = createRoot(document.getElementById('root')!);
+const params = new URLSearchParams(window.location.search);
+const publicAssetParam = params.get('public_asset') || params.get('asset_id') || params.get('patrimonio');
+
+if (publicAssetParam) {
+  import('./components/PublicAssetView').then(({ default: PublicAssetView }) => {
+    root.render(
+      <StrictMode>
+        <PublicAssetView
+          assetIdentifier={publicAssetParam}
+          onGoToLogin={() => {
+            // Mesmo comportamento de antes: tira o parâmetro e recarrega o app (não desloga ninguém)
+            window.history.replaceState({}, document.title, window.location.pathname);
+            window.location.reload();
+          }}
+        />
+      </StrictMode>
+    );
+  });
+} else {
+  import('./App.tsx').then(({ default: App }) => {
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    );
+  });
+}
