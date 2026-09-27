@@ -145,19 +145,24 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 
 ---
 
-## 5. Perguntas em aberto
+## 5. Decisões tomadas (27/09/2026)
 
-Respostas registradas aqui assim que decididas.
+1. **Periodicidades:** Diária, Semanal, Quinzenal, Mensal, Trimestral, Semestral e Anual. Quem define é o Super Administrador.
+2. **Nomes dos perfis editáveis**, inclusive o do Super Administrador. O sistema não pode depender do nome: o perfil "acesso total" é identificado por uma marca interna, não pelo texto.
+3. **Visão de várias unidades:** alguns perfis vão precisar. A configuração do perfil define quais unidades ele vê.
+4. **Homem-hora em horas e em R$**, para **todo o efetivo** (técnico, mecânico, meio oficial...).
+5. **Participação:** quem foi incluído na OS participou dela **inteira** (tempo total × cada participante).
+6. **Materiais têm custo em R$.** O formato da planilha será visto quando você importar a primeira.
+7. **Pernoite por lote:** o planejador informa **quantas pessoas** e **quantos pernoites** para o lote de preventivas. O **valor do pernoite** é definido e atualizado pelo Super Administrador. Um reajuste vale só para as preventivas ainda **abertas**; as concluídas mantêm o valor da época.
+8. **Não existe pausar/retomar.** Um problema durante a execução vira corretiva, com observação.
+9. **Concluídas somem do app do técnico.** Os demais perfis consultam o histórico **sob demanda**, sem carregar tudo.
+10. **Corretivas vindas do checklist:** continuam como estão hoje, em Solicitações.
+11. **Replanejamento:** o planejador altera a data só enquanto a OS está aberta (não iniciada). Depois de iniciada ou executada, não pode mais. As atrasadas continuam podendo ser reagendadas, como hoje.
+12. **OS concluída é imutável:** ninguém altera, nem o Super Administrador. A responsabilidade é do técnico.
 
-1. **Periodicidades:** hoje existem **Quinzenal** e **Anual**, inclusive nas periodicidades dos ativos importados. Elas saem, ou ficam junto com Diária, Semanal, Mensal, Trimestral e Semestral?
-2. **Perfis atuais:** posso converter automaticamente Administrador → Planejador e Profissional → Técnico?
-3. **Visão por unidade:** algum perfil futuro vai precisar ver **mais de uma unidade** (ex.: um diretor da DOM vendo as 3 gerências)? Se sim, a permissão de perfil terá "unidade própria" ou "todas as unidades".
-4. **Horas do efetivo:** para o homem-hora basta **horas** (tempo × pessoas), ou também **custo em R$**? Se tiver custo, o valor da hora vale para **todos do efetivo** (técnico, mecânico, meio oficial) ou só para os técnicos?
-5. **Participação:** todos os participantes contam o **tempo inteiro** da OS, ou o técnico informa quanto tempo cada um participou?
-6. **Materiais:** quais colunas tem a planilha (código, descrição, unidade...)? O técnico informa só a quantidade usada? Material tem custo?
-7. **Pernoite:** é só "sim/não" por OS, ou precisa da **quantidade de noites**?
-8. **Pausa:** se o técnico iniciar e precisar parar (fim do expediente, falta de peça), existe **pausar/retomar**? Ou o tempo conta direto do início até a conclusão?
-9. **Concluídas do técnico:** somem totalmente do app dele, ou fica uma aba "Histórico" só para consulta?
-10. **Corretiva:** ao escolher "Abrir corretiva", precisa registrar o **número da corretiva** do outro sistema?
-11. **Replanejamento:** o planejador pode trocar a data ou o técnico enquanto a OS **não foi iniciada**? E depois de iniciada?
-12. **Alterações administrativas:** depois de concluída, o Super Admin pode corrigir algo (ex.: material lançado errado)? Se sim, fica registrado na linha do tempo.
+## 6. Perguntas em aberto
+
+A. **Pernoite, o "lote":** o lote é o conjunto de OS que o planejador distribui juntas (ex.: 100 OS para o Jonas de 01 a 15/10)? O custo do pernoite (pessoas × pernoites × valor) fica ligado a esse lote e é somado nos relatórios do lote, do técnico, da unidade e do período, **sem ser dividido por OS**?
+B. **Momento em que o valor do pernoite congela:** o lote pode ter OS concluídas e OS abertas ao mesmo tempo. O valor congela **quando o lote todo termina**, ou **na primeira conclusão** do lote?
+C. **Feriados:** para aplicar +100%, quem cadastra os feriados? Proposta: o Super Administrador mantém uma lista de feriados no sistema. O dia considerado é o **dia do início** da execução.
+D. **Exclusão:** uma OS concluída também **não pode ser excluída** (hoje o Administrador consegue excluir OS)? Proposta: só OS **não iniciadas** podem ser excluídas.
