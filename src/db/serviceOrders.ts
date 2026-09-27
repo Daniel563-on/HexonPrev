@@ -255,8 +255,16 @@ export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: st
 }
 
 export interface ServiceOrdersScope {
-  sector: string | null; // gerência (campo "sector" da OS); null = todas as gerências
+  units: string[] | null; // unidades (campo "unit" da OS: GMMR, GMEE...); null = todas
   technicianNames?: string[]; // técnico: só as OS atribuídas a ele (variações do nome/matrícula)
+}
+
+// Filtros de cada busca: uma busca por unidade (as regras do banco só liberam a unidade do usuário).
+// null = uma busca sem filtro de unidade (Super Administrador / todas as unidades).
+function scopeFilterSets(scope: ServiceOrdersScope): any[][] {
+  if (scope.technicianNames) return [[where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))]];
+  if (!scope.units) return [[]];
+  return scope.units.map((u) => [where('unit', '==', u)]);
 }
 
 // Variações do nome/matrícula com que a OS pode ter sido atribuída ao técnico (máx. 5)
@@ -284,13 +292,13 @@ export function subscribeServiceOrders(
   }
 
   const ordersRef = collection(dbInstance, 'serviceOrders');
-  const sectorFilter = scope.technicianNames
-    ? [where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))]
-    : scope.sector
-    ? [where('sector', '==', scope.sector)]
-    : [];
-  let openOrders: ServiceOrder[] | null = null;
-  let closedOrders: ServiceOrder[] | null = null;
+  const filterSets = scopeFilterSets(scope);
+  if (filterSets.length === 0) {
+    onChange([]);
+    return () => {};
+  }
+  // Resultado de cada busca (abertas e fechadas de cada unidade); null = ainda não chegou
+  const parts: (ServiceOrder[] | null)[] = filterSets.flatMap(() => [null, null]);
 
   const toList = (snap: { forEach: (cb: (d: any) => void) => void }): ServiceOrder[] => {
     const list: ServiceOrder[] = [];
@@ -302,12 +310,12 @@ export function subscribeServiceOrders(
     return list;
   };
 
-  // Junta as duas buscas (a aberta prevalece) e mostra o status recalculado pelos prazos
+  // Junta as buscas (a aberta prevalece) e mostra o status recalculado pelos prazos
   const emit = () => {
-    if (openOrders === null || closedOrders === null) return;
+    if (parts.some((p) => p === null)) return;
     const byId = new Map<string, ServiceOrder>();
-    for (const o of closedOrders) byId.set(o.id, o);
-    for (const o of openOrders) byId.set(o.id, o);
+    parts.forEach((p, i) => { if (i % 2 === 1) p!.forEach((o) => byId.set(o.id, o)); });
+    parts.forEach((p, i) => { if (i % 2 === 0) p!.forEach((o) => byId.set(o.id, o)); });
     const todayStr = localTodayStr();
     const list = Array.from(byId.values())
       .map((o) => {
@@ -318,38 +326,27 @@ export function subscribeServiceOrders(
     onChange(list);
   };
 
-  const unsubscribeOpen = onSnapshot(
-    query(ordersRef, ...sectorFilter, where('status', 'in', OPEN_STATUSES)),
-    (snap) => {
-      openOrders = toList(snap);
-      emit();
-    },
-    (err) => {
-      console.warn('Firestore listen open service orders failed:', err);
-      checkQuotaException(err);
-      openOrders = openOrders || [];
-      emit();
-    }
-  );
+  const listen = (idx: number, q: any, label: string) =>
+    onSnapshot(
+      q,
+      (snap: any) => {
+        parts[idx] = toList(snap);
+        emit();
+      },
+      (err: any) => {
+        console.warn(`Firestore listen ${label} service orders failed:`, err);
+        checkQuotaException(err);
+        parts[idx] = parts[idx] || [];
+        emit();
+      }
+    );
 
-  const unsubscribeClosed = onSnapshot(
-    query(ordersRef, ...sectorFilter, where('closedMonth', '==', month)),
-    (snap) => {
-      closedOrders = toList(snap);
-      emit();
-    },
-    (err) => {
-      console.warn('Firestore listen closed service orders failed:', err);
-      checkQuotaException(err);
-      closedOrders = closedOrders || [];
-      emit();
-    }
-  );
+  const unsubscribers = filterSets.flatMap((filters, i) => [
+    listen(i * 2, query(ordersRef, ...filters, where('status', 'in', OPEN_STATUSES)), 'open'),
+    listen(i * 2 + 1, query(ordersRef, ...filters, where('closedMonth', '==', month)), 'closed')
+  ]);
 
-  return () => {
-    unsubscribeOpen();
-    unsubscribeClosed();
-  };
+  return () => unsubscribers.forEach((u) => u());
 }
 
 // SOLICITAÇÕES DE CORRETIVA
@@ -362,22 +359,33 @@ export function subscribePendingSolicitations(
     onChange([]);
     return () => {};
   }
-  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
-  return onSnapshot(
-    query(collection(dbInstance, 'serviceOrders'), ...sectorFilter, where('solicitationStatus', '==', 'Pendente')),
-    (snap) => {
-      const list: ServiceOrder[] = [];
-      snap.forEach((d) => {
-        if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
-      });
-      onChange(list.sort(compareOrdersNewestFirst));
-    },
-    (err) => {
-      console.warn('Firestore listen pending solicitations failed:', err);
-      checkQuotaException(err);
-      onChange([]);
-    }
+  const filterSets = scopeFilterSets(scope);
+  const parts: ServiceOrder[][] = filterSets.map(() => []);
+  const emit = () => onChange(parts.flat().sort(compareOrdersNewestFirst));
+  if (filterSets.length === 0) {
+    onChange([]);
+    return () => {};
+  }
+  const unsubscribers = filterSets.map((filters, i) =>
+    onSnapshot(
+      query(collection(dbInstance!, 'serviceOrders'), ...filters, where('solicitationStatus', '==', 'Pendente')),
+      (snap) => {
+        const list: ServiceOrder[] = [];
+        snap.forEach((d) => {
+          if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+        });
+        parts[i] = list;
+        emit();
+      },
+      (err) => {
+        console.warn('Firestore listen pending solicitations failed:', err);
+        checkQuotaException(err);
+        parts[i] = [];
+        emit();
+      }
+    )
   );
+  return () => unsubscribers.forEach((u) => u());
 }
 
 // Com ação (confirmadas / canceladas): só quando o usuário filtra, em páginas, das mais recentes para as mais antigas.
@@ -396,25 +404,42 @@ export async function dbGetHandledSolicitationsPage(
   if (!firebaseActive || !dbInstance || statuses.length === 0) {
     return { orders: [], cursor: null, hasMore: false };
   }
-  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
-  const constraints: any[] = [
-    ...sectorFilter,
-    where('solicitationStatus', 'in', statuses),
-    orderBy('updatedAt', 'desc'),
-    limit(pageSize)
-  ];
-  if (after) constraints.push(startAfter(after));
+  // Uma busca por unidade; o "cursor" guarda a posição de cada uma
+  const filterSets = scopeFilterSets(scope);
+  if (filterSets.length === 0) return { orders: [], cursor: null, hasMore: false };
+  const cursors = (after as any[] | undefined) || [];
 
   try {
-    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), ...constraints));
-    const list: ServiceOrder[] = [];
-    snap.forEach((d) => {
-      if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+    const snaps = await Promise.all(
+      filterSets.map((filters, i) =>
+        getDocs(
+          query(
+            collection(dbInstance!, 'serviceOrders'),
+            ...filters,
+            where('solicitationStatus', 'in', statuses),
+            orderBy('updatedAt', 'desc'),
+            ...(cursors[i] ? [startAfter(cursors[i])] : []),
+            limit(pageSize)
+          )
+        )
+      )
+    );
+    // Junta, ordena pelas mais recentes e pega uma página
+    const merged = snaps.flatMap((snap, i) => snap.docs.map((d) => ({ i, d })));
+    merged.sort((x, y) => String(y.d.data().updatedAt || '').localeCompare(String(x.d.data().updatedAt || '')));
+    const taken = merged.slice(0, pageSize);
+    const nextCursors = filterSets.map((_, i) => {
+      const mine = taken.filter((t) => t.i === i);
+      return mine.length > 0 ? mine[mine.length - 1].d : cursors[i] || null;
+    });
+    const orders: ServiceOrder[] = [];
+    taken.forEach(({ d }) => {
+      if (!isMockOrLegacyId(d.id)) orders.push({ id: d.id, ...d.data() } as ServiceOrder);
     });
     return {
-      orders: list,
-      cursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : after || null,
-      hasMore: snap.docs.length === pageSize
+      orders,
+      cursor: nextCursors,
+      hasMore: merged.length > pageSize || snaps.some((snap) => snap.docs.length === pageSize)
     };
   } catch (err: any) {
     console.warn('Firestore fetch handled solicitations failed:', err);
@@ -429,12 +454,14 @@ export async function dbCountSolicitations(
 ): Promise<{ pendente: number; resolvido: number; cancelado: number }> {
   const empty = { pendente: 0, resolvido: 0, cancelado: 0 };
   if (!firebaseActive || !dbInstance) return empty;
-  const sectorFilter = scope.sector ? [where('sector', '==', scope.sector)] : [];
+  const filterSets = scopeFilterSets(scope);
   const countOf = async (status: 'Pendente' | 'Resolvido' | 'Cancelado') => {
-    const snap = await getCountFromServer(
-      query(collection(dbInstance!, 'serviceOrders'), ...sectorFilter, where('solicitationStatus', '==', status))
+    const counts = await Promise.all(
+      filterSets.map((filters) =>
+        getCountFromServer(query(collection(dbInstance!, 'serviceOrders'), ...filters, where('solicitationStatus', '==', status)))
+      )
     );
-    return snap.data().count;
+    return counts.reduce((sum, snap) => sum + snap.data().count, 0);
   };
   try {
     const [pendente, resolvido, cancelado] = await Promise.all([countOf('Pendente'), countOf('Resolvido'), countOf('Cancelado')]);
@@ -446,36 +473,51 @@ export async function dbCountSolicitations(
   }
 }
 
-// CONSULTA DE OS (ordens encerradas de um mês)
-// O banco filtra por mês + gerência + UM filtro principal (CRAAI, comarca ou técnico);
-// status e texto são refinados na tela. Sem filtro principal, o resultado é limitado.
-export type OrdersSearchField = 'craai' | 'comarca' | 'assignedTechnician';
-
+// CONSULTA DE OS (qualquer OS: abertas e fechadas)
+// Todos os filtros são opcionais e independentes; o banco aplica os que forem escolhidos.
+// Mês = mês do período da OS (fim do período, endDate). Sem mês, traz as mais recentes.
+// A gerência usa o campo "unit" (nome exato da gerência). Resultado limitado a ORDERS_SEARCH_LIMIT.
 export interface OrdersSearchParams {
-  month: string;              // "AAAA-MM" (obrigatório)
-  sector: string | null;      // gerência; null = todas
-  field: OrdersSearchField | null;
-  value: string;
+  month: string;              // "AAAA-MM" ou "" (todos os meses)
+  units: string[] | null;     // unidades pesquisadas; null = todas
+  status: ServiceOrder['status'] | '';
+  craai: string;
+  comarca: string;
+  technician: string;
 }
 
 export const ORDERS_SEARCH_LIMIT = 500;
 
-export async function dbSearchClosedOrders(
+export async function dbSearchOrders(
   params: OrdersSearchParams
 ): Promise<{ orders: ServiceOrder[]; limited: boolean }> {
-  if (!params.month || !firebaseActive || !dbInstance) return { orders: [], limited: false };
+  if (!firebaseActive || !dbInstance) return { orders: [], limited: false };
+  if (params.units && params.units.length === 0) return { orders: [], limited: false };
   const constraints: any[] = [];
-  if (params.sector) constraints.push(where('sector', '==', params.sector));
-  constraints.push(where('closedMonth', '==', params.month));
-  if (params.field && params.value) constraints.push(where(params.field, '==', params.value));
+  if (params.units) {
+    constraints.push(params.units.length === 1 ? where('unit', '==', params.units[0]) : where('unit', 'in', params.units.slice(0, 30)));
+  }
+  if (params.status) constraints.push(where('status', '==', params.status));
+  if (params.craai) constraints.push(where('craai', '==', params.craai));
+  if (params.comarca) constraints.push(where('comarca', '==', params.comarca));
+  if (params.technician) constraints.push(where('assignedTechnician', '==', params.technician));
+  if (params.month) {
+    constraints.push(where('endDate', '>=', `${params.month}-01`));
+    constraints.push(where('endDate', '<=', `${params.month}-31`));
+  }
+  constraints.push(orderBy('endDate', 'desc'));
   constraints.push(limit(ORDERS_SEARCH_LIMIT));
 
   const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), ...constraints));
+  const todayStr = localTodayStr();
   const list: ServiceOrder[] = [];
   snap.forEach((d) => {
-    if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+    if (isMockOrLegacyId(d.id)) return;
+    const o = { id: d.id, ...d.data() } as ServiceOrder;
+    const status = computeDeadlineStatus(o, todayStr);
+    list.push(status === o.status ? o : { ...o, status });
   });
-  return { orders: list.sort(compareOrdersNewestFirst), limited: snap.docs.length >= ORDERS_SEARCH_LIMIT };
+  return { orders: list, limited: snap.docs.length >= ORDERS_SEARCH_LIMIT };
 }
 
 // Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.

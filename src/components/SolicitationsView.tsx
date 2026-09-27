@@ -38,7 +38,7 @@ export interface Solicitation {
 
 interface SolicitationsViewProps {
   pendingOrders: ServiceOrder[]; // OS com solicitação pendente de ação (tempo real, já filtradas pela gerência)
-  scopeSector: string | null;    // gerência do usuário; null = todas
+  scopeUnits: string[] | null;   // unidades do usuário; null = todas
   onNavigateToOS: (osId?: string) => void;
   onReload?: () => void;
   userProfile?: HexonUser | null;
@@ -97,7 +97,7 @@ export function getSolicitations(orders: ServiceOrder[]): Solicitation[] {
 
 export default function SolicitationsView({ 
   pendingOrders, 
-  scopeSector, 
+  scopeUnits, 
   onNavigateToOS, 
   onReload,
   userProfile,
@@ -115,6 +115,8 @@ export default function SolicitationsView({
   const [loadingHandled, setLoadingHandled] = useState(false);
   const [counts, setCounts] = useState({ pendente: 0, resolvido: 0, cancelado: 0 });
 
+  const scopeUnitsKey = scopeUnits === null ? '*' : scopeUnits.join('|');
+
   const handledStatuses = (filter: SolicitationFilter): Array<'Resolvido' | 'Cancelado'> =>
     filter === 'Resolvido' ? ['Resolvido'] : filter === 'Cancelado' ? ['Cancelado'] : ['Resolvido', 'Cancelado'];
 
@@ -123,7 +125,7 @@ export default function SolicitationsView({
     setLoadingHandled(true);
     try {
       const page = await dbGetHandledSolicitationsPage(
-        { sector: scopeSector },
+        { units: scopeUnits },
         handledStatuses(filter),
         HANDLED_PAGE_SIZE,
         reset ? undefined : handledCursor
@@ -137,7 +139,7 @@ export default function SolicitationsView({
   };
 
   const refreshCounts = () => {
-    dbCountSolicitations({ sector: scopeSector }).then(setCounts).catch(() => {});
+    dbCountSolicitations({ units: scopeUnits }).then(setCounts).catch(() => {});
   };
 
   // Troca de filtro: pendentes já estão na memória; as demais são buscadas (1ª página)
@@ -146,12 +148,12 @@ export default function SolicitationsView({
     setHandledCursor(null);
     setHandledHasMore(false);
     loadHandledPage(statusFilter, true);
-  }, [statusFilter, scopeSector]);
+  }, [statusFilter, scopeUnitsKey]);
 
   // Totais dos cartões (contagem no servidor): ao abrir e quando as pendentes mudam
   useEffect(() => {
     refreshCounts();
-  }, [pendingOrders.length, scopeSector]);
+  }, [pendingOrders.length, scopeUnitsKey]);
 
   const hasManagePermission = (): boolean => {
     if (!userProfile) return true; // Fail-open fallback

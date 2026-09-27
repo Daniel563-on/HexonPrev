@@ -4,11 +4,9 @@ import * as XLSX from 'xlsx';
 import { Asset, HexonUser, Management, ServiceOrder, formatDateBR } from '../../types';
 import {
   isSectorVisible,
-  dbSearchClosedOrders,
+  dbSearchOrders,
   dbGetManagements,
   dbGetUsers,
-  localMonthKey,
-  OrdersSearchField,
   ORDERS_SEARCH_LIMIT
 } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
@@ -23,18 +21,20 @@ interface OrdersSearchPanelProps {
 }
 
 const PAGE_SIZE = 50;
+const STATUS_OPTIONS: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada', 'Concluída', 'Não Executada', 'Cancelada'];
 
-// CONSULTA DE OS: ordens encerradas (Concluída / Não Executada) de um mês.
-// O banco filtra mês + gerência + um filtro principal; status e texto são refinados aqui.
+// CONSULTA DE OS: qualquer OS (abertas e fechadas), de qualquer mês.
+// Todos os filtros são opcionais e independentes (1, 2, 3 ou todos). O texto refina o resultado na tela.
 export default function OrdersSearchPanel({ userProfile, visibleUnits = null, assets, templates, userHasActionPermission }: OrdersSearchPanelProps) {
   // Uma unidade só: fica fixa. Várias: o seletor mostra apenas as do perfil.
   const fixedSector = visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : null;
 
-  const [month, setMonth] = useState(localMonthKey());
+  const [month, setMonth] = useState('');
   const [sector, setSector] = useState<string>(fixedSector || 'Todas');
-  const [field, setField] = useState<OrdersSearchField | ''>('craai');
-  const [value, setValue] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'Todos' | 'Concluída' | 'Não Executada'>('Todos');
+  const [status, setStatus] = useState<ServiceOrder['status'] | ''>('');
+  const [craai, setCraai] = useState('');
+  const [comarca, setComarca] = useState('');
+  const [technician, setTechnician] = useState('');
   const [textFilter, setTextFilter] = useState('');
 
   const [managements, setManagements] = useState<Management[]>([]);
@@ -59,36 +59,46 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
 
   const effectiveSector = fixedSector || (sector === 'Todas' ? null : sector);
 
-  // Opções de CRAAI e comarca a partir do cadastro de ativos da gerência
+  // Opções de CRAAI e comarca a partir do cadastro de ativos (comarca só da CRAAI escolhida)
   const locationOptions = useMemo(() => {
     const craais = new Set<string>();
     const comarcas = new Set<string>();
     assets.forEach((a) => {
-      if (effectiveSector && (a.sector || '').trim() !== effectiveSector) return;
+      if (effectiveSector && !isSectorVisible(a.sector || '', [effectiveSector])) return;
       if (!isSectorVisible(a.sector || '', visibleUnits)) return;
-      const craai = a.specs?.CRAAI || a.specs?.craai;
-      const comarca = a.specs?.COMARCA || a.specs?.comarca;
-      if (typeof craai === 'string' && craai.trim()) craais.add(craai.trim());
-      if (typeof comarca === 'string' && comarca.trim()) comarcas.add(comarca.trim());
+      const c = a.specs?.CRAAI || a.specs?.craai;
+      const cm = a.specs?.COMARCA || a.specs?.comarca;
+      if (typeof c === 'string' && c.trim()) craais.add(c.trim());
+      if (typeof cm === 'string' && cm.trim() && (!craai || (typeof c === 'string' && c.trim() === craai))) comarcas.add(cm.trim());
     });
-    const sort = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b));
+    const sort = (set: Set<string>) => Array.from(set).sort((a, b) => a.localeCompare(b));
     return { craai: sort(craais), comarca: sort(comarcas) };
-  }, [assets, effectiveSector]);
+  }, [assets, effectiveSector, visibleUnits, craai]);
 
-  const valueOptions =
-    field === 'craai' ? locationOptions.craai : field === 'comarca' ? locationOptions.comarca : field === 'assignedTechnician' ? technicians : [];
+  const clearFilters = () => {
+    setMonth('');
+    setSector(fixedSector || 'Todas');
+    setStatus('');
+    setCraai('');
+    setComarca('');
+    setTechnician('');
+    setTextFilter('');
+  };
 
   const handleSearch = async () => {
-    if (field && !value) {
-      alert('Escolha o valor do filtro principal (ou selecione "Nenhum").');
-      return;
-    }
     setLoading(true);
     setError(null);
     setPage(1);
     try {
-      const res = await dbSearchClosedOrders({ month, sector: effectiveSector, field: field || null, value });
-      setResults(res.orders.filter((o) => isSectorVisible(o.sector || '', visibleUnits)));
+      const res = await dbSearchOrders({
+        month,
+        units: effectiveSector ? [effectiveSector] : visibleUnits,
+        status,
+        craai,
+        comarca,
+        technician
+      });
+      setResults(res.orders);
       setLimited(res.limited);
     } catch (err: any) {
       console.warn('Consulta de OS falhou:', err);
@@ -99,17 +109,16 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
     }
   };
 
-  // Refino na tela: status e texto
+  // Refino na tela: texto
   const refined = useMemo(() => {
     if (!results) return [];
     const q = textFilter.trim().toLowerCase();
     return results.filter((o) => {
-      if (statusFilter !== 'Todos' && o.status !== statusFilter) return false;
       if (!q) return true;
       return [o.id, o.title, o.assetName, o.assetCode, o.assignedTechnician]
         .some((v) => (v || '').toLowerCase().includes(q));
     });
-  }, [results, statusFilter, textFilter]);
+  }, [results, textFilter]);
 
   const totalPages = Math.max(1, Math.ceil(refined.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -121,7 +130,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
       'Título': o.title,
       'Ativo': o.assetName,
       'Código': o.assetCode,
-      'Gerência': o.sector,
+      'Gerência': o.unit || o.sector,
       'CRAAI': o.craai || '',
       'Comarca': o.comarca || o.surveyLocation || '',
       'Técnico': o.assignedTechnician,
@@ -134,7 +143,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Consulta de OS');
-    XLSX.writeFile(workbook, `Consulta_OS_${month}.xlsx`);
+    XLSX.writeFile(workbook, `Consulta_OS_${month || 'todos-os-meses'}.xlsx`);
   };
 
   const inputClass = 'w-full text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-bold text-slate-800';
@@ -144,10 +153,18 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
     <div className="space-y-4">
       {/* Filtros do banco */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
-            <label className={labelClass}>Mês de encerramento*</label>
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputClass} />
+            <label className={labelClass}>Mês (período da OS)</label>
+            <div className="flex gap-1.5">
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputClass} />
+              {month && (
+                <button type="button" onClick={() => setMonth('')} className="px-2 text-[10px] font-black text-slate-500 border border-slate-200 rounded-lg cursor-pointer" title="Todos os meses">
+                  ✕
+                </button>
+              )}
+            </div>
+            {!month && <span className="text-[9px] font-bold text-slate-400">Todos os meses</span>}
           </div>
           <div>
             <label className={labelClass}>Gerência</label>
@@ -163,32 +180,50 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
             )}
           </div>
           <div>
-            <label className={labelClass}>Filtro principal</label>
-            <select
-              value={field}
-              onChange={(e) => {
-                setField(e.target.value as OrdersSearchField | '');
-                setValue('');
-              }}
-              className={inputClass}
-            >
-              <option value="craai">CRAAI</option>
-              <option value="comarca">Comarca</option>
-              <option value="assignedTechnician">Técnico</option>
-              <option value="">Nenhum</option>
+            <label className={labelClass}>Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value as ServiceOrder['status'] | '')} className={inputClass}>
+              <option value="">Todos</option>
+              {STATUS_OPTIONS.map((st) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
             </select>
           </div>
           <div>
-            <label className={labelClass}>Valor</label>
-            <select value={value} onChange={(e) => setValue(e.target.value)} disabled={!field} className={inputClass}>
-              <option value="">{field ? 'Selecione...' : '—'}</option>
-              {valueOptions.map((v) => (
+            <label className={labelClass}>CRAAI</label>
+            <select value={craai} onChange={(e) => { setCraai(e.target.value); setComarca(''); }} className={inputClass}>
+              <option value="">Todas</option>
+              {locationOptions.craai.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Comarca</label>
+            <select value={comarca} onChange={(e) => setComarca(e.target.value)} className={inputClass}>
+              <option value="">Todas</option>
+              {locationOptions.comarca.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Técnico</label>
+            <select value={technician} onChange={(e) => setTechnician(e.target.value)} className={inputClass}>
+              <option value="">Todos</option>
+              {technicians.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="px-4 py-2.5 border border-slate-200 text-slate-600 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer"
+          >
+            Limpar filtros
+          </button>
           <button
             type="button"
             onClick={handleSearch}
@@ -224,21 +259,6 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
                 className={inputClass}
               />
             </div>
-            <div>
-              <label className={labelClass}>Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as typeof statusFilter);
-                  setPage(1);
-                }}
-                className={inputClass}
-              >
-                <option value="Todos">Todos</option>
-                <option value="Concluída">Concluída</option>
-                <option value="Não Executada">Não Executada</option>
-              </select>
-            </div>
             <button
               type="button"
               onClick={handleExport}
@@ -252,7 +272,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
 
           <p className="text-[11px] font-bold text-slate-500">
             {refined.length} OS encontrada(s)
-            {limited && ` — resultado limitado às ${ORDERS_SEARCH_LIMIT} primeiras; use um filtro principal para refinar`}
+            {limited && ` — mostrando as ${ORDERS_SEARCH_LIMIT} mais recentes; use mais filtros para refinar`}
           </p>
 
           <div className="divide-y divide-slate-100">
@@ -262,13 +282,19 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
                   <span className="font-mono text-[10px] font-bold text-indigo-600">#{formatOrderNumber(o.id)}</span>
                   <p className="font-extrabold text-slate-800 truncate">{o.title}</p>
                   <p className="text-[10px] text-slate-500">
-                    {o.craai || '—'} • {o.comarca || o.surveyLocation || '—'} • {o.assignedTechnician || 'Sem técnico'}
+                    {formatDateBR(o.startDate)} a {formatDateBR(o.endDate)} • {o.unit || o.sector} • {o.craai || '—'} • {o.comarca || o.surveyLocation || '—'} • {o.assignedTechnician || 'Sem técnico'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span
                     className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                      o.status === 'Concluída' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      o.status === 'Concluída'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : o.status === 'Não Executada' || o.status === 'Atrasada'
+                        ? 'bg-rose-100 text-rose-800'
+                        : o.status === 'Cancelada'
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'bg-indigo-100 text-indigo-800'
                     }`}
                   >
                     {o.status}
