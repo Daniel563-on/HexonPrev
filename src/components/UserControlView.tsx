@@ -13,9 +13,14 @@ import {
   createAuthAccountForUser,
   matriculaToAuthEmail,
   dbLinkAuthUid,
-  adminResetUserPassword
+  adminResetUserPassword,
+  dbGetProfiles,
+  resolveUserProfile,
+  legacyPerfilOf,
+  SYSTEM_PROFILE_IDS
 } from '../db/firebase';
-import { HexonUser, Management, SystemPermission } from '../types';
+import { AccessProfile, HexonUser, Management, SystemPermission } from '../types';
+import ProfilesTab from './users/ProfilesTab';
 
 interface UserControlViewProps {
   currentUserProfile: HexonUser;
@@ -30,6 +35,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const [managements, setManagements] = useState<Management[]>([]);
   const [permissionsMatrix, setPermissionsMatrix] = useState<{ [key: string]: SystemPermission }>({});
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+  const [profiles, setProfiles] = useState<AccessProfile[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -45,6 +51,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     cargo: '',
     gerencia: 'Refrigeração',
     perfil: 'Profissional' as HexonUser['perfil'],
+    profileId: SYSTEM_PROFILE_IDS.execucao as string,
     status: 'Ativo' as HexonUser['status'],
     senha: '123456'
   });
@@ -72,17 +79,15 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const loadAllData = async (force: boolean = false) => {
     setIsLoading(true);
     try {
-      if (activeSubTab === 'users') {
+      if (activeSubTab === 'users' || activeSubTab === 'permissions') {
         const uList = await dbGetUsers(force);
         setUsers(uList);
         const mList = await dbGetManagements();
         setManagements(mList);
+        setProfiles(await dbGetProfiles(force, true));
       } else if (activeSubTab === 'managements') {
         const mList = await dbGetManagements();
         setManagements(mList);
-      } else if (activeSubTab === 'permissions') {
-        const permData = await dbGetPermissions();
-        setPermissionsMatrix(permData);
       }
     } catch (e) {
       console.error('Error loading RBAC settings:', e);
@@ -115,6 +120,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       cargo: '',
       gerencia: managements[0]?.name || 'Refrigeração',
       perfil: 'Profissional',
+      profileId: SYSTEM_PROFILE_IDS.execucao,
       status: 'Ativo',
       senha: '123456'
     });
@@ -131,6 +137,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       cargo: user.cargo,
       gerencia: user.gerencia,
       perfil: user.perfil,
+      profileId: resolveUserProfile(user, profiles)?.id || SYSTEM_PROFILE_IDS.execucao,
       status: user.status,
       // If password is encrypted hash, keep empty in form unless admin enters a new one
       senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || '')
@@ -174,7 +181,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         email: userForm.email.trim(),
         cargo: userForm.cargo.trim(),
         gerencia: userForm.gerencia,
-        perfil: userForm.perfil,
+        perfil: legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao'),
+        profileId: userForm.profileId,
         status: userForm.status,
         senha: finalSenha
       };
@@ -404,7 +412,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
            u.matricula.toLowerCase().includes(q) || 
            u.email.toLowerCase().includes(q) || 
            u.cargo.toLowerCase().includes(q) || 
-           u.perfil.toLowerCase().includes(q);
+           (resolveUserProfile(u, profiles)?.name || u.perfil).toLowerCase().includes(q);
   });
 
   return (
@@ -483,7 +491,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           }`}
         >
           <span className="material-symbols-outlined text-base">shield_lock</span>
-          Painel de Permissões
+          Perfis de Acesso
         </button>
       </div>
 
@@ -598,7 +606,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                                 u.perfil === 'Super Administrador' ? 'bg-amber-500' :
                                 u.perfil === 'Administrador' ? 'bg-indigo-600' : 'bg-blue-500'
                               }`} />
-                              <span className="font-bold">{u.perfil}</span>
+                              <span className="font-bold">{resolveUserProfile(u, profiles)?.name || u.perfil}</span>
                             </div>
                           </td>
 
@@ -696,84 +704,15 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             </div>
           )}
 
-          {/* TAB 3: PAINEL DE PERMISSÕES */}
+          {/* TAB 3: PERFIS DE ACESSO */}
           {activeSubTab === 'permissions' && (
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className={`p-4 rounded-xl border flex items-start gap-3 ${darkMode ? 'bg-blue-950/10 border-blue-900/40 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-800'}`}>
-                <span className="material-symbols-outlined shrink-0 text-xl">gavel</span>
-                <div className="text-xs space-y-1">
-                  <span className="font-bold block">Política de Controle de Acesso (RBAC)</span>
-                  <p className="leading-relaxed opacity-90">
-                    Este painel centraliza as permissões de conformidade do Hexon. O perfil de <strong>Super Administrador</strong> possui privilégios de acesso irrestritos (root) para salvaguardar a governança. Administradores e Técnicos Profissionais seguem estritamente os parâmetros definidos abaixo, aplicados instantaneamente.
-                  </p>
-                </div>
-              </div>
-
-              <div className={`border rounded-xl overflow-hidden ${darkMode ? 'bg-[#0a1122]/40 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <div className="p-4 border-b border-slate-200 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div>
-                    <h3 className={`text-xs font-black uppercase tracking-wider ${darkMode ? 'text-slate-350' : 'text-slate-700'}`}>
-                      Matriz de Controle de Permissões
-                    </h3>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Defina as visibilidades e ações comerciais de cada nível de usuário</p>
-                  </div>
-                  <button
-                    onClick={handleSavePermissions}
-                    disabled={isSavingPermissions}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800/40 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                  >
-                    {isSavingPermissions ? (
-                      <>
-                        <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span>Salvando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-[15px]">save</span>
-                        <span>Salvar Permissões</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className={`border-b border-slate-200 dark:border-slate-800 ${darkMode ? 'bg-slate-900/60 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
-                        <th className="p-4 font-bold text-[11px] uppercase tracking-wider w-1/2">Permissão & Descrição</th>
-                        <th className="p-4 font-bold text-[11px] uppercase tracking-wider text-center">Super Admin</th>
-                        <th className="p-4 font-bold text-[11px] uppercase tracking-wider text-center">Administrador</th>
-                        <th className="p-4 font-bold text-[11px] uppercase tracking-wider text-center">Profissional</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
-                      {/* CATEGORY: ABAS */}
-                      <tr className={`${darkMode ? 'bg-slate-900/30' : 'bg-slate-50/40'}`}>
-                        <td colSpan={4} className="px-4 py-2 font-bold text-[11px] tracking-wide text-blue-500 dark:text-blue-450 uppercase">
-                          Acesso aos Módulos (Abas)
-                        </td>
-                      </tr>
-                      {(Object.values(permissionsMatrix) as SystemPermission[])
-                        .filter(p => p.category === 'Abas')
-                        .map(p => renderPermissionRow(p))}
-
-                      {/* CATEGORY: AÇÕES */}
-                      <tr className={`${darkMode ? 'bg-slate-900/30' : 'bg-slate-50/40'}`}>
-                        <td colSpan={4} className="px-4 py-2 font-bold text-[11px] tracking-wide text-blue-500 dark:text-blue-450 uppercase border-t border-slate-200 dark:border-slate-850">
-                          Ações e Operações em Campo
-                        </td>
-                      </tr>
-                      {(Object.values(permissionsMatrix) as SystemPermission[])
-                        .filter(p => p.category === 'Ações')
-                        .map(p => renderPermissionRow(p))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <ProfilesTab
+              profiles={profiles}
+              managements={managements}
+              users={users}
+              darkMode={darkMode}
+              onChanged={() => loadAllData(true)}
+            />
           )}
 
         </>
@@ -947,15 +886,15 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Perfil de Acesso (RBAC) *</label>
                   <select
-                    value={userForm.perfil}
-                    onChange={(e) => setUserForm({...userForm, perfil: e.target.value as HexonUser['perfil']})}
+                    value={userForm.profileId}
+                    onChange={(e) => setUserForm({...userForm, profileId: e.target.value})}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
                       darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
                     }`}
                   >
-                    <option value="Profissional">Profissional (Operador em campo)</option>
-                    <option value="Administrador">Administrador (Gestor de Gerência)</option>
-                    <option value="Super Administrador">Super Administrador (Acesso Global)</option>
+                    {profiles.map((pr) => (
+                      <option key={pr.id} value={pr.id}>{pr.name}</option>
+                    ))}
                   </select>
                 </div>
 

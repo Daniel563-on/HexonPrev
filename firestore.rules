@@ -92,6 +92,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 4g. PERFIS DE ACESSO — todos leem (cada um precisa das permissões do seu perfil); só o Super Administrador altera
+    match /profiles/{profileId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

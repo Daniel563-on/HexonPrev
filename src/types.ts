@@ -260,6 +260,27 @@ export interface HexonUser {
   senha?: string; // Senha para login via credenciais
   currentSessionId?: string; // ID de sessão único do dispositivo ativo
   authUid?: string; // UID do Firebase Authentication vinculado
+  profileId?: string; // perfil de acesso (cadastro de Perfis); "perfil" acima guarda o tipo básico derivado dele
+}
+
+// PERFIL DE ACESSO (criado e editado pelo Super Administrador; o nome é livre)
+// kind = tipo básico de uso, que o restante do sistema entende:
+//   'total'        -> acesso total (administração)
+//   'planejamento' -> escritório (planejar, acompanhar)
+//   'execucao'     -> campo (app do técnico)
+export type ProfileKind = 'total' | 'planejamento' | 'execucao';
+
+export interface AccessProfile {
+  id: string;
+  name: string;
+  description: string;
+  kind: ProfileKind;
+  unitScope: 'own' | 'selected' | 'all'; // unidades visíveis: a do usuário, as escolhidas ou todas
+  units: string[]; // usadas quando unitScope = 'selected'
+  permissions: Record<string, boolean>; // id da permissão -> liberada
+  system: boolean; // perfis de fábrica: podem ser renomeados, mas não excluídos
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Profile {
