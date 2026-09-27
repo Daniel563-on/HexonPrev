@@ -92,11 +92,6 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // 4g. CUSTO HOMEM-HORA DOS PROFISSIONAIS — dado salarial: só o Super Administrador lê e grava
-    match /laborRates/{userId} {
-      allow read, write: if isSuperAdmin();
-    }
-
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

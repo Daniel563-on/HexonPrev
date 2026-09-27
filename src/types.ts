@@ -262,28 +262,6 @@ export interface HexonUser {
   authUid?: string; // UID do Firebase Authentication vinculado
 }
 
-// CUSTO HOMEM-HORA DO PROFISSIONAL DE CAMPO (só o Super Administrador vê e edita)
-// Domingo/feriado é sempre +100%; o adicional de sábado é definido por colaborador.
-export interface LaborRateChange {
-  hourlyRate: number;
-  saturdayPct: number;
-  validFrom: string; // AAAA-MM-DD: a partir de quando vale
-  changedAt: string;
-  changedBy: string;
-}
-
-export interface LaborRate {
-  userId: string;
-  hourlyRate: number; // R$ por hora (dia útil)
-  saturdayPct: number; // adicional de sábado (%)
-  validFrom: string;
-  updatedAt: string;
-  updatedBy: string;
-  history: LaborRateChange[]; // valores anteriores (para não alterar o custo de OS antigas)
-}
-
-export const SUNDAY_HOLIDAY_PCT = 100;
-
 export interface Profile {
   id: string;
   name: string;
