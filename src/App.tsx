@@ -14,7 +14,7 @@ import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, SystemPermission, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
 import { 
   subscribeServiceOrders,
   subscribePendingSolicitations,
@@ -31,6 +31,8 @@ import {
   dbGetUsers,
   dbAddAccessLog,
   dbGetPermissions,
+  dbGetProfiles,
+  resolveUserProfile,
   subscribeToUserProfile,
   dbSaveUser,
   dbUpdateUserSessionId,
@@ -116,6 +118,8 @@ export default function App() {
     return null;
   });
   const [permissionsMatrix, setPermissionsMatrix] = useState<{ [key: string]: SystemPermission } | null>(null);
+  // Perfis de acesso (cadastro do Super Administrador): permissões de cada usuário vêm do perfil dele
+  const [accessProfiles, setAccessProfiles] = useState<AccessProfile[]>([]);
   const [sessionChecking, setSessionChecking] = useState<boolean>(false);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -399,6 +403,7 @@ export default function App() {
     try {
       const matrix = await dbGetPermissions();
       setPermissionsMatrix(matrix);
+      setAccessProfiles(await dbGetProfiles(true, userProfile?.perfil === 'Super Administrador'));
     } catch (e) {
       console.warn('Failed loading permissions matrix in App:', e);
     }
@@ -410,6 +415,7 @@ export default function App() {
     if (tab === 'user-control') return false; // Strictly restricted to Super Administrador
 
     let permId = '';
+    const profile = resolveUserProfile(userProfile, accessProfiles);
     if (tab === 'dashboard') permId = 'view_dashboard';
     else if (tab === 'service-orders') permId = 'view_service_orders';
     else if (tab === 'assets') permId = 'view_assets';
@@ -417,6 +423,9 @@ export default function App() {
     else if (tab === 'solicitations') permId = 'view_solicitations';
 
     if (!permId) return true;
+
+    // Permissão definida no perfil do usuário
+    if (profile && permId in profile.permissions) return !!profile.permissions[permId];
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -433,6 +442,10 @@ export default function App() {
   const userHasActionPermission = (actionId: string): boolean => {
     if (!userProfile) return false;
     if (userProfile.perfil === 'Super Administrador') return true;
+
+    // Permissão definida no perfil do usuário
+    const profile = resolveUserProfile(userProfile, accessProfiles);
+    if (profile && actionId in profile.permissions) return !!profile.permissions[actionId];
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
