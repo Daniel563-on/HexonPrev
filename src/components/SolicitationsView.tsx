@@ -172,12 +172,12 @@ export default function SolicitationsView({
       const match = os.description.match(/Comarca:\s*([^.]+)/);
       if (match) return match[1].trim();
     }
-    return os.surveyLocation || 'Geral';
+    return os.surveyLocation || '—';
   };
 
   // CRAAI da OS: gravado na própria OS no disparo
   const getOrderCRAAI = (os: ServiceOrder) => {
-    return os.craai || os.sector || 'Geral';
+    return os.craai || '—'; // sem CRAAI gravada: não mostra a gerência no lugar
   };
 
   // Solicitações da lista atual: pendentes (tempo real) ou as que já tiveram ação (páginas buscadas)

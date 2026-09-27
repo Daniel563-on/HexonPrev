@@ -29,8 +29,8 @@ export default function UnitBackfillCard({ darkMode }: { darkMode: boolean }) {
       <div>
         <h3 className={`text-sm font-black uppercase tracking-wider ${strong}`}>Corrigir unidade das OS</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Grava a unidade (nome da gerência) em todas as ordens de serviço e liga o histórico das vistorias ao QR do imóvel.
-          Só acrescenta essas informações; nada é apagado. Pode ser executado mais de uma vez.
+          Preenche nas ordens de serviço o que estiver faltando: unidade (nome da gerência), CRAAI e comarca do ativo e mês de encerramento
+          das concluídas/não executadas; e liga o histórico das vistorias ao QR do imóvel. Nada é apagado. Pode ser executado mais de uma vez.
         </p>
       </div>
 
@@ -69,8 +69,13 @@ export default function UnitBackfillCard({ darkMode }: { darkMode: boolean }) {
       {result && (
         <div className={`text-xs space-y-1 ${strong}`}>
           <p className="font-bold text-emerald-600">Correção concluída.</p>
-          <p>OS lidas: {result.total} • OS atualizadas: {result.updated} • Históricos de vistoria ligados ao imóvel: {result.historiesFixed}</p>
+          <p>OS lidas: {result.total} • OS atualizadas: {result.updated}</p>
+          <p>
+            Preenchidos agora: unidade em {result.unitsFilled} • CRAAI/comarca em {result.locationFilled} • mês de encerramento em{' '}
+            {result.closedMonthFilled} • históricos de vistoria ligados ao imóvel: {result.historiesFixed}
+          </p>
           <p>Por unidade: {Object.entries(result.perUnit).map(([u, n]) => `${u}: ${n}`).join(' • ') || '—'}</p>
+          <p>Por status: {Object.entries(result.perStatus).map(([st, n]) => `${st}: ${n}`).join(' • ') || '—'}</p>
           {result.withoutUnit > 0 && (
             <p className="font-bold text-amber-600">
               {result.withoutUnit} OS ficaram sem unidade (setor não corresponde a uma gerência):{' '}

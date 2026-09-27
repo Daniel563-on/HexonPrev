@@ -91,12 +91,12 @@ async function findExistingOrderIds(ids: string[]): Promise<Set<string>> {
 
 // Comarca e CRAAI do ativo. São copiados para a OS no disparo, para que consultas e
 // relatórios filtrem as OS por comarca/CRAAI sem precisar baixar os ativos.
-function getAssetComarca(asset: Asset): string {
+export function getAssetComarca(asset: Asset): string {
   const c = asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location);
   return typeof c === 'string' ? c.trim() : '';
 }
 
-function getAssetCraai(asset: Asset): string {
+export function getAssetCraai(asset: Asset): string {
   const c = asset.specs?.CRAAI || asset.specs?.craai;
   return typeof c === 'string' ? c.trim() : '';
 }

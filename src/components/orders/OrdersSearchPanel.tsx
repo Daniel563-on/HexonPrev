@@ -262,7 +262,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
                   <span className="font-mono text-[10px] font-bold text-indigo-600">#{formatOrderNumber(o.id)}</span>
                   <p className="font-extrabold text-slate-800 truncate">{o.title}</p>
                   <p className="text-[10px] text-slate-500">
-                    {o.craai || o.sector} • {o.comarca || o.surveyLocation || 'Geral'} • {o.assignedTechnician || 'Sem técnico'}
+                    {o.craai || '—'} • {o.comarca || o.surveyLocation || '—'} • {o.assignedTechnician || 'Sem técnico'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
