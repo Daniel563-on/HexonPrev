@@ -21,6 +21,7 @@ import {
 } from '../db/firebase';
 import { AccessProfile, HexonUser, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
+import UnitBackfillCard from './users/UnitBackfillCard';
 
 interface UserControlViewProps {
   currentUserProfile: HexonUser;
@@ -660,6 +661,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           {/* TAB 2: GERÊNCIAS */}
           {activeSubTab === 'managements' && (
             <div className="max-w-3xl mx-auto">
+              {currentUserProfile.perfil === 'Super Administrador' && <UnitBackfillCard darkMode={darkMode} />}
               
               {/* Gerências */}
               <div className={`p-5 rounded-xl border ${darkMode ? 'bg-[#0a1122]/40 border-slate-800' : 'bg-white border-slate-200'}`}>

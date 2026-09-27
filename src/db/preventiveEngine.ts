@@ -1,5 +1,5 @@
 import { collection, doc, documentId, getDocs, query, where, writeBatch } from 'firebase/firestore';
-import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate } from '../types';
+import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate, resolveOrderUnit } from '../types';
 import {
   firebaseActive,
   dbInstance,
@@ -613,6 +613,10 @@ export async function dbAutoGeneratePreventiveActivities(
       // 2) Segurança extra para OS gravadas antes do registro existir
       const existingIds = await findExistingOrderIds(ordersToSave.map((o) => o.id));
       ordersToSave = ordersToSave.filter((o) => !existingIds.has(o.id));
+
+      // Unidade de cada OS (usada pelas regras do banco)
+      const unitNames = (await dbGetManagements().catch(() => [])).map((m) => m.name);
+      ordersToSave = ordersToSave.map((o) => (o.unit ? o : { ...o, unit: resolveOrderUnit(o.sector, o.addressId, unitNames) || undefined }));
 
       let failedCount = 0;
       let lastError = '';
