@@ -471,19 +471,26 @@ export default function App() {
   useEffect(() => {
     if (!userProfile) return;
 
+    // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
+    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'qr-codes'].find((t) =>
+      userHasTabPermission(t)
+    );
+
     // 1. Strict Security Guard: only Super Administrador can access 'user-control'
     if (currentTab === 'user-control' && userProfile.perfil !== 'Super Administrador') {
-      setCurrentTab('dashboard');
+      if (firstAllowedTab) setCurrentTab(firstAllowedTab);
       alert('Acesso Restrito: Somente o Super Administrador corporativo conta com privilégios para acessar a central de controle de acessos.');
       return;
     }
 
-    // 2. Dynamic permission matrix check for other tabs
-    if (currentTab !== 'dashboard' && !userHasTabPermission(currentTab)) {
-      setCurrentTab('dashboard');
-      alert('Acesso Restrito: Seu perfil de acesso atual não possui as permissões necessárias para visualizar este módulo.');
+    // 2. Aba sem permissão: vai para a primeira permitida (sem aviso quando é só a tela inicial)
+    if (!userHasTabPermission(currentTab) && firstAllowedTab && firstAllowedTab !== currentTab) {
+      setCurrentTab(firstAllowedTab);
+      if (currentTab !== 'dashboard') {
+        alert('Acesso Restrito: Seu perfil de acesso atual não possui as permissões necessárias para visualizar este módulo.');
+      }
     }
-  }, [currentTab, userProfile, permissionsMatrix]);
+  }, [currentTab, userProfile, permissionsMatrix, accessProfiles]);
 
   // Bootstrapping default sequence on Application load
   useEffect(() => {

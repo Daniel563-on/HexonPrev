@@ -65,9 +65,13 @@ export default function OrdersCardGrid({
 }: OrdersCardGridProps) {
   const sanitizedPage = Math.min(Math.max(1, currentPage), totalPages);
 
+  // Seleção serve só para excluir: só o Super Administrador, e só OS "Novo"
+  const canSelectOrder = (os: ServiceOrder) => userProfile?.perfil === 'Super Administrador' && os.status === 'Novo';
+  const selectableCount = paginatedOrders.filter(canSelectOrder).length;
+
   return (
     <section className="bg-transparent flex flex-col gap-4">
-      {paginatedOrders.length > 0 && (
+      {selectableCount > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-3">
             <input
@@ -78,7 +82,7 @@ export default function OrdersCardGrid({
               className="w-4.5 h-4.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
             />
             <label htmlFor="select-all-page" className="text-xs font-black text-slate-705 cursor-pointer select-none">
-              Selecionar Todas desta Página ({paginatedOrders.length} {paginatedOrders.length === 1 ? 'preventiva' : 'preventivas'})
+              Selecionar as OS "Novo" desta página ({selectableCount} {selectableCount === 1 ? 'preventiva' : 'preventivas'})
             </label>
             {selectedOrderIds.length > 0 && (
               <span className="bg-indigo-50 text-indigo-750 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-indigo-150">
@@ -160,15 +164,17 @@ export default function OrdersCardGrid({
                 <div>
                   {/* Top Row: ID & Category */}
                   <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        onToggleSelectOrder(os.id);
-                      }}
-                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-                    />
+                    {canSelectOrder(os) && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          onToggleSelectOrder(os.id);
+                        }}
+                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                      />
+                    )}
                     <span className="font-mono text-[#3525cd] font-black text-xs">
                       #{formatOrderNumber(os.id)}
                     </span>

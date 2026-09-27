@@ -379,7 +379,9 @@ export default function ServiceOrdersView({
   const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
 
   // Bulk Selection and Controls Helpers
-  const isAllSelected = paginatedOrders.length > 0 && paginatedOrders.every(os => selectedOrderIds.includes(os.id));
+  // Seleção serve só para excluir: só o Super Administrador, e só OS "Novo"
+  const selectablePageOrders = userProfile?.perfil === 'Super Administrador' ? paginatedOrders.filter(os => os.status === 'Novo') : [];
+  const isAllSelected = selectablePageOrders.length > 0 && selectablePageOrders.every(os => selectedOrderIds.includes(os.id));
   const toggleSelectOrder = (id: string) => {
     setSelectedOrderIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
@@ -387,9 +389,9 @@ export default function ServiceOrdersView({
   };
   const toggleSelectAll = () => {
     if (isAllSelected) {
-      setSelectedOrderIds(prev => prev.filter(id => !paginatedOrders.some(os => os.id === id)));
+      setSelectedOrderIds(prev => prev.filter(id => !selectablePageOrders.some(os => os.id === id)));
     } else {
-      const pageIds = paginatedOrders.map(os => os.id);
+      const pageIds = selectablePageOrders.map(os => os.id);
       setSelectedOrderIds(prev => Array.from(new Set([...prev, ...pageIds])));
     }
   };
