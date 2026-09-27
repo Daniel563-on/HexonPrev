@@ -231,13 +231,14 @@ export default function ServiceOrdersView({
 
   // Helper to determine the CRAAI of an order
   const getOrderCRAAI = (os: ServiceOrder) => {
+    if (os.craai) return os.craai;
     if (os.assetId && assets.length > 0) {
       const asset = assets.find(a => a.id === os.assetId);
       if (asset) {
-        return asset.specs?.CRAAI || asset.specs?.craai || os.sector || 'Geral';
+        return asset.specs?.CRAAI || asset.specs?.craai || '—';
       }
     }
-    return os.sector || 'Geral';
+    return '—'; // sem CRAAI: não mostra a gerência no lugar
   };
 
   // helper to clean automatic description phrases and save massive space

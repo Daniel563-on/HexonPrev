@@ -16,6 +16,8 @@ import {
 } from 'firebase/firestore';
 import { MaintenanceLog, ServiceOrder, resolveOrderUnit } from '../types';
 import { dbGetManagements } from './organization';
+import { dbGetAssets } from './assets';
+import { getAssetComarca, getAssetCraai } from './preventiveEngine';
 import {
   firebaseActive,
   dbInstance,
@@ -1308,16 +1310,21 @@ export async function dbGetAssetOrdersPublic(assetId: string, assetCode?: string
 }
 
 
-// CORREÇÃO ÚNICA (Super Administrador, antes das novas regras do banco):
-// 1) grava a unidade (GMMR, GMEE, GMC, DOM...) em todas as OS;
-// 2) liga o histórico das vistorias ao QR do imóvel ("addr:<id>") para a página pública.
-// Só acrescenta/ajusta esses campos; nada é apagado.
+// CORREÇÃO DAS OS (Super Administrador, antes das novas regras do banco). Só preenche o que falta; nada é apagado:
+// 1) unidade (GMMR, GMEE, GMC, DOM...);
+// 2) CRAAI e comarca copiadas do ativo (OS antigas, disparadas antes desses campos existirem);
+// 3) mês de encerramento (closedMonth) das Concluídas / Não Executadas / Canceladas que não têm;
+// 4) histórico das vistorias ligado ao QR do imóvel ("addr:<id>").
 export interface UnitBackfillResult {
   total: number;
   updated: number;
   perUnit: Record<string, number>;
   withoutUnit: number;
   unresolvedSectors: Record<string, number>;
+  unitsFilled: number;
+  locationFilled: number;
+  closedMonthFilled: number;
+  perStatus: Record<string, number>;
   historiesFixed: number;
 }
 
@@ -1325,30 +1332,63 @@ export async function dbBackfillOrderUnits(): Promise<UnitBackfillResult> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
   const unitNames = (await dbGetManagements()).map((m) => m.name).filter((n) => n && n !== 'Todas');
+  const assetsById = new Map((await dbGetAssets()).map((a) => [a.id, a]));
 
-  const result: UnitBackfillResult = { total: 0, updated: 0, perUnit: {}, withoutUnit: 0, unresolvedSectors: {}, historiesFixed: 0 };
-  const updates: { id: string; unit: string }[] = [];
+  const result: UnitBackfillResult = {
+    total: 0, updated: 0, perUnit: {}, withoutUnit: 0, unresolvedSectors: {},
+    unitsFilled: 0, locationFilled: 0, closedMonthFilled: 0, perStatus: {}, historiesFixed: 0
+  };
+  const updates: { id: string; fields: Record<string, string> }[] = [];
   const addressByOrder = new Map<string, string>();
+  const monthOf = (v?: string | null) => (v && /^\d{4}-\d{2}/.test(v) ? v.slice(0, 7) : '');
 
   const snap = await getDocs(collection(db, 'serviceOrders'));
   snap.forEach((d) => {
     const o = d.data() as ServiceOrder;
     result.total++;
+    result.perStatus[o.status || '(sem status)'] = (result.perStatus[o.status || '(sem status)'] || 0) + 1;
     if (o.addressId) addressByOrder.set(d.id, o.addressId);
+    const fields: Record<string, string> = {};
+
     const unit = o.unit && unitNames.includes(o.unit) ? o.unit : resolveOrderUnit(o.sector, o.addressId, unitNames);
     if (!unit) {
       result.withoutUnit++;
       const key = o.sector || '(sem setor)';
       result.unresolvedSectors[key] = (result.unresolvedSectors[key] || 0) + 1;
-      return;
+    } else {
+      result.perUnit[unit] = (result.perUnit[unit] || 0) + 1;
+      if (o.unit !== unit) {
+        fields.unit = unit;
+        result.unitsFilled++;
+      }
     }
-    result.perUnit[unit] = (result.perUnit[unit] || 0) + 1;
-    if (o.unit !== unit) updates.push({ id: d.id, unit });
+
+    const asset = o.assetId ? assetsById.get(o.assetId) : undefined;
+    if (asset) {
+      const craai = getAssetCraai(asset);
+      const comarca = getAssetComarca(asset);
+      if (!o.craai && craai) fields.craai = craai;
+      if (!o.comarca && comarca) fields.comarca = comarca;
+      if (fields.craai || fields.comarca) result.locationFilled++;
+    }
+
+    if (!o.closedMonth) {
+      const closed =
+        o.status === 'Concluída' ? monthOf(o.signedAt) || monthOf(o.endDate) :
+        o.status === 'Não Executada' ? monthOf(o.endDate) :
+        o.status === 'Cancelada' ? monthOf(o.cancelledAt) || monthOf(o.endDate) : '';
+      if (closed) {
+        fields.closedMonth = closed;
+        result.closedMonthFilled++;
+      }
+    }
+
+    if (Object.keys(fields).length > 0) updates.push({ id: d.id, fields });
   });
 
   for (let i = 0; i < updates.length; i += 400) {
     const batch = writeBatch(db);
-    updates.slice(i, i + 400).forEach((u) => batch.update(doc(db, 'serviceOrders', u.id), { unit: u.unit }));
+    updates.slice(i, i + 400).forEach((u) => batch.update(doc(db, 'serviceOrders', u.id), u.fields));
     await batch.commit();
   }
   result.updated = updates.length;

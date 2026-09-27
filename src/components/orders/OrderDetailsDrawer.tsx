@@ -545,7 +545,7 @@ export default function OrderDetailsDrawer({
                       <div className="bg-white p-3 rounded-lg border border-slate-150 shadow-3xs flex flex-col min-w-0">
                         <p className="text-[8.5px] text-slate-450 font-bold uppercase tracking-wider mb-0.5">CRAAI</p>
                         <p className="font-extrabold text-slate-800 break-words whitespace-normal leading-normal">
-                          {activeLinkedAsset.specs?.CRAAI || activeLinkedAsset.specs?.craai || activeLinkedAsset.sector || 'Não informado'}
+                          {activeLinkedAsset.specs?.CRAAI || activeLinkedAsset.specs?.craai || 'Não informado'}
                         </p>
                       </div>
 
