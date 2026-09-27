@@ -20,9 +20,9 @@ import {
   CheckCircle2,
   FileSignature
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../../types';
+import { ServiceOrder, Asset, formatDateBR, HexonUser, getSectorGerencia } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder, localTodayStr, PlanningDeadline } from '../../db/firebase';
+import { dbSaveServiceOrder, localTodayStr, PlanningDeadline, isSectorVisible } from '../../db/firebase';
 
 export interface OrdersCalendarPlanningProps {
   orders: ServiceOrder[];
@@ -30,6 +30,7 @@ export interface OrdersCalendarPlanningProps {
   templates: any[];
   users: HexonUser[];
   userProfile?: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   userHasActionPermission?: (action: any) => boolean;
   canRevertUnexecutedOrder: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
   deadlines: PlanningDeadline[];
@@ -59,6 +60,7 @@ export default function OrdersCalendarPlanning({
   templates,
   users,
   userProfile,
+  visibleUnits = null,
   userHasActionPermission,
   canRevertUnexecutedOrder,
   deadlines,
@@ -82,7 +84,7 @@ export default function OrdersCalendarPlanning({
   const [planSearchType, setPlanSearchType] = useState<'all' | 'id' | 'patrimonio' | 'craai' | 'comarca'>('all');
   const [isBulkScheduling, setIsBulkScheduling] = useState(false);
   const [bulkAssignTech, setBulkAssignTech] = useState<string>('');
-  const [planSector, setPlanSector] = useState(userProfile?.perfil === 'Administrador' && userProfile.gerencia !== 'Todas' ? userProfile?.gerencia || 'all' : 'all');
+  const [planSector, setPlanSector] = useState(visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : 'all');
   const [planPriority, setPlanPriority] = useState('all');
   const [planOnlyCompatible, setPlanOnlyCompatible] = useState(true);
   const [planAssignedTechs, setPlanAssignedTechs] = useState<{ [key: string]: string }>({});
@@ -152,10 +154,11 @@ export default function OrdersCalendarPlanning({
     });
   };
 
-  const availableProfessionals = users.filter(u => 
-    u.perfil === 'Profissional' && 
-    (userProfile?.gerencia === 'Todas' || u.gerencia === 'Todas' || u.gerencia === userProfile?.gerencia)
-  );
+  // Técnico da mesma unidade do planejador (ou de alguma das unidades do perfil)
+  const isTechInMyUnits = (u: HexonUser) =>
+    visibleUnits === null || u.gerencia === 'Todas' || visibleUnits.includes(u.gerencia);
+
+  const availableProfessionals = users.filter(u => u.perfil === 'Profissional' && isTechInMyUnits(u));
 
   const normalizeStr = (str: string) => {
     return (str || '')
@@ -170,13 +173,10 @@ export default function OrdersCalendarPlanning({
     return users.filter(u => {
       if (u.perfil !== 'Profissional') return false;
       
-      const adminGer = normalizeStr(userProfile?.gerencia || '');
       const uGer = normalizeStr(u.gerencia || '');
       const osSec = normalizeStr(os.sector || '');
 
-      if (adminGer && adminGer !== 'todas') {
-        if (uGer !== adminGer && uGer !== 'todas') return false;
-      }
+      if (!isTechInMyUnits(u)) return false;
       
       if (osSec && osSec !== 'all' && osSec !== 'todos') {
         if (osSec !== uGer && uGer !== 'todas') {
@@ -193,14 +193,13 @@ export default function OrdersCalendarPlanning({
     });
   };
 
-        let isPlanningExpired = false;
-        if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-          const dlObj = deadlines.find(d => d.id === userProfile.gerencia);
-          if (dlObj && dlObj.expiresAt && dlObj.expiresAt !== 'none') {
-            const countdownHelper = getCountdownText(dlObj.expiresAt);
-            isPlanningExpired = countdownHelper.isExpired;
-          }
-        }
+        // Bloqueia quando o prazo de planejamento expirou em TODAS as unidades do perfil
+        const planUnits = visibleUnits || [];
+        const isUnitExpired = (unit: string) => {
+          const dlObj = deadlines.find(d => d.id === unit);
+          return !!(dlObj && dlObj.expiresAt && dlObj.expiresAt !== 'none' && getCountdownText(dlObj.expiresAt).isExpired);
+        };
+        const isPlanningExpired = planUnits.length > 0 && planUnits.every(isUnitExpired);
 
         if (isPlanningExpired) {
           return (
@@ -212,7 +211,7 @@ export default function OrdersCalendarPlanning({
                 Acesso Bloqueado: Prazo de Programação Expirado
               </h3>
               <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-lg mx-auto">
-                O prazo de 7 dias úteis/corridos concedido à sua gerência (<strong className="text-slate-800">{userProfile?.gerencia}</strong>) para planejamento e alocação das ordens preventivas no calendário expirou.
+                O prazo de 7 dias úteis/corridos concedido à sua gerência (<strong className="text-slate-800">{planUnits.join(', ')}</strong>) para planejamento e alocação das ordens preventivas no calendário expirou.
               </p>
               <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-4 my-6 text-[11px] text-rose-800 font-bold max-w-md mx-auto leading-relaxed">
                 Todas as preventivas/vistorias que aguardavam programação foram finalizadas automaticamente como "Não Executada".
@@ -497,7 +496,7 @@ export default function OrdersCalendarPlanning({
                     <p className="text-[9px] font-black text-slate-450 uppercase tracking-wider leading-tight">Aguardando Programação</p>
                     <p className="text-base font-bold text-amber-700 mt-0.5">
                       {orders.filter(os => os.status === 'Novo' && 
-                        (userProfile?.perfil !== 'Administrador' || userProfile?.gerencia === 'Todas' || isSectorInGerencia(os.sector, userProfile?.gerencia))
+                        isSectorVisible(os.sector, visibleUnits)
                       ).length}
                     </p>
                   </div>
@@ -551,9 +550,7 @@ export default function OrdersCalendarPlanning({
 
               // 1. Get already scheduled orders overlapping with this selected day or range
               const dayScheduledOrders = orders.filter(os => {
-                if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-                  if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
-                }
+                if (!isSectorVisible(os.sector, visibleUnits)) return false;
                 if (!os.scheduledDate || os.status === 'Novo') return false;
                 const start = os.scheduledDate.slice(0, 10);
                 const end = (os.scheduledEndDate || os.scheduledDate).slice(0, 10);
@@ -577,11 +574,8 @@ export default function OrdersCalendarPlanning({
               // 2. Get all 'Novo' preventives awaiting scheduling, filtered by criteria
               const rawNewOrders = orders.filter(os => {
                 if (os.status !== 'Novo') return false;
-                // Sector restrictions for managers
-                if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-                  return isSectorInGerencia(os.sector, userProfile.gerencia);
-                }
-                return true;
+                // Só as unidades do perfil
+                return isSectorVisible(os.sector, visibleUnits);
               });
 
               // Comarca options available in rawNewOrders
@@ -649,7 +643,7 @@ export default function OrdersCalendarPlanning({
                         )}
                       </h3>
                       <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wide">
-                        Gerência: {userProfile?.gerencia || 'Todas'} • {isRange ? 'Período com janela de execução selecionado' : 'Data única selecionada'}
+                        Gerência: {visibleUnits ? visibleUnits.join(', ') : 'Todas'} • {isRange ? 'Período com janela de execução selecionado' : 'Data única selecionada'}
                       </p>
                     </div>
                     <button

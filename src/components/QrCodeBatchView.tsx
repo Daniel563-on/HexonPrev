@@ -22,6 +22,7 @@ import {
   dbGetAddresses,
   dbGetManagements,
   addressToAssetItem,
+  isSectorVisible,
   dbGetQrTemplates, 
   dbSaveQrTemplate, 
   dbDeleteQrTemplate 
@@ -40,10 +41,11 @@ import { executeBatchPrint } from './qrcode/qrPrintHelpers';
 
 interface QrCodeBatchViewProps {
   userProfile: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   darkMode: boolean;
 }
 
-export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchViewProps) {
+export default function QrCodeBatchView({ userProfile, visibleUnits = null, darkMode }: QrCodeBatchViewProps) {
   // Assets & loading
   const [allAssets, setAllAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -165,12 +167,15 @@ export default function QrCodeBatchView({ userProfile, darkMode }: QrCodeBatchVi
       setLoading(false);
     });
     dbGetAddresses().then(setAddresses).catch(() => {});
-    dbGetManagements().then((list) => setManagementNames(list.map((m) => m.name))).catch(() => {});
+    dbGetManagements()
+      .then((list) => setManagementNames(list.map((m) => m.name).filter((n) => visibleUnits === null || visibleUnits.includes(n))))
+      .catch(() => {});
     return unsubscribe;
   }, []);
   useEffect(() => {
-    setAllAssets([...localAssets, ...addresses.map(addressToAssetItem)]);
-  }, [localAssets, addresses]);
+    // Dentro do sistema só os itens das unidades do perfil (o QR público continua aberto)
+    setAllAssets([...localAssets, ...addresses.map(addressToAssetItem)].filter((a) => isSectorVisible(a.sector || '', visibleUnits)));
+  }, [localAssets, addresses, visibleUnits]);
 
   // Template actions
   const handleLoadTemplate = (id: string) => {

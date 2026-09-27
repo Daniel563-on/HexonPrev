@@ -92,6 +92,7 @@ interface DashboardViewProps {
   onNavigateToAssets: () => void;
   onNavigateToSolicitations?: () => void;
   userProfile?: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
 }
 
 export default function DashboardView({
@@ -99,7 +100,8 @@ export default function DashboardView({
   onNavigateToOS,
   onNavigateToAssets,
   onNavigateToSolicitations,
-  userProfile
+  userProfile,
+  visibleUnits = null
 }: DashboardViewProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [managements, setManagements] = useState<Management[]>([]);
@@ -134,10 +136,9 @@ export default function DashboardView({
   const [summaryRows, setSummaryRows] = useState<StatRow[]>([]);
   const [addressCraais, setAddressCraais] = useState<string[]>([]);
   const currentMonth = localMonthKey();
-  const fixedGerencia =
-    userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
-      ? userProfile.gerencia
-      : null;
+  // Uma unidade só: fica fixa. Várias: o seletor mostra apenas as do perfil.
+  const fixedGerencia = visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : null;
+  const visibleUnitsKey = visibleUnits === null ? '*' : visibleUnits.join('|');
 
   const periodMonths = useMemo(() => {
     const [y, m] = currentMonth.split('-').map(Number);
@@ -152,7 +153,7 @@ export default function DashboardView({
 
   useEffect(() => {
     const pastMonths = periodMonths.filter((month) => month < currentMonth);
-    const sectors = fixedGerencia ? [fixedGerencia] : managements.filter((m) => m.name !== 'Todas').map((m) => m.name);
+    const sectors = visibleUnits !== null ? visibleUnits : managements.filter((m) => m.name !== 'Todas').map((m) => m.name);
     let active = true;
     dbGetMonthlySummaries(pastMonths, sectors).then((rows) => {
       if (active) setSummaryRows(rows);
@@ -160,7 +161,7 @@ export default function DashboardView({
     return () => {
       active = false;
     };
-  }, [periodMonths.join(','), managements, fixedGerencia, currentMonth]);
+  }, [periodMonths.join(','), managements, visibleUnitsKey, currentMonth]);
 
   // Mês atual ao vivo (mesma regra do fechamento): P = no prazo, A = em atraso, N = não realizada, L = em aberto
   const liveRows = useMemo<StatRow[]>(() => {
@@ -253,10 +254,10 @@ export default function DashboardView({
 
   // Sync profile defaults
   useEffect(() => {
-    if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-      setSelectedGerencia(userProfile.gerencia);
+    if (fixedGerencia) {
+      setSelectedGerencia(fixedGerencia);
     }
-  }, [userProfile]);
+  }, [fixedGerencia]);
 
   // Auto-trigger print when opening from a secure tab containing ?print=true
   useEffect(() => {
@@ -517,11 +518,7 @@ export default function DashboardView({
     setDatePreset('all');
     setStartDate('');
     setEndDate('');
-    setSelectedGerencia(
-      userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
-        ? userProfile.gerencia
-        : 'Todas'
-    );
+    setSelectedGerencia(fixedGerencia || 'Todas');
     setSelectedSector('Todos');
     setSelectedPeriodicity('Todas');
     setSelectedTechnician('Todos');
@@ -946,9 +943,9 @@ export default function DashboardView({
           {/* Gerência Select Filter */}
           <div className="space-y-1">
             <label className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Gerência de Controle</label>
-            {userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas' ? (
+            {fixedGerencia ? (
               <div className="w-full bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl px-3 py-2 text-xs font-bold leading-normal">
-                {userProfile.gerencia} (Fixo)
+                {fixedGerencia} (Fixo)
               </div>
             ) : (
               <select
@@ -959,9 +956,9 @@ export default function DashboardView({
                 }}
                 className="w-full bg-slate-50 dark:bg-[#0b1329] text-slate-800 dark:text-white border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-bold"
               >
-                <option value="Todas">Todas as Gerências</option>
+                <option value="Todas">{visibleUnits ? 'Todas as minhas unidades' : 'Todas as Gerências'}</option>
                 {managements
-                  .filter((m) => m.name !== 'Todas')
+                  .filter((m) => m.name !== 'Todas' && (visibleUnits === null || visibleUnits.includes(m.name)))
                   .map((m) => (
                     <option key={m.id} value={m.name}>{m.name}</option>
                   ))}

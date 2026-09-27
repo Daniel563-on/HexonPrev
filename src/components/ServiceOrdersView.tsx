@@ -11,8 +11,8 @@ import {
   ChevronRight,
   FileSearch
 } from 'lucide-react';
-import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, isSectorInGerencia, getSectorGerencia } from '../types';
-import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline } from '../db/firebase';
+import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, getSectorGerencia } from '../types';
+import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline, isSectorVisible } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -28,6 +28,7 @@ interface ServiceOrdersViewProps {
   onViewedMonthChange?: (month: string) => void; // mês (AAAA-MM) cujas OS fechadas devem ser carregadas
   highlightOSId?: string | null;
   userProfile?: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   userHasActionPermission?: (actionId: string) => boolean;
 }
 
@@ -37,8 +38,12 @@ export default function ServiceOrdersView({
   onViewedMonthChange,
   highlightOSId,
   userProfile,
+  visibleUnits = null,
   userHasActionPermission
 }: ServiceOrdersViewProps) {
+  // Unidades com prazo de planejamento acompanhado (perfis limitados a unidades)
+  const planUnits = visibleUnits || [];
+  const planUnitsKey = planUnits.join('|');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [deadlines, setDeadlines] = useState<PlanningDeadline[]>([]);
@@ -78,16 +83,21 @@ export default function ServiceOrdersView({
 
   // Handle countdown updates & alerts
   useEffect(() => {
-    if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
+    if (planUnits.length > 0) {
       const runCheck = () => {
         dbGetPlanningDeadlines().then((list) => {
           setDeadlines([...list]);
-          const deadline = list.find(d => d.id === userProfile.gerencia);
+          // Aviso da primeira unidade do perfil com prazo terminando em até 24h
+          const deadline =
+            list.find(d => planUnits.includes(d.id) && d.expiresAt && d.expiresAt !== 'none' && (() => {
+              const c = getCountdownText(d.expiresAt);
+              return !c.isExpired && c.hoursLeft <= 24;
+            })()) || list.find(d => planUnits.includes(d.id));
           if (deadline && deadline.expiresAt) {
             const { isExpired, hoursLeft, text } = getCountdownText(deadline.expiresAt);
             if (!isExpired && hoursLeft <= 24) {
-              if (!hasDismissedTemp) {
-                setWarnPopupManagement(userProfile.gerencia);
+               if (!hasDismissedTemp) {
+                setWarnPopupManagement(deadline.id);
                 setWarnPopupTimeText(text);
                 setShowDeadlineWarnPopup(true);
               }
@@ -108,7 +118,7 @@ export default function ServiceOrdersView({
       const interval = setInterval(runCheck, 10000); // Check every 10 seconds
       return () => clearInterval(interval);
     }
-  }, [userProfile, hasDismissedTemp]);
+  }, [planUnitsKey, hasDismissedTemp]);
 
   // Regra de reagendamento:
   // - Só a OS "Atrasada" (passou do período do encarregado) pode voltar para "Novo" e ser reagendada.
@@ -116,9 +126,7 @@ export default function ServiceOrdersView({
   // - "Não Executada" (passou do prazo do Super Administrador) fica bloqueada: ninguém reverte.
   const canRevertUnexecutedOrder = (os: ServiceOrder, targetMonthDate: Date = currentCalendarDate): boolean => {
     if (os.status !== 'Atrasada') return false;
-    if (userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-      if (!isSectorInGerencia(os.sector, userProfile.gerencia)) return false;
-    }
+    if (!isSectorVisible(os.sector, visibleUnits)) return false;
     // Prazo do Super Administrador ainda aberto
     if (os.endDate && localTodayStr() > os.endDate) return false;
     // O prazo da OS precisa cruzar o mês em exibição
@@ -469,12 +477,12 @@ export default function ServiceOrdersView({
       )}
 
       {/* Dynamic Countdowns / Status Bar for Administrator */}
-      {userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (() => {
-        const deadline = deadlines.find(d => d.id === userProfile.gerencia);
+      {planUnits.map((unit) => {
+        const deadline = deadlines.find(d => d.id === unit);
         if (!deadline || !deadline.expiresAt) return null;
         const { isExpired, text, hoursLeft } = getCountdownText(deadline.expiresAt);
         return (
-          <div className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+          <div key={unit} className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
             isExpired 
               ? 'bg-rose-50 border-rose-200 text-rose-900 animate-pulse' 
               : hoursLeft <= 24 
@@ -487,7 +495,7 @@ export default function ServiceOrdersView({
               </div>
               <div className="text-left">
                 <h4 className="text-[10.5px] font-black uppercase tracking-wider">
-                  Tempo Limite para Planejamento de Preventivas ({userProfile.gerencia})
+                  Tempo Limite para Planejamento de Preventivas ({unit})
                 </h4>
                 <p className="text-[11px] opacity-80 mt-0.5 leading-relaxed font-semibold">
                   {isExpired 
@@ -504,7 +512,7 @@ export default function ServiceOrdersView({
             </div>
           </div>
         );
-      })()}
+      })}
 
       {/* Super Admin Deadline Control Center */}
       {userProfile?.perfil === 'Super Administrador' && (
@@ -674,6 +682,7 @@ export default function ServiceOrdersView({
           templates={templates}
           users={users}
           userProfile={userProfile}
+          visibleUnits={visibleUnits}
           userHasActionPermission={userHasActionPermission}
           canRevertUnexecutedOrder={canRevertUnexecutedOrder}
           deadlines={deadlines}
@@ -697,6 +706,7 @@ export default function ServiceOrdersView({
       ) : subTab === 'consulta' && userProfile?.perfil !== 'Profissional' ? (
         <OrdersSearchPanel
           userProfile={userProfile}
+          visibleUnits={visibleUnits}
           assets={assets}
           templates={templates}
           userHasActionPermission={userHasActionPermission}
