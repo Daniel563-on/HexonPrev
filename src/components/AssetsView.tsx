@@ -42,6 +42,7 @@ import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Managemen
 import { 
   dbGetAddresses,
   addressToAssetItem,
+  isSectorVisible,
   subscribeLocalAssets,
   forceFullAssetResync,
   dbGetAssetHistory, 
@@ -61,6 +62,7 @@ interface AssetsViewProps {
   scannedAssetId: string | null;
   clearScannedAsset: () => void;
   userProfile?: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   orders?: ServiceOrder[];
   userHasActionPermission?: (actionId: string) => boolean;
 }
@@ -70,6 +72,7 @@ export default function AssetsView({
   scannedAssetId, 
   clearScannedAsset,
   userProfile,
+  visibleUnits = null,
   orders = [],
   userHasActionPermission
 }: AssetsViewProps) {
@@ -168,7 +171,11 @@ export default function AssetsView({
 
   // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
   const addressItems = React.useMemo<Asset[]>(() => addressList.map(addressToAssetItem), [addressList]);
-  const allItems = React.useMemo(() => [...assets, ...addressItems], [assets, addressItems]);
+  // Dentro do sistema cada um vê só os itens das unidades do seu perfil (o QR público continua aberto)
+  const allItems = React.useMemo(
+    () => [...assets, ...addressItems].filter((a) => isSectorVisible(a.sector || '', visibleUnits)),
+    [assets, addressItems, visibleUnits]
+  );
 
   const commonEquipmentTypes = React.useMemo(
     () => ['Todos', ...Array.from(new Set<string>(allItems.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],

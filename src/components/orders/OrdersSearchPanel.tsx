@@ -3,6 +3,7 @@ import { Search, Download, FileSearch } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Asset, HexonUser, Management, ServiceOrder, formatDateBR } from '../../types';
 import {
+  isSectorVisible,
   dbSearchClosedOrders,
   dbGetManagements,
   dbGetUsers,
@@ -15,6 +16,7 @@ import OrderDetailsDrawer from './OrderDetailsDrawer';
 
 interface OrdersSearchPanelProps {
   userProfile?: HexonUser | null;
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   assets: Asset[];
   templates: any[];
   userHasActionPermission?: (actionId: string) => boolean;
@@ -24,11 +26,9 @@ const PAGE_SIZE = 50;
 
 // CONSULTA DE OS: ordens encerradas (Concluída / Não Executada) de um mês.
 // O banco filtra mês + gerência + um filtro principal; status e texto são refinados aqui.
-export default function OrdersSearchPanel({ userProfile, assets, templates, userHasActionPermission }: OrdersSearchPanelProps) {
-  const fixedSector =
-    userProfile?.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
-      ? userProfile.gerencia
-      : null;
+export default function OrdersSearchPanel({ userProfile, visibleUnits = null, assets, templates, userHasActionPermission }: OrdersSearchPanelProps) {
+  // Uma unidade só: fica fixa. Várias: o seletor mostra apenas as do perfil.
+  const fixedSector = visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : null;
 
   const [month, setMonth] = useState(localMonthKey());
   const [sector, setSector] = useState<string>(fixedSector || 'Todas');
@@ -51,7 +51,7 @@ export default function OrdersSearchPanel({ userProfile, assets, templates, user
     dbGetUsers()
       .then((list) =>
         setTechnicians(
-          Array.from(new Set(list.filter((u) => u.perfil === 'Profissional').map((u) => u.name))).sort((a, b) => a.localeCompare(b))
+          Array.from(new Set(list.filter((u) => u.perfil === 'Profissional' && (visibleUnits === null || u.gerencia === 'Todas' || visibleUnits.includes(u.gerencia))).map((u) => u.name))).sort((a, b) => a.localeCompare(b))
         )
       )
       .catch(() => {});
@@ -65,6 +65,7 @@ export default function OrdersSearchPanel({ userProfile, assets, templates, user
     const comarcas = new Set<string>();
     assets.forEach((a) => {
       if (effectiveSector && (a.sector || '').trim() !== effectiveSector) return;
+      if (!isSectorVisible(a.sector || '', visibleUnits)) return;
       const craai = a.specs?.CRAAI || a.specs?.craai;
       const comarca = a.specs?.COMARCA || a.specs?.comarca;
       if (typeof craai === 'string' && craai.trim()) craais.add(craai.trim());
@@ -87,7 +88,7 @@ export default function OrdersSearchPanel({ userProfile, assets, templates, user
     setPage(1);
     try {
       const res = await dbSearchClosedOrders({ month, sector: effectiveSector, field: field || null, value });
-      setResults(res.orders);
+      setResults(res.orders.filter((o) => isSectorVisible(o.sector || '', visibleUnits)));
       setLimited(res.limited);
     } catch (err: any) {
       console.warn('Consulta de OS falhou:', err);
@@ -154,8 +155,8 @@ export default function OrdersSearchPanel({ userProfile, assets, templates, user
               <input type="text" value={fixedSector} disabled className={`${inputClass} text-slate-500 cursor-not-allowed`} />
             ) : (
               <select value={sector} onChange={(e) => setSector(e.target.value)} className={inputClass}>
-                <option value="Todas">Todas</option>
-                {managements.map((m) => (
+                <option value="Todas">{visibleUnits ? 'Todas as minhas unidades' : 'Todas'}</option>
+                {managements.filter((m) => visibleUnits === null || visibleUnits.includes(m.name)).map((m) => (
                   <option key={m.id} value={m.name}>{m.name}</option>
                 ))}
               </select>

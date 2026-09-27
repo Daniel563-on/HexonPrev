@@ -1,5 +1,5 @@
 import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
-import { AccessProfile, HexonUser, ProfileKind } from '../types';
+import { AccessProfile, HexonUser, ProfileKind, isSectorInGerencia } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { DEFAULT_PERMISSIONS, dbGetPermissions } from './permissions';
 import { dbGetUsers, dbSaveUser } from './users';
@@ -119,4 +119,24 @@ export async function dbDeleteProfile(profile: AccessProfile): Promise<void> {
   if (inUse > 0) throw new Error(`Há ${inUse} usuário(s) com este perfil. Troque o perfil deles antes de excluir.`);
   await deleteDoc(doc(dbInstance, 'profiles', profile.id));
   cacheProfiles = null;
+}
+
+// UNIDADES QUE O USUÁRIO ENXERGA DENTRO DO SISTEMA
+// null = todas. "Própria" usa a gerência do usuário; "Escolhidas" usa as marcadas no perfil.
+export function userVisibleUnits(user: HexonUser | null | undefined, profiles: AccessProfile[]): string[] | null {
+  if (!user) return [];
+  const profile = resolveUserProfile(user, profiles);
+  const kind = profile?.kind || kindOfLegacyPerfil(user.perfil);
+  if (kind === 'total') return null;
+  const scope = profile?.unitScope || 'own';
+  if (scope === 'all') return null;
+  if (scope === 'selected') return profile && profile.units.length > 0 ? [...profile.units] : [];
+  if (!user.gerencia || user.gerencia === 'Todas') return null;
+  return [user.gerencia];
+}
+
+// O setor (de uma OS ou ativo) pertence a alguma das unidades visíveis?
+export function isSectorVisible(sector: string, units: string[] | null): boolean {
+  if (units === null) return true;
+  return units.some((u) => isSectorInGerencia(sector, u));
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import DashboardView from './components/DashboardView';
@@ -33,6 +33,8 @@ import {
   dbGetPermissions,
   dbGetProfiles,
   resolveUserProfile,
+  userVisibleUnits,
+  isSectorVisible,
   subscribeToUserProfile,
   dbSaveUser,
   dbUpdateUserSessionId,
@@ -340,12 +342,13 @@ export default function App() {
   // Mês cujas OS fechadas (Concluída / Não Executada) são carregadas; muda quando a tela de OS troca de mês
   const [ordersMonth, setOrdersMonth] = useState<string>(() => localMonthKey());
 
-  // Gestão (Administrador / Super Admin): OS em tempo real, só da gerência do usuário.
+  // Unidades que o usuário enxerga dentro do sistema (null = todas), conforme o perfil de acesso
+  const visibleUnits = useMemo(() => userVisibleUnits(userProfile, accessProfiles), [userProfile, accessProfiles]);
+
+  // Gestão (Planejador / Super Admin): OS em tempo real, só das unidades do usuário.
   // Todas as abertas + as fechadas do mês visto; o banco envia apenas o que mudar.
-  const ordersScopeSector =
-    userProfile && userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas'
-      ? userProfile.gerencia
-      : null;
+  // Uma unidade: o banco já filtra. Várias: busca tudo e o filtro abaixo (getFilteredOrders) separa.
+  const ordersScopeSector = visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : null;
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
     return subscribeServiceOrders({ sector: ordersScopeSector }, ordersMonth, setOrders);
@@ -707,11 +710,9 @@ export default function App() {
         isSectorInGerencia(o.sector, userProfile.gerencia)
       );
     } 
-    // 2. Administrator can only see orders from her/his specific gerência (sector)
-    else if (userProfile.perfil === 'Administrador' && userProfile.gerencia && userProfile.gerencia !== 'Todas') {
-      filtered = filtered.filter(o => {
-        return isSectorInGerencia(o.sector, userProfile.gerencia);
-      });
+    // 2. Demais perfis: só as OS das unidades do perfil
+    else if (visibleUnits !== null) {
+      filtered = filtered.filter(o => isSectorVisible(o.sector, visibleUnits));
     }
     
     return filtered;
@@ -946,6 +947,7 @@ export default function App() {
               onNavigateToAssets={() => setCurrentTab('assets')}
               onNavigateToSolicitations={() => setCurrentTab('solicitations')}
               userProfile={userProfile}
+              visibleUnits={visibleUnits}
             />
           )}
 
@@ -956,6 +958,7 @@ export default function App() {
               onViewedMonthChange={setOrdersMonth}
               highlightOSId={highlightedOSId}
               userProfile={userProfile}
+              visibleUnits={visibleUnits}
               userHasActionPermission={userHasActionPermission}
             />
           )}
@@ -966,6 +969,7 @@ export default function App() {
               scannedAssetId={scannedAssetId}
               clearScannedAsset={clearScannedAsset}
               userProfile={userProfile}
+              visibleUnits={visibleUnits}
               orders={orders}
               userHasActionPermission={userHasActionPermission}
             />
@@ -1002,6 +1006,7 @@ export default function App() {
           {currentTab === 'qr-codes' && (
             <QrCodeBatchView 
               userProfile={userProfile}
+              visibleUnits={visibleUnits}
               darkMode={darkMode}
             />
           )}
