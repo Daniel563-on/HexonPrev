@@ -96,13 +96,23 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
     }
   };
 
-  const handleDelete = async (p: AccessProfile) => {
-    if (!window.confirm(`Excluir o perfil "${p.name}"?`)) return;
+  // Confirmação dentro da tela (o preview bloqueia window.confirm/alert)
+  const [toDelete, setToDelete] = useState<AccessProfile | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeletingBusy(true);
+    setDeleteError(null);
     try {
-      await dbDeleteProfile(p);
+      await dbDeleteProfile(toDelete);
+      setToDelete(null);
       onChanged();
     } catch (err: any) {
-      alert(err?.message || String(err));
+      setDeleteError(err?.message || String(err));
+    } finally {
+      setDeletingBusy(false);
     }
   };
 
@@ -175,7 +185,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
               {!p.system && (
                 <button
                   type="button"
-                  onClick={() => handleDelete(p)}
+                  onClick={() => { setDeleteError(null); setToDelete(p); }}
                   className="px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold cursor-pointer"
                 >
                   Excluir
@@ -309,6 +319,34 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
               >
                 {saving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+            <h3 className={`text-base font-black ${strong}`}>Excluir perfil</h3>
+            <p className={`text-xs ${muted}`}>Deseja excluir o perfil "{toDelete.name}"? Esta ação não pode ser desfeita.</p>
+            {deleteError && <p className="text-xs font-bold text-rose-600">{deleteError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setToDelete(null)}
+                disabled={deletingBusy}
+                className={`px-4 py-2 rounded-lg border text-xs font-bold cursor-pointer ${darkMode ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deletingBusy}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                {deletingBusy ? 'Excluindo...' : 'Excluir'}
               </button>
             </div>
           </div>
