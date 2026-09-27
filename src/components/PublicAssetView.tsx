@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
-import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic, dbGetAssetOrdersPublic, dbGetAddressVistorias } from '../db/firebase';
+import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic } from '../db/firebase';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
 interface PublicAssetViewProps {
@@ -32,7 +32,6 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
 }) => {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [history, setHistory] = useState<MaintenanceLog[]>([]);
-  const [linkedOrders, setLinkedOrders] = useState<ServiceOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -64,19 +63,13 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
 
         setAsset(found);
 
-        // Busca paralela e estrita apenas dos dados deste ativo (sem baixar banco geral)
-        const [hist, orders] = await Promise.all([
-          dbGetAssetHistoryPublic(found.id).catch(() => []),
-          (found.kind === 'address'
-            ? dbGetAddressVistorias(found.addressId || '') // QR do endereço: vistorias do local
-            : dbGetAssetOrdersPublic(found.id, found.code)
-          ).catch(() => [])
-        ]);
+        // Página pública mostra só o histórico de preventivas concluídas (as OS não são públicas).
+        // Vistoria de endereço: o histórico é gravado com o mesmo id do QR do imóvel ("addr:...").
+        const hist = await dbGetAssetHistoryPublic(found.id).catch(() => []);
 
         if (active) {
           const sortedHist = [...hist].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setHistory(sortedHist);
-          setLinkedOrders(orders);
           setLoading(false);
         }
       } catch (err: any) {
@@ -344,64 +337,6 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
               <p className="text-[11px] font-medium text-amber-900/90 mt-0.5">
                 Este equipamento está cadastrado e aguardando a realização de sua primeira preventiva programada.
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* Ordens de Serviço Preventivas Vinculadas (se houver em andamento ou agendadas) */}
-        {linkedOrders.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3.5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-indigo-600" />
-                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                  {asset.kind === 'address' ? 'Vistorias do Local' : 'Preventivas Programadas no Sistema'} ({linkedOrders.length})
-                </h3>
-              </div>
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                Ativas
-              </span>
-            </div>
-
-            <div className="space-y-2.5">
-              {linkedOrders.map((ord) => (
-                <div
-                  key={ord.id}
-                  className="p-3 rounded-xl border border-slate-150 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2 text-xs"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                        OS #{formatOrderNumber(ord.id)}
-                      </span>
-                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                        ord.status === 'Concluído'
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : ord.status === 'Em Andamento'
-                          ? 'bg-blue-50 border-blue-200 text-blue-800'
-                          : 'bg-amber-50 border-amber-200 text-amber-800'
-                      }`}>
-                        {ord.status}
-                      </span>
-                    </div>
-                    <p className="font-bold text-slate-850 mt-1 truncate">
-                      {ord.title}
-                    </p>
-                    {ord.dueDate && (
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Prazo previsto: <strong>{formatDateBR(ord.dueDate)}</strong>
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <span className="text-[10px] font-medium text-slate-500 block">Técnico Encarregado</span>
-                    <span className="text-[11px] font-bold text-slate-800">
-                      {sanitizeTechnicianName(ord.assignedTechnician)}
-                    </span>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}

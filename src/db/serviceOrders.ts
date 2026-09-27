@@ -14,7 +14,8 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { MaintenanceLog, ServiceOrder } from '../types';
+import { MaintenanceLog, ServiceOrder, resolveOrderUnit } from '../types';
+import { dbGetManagements } from './organization';
 import {
   firebaseActive,
   dbInstance,
@@ -545,6 +546,13 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     signatureFields = { signature: null, hasSignature: true };
   }
 
+  // Unidade da OS (usada pelas regras do banco): calculada uma vez, se ainda não tiver
+  if (!order.unit) {
+    const unitNames = (await dbGetManagements().catch(() => [])).map((m) => m.name);
+    const unit = resolveOrderUnit(order.sector, order.addressId, unitNames);
+    if (unit) order = { ...order, unit };
+  }
+
   // Grava sempre o status coerente com os prazos (ex.: remarcar uma OS "Atrasada" volta para "Planejada")
   const status = computeDeadlineStatus(order);
   const orderWithUpdate: ServiceOrder = {
@@ -595,7 +603,9 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
 
     const historyEntry: MaintenanceLog = {
       id: `hist_${order.id}`,
-      assetId: order.assetId || 'none',
+      // Vistoria de endereço: grava com o mesmo id do QR do imóvel ("addr:...") para aparecer na página pública
+      assetId: order.assetId || (order.addressId ? `addr:${order.addressId}` : 'none'),
+      addressId: order.addressId,
       osId: order.id,
       osTitle: order.title,
       date: order.signedAt || new Date().toISOString().replace('T', ' ').slice(0, 16),
@@ -1297,3 +1307,68 @@ export async function dbGetAssetOrdersPublic(assetId: string, assetCode?: string
   return [];
 }
 
+
+// CORREÇÃO ÚNICA (Super Administrador, antes das novas regras do banco):
+// 1) grava a unidade (GMMR, GMEE, GMC, DOM...) em todas as OS;
+// 2) liga o histórico das vistorias ao QR do imóvel ("addr:<id>") para a página pública.
+// Só acrescenta/ajusta esses campos; nada é apagado.
+export interface UnitBackfillResult {
+  total: number;
+  updated: number;
+  perUnit: Record<string, number>;
+  withoutUnit: number;
+  unresolvedSectors: Record<string, number>;
+  historiesFixed: number;
+}
+
+export async function dbBackfillOrderUnits(): Promise<UnitBackfillResult> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const db = dbInstance;
+  const unitNames = (await dbGetManagements()).map((m) => m.name).filter((n) => n && n !== 'Todas');
+
+  const result: UnitBackfillResult = { total: 0, updated: 0, perUnit: {}, withoutUnit: 0, unresolvedSectors: {}, historiesFixed: 0 };
+  const updates: { id: string; unit: string }[] = [];
+  const addressByOrder = new Map<string, string>();
+
+  const snap = await getDocs(collection(db, 'serviceOrders'));
+  snap.forEach((d) => {
+    const o = d.data() as ServiceOrder;
+    result.total++;
+    if (o.addressId) addressByOrder.set(d.id, o.addressId);
+    const unit = o.unit && unitNames.includes(o.unit) ? o.unit : resolveOrderUnit(o.sector, o.addressId, unitNames);
+    if (!unit) {
+      result.withoutUnit++;
+      const key = o.sector || '(sem setor)';
+      result.unresolvedSectors[key] = (result.unresolvedSectors[key] || 0) + 1;
+      return;
+    }
+    result.perUnit[unit] = (result.perUnit[unit] || 0) + 1;
+    if (o.unit !== unit) updates.push({ id: d.id, unit });
+  });
+
+  for (let i = 0; i < updates.length; i += 400) {
+    const batch = writeBatch(db);
+    updates.slice(i, i + 400).forEach((u) => batch.update(doc(db, 'serviceOrders', u.id), { unit: u.unit }));
+    await batch.commit();
+  }
+  result.updated = updates.length;
+
+  const histUpdates: { id: string; addressId: string }[] = [];
+  const hsnap = await getDocs(collection(db, 'histories'));
+  hsnap.forEach((d) => {
+    const h = d.data() as MaintenanceLog;
+    const addressId = addressByOrder.get(h.osId);
+    if (addressId && h.assetId !== `addr:${addressId}`) histUpdates.push({ id: d.id, addressId });
+  });
+  for (let i = 0; i < histUpdates.length; i += 400) {
+    const batch = writeBatch(db);
+    histUpdates.slice(i, i + 400).forEach((h) =>
+      batch.update(doc(db, 'histories', h.id), { assetId: `addr:${h.addressId}`, addressId: h.addressId })
+    );
+    await batch.commit();
+  }
+  result.historiesFixed = histUpdates.length;
+
+  cacheServiceOrders = null;
+  return result;
+}

@@ -73,6 +73,7 @@ export interface ServiceOrder {
   cancelReason?: string; // motivo do cancelamento (ex.: ativo baixado na importação)
   cancelledAt?: string;
   addressId?: string;            // endereço cadastrado (rondas da DOM geradas por endereço)
+  unit?: string;                 // unidade (nome exato da gerência: GMMR, GMEE, GMC, DOM...) usada pelas regras do banco
   addressText?: string;          // endereço por extenso, gravado no disparo
   signedBy: string | null;       // Client or technician name
   signedAt: string | null;       // ISO timestamp
@@ -100,7 +101,8 @@ export interface Address {
 
 export interface MaintenanceLog {
   id: string;
-  assetId: string;
+  assetId: string; // para vistoria de endereço: "addr:<id do endereço>" (mesmo id do QR do imóvel)
+  addressId?: string;
   osId: string;
   osTitle: string;
   date: string;
@@ -359,6 +361,18 @@ export function getSectorGerencia(sector: string): string {
     return 'GMEE'; // Elétrica / Eletrônica
   }
   return 'GMC'; // Civil / Hidráulica / Predial / Geral / Outros (GMC)
+}
+
+// Unidade da OS (nome exato de uma gerência cadastrada). Vistoria de endereço = DOM.
+// Se o setor não bate com exatamente uma gerência, fica vazio (a correção mostra quantas ficaram assim).
+export function resolveOrderUnit(sector: string, addressId: string | undefined, unitNames: string[]): string {
+  const names = unitNames.filter((n) => n && n !== 'Todas');
+  if (addressId) return names.find((n) => n.trim().toUpperCase() === 'DOM') || 'DOM';
+  const s = (sector || '').trim().toUpperCase();
+  const exact = names.find((n) => n.trim().toUpperCase() === s);
+  if (exact) return exact;
+  const matches = names.filter((n) => isSectorInGerencia(sector, n));
+  return matches.length === 1 ? matches[0] : '';
 }
 
 export function isSectorInGerencia(sector: string, gerencia: string): boolean {
