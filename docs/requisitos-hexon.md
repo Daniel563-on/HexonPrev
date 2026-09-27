@@ -133,15 +133,15 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 | # | Etapa | Conteúdo principal |
 |---|---|---|
 | 1 | Unidades e perfis | 4 unidades com código fixo; perfis criados pelo Super Admin; permissões + unidade visível; renomear Administrador→Planejador e Profissional→Técnico; regras do banco por unidade. |
-| 2 | Efetivo | Base de pessoas (com e sem login), importação por planilha, cargo, vínculo usuário↔pessoa e valor da hora (a tela já feita, adaptada). |
+| 2 | Efetivo | Base de pessoas (com e sem login), importação por planilha, cargo, vínculo usuário↔pessoa e valor da hora com histórico (sem hora extra). |
 | 3 | Materiais | Base de materiais com importação. |
 | 4 | Modelos e disparo | Periodicidades novas, materiais previstos no modelo, validação datas × periodicidade, duplicidade revisada e disparo por unidade. |
-| 5 | Planejamento | Pernoite; técnico gravado pelo código, não pelo nome. |
+| 5 | Planejamento | Lote com pessoas e pernoites (custo dividido pelas OS; valor do pernoite congelado na criação da OS); técnico gravado pelo código, não pelo nome. |
 | 6 | Execução | Visualizar ≠ Iniciar; início e conclusão com hora do servidor; equipe habitual; participantes; materiais usados; bloqueio após assinatura; linha do tempo da OS; concluída sai da lista. |
 | 7 | Homem-hora | Cálculo automático e congelado na OS no momento da conclusão. |
 | 8 | Solicitações | "Abrir corretiva" / "Não abrir", com registro de quem decidiu e quando. |
 | 9 | Relatórios | Indicadores de tempo, homem-hora, materiais, pernoite e produtividade, com exportação para Excel e PDF. |
-| 10 | Prazos e horários | Rotina à 00:00, fechamento à 00:30 do dia 1º e trava de conclusão fora do prazo. |
+| 10 | Prazos e horários | Rotina à 00:00, fechamento à 00:30 do dia 1º e trava de conclusão fora do prazo. Exclusão só de OS "Novo" pelo Super Admin. |
 
 ---
 
@@ -160,9 +160,11 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 11. **Replanejamento:** o planejador altera a data só enquanto a OS está aberta (não iniciada). Depois de iniciada ou executada, não pode mais. As atrasadas continuam podendo ser reagendadas, como hoje.
 12. **OS concluída é imutável:** ninguém altera, nem o Super Administrador. A responsabilidade é do técnico.
 
+13. **Pernoite dividido por OS:** o custo do lote (pessoas × pernoites × valor) é dividido igualmente entre as OS do lote, e cada OS fica com o seu valor.
+14. **Valor do pernoite congelado na criação da OS:** cada OS guarda o valor de pernoite vigente **no momento em que o Super Administrador gerou o lote**. Um reajuste vale só para os lotes gerados depois.
+15. **Sem hora extra em preventiva:** não existe adicional de sábado, domingo ou feriado. O custo é **horas trabalhadas × valor da hora**. (A tela de custo homem-hora que ainda não foi aplicada perde os campos de sábado e domingo/feriado.)
+16. **Exclusão:** só o **Super Administrador** exclui, e só OS com status **Novo**. Iniciadas, concluídas ou não executadas nunca podem ser excluídas.
+
 ## 6. Perguntas em aberto
 
-A. **Pernoite, o "lote":** o lote é o conjunto de OS que o planejador distribui juntas (ex.: 100 OS para o Jonas de 01 a 15/10)? O custo do pernoite (pessoas × pernoites × valor) fica ligado a esse lote e é somado nos relatórios do lote, do técnico, da unidade e do período, **sem ser dividido por OS**?
-B. **Momento em que o valor do pernoite congela:** o lote pode ter OS concluídas e OS abertas ao mesmo tempo. O valor congela **quando o lote todo termina**, ou **na primeira conclusão** do lote?
-C. **Feriados:** para aplicar +100%, quem cadastra os feriados? Proposta: o Super Administrador mantém uma lista de feriados no sistema. O dia considerado é o **dia do início** da execução.
-D. **Exclusão:** uma OS concluída também **não pode ser excluída** (hoje o Administrador consegue excluir OS)? Proposta: só OS **não iniciadas** podem ser excluídas.
+E. **QR público × visão por unidade:** o QR público precisa ler as OS de um ativo sem login. Para o banco bloquear a leitura de OS de outra unidade, a página pública passa a mostrar só o **histórico de preventivas concluídas**, e não as OS abertas. Decisão pendente (ver a Etapa 1).
