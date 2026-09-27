@@ -345,29 +345,28 @@ export default function App() {
   // Unidades que o usuário enxerga dentro do sistema (null = todas), conforme o perfil de acesso
   const visibleUnits = useMemo(() => userVisibleUnits(userProfile, accessProfiles), [userProfile, accessProfiles]);
 
-  // Gestão (Planejador / Super Admin): OS em tempo real, só das unidades do usuário.
+  // Gestão (Planejador / Super Admin): OS em tempo real, só das unidades do usuário (campo "unit" da OS).
   // Todas as abertas + as fechadas do mês visto; o banco envia apenas o que mudar.
-  // Uma unidade: o banco já filtra. Várias: busca tudo e o filtro abaixo (getFilteredOrders) separa.
-  const ordersScopeSector = visibleUnits && visibleUnits.length === 1 ? visibleUnits[0] : null;
+  const visibleUnitsKey = visibleUnits === null ? '*' : visibleUnits.join('|');
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
-    return subscribeServiceOrders({ sector: ordersScopeSector }, ordersMonth, setOrders);
-  }, [userProfile?.id, userProfile?.perfil, ordersScopeSector, ordersMonth]);
+    return subscribeServiceOrders({ units: visibleUnits }, ordersMonth, setOrders);
+  }, [userProfile?.id, userProfile?.perfil, visibleUnitsKey, ordersMonth]);
 
   // Técnico: OS em tempo real, só as atribuídas a ele (abertas + as que fechou no mês atual)
   useEffect(() => {
     if (!userProfile || userProfile.perfil !== 'Profissional') return;
     const names = technicianCandidates(userProfile.name, userProfile.matricula);
     if (names.length === 0) return;
-    return subscribeServiceOrders({ sector: null, technicianNames: names }, localMonthKey(), setOrders);
+    return subscribeServiceOrders({ units: null, technicianNames: names }, localMonthKey(), setOrders);
   }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula]);
 
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
   const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
-    return subscribePendingSolicitations({ sector: ordersScopeSector }, setPendingSolicitationOrders);
-  }, [userProfile?.id, userProfile?.perfil, ordersScopeSector]);
+    return subscribePendingSolicitations({ units: visibleUnits }, setPendingSolicitationOrders);
+  }, [userProfile?.id, userProfile?.perfil, visibleUnitsKey]);
 
   // Load and refresh lists from DB
   const loadServiceOrders = async (targetUser?: HexonUser | null) => {
@@ -984,7 +983,7 @@ export default function App() {
           {currentTab === 'solicitations' && (
             <SolicitationsView 
               pendingOrders={pendingSolicitationOrders}
-              scopeSector={ordersScopeSector}
+              scopeUnits={visibleUnits}
               onNavigateToOS={handleNavigateToOS}
               onReload={loadServiceOrders}
               userProfile={userProfile}

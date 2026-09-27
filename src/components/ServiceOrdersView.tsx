@@ -170,10 +170,11 @@ export default function ServiceOrdersView({
   const [showBulkRevertModal, setShowBulkRevertModal] = useState<boolean>(false);
   const [bulkRevertScope, setBulkRevertScope] = useState<'period' | 'month'>('period');
 
-  // O mês visto no calendário / lista define quais OS fechadas são carregadas do banco
+  // O mês visto no calendário define quais OS fechadas são carregadas do banco;
+  // na Realização vale sempre o mês atual
   useEffect(() => {
-    onViewedMonthChange?.(localMonthKey(currentCalendarDate));
-  }, [currentCalendarDate.getFullYear(), currentCalendarDate.getMonth()]);
+    onViewedMonthChange?.(subTab === 'planejamento' ? localMonthKey(currentCalendarDate) : localMonthKey());
+  }, [currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), subTab]);
 
   // Ao sair da tela de OS, volta para o mês atual (o Dashboard mostra o mês corrente)
   useEffect(() => {
@@ -327,7 +328,12 @@ export default function ServiceOrdersView({
   ).sort((a, b) => a.localeCompare(b));
 
   // Dynamic filtered orders listings
+  const currentMonthKey = localMonthKey();
   const filteredOrders = orders.filter((os) => {
+    // Realização: abertas sempre; fechadas só as do mês atual (as antigas ficam na Consulta de OS)
+    if ((os.status === 'Concluída' || os.status === 'Não Executada' || os.status === 'Cancelada') && os.closedMonth !== currentMonthKey) {
+      return false;
+    }
     const osComarca = getOrderComarca(os);
     const osPatrimonio = os.assetCode || '';
     const osId = os.id;
@@ -714,33 +720,9 @@ export default function ServiceOrdersView({
         />
       ) : (
         <>
-          {/* MÊS DAS OS FECHADAS: as abertas aparecem sempre; Concluídas e Não Executadas são as deste mês */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-xs">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Concluídas e não executadas do mês
-            </span>
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1))}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                title="Mês anterior"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-black text-slate-800 min-w-[130px] text-center">
-                {monthNames[currentCalendarDate.getMonth()]}/{currentCalendarDate.getFullYear()}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1))}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                title="Próximo mês"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <p className="text-[11px] font-bold text-slate-500 px-1">
+            Aqui aparecem as OS abertas e as concluídas/não executadas deste mês. Para OS de meses anteriores, use a aba Consulta de OS.
+          </p>
 
           {/* SECTION: Smart Search & Filtros Inteligentes (EXTRACTED IN STAGE 3) */}
           <OrdersFilterBar
