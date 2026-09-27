@@ -131,8 +131,8 @@ export function userVisibleUnits(user: HexonUser | null | undefined, profiles: A
   const scope = profile?.unitScope || 'own';
   if (scope === 'all') return null;
   if (scope === 'selected') return profile && profile.units.length > 0 ? [...profile.units] : [];
-  if (!user.gerencia || user.gerencia === 'Todas') return null;
-  return [user.gerencia];
+  if (user.gerencia === 'Todas') return null;
+  return user.gerencia ? [user.gerencia] : []; // mesma regra do banco: sem gerência, nenhuma unidade
 }
 
 // O setor (de uma OS ou ativo) pertence a alguma das unidades visíveis?

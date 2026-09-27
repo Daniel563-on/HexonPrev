@@ -24,6 +24,31 @@ service cloud.firestore {
       return isStaff() && me().perfil == 'Super Administrador';
     }
 
+    // ===== UNIDADES DO USUÁRIO (perfil de acesso) =====
+    // Mesma regra das telas: "Todas" = vê tudo; "Escolhidas" = unidades marcadas no perfil;
+    // "Própria" = gerência do usuário ("Todas" na gerência = vê tudo).
+    function myProfileId() {
+      return me().get('profileId', '');
+    }
+    function myProfilePath() {
+      return /databases/$(database)/documents/profiles/$(myProfileId());
+    }
+    function hasProfile() {
+      return myProfileId() != '' && exists(myProfilePath());
+    }
+    function profileScope() {
+      return hasProfile() ? get(myProfilePath()).data.get('unitScope', 'own') : 'own';
+    }
+    function seesAllUnits() {
+      return isSuperAdmin()
+        || (hasProfile() && get(myProfilePath()).data.get('kind', '') == 'total')
+        || profileScope() == 'all'
+        || (profileScope() == 'own' && me().get('gerencia', '') == 'Todas');
+    }
+    function myUnits() {
+      return profileScope() == 'selected' ? get(myProfilePath()).data.get('units', []) : [me().get('gerencia', '')];
+    }
+
     // 1. ATIVOS — leitura pública (QR Code); gravação só equipe
     match /assets/{assetId} {
       allow read: if true;
@@ -52,11 +77,22 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // 4. ORDENS DE SERVIÇO — leitura pública (QR Code); gravação só equipe
+    // 4. ORDENS DE SERVIÇO — só a equipe, e só das suas unidades (campo "unit" da OS).
+    // O QR público mostra só o histórico (coleção "histories"), não as OS.
+    // OS "Concluída" não se altera; exceções: andamento da solicitação de corretiva (checklist/solicitationStatus)
+    // e a correção de campos de cadastro pelo Super Administrador (unit, craai, comarca, closedMonth).
+    // Excluir: só o Super Administrador, e só OS "Novo".
     match /serviceOrders/{orderId} {
-      allow read: if true;
-      allow create, update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title']);
-      allow delete: if isAdmin();
+      allow get: if isStaff() && (resource == null || seesAllUnits() || resource.data.unit in myUnits());
+      allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow create: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
+        && (seesAllUnits() || request.resource.data.unit in myUnits());
+      allow update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
+        && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
+        && (resource.data.status != 'Concluída'
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'solicitationStatus', 'updatedAt'])
+            || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth'])));
+      allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
     }
 
     // 4b. ASSINATURAS DAS ORDENS — fora da OS para deixar as listas leves; só a equipe vê

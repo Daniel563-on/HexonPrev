@@ -81,10 +81,16 @@ async function findExistingOrderIds(ids: string[]): Promise<Set<string>> {
   const existing = new Set<string>();
   if (!firebaseActive || !dbInstance || ids.length === 0) return existing;
   // Firestore limits "in" queries to 30 values
-  for (let i = 0; i < ids.length; i += 30) {
-    const chunk = ids.slice(i, i + 30);
-    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), where(documentId(), 'in', chunk)));
-    snap.forEach((d) => existing.add(d.id));
+  try {
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), where(documentId(), 'in', chunk)));
+      snap.forEach((d) => existing.add(d.id));
+    }
+  } catch (err) {
+    // Sem permissão para essa busca (perfil limitado a unidades): o registro do disparo (dispatchIndex) já evita duplicar,
+    // e o banco não deixa sobrescrever uma OS concluída.
+    console.warn('Verificação extra de OS existentes não permitida para este perfil:', err);
   }
   return existing;
 }

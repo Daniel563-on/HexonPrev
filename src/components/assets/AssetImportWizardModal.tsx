@@ -513,7 +513,8 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         );
         cancelledOrders = await dbCancelOpenOrdersForAssets(
           pendingImport.toRetire.map((a) => a.id),
-          'Ativo baixado: não constava na planilha de importação da gerência'
+          'Ativo baixado: não constava na planilha de importação da gerência',
+          importTargetSector
         );
       }
       setImportStats((prev) => ({ ...prev, cancelledOrders }));

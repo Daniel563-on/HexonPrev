@@ -227,20 +227,25 @@ const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execu�
 export async function dbGetAddressVistorias(addressId: string): Promise<ServiceOrder[]> {
   if (!firebaseActive || !dbInstance || !addressId) return [];
   const snap = await getDocs(
-    query(collection(dbInstance, 'serviceOrders'), where('addressId', '==', addressId), orderBy('endDate', 'desc'), limit(100))
+    // Vistorias de endereço são da DOM (as regras do banco exigem o filtro de unidade)
+    query(collection(dbInstance, 'serviceOrders'), where('unit', '==', 'DOM'), where('addressId', '==', addressId), orderBy('endDate', 'desc'), limit(100))
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data(), signature: null } as ServiceOrder));
 }
 
 // Cancela as OS abertas dos ativos baixados (busca as OS de 30 ativos por vez).
 // Só altera status e datas; a OS continua guardada para consulta.
-export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: string): Promise<number> {
+export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: string, sector = ''): Promise<number> {
   if (!firebaseActive || !dbInstance || assetIds.length === 0) return 0;
+  // Unidade da importação (as regras do banco exigem o filtro de unidade para quem não vê todas)
+  const unitNames = (await dbGetManagements().catch(() => [])).map((m) => m.name);
+  const unit = sector ? resolveOrderUnit(sector, undefined, unitNames) : '';
+  const unitFilter = unit ? [where('unit', '==', unit)] : [];
   const now = new Date().toISOString();
   const month = localMonthKey();
   let cancelled = 0;
   for (let i = 0; i < assetIds.length; i += 30) {
-    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), where('assetId', 'in', assetIds.slice(i, i + 30))));
+    const snap = await getDocs(query(collection(dbInstance, 'serviceOrders'), ...unitFilter, where('assetId', 'in', assetIds.slice(i, i + 30))));
     const open = snap.docs.filter((d) => OPEN_STATUSES.includes(d.data().status));
     for (let j = 0; j < open.length; j += 400) {
       const batch = writeBatch(dbInstance);
@@ -262,9 +267,9 @@ export interface ServiceOrdersScope {
 // Filtros de cada busca: uma busca por unidade (as regras do banco só liberam a unidade do usuário).
 // null = uma busca sem filtro de unidade (Super Administrador / todas as unidades).
 function scopeFilterSets(scope: ServiceOrdersScope): any[][] {
-  if (scope.technicianNames) return [[where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))]];
-  if (!scope.units) return [[]];
-  return scope.units.map((u) => [where('unit', '==', u)]);
+  const base = scope.technicianNames ? [where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))] : [];
+  if (!scope.units) return [base];
+  return scope.units.map((u) => [...base, where('unit', '==', u)]);
 }
 
 // Variações do nome/matrícula com que a OS pode ter sido atribuída ao técnico (máx. 5)
@@ -715,7 +720,8 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
     } catch (err: any) {
       console.warn('Firestore delete service order failed:', err);
       checkQuotaException(err);
-      return;
+      // Avisa a tela (o banco só permite ao Super Administrador excluir OS "Novo")
+      throw new Error('Exclusão não permitida: só o Super Administrador exclui, e só OS com status "Novo".');
     }
     try {
       // Apaga também a assinatura, se existir (apagar documento inexistente não gera erro)
@@ -1245,7 +1251,8 @@ export async function dbGetTechnicianOrdersPaginated(
  */
 export async function dbGetOrdersForTechnician(
   technicianName: string,
-  matricula?: string
+  matricula?: string,
+  units: string[] | null = null // unidades do técnico (as regras do banco só liberam as dele)
 ): Promise<ServiceOrder[]> {
   const candidates = technicianCandidates(technicianName, matricula);
 
@@ -1256,18 +1263,22 @@ export async function dbGetOrdersForTechnician(
   if (firebaseActive && dbInstance) {
     try {
       // Só as OS abertas do técnico + as que ele fechou no mês atual (não baixa o histórico inteiro)
-      const byTechnician = where('assignedTechnician', 'in', candidates);
-      const [openSnap, closedSnap] = await Promise.all([
-        getDocs(query(collection(dbInstance, 'serviceOrders'), byTechnician, where('status', 'in', OPEN_STATUSES))),
-        getDocs(query(collection(dbInstance, 'serviceOrders'), byTechnician, where('closedMonth', '==', localMonthKey())))
-      ]);
+      const filterSets = scopeFilterSets({ units, technicianNames: candidates });
+      const snaps = await Promise.all(
+        filterSets.map((filters) =>
+          Promise.all([
+            getDocs(query(collection(dbInstance!, 'serviceOrders'), ...filters, where('status', 'in', OPEN_STATUSES))),
+            getDocs(query(collection(dbInstance!, 'serviceOrders'), ...filters, where('closedMonth', '==', localMonthKey())))
+          ])
+        )
+      );
       const byId = new Map<string, ServiceOrder>();
-      closedSnap.forEach((d) => {
+      snaps.forEach(([, closedSnap]) => closedSnap.forEach((d) => {
         if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
-      });
-      openSnap.forEach((d) => {
+      }));
+      snaps.forEach(([openSnap]) => openSnap.forEach((d) => {
         if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
-      });
+      }));
       const list = Array.from(byId.values());
 
       // Update local storage cache for offline protection
