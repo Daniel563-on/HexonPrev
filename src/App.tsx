@@ -471,8 +471,9 @@ export default function App() {
   useEffect(() => {
     if (!userProfile) return;
 
-    const firstAllowedTab = (['dashboard', 'service-orders', 'solicitations', 'assets', 'templates'] as const).find(
-      (tab) => userHasTabPermission(tab)
+    // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
+    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'qr-codes'].find((t) =>
+      userHasTabPermission(t)
     );
 
     // Tela sem permissão não aparece (o menu já esconde): vai direto para a primeira permitida, sem aviso
@@ -480,7 +481,6 @@ export default function App() {
       if (firstAllowedTab) setCurrentTab(firstAllowedTab);
       return;
     }
-
     if (!userHasTabPermission(currentTab) && firstAllowedTab && firstAllowedTab !== currentTab) {
       setCurrentTab(firstAllowedTab);
     }
