@@ -277,7 +277,8 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
         <p className="text-xs text-slate-500">Nenhum cargo cadastrado. Clique em "Atualizar cargos" para gerar os cargos que existem no sistema.</p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* items-start: abrir o histórico de um cargo não estica os outros cartões da mesma linha */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
         {visibleRoles.map((r) => (
           <div key={r.id} className={`border rounded-xl p-4 space-y-2 ${card} ${!r.rateFrom ? 'border-amber-300' : ''}`}>
             <div className="flex items-start justify-between gap-2">
