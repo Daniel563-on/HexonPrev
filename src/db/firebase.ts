@@ -18,6 +18,7 @@ export * from './addresses';
 export * from './monthlySummaries';
 export * from './profiles';
 export * from './workforce';
+export * from './materials';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';
@@ -38,6 +39,7 @@ import { clearQrTemplatesCache } from './qrTemplates';
 import { configurePreventiveEngineDeps } from './preventiveEngine';
 import { clearProfilesCache } from './profiles';
 import { clearWorkforceCache } from './workforce';
+import { clearMaterialsCache } from './materials';
 
 /**
  * Invalidate all domain-specific caches and pending promises across the system
@@ -55,6 +57,7 @@ export function clearAllCaches(): void {
   clearQrTemplatesCache();
   clearProfilesCache();
   clearWorkforceCache();
+  clearMaterialsCache();
 }
 
 /**

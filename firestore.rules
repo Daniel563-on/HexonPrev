@@ -45,6 +45,11 @@ service cloud.firestore {
         || profileScope() == 'all'
         || (profileScope() == 'own' && me().get('gerencia', '') == 'Todas');
     }
+    // Permissão marcada no perfil de acesso (Super Administrador tem todas)
+    function hasPermission(permissionId) {
+      return isSuperAdmin()
+        || (hasProfile() && get(myProfilePath()).data.get('permissions', {}).get(permissionId, false) == true);
+    }
     function myUnits() {
       return profileScope() == 'selected' ? get(myProfilePath()).data.get('units', []) : [me().get('gerencia', '')];
     }
@@ -143,6 +148,17 @@ service cloud.firestore {
     // 4i. CARGOS E VALOR DA HORA — só o Super Administrador
     match /jobRoles/{roleId} {
       allow read, write: if isSuperAdmin();
+    }
+
+    // 4j. MATERIAIS — lista de cada gerência (sem estoque).
+    // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência dele, para informar o uso na OS).
+    // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências).
+    match /materials/{materialId} {
+      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
+        && (hasPermission('view_materials') || me().perfil == 'Profissional');
+      allow write: if isStaff() && hasPermission('manage_materials')
+        && (seesAllUnits()
+            || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
     }
 
     // 5. MODELOS DE CHECKLIST

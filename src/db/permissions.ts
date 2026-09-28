@@ -44,6 +44,20 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Abas',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
+  view_materials: {
+    id: 'view_materials',
+    name: 'Visualizar Materiais',
+    description: 'Acesso à aba Materiais (lista de materiais das gerências do perfil).',
+    category: 'Abas',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  manage_materials: {
+    id: 'manage_materials',
+    name: 'Cadastrar e Importar Materiais',
+    description: 'Cadastrar, editar, alterar o valor e importar a planilha de materiais das gerências do perfil.',
+    category: 'Ações',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   create_asset: {
     id: 'create_asset',
     name: 'Adicionar e Editar Ativos',

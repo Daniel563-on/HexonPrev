@@ -298,6 +298,28 @@ export interface JobRole {
   updatedAt: string;
 }
 
+// MATERIAL: cada gerência tem a sua lista. Sem controle de estoque: a OS só registra o que foi usado.
+// Valor R$ 0,00 = indisponível para o técnico (ex.: saiu da planilha); fica na lista para o histórico.
+export interface MaterialCost {
+  value: number;         // R$ por unidade de medida
+  from: string;          // vigência: "AAAA-MM-DD"
+  setAt: string;
+  setBy: string;
+  reason?: string;       // ex.: "saiu da planilha"
+}
+export interface Material {
+  id: string;            // "mat_" + gerência + código
+  unit: string;          // gerência dona da lista (GMMR, GMEE, GMC, DOM...)
+  code: string;
+  description: string;
+  measureUnit: string;   // UN, M, KG, L, CX...
+  cost: number;          // valor atual (R$ 0,00 = técnico não pode usar)
+  costFrom: string;
+  history: MaterialCost[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // PERFIL DE ACESSO (criado e editado pelo Super Administrador; o nome é livre)
 // kind = tipo básico de uso, que o restante do sistema entende:
 //   'total'        -> acesso total (administração)
