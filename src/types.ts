@@ -293,6 +293,7 @@ export interface JobRole {
   hourlyRate: number;    // valor atual (R$ 0,00 até o Super Administrador preencher)
   rateFrom: string;      // vigência do valor atual ("" = nunca preenchido)
   history: JobRoleRate[];
+  archived?: boolean;    // ninguém tem mais este cargo: some das listas (valor e histórico ficam guardados)
   createdAt: string;
   updatedAt: string;
 }

@@ -41,6 +41,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [profiles, setProfiles] = useState<AccessProfile[]>([]);
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
+  const activeJobRoles = jobRoles.filter((r) => !r.archived); // cargos que existem hoje no sistema
+  const [customCargo, setCustomCargo] = useState(false); // digitando um cargo novo no cadastro do usuário
   const [saveNotice, setSaveNotice] = useState<string | null>(null); // aviso após salvar (a janela de alerta é bloqueada no preview)
 
   const [isLoading, setIsLoading] = useState(false);
@@ -131,6 +133,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       status: 'Ativo',
       senha: '123456'
     });
+    setCustomCargo(false);
     setIsUserModalOpen(true);
   };
 
@@ -149,6 +152,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       // If password is encrypted hash, keep empty in form unless admin enters a new one
       senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || '')
     });
+    setCustomCargo(false);
     setIsUserModalOpen(true);
   };
 
@@ -892,33 +896,56 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 {/* Cargo */}
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cargo / Função</label>
-                  {jobRoles.length > 0 ? (
-                    // Lista de cargos cadastrados (aba Efetivo > Cargos); mantém o cargo atual se ainda não estiver na lista
+                  {activeJobRoles.length > 0 && !customCargo ? (
+                    // Só os cargos que existem hoje no sistema (aba Efetivo > Cargos); "Outro" permite digitar um cargo novo
                     <select
                       value={userForm.cargo}
-                      onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
+                      onChange={(e) => {
+                        if (e.target.value === '__outro__') {
+                          setCustomCargo(true);
+                          setUserForm({ ...userForm, cargo: '' });
+                        } else {
+                          setUserForm({ ...userForm, cargo: e.target.value });
+                        }
+                      }}
                       className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
                         darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
                       }`}
                     >
                       <option value="">Selecione o cargo...</option>
-                      {userForm.cargo && !jobRoles.some((r) => r.name === userForm.cargo) && (
-                        <option value={userForm.cargo}>{userForm.cargo} (não cadastrado)</option>
+                      {userForm.cargo && !activeJobRoles.some((r) => r.name === userForm.cargo) && (
+                        <option value={userForm.cargo}>{userForm.cargo}</option>
                       )}
-                      {jobRoles.map((r) => (
+                      {activeJobRoles.map((r) => (
                         <option key={r.id} value={r.name}>{r.name}</option>
                       ))}
+                      <option value="__outro__">+ Outro cargo (digitar)</option>
                     </select>
                   ) : (
-                    <input
-                      type="text"
-                      placeholder="Ex: Técnico"
-                      value={userForm.cargo}
-                      onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
-                      className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                        darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
-                      }`}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Ex: Técnico"
+                        value={userForm.cargo}
+                        onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
+                        className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
+                          darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                        }`}
+                      />
+                      {activeJobRoles.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setCustomCargo(false); setUserForm({ ...userForm, cargo: '' }); }}
+                          className="px-2 text-[10px] font-bold text-slate-500 border border-slate-200 rounded-lg cursor-pointer shrink-0"
+                          title="Voltar para a lista de cargos"
+                        >
+                          Lista
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {customCargo && (
+                    <p className="text-[10px] text-slate-500 mt-1">Cargo novo: depois vá em Efetivo &gt; Cargos, clique em "Atualizar cargos" e informe o valor da hora.</p>
                   )}
                 </div>
 

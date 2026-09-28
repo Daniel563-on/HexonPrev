@@ -173,14 +173,35 @@ export async function dbGetJobRoles(force = false): Promise<JobRole[]> {
   }
 }
 
-// "Atualizar cargos": cria os cargos que existem no efetivo/usuários e ainda não estão cadastrados (com R$ 0,00)
-export async function dbSyncJobRoles(cargoNames: string[]): Promise<string[]> {
+// "Atualizar cargos": deixa a lista igual aos cargos que existem hoje no efetivo e nos usuários.
+// - cargo novo: é criado com R$ 0,00;
+// - cargo que ninguém tem mais: é arquivado (some das listas; valor e histórico ficam guardados);
+// - cargo arquivado que voltou a existir: volta com o valor que tinha.
+export interface JobRoleSyncResult {
+  created: string[];
+  archived: string[];
+  restored: string[];
+}
+
+export async function dbSyncJobRoles(cargoNames: string[]): Promise<JobRoleSyncResult> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const current = await dbGetJobRoles(true);
   const known = new Set(current.map((r) => cargoKey(r.name)));
+  const inUse = new Set(cargoNames.map(cargoKey).filter(Boolean));
   const now = new Date().toISOString();
-  const created: string[] = [];
+  const result: JobRoleSyncResult = { created: [], archived: [], restored: [] };
+  const created = result.created;
   const batch = writeBatch(dbInstance);
+  for (const role of current) {
+    const used = inUse.has(cargoKey(role.name));
+    if (!used && !role.archived) {
+      batch.set(doc(dbInstance, 'jobRoles', role.id), { ...role, archived: true, updatedAt: now });
+      result.archived.push(role.name);
+    } else if (used && role.archived) {
+      batch.set(doc(dbInstance, 'jobRoles', role.id), { ...role, archived: false, updatedAt: now });
+      result.restored.push(role.name);
+    }
+  }
   for (const name of cargoNames) {
     const key = cargoKey(name);
     if (!key || known.has(key)) continue;
@@ -197,9 +218,9 @@ export async function dbSyncJobRoles(cargoNames: string[]): Promise<string[]> {
     batch.set(doc(dbInstance, 'jobRoles', role.id), role);
     created.push(role.name);
   }
-  if (created.length > 0) await batch.commit();
+  if (created.length + result.archived.length + result.restored.length > 0) await batch.commit();
   cacheJobRoles = null;
-  return created;
+  return result;
 }
 
 // Novo valor da hora do cargo, a partir de uma data (o anterior fica no histórico)
