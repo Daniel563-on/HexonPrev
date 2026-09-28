@@ -114,6 +114,13 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Ações',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
+  delete_templates: {
+    id: 'delete_templates',
+    name: 'Excluir Modelos',
+    description: 'Excluir modelos de preventiva e de vistoria.',
+    category: 'Ações',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   manage_solicitations: {
     id: 'manage_solicitations',
     name: 'Operar Chamados (Abrir/Cancelar)',

@@ -459,6 +459,7 @@ export default function App() {
       if (actionId === 'delete_asset' || actionId === 'delete_order') {
         return false; // strictly Super Admin
       }
+      if (actionId === 'delete_templates') return false; // padrão: só Super Administrador
       if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'create_order' || actionId === 'manage_templates') {
         return userProfile.perfil === 'Administrador';
       }
@@ -989,6 +990,7 @@ export default function App() {
               userProfile={userProfile!}
               visibleUnits={visibleUnits}
               canManage={userHasActionPermission('manage_templates')}
+              canDelete={userHasActionPermission('delete_templates')}
             />
           )}
 
