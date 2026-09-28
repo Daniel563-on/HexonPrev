@@ -358,8 +358,8 @@ export default function App() {
     if (!userProfile || userProfile.perfil !== 'Profissional') return;
     const names = technicianCandidates(userProfile.name, userProfile.matricula);
     if (names.length === 0) return;
-    return subscribeServiceOrders({ units: null, technicianNames: names }, localMonthKey(), setOrders);
-  }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula]);
+    return subscribeServiceOrders({ units: visibleUnits, technicianNames: names }, localMonthKey(), setOrders);
+  }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula, visibleUnitsKey]);
 
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
   const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
@@ -375,7 +375,8 @@ export default function App() {
       // A atualização de prazos (Atrasada / Não Executada) é gravada por perfis de gestão.
       // Técnicos não executam essa rotina: evita 175 aparelhos repetindo o mesmo trabalho;
       // a tela deles já exibe o status recalculado.
-      if (activeProfile && activeProfile.perfil !== 'Profissional') {
+      // Só quem vê todas as unidades (a Cloud Function diária também faz isso no servidor)
+      if (activeProfile && activeProfile.perfil !== 'Profissional' && visibleUnits === null) {
         await dbCheckAndExpirePlanningOrders().catch(() => {});
       }
 
@@ -470,19 +471,20 @@ export default function App() {
   useEffect(() => {
     if (!userProfile) return;
 
-    // 1. Strict Security Guard: only Super Administrador can access 'user-control'
+    const firstAllowedTab = (['dashboard', 'service-orders', 'solicitations', 'assets', 'templates'] as const).find(
+      (tab) => userHasTabPermission(tab)
+    );
+
+    // Tela sem permissão não aparece (o menu já esconde): vai direto para a primeira permitida, sem aviso
     if (currentTab === 'user-control' && userProfile.perfil !== 'Super Administrador') {
-      setCurrentTab('dashboard');
-      alert('Acesso Restrito: Somente o Super Administrador corporativo conta com privilégios para acessar a central de controle de acessos.');
+      if (firstAllowedTab) setCurrentTab(firstAllowedTab);
       return;
     }
 
-    // 2. Dynamic permission matrix check for other tabs
-    if (currentTab !== 'dashboard' && !userHasTabPermission(currentTab)) {
-      setCurrentTab('dashboard');
-      alert('Acesso Restrito: Seu perfil de acesso atual não possui as permissões necessárias para visualizar este módulo.');
+    if (!userHasTabPermission(currentTab) && firstAllowedTab && firstAllowedTab !== currentTab) {
+      setCurrentTab(firstAllowedTab);
     }
-  }, [currentTab, userProfile, permissionsMatrix]);
+  }, [currentTab, userProfile, permissionsMatrix, accessProfiles]);
 
   // Bootstrapping default sequence on Application load
   useEffect(() => {
@@ -861,6 +863,7 @@ export default function App() {
         assets={assets}
         templates={templates}
         userProfile={userProfile}
+        visibleUnits={visibleUnits}
         onReloadOrders={loadServiceOrders}
         darkMode={darkMode}
         onToggleDarkMode={handleToggleDarkMode}

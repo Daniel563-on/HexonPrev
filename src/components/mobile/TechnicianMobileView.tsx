@@ -42,6 +42,7 @@ export interface TechnicianMobileViewProps {
   assets: Asset[];
   templates: any[];
   userProfile: HexonUser;
+  visibleUnits?: string[] | null; // unidades do técnico (null = todas)
   onReloadOrders: () => void;
   darkMode: boolean;
   onToggleDarkMode: () => void;
@@ -62,6 +63,7 @@ export default function TechnicianMobileView({
   assets,
   templates,
   userProfile,
+  visibleUnits = null,
   onReloadOrders,
   darkMode,
   onToggleDarkMode,
@@ -93,7 +95,7 @@ export default function TechnicianMobileView({
   const handleRefreshTechnicianOrders = async () => {
     setIsRefreshingOrders(true);
     try {
-      const freshOrders = await dbGetOrdersForTechnician(userProfile.name, userProfile.matricula);
+      const freshOrders = await dbGetOrdersForTechnician(userProfile.name, userProfile.matricula, visibleUnits);
       if (freshOrders && freshOrders.length > 0) {
         setSourceOrders(freshOrders);
       }

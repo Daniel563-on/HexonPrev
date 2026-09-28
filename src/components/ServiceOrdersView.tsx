@@ -809,7 +809,7 @@ export default function ServiceOrdersView({
 
       <DeleteOrderModal
         isOpen={showBulkDeleteModal}
-        orderIds={selectedOrderIds}
+        orderIds={selectedOrderIds.filter((id) => orders.find((o) => o.id === id)?.status === 'Novo')}
         onClose={() => setShowBulkDeleteModal(false)}
         onSuccess={() => {
           setSelectedOrderIds([]);

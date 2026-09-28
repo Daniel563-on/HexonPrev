@@ -96,7 +96,8 @@ export default function OrdersCardGrid({
               >
                 Limpar Seleção
               </button>
-              {userProfile?.perfil !== 'Profissional' && (
+              {/* Excluir: só o Super Administrador, e só OS "Novo" (as demais selecionadas são ignoradas) */}
+              {userProfile?.perfil === 'Super Administrador' && (
                 <button
                   type="button"
                   onClick={onOpenBulkDeleteModal}
@@ -292,7 +293,7 @@ export default function OrdersCardGrid({
                         </button>
                       );
                     })()}
-                    {userProfile?.perfil !== 'Profissional' && (
+                    {userProfile?.perfil === 'Super Administrador' && os.status === 'Novo' && (
                       <button
                         onClick={() => onDeleteOrder(os.id)}
                         className="inline-flex items-center justify-center p-1.5 rounded-md border border-rose-100 bg-rose-50 hover:bg-rose-150 hover:border-rose-300 text-rose-600 transition-all duration-155 active:scale-95 cursor-pointer shadow-3xs"
