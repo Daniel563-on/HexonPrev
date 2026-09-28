@@ -1,4 +1,4 @@
-import { arrayRemove, collection, deleteField, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayRemove, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
@@ -24,6 +24,22 @@ export async function dbSetOvernightRate(current: OvernightRateSetting | null, v
   const history = [...(current?.history || []), entry].sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt));
   const latest = history[history.length - 1];
   await setDoc(doc(dbInstance, 'costSettings', 'overnight'), { value: latest.value, from: latest.from, history });
+}
+
+// Exclui um lançamento errado do histórico (Super Administrador). O valor atual passa a ser o último que sobrar;
+// se não sobrar nenhum, o valor do pernoite fica "não informado".
+export async function dbRemoveOvernightRateEntry(current: OvernightRateSetting, entry: OvernightRateSetting['history'][number]): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const history = current.history
+    .filter((h) => !(h.setAt === entry.setAt && h.from === entry.from && h.value === entry.value))
+    .sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt));
+  const ref = doc(dbInstance, 'costSettings', 'overnight');
+  if (history.length === 0) {
+    await deleteDoc(ref);
+    return;
+  }
+  const latest = history[history.length - 1];
+  await setDoc(ref, { value: latest.value, from: latest.from, history });
 }
 
 // Valor vigente numa data ("AAAA-MM-DD"): o último que começou até essa data

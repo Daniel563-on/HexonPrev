@@ -238,6 +238,23 @@ export async function dbSetJobRoleRate(role: JobRole, value: number, from: strin
   cacheJobRoles = null;
 }
 
+// Exclui um lançamento errado do histórico do cargo (Super Administrador).
+// O valor atual passa a ser o último lançamento que sobrar; sem nenhum, o cargo volta a R$ 0,00.
+export async function dbRemoveJobRoleRateEntry(role: JobRole, entry: JobRole['history'][number]): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const history = (role.history || []).filter((h) => !(h.setAt === entry.setAt && h.from === entry.from && h.value === entry.value));
+  const latest = history[history.length - 1];
+  const updated: JobRole = {
+    ...role,
+    hourlyRate: latest ? latest.value : 0,
+    rateFrom: latest ? latest.from : '',
+    history,
+    updatedAt: new Date().toISOString()
+  };
+  await setDoc(doc(dbInstance, 'jobRoles', role.id), cleanUndefined(updated));
+  cacheJobRoles = null;
+}
+
 export async function dbDeleteJobRole(roleId: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await deleteDoc(doc(dbInstance, 'jobRoles', roleId));
