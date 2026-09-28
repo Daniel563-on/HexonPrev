@@ -329,7 +329,7 @@ export default function ServiceOrdersView({
 
   // Dynamic filtered orders listings
   const currentMonthKey = localMonthKey();
-  const filteredOrders = orders.filter((os) => {
+  const ordersBeforeStatus = orders.filter((os) => {
     // Realização: abertas sempre; fechadas só as do mês atual (as antigas ficam na Consulta de OS)
     if ((os.status === 'Concluída' || os.status === 'Não Executada' || os.status === 'Cancelada') && os.closedMonth !== currentMonthKey) {
       return false;
@@ -360,14 +360,18 @@ export default function ServiceOrdersView({
     // 3. Patrimônio dropdown filter
     const matchesPatrimonio = selectedPatrimonio === 'Todos' || osPatrimonio.toLowerCase().trim() === selectedPatrimonio.toLowerCase().trim();
 
-    // 4. Status filter
-    const matchesStatus = selectedStatus === 'Todos' || os.status === selectedStatus;
-
-    // 5. Execution Date filter
+    // 4. Execution Date filter
     const matchesExecutionDate = !selectedExecutionDate || os.scheduledDate === selectedExecutionDate;
 
-    return matchesSmart && matchesComarca && matchesPatrimonio && matchesStatus && matchesExecutionDate;
+    return matchesSmart && matchesComarca && matchesPatrimonio && matchesExecutionDate;
   });
+
+  // Quantidade de cada status (respeitando os outros filtros) e o filtro de status
+  const statusCounts = ordersBeforeStatus.reduce<Record<string, number>>((acc, os) => {
+    acc[os.status] = (acc[os.status] || 0) + 1;
+    return acc;
+  }, {});
+  const filteredOrders = selectedStatus === 'Todos' ? ordersBeforeStatus : ordersBeforeStatus.filter((os) => os.status === selectedStatus);
 
   // Pagination calculation variables for 50 items per page
   const itemsPerPage = 50;
@@ -722,10 +726,6 @@ export default function ServiceOrdersView({
         />
       ) : (
         <>
-          <p className="text-[11px] font-bold text-slate-500 px-1">
-            Aqui aparecem as OS abertas e as concluídas/não executadas deste mês. Para OS de meses anteriores, use a aba Consulta de OS.
-          </p>
-
           {/* SECTION: Smart Search & Filtros Inteligentes (EXTRACTED IN STAGE 3) */}
           <OrdersFilterBar
             smartSearch={smartSearch}
@@ -740,6 +740,8 @@ export default function ServiceOrdersView({
             setSelectedExecutionDate={setSelectedExecutionDate}
             selectedStatus={selectedStatus}
             setSelectedStatus={setSelectedStatus}
+            statusCounts={statusCounts}
+            totalCount={ordersBeforeStatus.length}
             onOpenScanSimulator={() => setShowPreventiveScanSimulator(true)}
           />
 

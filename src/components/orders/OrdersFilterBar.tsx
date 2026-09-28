@@ -14,8 +14,25 @@ export interface OrdersFilterBarProps {
   setSelectedExecutionDate: (val: string) => void;
   selectedStatus: string;
   setSelectedStatus: (val: string) => void;
+  statusCounts: Record<string, number>; // quantidade de OS em cada status (com os outros filtros aplicados)
+  totalCount: number;
   onOpenScanSimulator: () => void;
 }
+
+// Status na ordem do andamento da OS, com a cor de cada um
+const STATUS_CHIPS: { status: string; dot: string }[] = [
+  { status: 'Novo', dot: 'bg-sky-500' },
+  { status: 'Planejada', dot: 'bg-indigo-500' },
+  { status: 'Em Execução', dot: 'bg-blue-600' },
+  { status: 'Atrasada', dot: 'bg-amber-500' },
+  { status: 'Concluída', dot: 'bg-emerald-500' },
+  { status: 'Não Executada', dot: 'bg-rose-500' },
+  { status: 'Cancelada', dot: 'bg-slate-400' }
+];
+
+const labelClass = 'block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5';
+const fieldClass =
+  'w-full h-10 text-xs px-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800';
 
 export default function OrdersFilterBar({
   smartSearch,
@@ -30,15 +47,15 @@ export default function OrdersFilterBar({
   setSelectedExecutionDate,
   selectedStatus,
   setSelectedStatus,
+  statusCounts,
+  totalCount,
   onOpenScanSimulator
 }: OrdersFilterBarProps) {
   const getTodayStr = () => {
     const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
+  const todayStr = getTodayStr();
 
   const hasActiveFilters =
     smartSearch ||
@@ -55,64 +72,74 @@ export default function OrdersFilterBar({
     setSelectedExecutionDate('');
   };
 
-  return (
-    <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-      <div className="flex items-center gap-2 mb-4">
-        <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
-        <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-          Painel de Filtros & Busca Inteligente
-        </h2>
-      </div>
+  // Mostra os status que têm OS (e o escolhido, mesmo sem OS)
+  const chips = STATUS_CHIPS.filter((c) => (statusCounts[c.status] || 0) > 0 || selectedStatus === c.status);
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Smart Search */}
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
-            Busca Inteligente (ID, Título, Técnico)
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-grow">
-              <input
-                type="text"
-                value={smartSearch}
-                onChange={(e) => setSmartSearch(e.target.value)}
-                placeholder="Pesquisar ID, Técnico, Titulo..."
-                className="w-full text-xs py-2 pl-8 pr-8 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-800"
-              />
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-3" />
-              {smartSearch && (
-                <button
-                  onClick={() => setSmartSearch('')}
-                  className="absolute right-2 top-2.5 p-0.5 text-gray-400 hover:text-rose-600 rounded cursor-pointer"
-                  title="Limpar pesquisa"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={onOpenScanSimulator}
-              className="px-3 bg-indigo-50 border border-indigo-200 text-[#3525cd] hover:bg-indigo-100 rounded-lg text-xs font-black flex items-center gap-1 hover:shadow-2xs cursor-pointer shrink-0 transition-colors"
-              title="Escanear QR Ativo para Localizar Preventiva"
-            >
-              <QrCode className="w-4 h-4" />
-              <span className="hidden sm:inline">Escanear Ativo</span>
-            </button>
+  return (
+    <section className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 space-y-4">
+      {/* Título */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex items-start gap-2">
+          <SlidersHorizontal className="w-4 h-4 text-indigo-600 mt-0.5" />
+          <div>
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider">Filtros</h2>
+            <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
+              OS abertas e as concluídas/não executadas deste mês. Meses anteriores: aba Consulta de OS.
+            </p>
           </div>
         </div>
-
-        {/* Comarca selector */}
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
-            Comarca
-          </label>
-          <select
-            value={selectedComarca}
-            onChange={(e) => setSelectedComarca(e.target.value)}
-            className="w-full text-xs py-2 px-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800"
+        {hasActiveFilters && (
+          <button
+            onClick={handleClearFilters}
+            className="self-start sm:self-auto text-[10px] font-black text-rose-600 hover:text-rose-800 uppercase tracking-wider flex items-center gap-1 cursor-pointer"
           >
-            <option value="Todas">Todas as Comarcas</option>
+            <X className="w-3.5 h-3.5" />
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
+      {/* Busca */}
+      <div>
+        <label className={labelClass}>Buscar (nº da OS, título, técnico, patrimônio)</label>
+        <div className="flex gap-2">
+          <div className="relative flex-grow">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+            <input
+              type="text"
+              value={smartSearch}
+              onChange={(e) => setSmartSearch(e.target.value)}
+              placeholder="Digite para buscar..."
+              className={`${fieldClass} pl-9 pr-9`}
+            />
+            {smartSearch && (
+              <button
+                onClick={() => setSmartSearch('')}
+                className="absolute right-2.5 top-2.5 p-0.5 text-gray-400 hover:text-rose-600 rounded cursor-pointer"
+                title="Limpar busca"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onOpenScanSimulator}
+            className="h-10 px-4 bg-indigo-50 border border-indigo-200 text-[#3525cd] hover:bg-indigo-100 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+            title="Escanear o QR do ativo para localizar a preventiva"
+          >
+            <QrCode className="w-4 h-4" />
+            <span className="hidden sm:inline">Escanear ativo</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Comarca, patrimônio e dia */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className={labelClass}>Comarca</label>
+          <select value={selectedComarca} onChange={(e) => setSelectedComarca(e.target.value)} className={fieldClass}>
+            <option value="Todas">Todas as comarcas</option>
             {comarcasList.map((comarca) => (
               <option key={comarca} value={comarca}>
                 {comarca}
@@ -121,17 +148,10 @@ export default function OrdersFilterBar({
           </select>
         </div>
 
-        {/* Patrimônio selector */}
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
-            Patrimônio (Ativo)
-          </label>
-          <select
-            value={selectedPatrimonio}
-            onChange={(e) => setSelectedPatrimonio(e.target.value)}
-            className="w-full text-xs py-2 px-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800"
-          >
-            <option value="Todos">Todos os Patrimônios</option>
+          <label className={labelClass}>Patrimônio (ativo)</label>
+          <select value={selectedPatrimonio} onChange={(e) => setSelectedPatrimonio(e.target.value)} className={fieldClass}>
+            <option value="Todos">Todos os patrimônios</option>
             {patrimoniosList.map((pat) => (
               <option key={pat} value={pat}>
                 {pat}
@@ -140,88 +160,69 @@ export default function OrdersFilterBar({
           </select>
         </div>
 
-        {/* Filter by Execution Date */}
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center justify-between">
-            <span>Dia Programado</span>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedExecutionDate(getTodayStr())}
-                className={`text-[8.5px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                  selectedExecutionDate === getTodayStr()
-                    ? 'bg-indigo-650 text-white font-extrabold'
-                    : 'bg-gray-150 text-slate-600 hover:bg-gray-200'
-                }`}
-              >
-                Hoje
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedExecutionDate('')}
-                className={`text-[8.5px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                  !selectedExecutionDate
-                    ? 'bg-indigo-610 text-white font-extrabold'
-                    : 'bg-gray-150 text-slate-600 hover:bg-gray-200'
-                }`}
-              >
-                Ver Todos
-              </button>
-            </div>
-          </label>
-          <div className="relative">
+          <label className={labelClass}>Dia programado</label>
+          <div className="flex gap-2">
             <input
               type="date"
               value={selectedExecutionDate}
               onChange={(e) => setSelectedExecutionDate(e.target.value)}
-              className="w-full text-xs py-1.5 px-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-slate-800"
+              className={fieldClass}
             />
-            {selectedExecutionDate && (
-              <button
-                onClick={() => setSelectedExecutionDate('')}
-                className="absolute right-7 top-2 text-gray-400 hover:text-rose-600 cursor-pointer"
-                title="Listar sem data"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setSelectedExecutionDate(selectedExecutionDate === todayStr ? '' : todayStr)}
+              className={`h-10 px-3 rounded-lg border text-[11px] font-black shrink-0 cursor-pointer transition-colors ${
+                selectedExecutionDate === todayStr
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-white border-gray-200 text-slate-600 hover:bg-gray-50'
+              }`}
+              title={selectedExecutionDate === todayStr ? 'Mostrar todos os dias' : 'Só as programadas para hoje'}
+            >
+              Hoje
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Status filtering row & quick clear */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 mt-4 border-t border-gray-100">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Status da OS:</span>
-          <div className="flex flex-wrap gap-1.5">
-            {['Todos', 'Planejada', 'Atrasada', 'Em Execução', 'Concluída', 'Não Executada'].map((sts) => {
-              const isActive = selectedStatus === sts;
-              return (
-                <button
-                  key={sts}
-                  onClick={() => setSelectedStatus(sts)}
-                  className={`px-3 py-1 text-[10px] font-extrabold rounded-lg border transition-all duration-150 cursor-pointer ${
-                    isActive
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm font-black'
-                      : 'bg-white border-gray-200 text-slate-600 hover:bg-gray-55'
-                  }`}
-                >
-                  {sts}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {hasActiveFilters && (
+      {/* Status */}
+      <div className="pt-4 border-t border-gray-100">
+        <span className={labelClass}>Status da OS</span>
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={handleClearFilters}
-            className="text-[10px] font-black text-rose-600 hover:text-rose-800 uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+            onClick={() => setSelectedStatus('Todos')}
+            className={`h-8 px-3 text-[11px] font-black rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${
+              selectedStatus === 'Todos'
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                : 'bg-white border-gray-200 text-slate-600 hover:bg-gray-50'
+            }`}
           >
-            <X className="w-3.5 h-3.5" />
-            Limpar Filtros Ativos
+            Todos
+            <span className={`px-1.5 rounded-md text-[10px] ${selectedStatus === 'Todos' ? 'bg-white/20' : 'bg-gray-100 text-slate-500'}`}>
+              {totalCount}
+            </span>
           </button>
-        )}
+          {chips.map(({ status, dot }) => {
+            const isActive = selectedStatus === status;
+            return (
+              <button
+                key={status}
+                onClick={() => setSelectedStatus(isActive ? 'Todos' : status)}
+                className={`h-8 px-3 text-[11px] font-black rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${
+                  isActive
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                    : 'bg-white border-gray-200 text-slate-600 hover:bg-gray-50'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white' : dot}`} />
+                {status}
+                <span className={`px-1.5 rounded-md text-[10px] ${isActive ? 'bg-white/20' : 'bg-gray-100 text-slate-500'}`}>
+                  {statusCounts[status] || 0}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
