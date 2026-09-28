@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
 import { Material } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { localTodayStr } from './serviceOrders';
@@ -40,6 +40,14 @@ export async function dbGetMaterials(units: string[] | null, force = false): Pro
 export async function dbSaveMaterial(material: Material): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await setDoc(doc(dbInstance, 'materials', material.id), cleanUndefined({ ...material, updatedAt: new Date().toISOString() }));
+  cacheMaterials = null;
+}
+
+// Exclusão manual (só Super Administrador, para corrigir erro de cadastro).
+// As OS guardam uma cópia do material usado (código, descrição e valor), então o histórico delas não se perde.
+export async function dbDeleteMaterial(materialId: string): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  await deleteDoc(doc(dbInstance, 'materials', materialId));
   cacheMaterials = null;
 }
 
