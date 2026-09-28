@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AccessProfile, HexonUser, JobRole, Management, WorkforcePerson } from '../../types';
 import {
   cargoKey,
-  dbDeleteWorkforcePerson,
   dbGetJobRoles,
   dbGetWorkforce,
-  dbSetWorkforceStatus,
   resolveUserProfile
 } from '../../db/firebase';
 import WorkforceImportModal from './WorkforceImportModal';
@@ -13,6 +11,7 @@ import JobRolesPanel from './JobRolesPanel';
 
 // EFETIVO (Super Administrador): todas as pessoas que podem participar de uma preventiva.
 // "Com login" = usuários do sistema; "Só efetivo" = importados por planilha, sem acesso ao sistema.
+// Os importados são mantidos só pela planilha: quem muda é atualizado e quem sai fica inativo.
 
 interface Props {
   users: HexonUser[];
@@ -31,7 +30,6 @@ interface Row {
   status: 'Ativo' | 'Inativo';
   hasLogin: boolean;
   profileName?: string;
-  person?: WorkforcePerson;
 }
 
 export default function WorkforceTab({ users, managements, profiles, currentUserName, darkMode }: Props) {
@@ -44,8 +42,6 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
   const [cargo, setCargo] = useState('Todos');
   const [origin, setOrigin] = useState<'Todos' | 'login' | 'importado'>('Todos');
   const [status, setStatus] = useState<'Ativo' | 'Inativo' | 'Todos'>('Ativo');
-  const [toDelete, setToDelete] = useState<WorkforcePerson | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = async (force = true) => {
     const [p, r] = await Promise.all([dbGetWorkforce(force), dbGetJobRoles(force)]);
@@ -78,8 +74,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
         cargo: p.cargo,
         unit: p.unit,
         status: p.status,
-        hasLogin: false,
-        person: p
+        hasLogin: false
       }))
     ],
     [users, people, profiles]
@@ -115,32 +110,8 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Coluna "Ações" só quando há importados na lista (os usuários com login são alterados em Colaboradores)
-  const showActions = filtered.some((r) => !r.hasLogin);
   const activeTotal = rows.filter((r) => r.status === 'Ativo').length;
   const activeLogin = rows.filter((r) => r.status === 'Ativo' && r.hasLogin).length;
-
-  const toggleStatus = async (p: WorkforcePerson) => {
-    setActionError(null);
-    try {
-      await dbSetWorkforceStatus(p, p.status === 'Ativo' ? 'Inativo' : 'Ativo');
-      await load();
-    } catch (err: any) {
-      setActionError(err?.message || String(err));
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!toDelete) return;
-    setActionError(null);
-    try {
-      await dbDeleteWorkforcePerson(toDelete.id);
-      setToDelete(null);
-      await load();
-    } catch (err: any) {
-      setActionError(err?.message || String(err));
-    }
-  };
 
   const card = darkMode ? 'bg-[#0a1122]/40 border-slate-800' : 'bg-white border-slate-200';
   const strong = darkMode ? 'text-slate-200' : 'text-slate-800';
@@ -215,8 +186,6 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
             </select>
           </div>
 
-          {actionError && <p className="text-xs font-bold text-rose-600">{actionError}</p>}
-
           {/* Lista */}
           <div className={`border rounded-xl overflow-x-auto ${card}`}>
             <table className="w-full text-left text-xs">
@@ -227,7 +196,6 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                   <th className="p-3">Gerência</th>
                   <th className="p-3">Origem</th>
                   <th className="p-3">Situação</th>
-                  {showActions && <th className="p-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -253,25 +221,11 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                     <td className="p-3">
                       <span className={`font-bold ${r.status === 'Ativo' ? 'text-emerald-600' : 'text-slate-500'}`}>{r.status}</span>
                     </td>
-                    {showActions && (
-                    <td className="p-3 text-right whitespace-nowrap">
-                      {r.person && (
-                        <>
-                          <button type="button" onClick={() => toggleStatus(r.person!)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer mr-1.5">
-                            {r.status === 'Ativo' ? 'Inativar' : 'Reativar'}
-                          </button>
-                          <button type="button" onClick={() => setToDelete(r.person!)} className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-700 cursor-pointer">
-                            Excluir
-                          </button>
-                        </>
-                      )}
-                    </td>
-                    )}
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={showActions ? 6 : 5} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
+                    <td colSpan={5} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
                   </tr>
                 )}
               </tbody>
@@ -291,24 +245,6 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
         />
       )}
 
-      {toDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className={`text-base font-black ${strong}`}>Excluir do efetivo</h3>
-            <p className="text-xs text-slate-500">
-              Excluir {toDelete.name} ({toDelete.matricula})? Use isto, por exemplo, antes de criar essa pessoa como usuário com login.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setToDelete(null)} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold cursor-pointer">
-                Cancelar
-              </button>
-              <button type="button" onClick={confirmDelete} className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer">
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
