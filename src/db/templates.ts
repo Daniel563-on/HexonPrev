@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, setDoc } from 'firebase/firestore';
 import { MaintenanceTemplate } from '../types';
 import {
   firebaseActive,
@@ -134,6 +134,7 @@ export async function dbSaveTemplate(template: MaintenanceTemplate): Promise<voi
     } catch (err: any) {
       console.warn('Firestore write template failed:', err);
       checkQuotaException(err);
+      throw new Error('Não foi possível gravar o modelo no banco (verifique sua permissão).');
     }
   }
 }
@@ -154,10 +155,11 @@ export async function dbDeleteTemplate(templateId: string): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'templates', templateId), cleanUndefined({ deleted: true }));
+      await deleteDoc(doc(dbInstance, 'templates', templateId));
     } catch (err: any) {
       console.warn('Firestore delete template failed:', err);
       checkQuotaException(err);
+      throw new Error('Não foi possível excluir o modelo (só quem tem a permissão "Excluir Modelos").');
     }
   }
 }

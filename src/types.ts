@@ -196,6 +196,14 @@ export interface MaintenanceTemplate {
   version?: number;
   history?: TemplateChangeLog[];
   pdfTemplate?: PdfTemplateConfig;
+  // ===== Formato novo (Etapa 4) =====
+  format?: 'v2';                 // modelos do formato novo; os antigos não têm
+  unit?: string;                 // gerência dona do modelo
+  description?: string;
+  assetTypeName?: string;        // preventiva: tipo de ativo (cadastro "Tipos de ativo")
+  addressScope?: 'rest' | 'selected'; // vistoria: "todos os demais endereços" ou "endereços escolhidos"
+  addressIds?: string[];         // vistoria com endereços escolhidos
+  updatedAt?: string;
 }
 
 /**

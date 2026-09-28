@@ -18,9 +18,9 @@ import {
 } from '../types';
 import PdfTemplateMapper from './PdfTemplateMapper';
 import CreateTemplateModal from './templates/CreateTemplateModal';
-import TemplateManagerTab from './templates/TemplateManagerTab';
 import TemplateGeneratorTab from './templates/TemplateGeneratorTab';
 import AssetTypesCycleTab from './templates/AssetTypesCycleTab';
+import ModelsTab from './templates/ModelsTab';
 import {
   dbGetTemplates,
   dbSaveTemplate,
@@ -36,9 +36,10 @@ interface TemplatesViewProps {
   userProfile: HexonUser;
   visibleUnits: string[] | null; // gerências do perfil (null = todas)
   canManage: boolean;            // permissão "Configurar Modelos de Cronograma"
+  canDelete: boolean;            // permissão "Excluir Modelos"
 }
 
-export default function TemplatesView({ onTemplatesUpdated, userProfile, visibleUnits, canManage }: TemplatesViewProps) {
+export default function TemplatesView({ onTemplatesUpdated, userProfile, visibleUnits, canManage, canDelete }: TemplatesViewProps) {
   // Navigation states (ordem do trabalho: 1. tipos e ciclo, 2. modelos, 3. disparo)
   const [subTab, setSubTab] = useState<'types' | 'templates' | 'generation'>('types');
   const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
@@ -259,17 +260,21 @@ export default function TemplatesView({ onTemplatesUpdated, userProfile, visible
           isSuperAdmin={userProfile.perfil === 'Super Administrador'}
         />
       ) : subTab === 'templates' ? (
-        <TemplateManagerTab
+        <ModelsTab
+          units={visibleUnits || managements.map((m) => m.name).filter((n) => n && n !== 'Todas')}
           templates={templates}
-          selectedTemplate={selectedTemplate}
-          onSelectTemplate={setSelectedTemplate}
-          onTemplateUpdated={handleTemplateUpdated}
-          onOpenAddModal={() => setShowAddModal(true)}
-          onOpenPdfMapper={() => setShowPdfMapperModal(true)}
-          onRequestDeleteTemplate={(id) => setTemplateToDeleteId(id)}
-          managements={managements}
-          existingSectors={existingSectors}
-          currentUserLabel={currentUserLabel}
+          addresses={addresses}
+          userName={userProfile.name}
+          canManage={canManage}
+          canDelete={canDelete}
+          onChanged={async () => {
+            await loadData();
+            if (onTemplatesUpdated) onTemplatesUpdated();
+          }}
+          onOpenPdfMapper={(t) => {
+            setSelectedTemplate(t);
+            setShowPdfMapperModal(true);
+          }}
         />
       ) : (
         <TemplateGeneratorTab

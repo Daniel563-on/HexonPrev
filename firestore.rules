@@ -179,9 +179,15 @@ service cloud.firestore {
     }
 
     // 5. MODELOS DE CHECKLIST
+    // Criar/editar: permissão "Configurar Modelos de Cronograma", só nas gerências do perfil.
+    // Excluir: permissão "Excluir Modelos" (padrão: só o Super Administrador).
     match /templates/{templateId} {
       allow read: if isStaff();
-      allow write: if isAdmin();
+      allow create, update: if isStaff() && hasPermission('manage_templates')
+        && (seesAllUnits()
+            || (request.resource.data.get('unit', '') in myUnits()
+                && (resource == null || resource.data.get('unit', '') in myUnits())));
+      allow delete: if isStaff() && hasPermission('delete_templates');
     }
 
     // 6. MODELOS DE ETIQUETAS / QR CODE
