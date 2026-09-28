@@ -134,6 +134,17 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 4h. EFETIVO IMPORTADO (pessoas sem login) — a equipe lê só das suas unidades; só o Super Administrador altera
+    match /workforce/{personId} {
+      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow write: if isSuperAdmin();
+    }
+
+    // 4i. CARGOS E VALOR DA HORA — só o Super Administrador
+    match /jobRoles/{roleId} {
+      allow read, write: if isSuperAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

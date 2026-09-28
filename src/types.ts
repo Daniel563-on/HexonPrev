@@ -265,6 +265,38 @@ export interface HexonUser {
   profileId?: string; // perfil de acesso (cadastro de Perfis); "perfil" acima guarda o tipo básico derivado dele
 }
 
+// EFETIVO: pessoas importadas por planilha, só para compor o efetivo (NÃO têm login).
+// Quem tem login fica em "users" e também conta no efetivo.
+export interface WorkforcePerson {
+  id: string;            // "wf_" + matrícula
+  matricula: string;
+  name: string;
+  cargo: string;
+  unit: string;          // gerência (GMMR, GMEE, GMC, DOM...)
+  status: 'Ativo' | 'Inativo';
+  source: 'importado';
+  createdAt: string;
+  updatedAt: string;
+  inactivatedAt?: string;
+}
+
+// CARGO com o valor da hora (definido pelo Super Administrador; vale para todos do cargo), com histórico
+export interface JobRoleRate {
+  value: number;         // R$ por hora
+  from: string;          // vigência: "AAAA-MM-DD"
+  setAt: string;
+  setBy: string;
+}
+export interface JobRole {
+  id: string;
+  name: string;
+  hourlyRate: number;    // valor atual (R$ 0,00 até o Super Administrador preencher)
+  rateFrom: string;      // vigência do valor atual ("" = nunca preenchido)
+  history: JobRoleRate[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // PERFIL DE ACESSO (criado e editado pelo Super Administrador; o nome é livre)
 // kind = tipo básico de uso, que o restante do sistema entende:
 //   'total'        -> acesso total (administração)

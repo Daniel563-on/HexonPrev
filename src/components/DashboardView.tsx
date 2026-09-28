@@ -837,7 +837,7 @@ export default function DashboardView({
           <div>
             <p className="font-extrabold text-slate-300 leading-none uppercase tracking-wider text-[9px]">Sistemas Totais</p>
             <p className="font-black text-white text-xs mt-1">
-              {userProfile?.perfil || 'Usuário'} • {userProfile?.gerencia || 'Todas as Gerências'}
+              {userProfile?.cargo || 'Colaborador'} • {userProfile?.gerencia || 'Todas as Gerências'}
             </p>
           </div>
         </div>
