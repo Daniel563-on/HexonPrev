@@ -19,7 +19,7 @@ import OrdersCardGrid from './orders/OrdersCardGrid';
 import DeleteOrderModal from './orders/DeleteOrderModal';
 import BulkRevertModal from './orders/BulkRevertModal';
 import PreventiveScanModal from './orders/PreventiveScanModal';
-import OrdersCalendarPlanning from './orders/OrdersCalendarPlanning';
+import PlanningBoard from './orders/planning/PlanningBoard';
 import OrdersSearchPanel from './orders/OrdersSearchPanel';
 
 interface ServiceOrdersViewProps {
@@ -689,10 +689,8 @@ export default function ServiceOrdersView({
       )}
 
       {subTab === 'planejamento' && userProfile?.perfil !== 'Profissional' ? (
-        <OrdersCalendarPlanning
+        <PlanningBoard
           orders={orders}
-          assets={assets}
-          templates={templates}
           users={users}
           userProfile={userProfile}
           visibleUnits={visibleUnits}
@@ -702,19 +700,8 @@ export default function ServiceOrdersView({
           getCountdownText={getCountdownText}
           onReload={onReload}
           onViewOrder={handleViewPreventive}
-          checkTechAssignment={checkTechAssignment}
-          getOrderComarca={getOrderComarca}
-          getOrderCRAAI={getOrderCRAAI}
           currentCalendarDate={currentCalendarDate}
           setCurrentCalendarDate={setCurrentCalendarDate}
-          selectedCalendarDay={selectedCalendarDay}
-          setSelectedCalendarDay={setSelectedCalendarDay}
-          selectedCalendarEndDay={selectedCalendarEndDay}
-          setSelectedCalendarEndDay={setSelectedCalendarEndDay}
-          onOpenBulkRevertModal={(scope) => {
-            setBulkRevertScope(scope);
-            setShowBulkRevertModal(true);
-          }}
         />
       ) : subTab === 'consulta' && userProfile?.perfil !== 'Profissional' ? (
         <OrdersSearchPanel
@@ -771,6 +758,9 @@ export default function ServiceOrdersView({
             onPageChange={(p) => setCurrentPage(p)}
           />
 
+        </>
+      )}
+
       {/* SLIDING SIDEBAR DETAIL DRAWER (EXTRACTED IN STAGE 2) */}
       <OrderDetailsDrawer
         isOpen={showDrawer && !!selectedOrder}
@@ -790,8 +780,6 @@ export default function ServiceOrdersView({
         currentCalendarDate={currentCalendarDate}
         initialOpenSignature={initialOpenSignature}
       />
-        </>
-      )}
 
       {/* EXTRACTED MODALS (STAGE 1) */}
       <DeleteOrderModal
