@@ -114,6 +114,13 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Ações',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
+  dispatch_orders: {
+    id: 'dispatch_orders',
+    name: 'Disparar OS',
+    description: 'Gerar as OS do mês (preventivas e vistorias) a partir dos modelos, nas gerências do perfil.',
+    category: 'Ações',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   delete_templates: {
     id: 'delete_templates',
     name: 'Excluir Modelos',

@@ -5,7 +5,7 @@
 //   "AS_GMMR_9693_XHQC-MEN-20260901" -> "GMMR_9693_XHQC · MEN 09/26"
 //   "AS_GMMR_9693_XHQC-SEM-20260907" -> "GMMR_9693_XHQC · SEM 07/09"
 //   números antigos ("28941") e manuais ("OS-260924-7K2Q9F") são exibidos como estão.
-const SHORT_PERIOD_CODES = new Set(['SEM', 'QUI']);
+const SHORT_PERIOD_CODES = new Set(['SEM', 'QUI', 'DIA']);
 
 export function formatOrderNumber(id: string | null | undefined): string {
   const value = String(id ?? '');
