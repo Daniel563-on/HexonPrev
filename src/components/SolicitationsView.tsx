@@ -248,7 +248,7 @@ export default function SolicitationsView({
       sol.preventiveOS.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sol.preventiveOS.assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sol.id.includes(searchTerm) ||
-      sol.preventiveOS.assignedTechnician.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (sol.preventiveOS.assignedTechnician || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (sol.spawnedOS && sol.spawnedOS.id.includes(searchTerm));
       
     return matchesSearch;

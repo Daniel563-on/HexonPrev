@@ -1,6 +1,6 @@
 import { collection, doc, documentId, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { Address, Asset, AssetTypeConfig, ChecklistItem, CycleSetting, MaintenanceTemplate, ServiceOrder } from '../types';
-import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { firebaseActive, dbInstance, cleanUndefined, withoutEmptyTechnician, checkQuotaException } from './core';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
 import { addMonths, assetTypeKey, cycleMonthIndex, duePeriodicity } from './cycle';
 import { isSectorInGerencia } from '../types';
@@ -294,7 +294,7 @@ export async function dbApplyDispatch(plan: DispatchPlan, onProgress?: (done: nu
   for (let i = 0; i < plan.toCreate.length; i += 200) {
     const chunk = plan.toCreate.slice(i, i + 200);
     const batch = writeBatch(db);
-    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), cleanUndefined(o)));
+    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), cleanUndefined(withoutEmptyTechnician(o))));
     addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));
     await batch.commit();
     done += chunk.length;

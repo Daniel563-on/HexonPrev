@@ -61,7 +61,7 @@ export interface ServiceOrder {
   scheduledEndDate?: string; // Optional end of execution period assigned by manager, e.g. "2026-09-11"
   startDate?: string;   // date window start, e.g. "2026-06-01"
   endDate?: string;     // date window end, e.g. "2026-06-06"
-  assignedTechnician: string;
+  assignedTechnician?: string; // sem técnico = campo ausente (não grava "": índices esparsos do banco)
   checklist: ChecklistItem[];
   notes: string;
   signature: string | null;      // Base64 drawing (no banco fica em "orderSignatures"; aqui só enquanto a OS está aberta na tela)

@@ -1293,7 +1293,7 @@ export default function OrderDetailsDrawer({
 
                 <div className="flex items-center gap-2.5 pt-2">
                   <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-700 font-semibold text-xs flex items-center justify-center">
-                    {selectedOrder.assignedTechnician.split(' ').map(n=>n[0]).join('')}
+                    {(selectedOrder.assignedTechnician || '').split(' ').map(n=>n[0]).join('')}
                   </div>
                   <div>
                     <h5 className="text-xs font-bold text-slate-800 leading-tight">{selectedOrder.assignedTechnician}</h5>
