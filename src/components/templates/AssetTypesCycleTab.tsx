@@ -95,6 +95,8 @@ export default function AssetTypesCycleTab({ units, assets, userName, canManage,
   );
 
   const unitTypes = types.filter((t) => t.unit === unit && !t.archived);
+  // Gerência sem equipamentos (ex.: DOM, cujo "ativo" é o endereço): trabalha só com vistorias por endereço
+  const onlySurveys = assetsByType.size === 0 && assetsWithoutType === 0 && unitTypes.length === 0;
   const withoutPeriodicity = unitTypes.filter((t) => t.periodicities.length === 0).length;
 
   // Próximos 12 meses a partir do mês atual (ou do início do ciclo, se ainda não chegou)
@@ -237,7 +239,19 @@ export default function AssetTypesCycleTab({ units, assets, userName, canManage,
         )}
       </div>
 
+      {onlySurveys && !loading && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-900">
+          <p className="font-black">{unit} não tem equipamentos cadastrados.</p>
+          <p className="mt-1">
+            As preventivas desta gerência são as <strong>vistorias por endereço</strong> (Semanal e Diária), configuradas na aba
+            <strong> 2. Modelos</strong>. Os tipos de ativo abaixo só se aplicam a gerências com equipamentos. O início do ciclo acima vale
+            também para marcar quando os disparos da {unit} deixam de ser teste.
+          </p>
+        </div>
+      )}
+
       {/* Tipos */}
+      {!onlySurveys && (
       <div className={`${card} space-y-3`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
@@ -311,6 +325,7 @@ export default function AssetTypesCycleTab({ units, assets, userName, canManage,
           </div>
         )}
       </div>
+      )}
 
       {confirmCycle && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
