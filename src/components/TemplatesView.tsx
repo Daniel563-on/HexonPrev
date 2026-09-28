@@ -201,53 +201,52 @@ export default function TemplatesView({ onTemplatesUpdated, userProfile, visible
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-sans text-slate-900 pb-12">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl border border-gray-200 shadow-sm gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-[#0b1c30] tracking-tight flex items-center gap-2">
-            <Sliders className="w-6 h-6 text-blue-600" />
-            Parametrização de Modelos e Protocolos
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Planeje, versione e gerencie procedimentos preventivos de ativos e vistorias semanais sem ativo, emitindo cronogramas em lote automaticamente.
-          </p>
+      {/* CABEÇALHO: título + etapas do trabalho (1 → 2 → 3) */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-6 pt-5 pb-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+            <Sliders className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg font-black text-[#0b1c30] tracking-tight">Modelos e Protocolos</h1>
+            <p className="text-xs text-slate-500">Configure na ordem: tipos de ativo e ciclo, depois os modelos, e por fim o disparo das OS.</p>
+          </div>
         </div>
-
-        {/* Outer Tabs selector */}
-        <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-gray-200 self-stretch md:self-auto gap-1">
-          <button
-            onClick={() => setSubTab('types')}
-            className={`flex-grow md:flex-initial h-9 px-4 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 border whitespace-nowrap cursor-pointer ${
-              subTab === 'types'
-                ? 'bg-white text-slate-900 shadow-sm border-gray-200'
-                : 'text-slate-500 hover:text-slate-900 border-transparent'
-            }`}
-          >
-            <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
-            1. Tipos de ativo e ciclo
-          </button>
-          <button
-            onClick={() => setSubTab('templates')}
-            className={`flex-grow md:flex-initial h-9 px-4 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 border whitespace-nowrap cursor-pointer ${
-              subTab === 'templates'
-                ? 'bg-white text-slate-900 shadow-sm border-gray-200'
-                : 'text-slate-500 hover:text-slate-900 border-transparent'
-            }`}
-          >
-            <ListChecks className="w-4 h-4 text-blue-600 shrink-0" />
-            2. Modelos
-          </button>
-          <button
-            onClick={() => setSubTab('generation')}
-            className={`flex-grow md:flex-initial h-9 px-4 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 border whitespace-nowrap cursor-pointer ${
-              subTab === 'generation'
-                ? 'bg-white text-slate-900 shadow-sm border-gray-200'
-                : 'text-slate-500 hover:text-slate-900 border-transparent'
-            }`}
-          >
-            <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-            3. Disparo
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-gray-200">
+          {([
+            { key: 'types', n: 1, title: 'Tipos de ativo e ciclo', hint: 'Periodicidades e início do ciclo', icon: Layers },
+            { key: 'templates', n: 2, title: 'Modelos', hint: 'Checklists por tipo e periodicidade', icon: ListChecks },
+            { key: 'generation', n: 3, title: 'Disparo', hint: 'Gerar as OS do mês', icon: Calendar }
+          ] as const).map((step, idx) => {
+            const active = subTab === step.key;
+            const Icon = step.icon;
+            return (
+              <button
+                key={step.key}
+                type="button"
+                onClick={() => setSubTab(step.key)}
+                className={`relative flex items-center gap-3 px-5 py-3.5 text-left transition-colors cursor-pointer ${
+                  idx > 0 ? 'sm:border-l border-t sm:border-t-0 border-gray-200' : ''
+                } ${active ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}
+              >
+                <span
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+                    active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {step.n}
+                </span>
+                <span className="min-w-0">
+                  <span className={`flex items-center gap-1.5 text-xs font-black ${active ? 'text-blue-700' : 'text-slate-700'}`}>
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    {step.title}
+                  </span>
+                  <span className="block text-[11px] text-slate-500 truncate">{step.hint}</span>
+                </span>
+                {active && <span className="absolute left-0 right-0 bottom-0 h-0.5 bg-blue-600" />}
+              </button>
+            );
+          })}
         </div>
       </div>
 
