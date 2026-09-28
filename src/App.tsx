@@ -986,6 +986,9 @@ export default function App() {
           {currentTab === 'templates' && (
             <TemplatesView 
               onTemplatesUpdated={loadServiceOrders}
+              userProfile={userProfile!}
+              visibleUnits={visibleUnits}
+              canManage={userHasActionPermission('manage_templates')}
             />
           )}
 

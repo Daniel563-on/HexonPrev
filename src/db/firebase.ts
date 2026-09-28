@@ -19,6 +19,7 @@ export * from './monthlySummaries';
 export * from './profiles';
 export * from './workforce';
 export * from './materials';
+export * from './cycle';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';
