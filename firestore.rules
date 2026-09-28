@@ -163,6 +163,21 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // 4k. TIPOS DE ATIVO E PERIODICIDADES — por gerência; altera quem tem "Configurar Modelos de Cronograma"
+    match /assetTypes/{typeId} {
+      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow write: if isStaff() && hasPermission('manage_templates')
+        && (seesAllUnits()
+            || ((request.resource == null || request.resource.data.unit in myUnits())
+                && (resource == null || resource.data.unit in myUnits())));
+    }
+
+    // 4l. INÍCIO DO CICLO OFICIAL DE CADA GERÊNCIA — a equipe lê; só o Super Administrador define
+    match /cycleSettings/{unitId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     match /templates/{templateId} {
       allow read: if isStaff();

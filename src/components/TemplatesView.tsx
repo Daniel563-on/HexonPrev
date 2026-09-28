@@ -3,7 +3,8 @@ import {
   Trash2,
   ListChecks,
   Calendar,
-  Sliders
+  Sliders,
+  Layers
 } from 'lucide-react';
 import {
   MaintenanceTemplate,
@@ -12,12 +13,14 @@ import {
   Management,
   Address,
   ServiceOrder,
-  PdfTemplateConfig
+  PdfTemplateConfig,
+  HexonUser
 } from '../types';
 import PdfTemplateMapper from './PdfTemplateMapper';
 import CreateTemplateModal from './templates/CreateTemplateModal';
 import TemplateManagerTab from './templates/TemplateManagerTab';
 import TemplateGeneratorTab from './templates/TemplateGeneratorTab';
+import AssetTypesCycleTab from './templates/AssetTypesCycleTab';
 import {
   dbGetTemplates,
   dbSaveTemplate,
@@ -30,11 +33,14 @@ import {
 
 interface TemplatesViewProps {
   onTemplatesUpdated?: () => void;
+  userProfile: HexonUser;
+  visibleUnits: string[] | null; // gerências do perfil (null = todas)
+  canManage: boolean;            // permissão "Configurar Modelos de Cronograma"
 }
 
-export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps) {
-  // Navigation states
-  const [subTab, setSubTab] = useState<'templates' | 'generation'>('templates');
+export default function TemplatesView({ onTemplatesUpdated, userProfile, visibleUnits, canManage }: TemplatesViewProps) {
+  // Navigation states (ordem do trabalho: 1. tipos e ciclo, 2. modelos, 3. disparo)
+  const [subTab, setSubTab] = useState<'types' | 'templates' | 'generation'>('types');
   const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [managements, setManagements] = useState<Management[]>([]);
@@ -207,7 +213,18 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
         </div>
 
         {/* Outer Tabs selector */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-gray-200 self-stretch md:self-auto gap-1">
+        <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-gray-200 self-stretch md:self-auto gap-1">
+          <button
+            onClick={() => setSubTab('types')}
+            className={`flex-grow md:flex-initial h-9 px-4 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 border whitespace-nowrap cursor-pointer ${
+              subTab === 'types'
+                ? 'bg-white text-slate-900 shadow-sm border-gray-200'
+                : 'text-slate-500 hover:text-slate-900 border-transparent'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+            1. Tipos de ativo e ciclo
+          </button>
           <button
             onClick={() => setSubTab('templates')}
             className={`flex-grow md:flex-initial h-9 px-4 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 border whitespace-nowrap cursor-pointer ${
@@ -217,7 +234,7 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             }`}
           >
             <ListChecks className="w-4 h-4 text-blue-600 shrink-0" />
-            1. Modelos de Checklists
+            2. Modelos
           </button>
           <button
             onClick={() => setSubTab('generation')}
@@ -228,12 +245,20 @@ export default function TemplatesView({ onTemplatesUpdated }: TemplatesViewProps
             }`}
           >
             <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-            2. Geração Automática
+            3. Disparo
           </button>
         </div>
       </div>
 
-      {subTab === 'templates' ? (
+      {subTab === 'types' ? (
+        <AssetTypesCycleTab
+          units={visibleUnits || managements.map((m) => m.name).filter((n) => n && n !== 'Todas')}
+          assets={assets}
+          userName={userProfile.name}
+          canManage={canManage}
+          isSuperAdmin={userProfile.perfil === 'Super Administrador'}
+        />
+      ) : subTab === 'templates' ? (
         <TemplateManagerTab
           templates={templates}
           selectedTemplate={selectedTemplate}

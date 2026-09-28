@@ -320,6 +320,30 @@ export interface Material {
   updatedAt: string;
 }
 
+// CICLO DE PREVENTIVAS (por gerência)
+// Periodicidades de ativos (as menores que o mês são só das vistorias/rondas).
+export type AssetPeriodicity = 'Mensal' | 'Trimestral' | 'Semestral' | 'Anual';
+
+// Tipo de ativo da gerência (vem do campo TIPO dos ativos) com as periodicidades que ele faz.
+// O ativo herda as periodicidades do seu tipo.
+export interface AssetTypeConfig {
+  id: string;            // "tipo_" + gerência + tipo
+  unit: string;          // gerência (GMMR, GMEE, GMC, DOM...)
+  name: string;          // como aparece no TIPO dos ativos
+  periodicities: AssetPeriodicity[];
+  archived?: boolean;    // nenhum ativo tem mais este tipo (fica guardado, fora da lista)
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Início do ciclo oficial da gerência ("mês 1"). Antes disso, tudo é teste.
+export interface CycleSetting {
+  unit: string;
+  cycleStart: string;    // "AAAA-MM"
+  setAt: string;
+  setBy: string;
+}
+
 // PERFIL DE ACESSO (criado e editado pelo Super Administrador; o nome é livre)
 // kind = tipo básico de uso, que o restante do sistema entende:
 //   'total'        -> acesso total (administração)
