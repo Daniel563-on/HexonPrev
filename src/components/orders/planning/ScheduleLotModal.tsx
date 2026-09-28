@@ -21,11 +21,12 @@ export default function ScheduleLotModal({ unit, orders, allOrders, technicians,
   const [techId, setTechId] = useState('');
   const [hasOvernight, setHasOvernight] = useState(false);
   const [people, setPeople] = useState('1');
-  const [nights, setNights] = useState(String(Math.max(1, weekdaysBetween(periodStart, periodEnd).length - 1)));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const days = weekdaysBetween(periodStart, periodEnd).length;
+  // Pernoites = dias úteis do período - 1 (automático, não editável). Período de 1 dia não tem pernoite.
+  const nights = Math.max(0, days - 1);
   // Carga de cada técnico no período (OS programadas que cruzam o período)
   const load = useMemo(() => {
     const map = new Map<string, number>();
@@ -47,9 +48,9 @@ export default function ScheduleLotModal({ unit, orders, allOrders, technicians,
     if (!tech) return setError('Escolha o técnico responsável.');
     if (!tech.matricula) return setError('Este técnico está sem matrícula no cadastro.');
     const p = Number(people);
-    const n = Number(nights);
-    if (hasOvernight && (!Number.isInteger(p) || p < 1 || !Number.isInteger(n) || n < 1)) {
-      return setError('Informe quantas pessoas e quantas noites (números inteiros a partir de 1).');
+    const n = nights;
+    if (hasOvernight && (!Number.isInteger(p) || p < 1 || n < 1)) {
+      return setError('Informe quantas pessoas (número inteiro a partir de 1).');
     }
     setSaving(true);
     try {
@@ -62,7 +63,7 @@ export default function ScheduleLotModal({ unit, orders, allOrders, technicians,
         overnight: hasOvernight ? { people: p, nights: n } : null,
         createdBy: userName
       });
-      onDone(`${orders.length} OS programada(s) para ${tech.name}, ${dayBR(periodStart)}${periodEnd !== periodStart ? ` a ${dayBR(periodEnd)}` : ''}${hasOvernight ? ` • pernoite: ${p} pessoa(s) × ${n} noite(s)` : ''}.`);
+      onDone(`${orders.length} OS programada(s) para ${tech.name}, ${dayBR(periodStart)}${periodEnd !== periodStart ? ` a ${dayBR(periodEnd)}` : ''}${hasOvernight ? ` • ${p} pessoa(s) × ${n} pernoite(s)` : ''}.`);
     } catch (err: any) {
       setError(`Não foi possível programar: ${err?.message || err}`);
       setSaving(false);
@@ -96,19 +97,23 @@ export default function ScheduleLotModal({ unit, orders, allOrders, technicians,
         </label>
 
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
-            <input type="checkbox" checked={hasOvernight} onChange={(e) => setHasOvernight(e.target.checked)} className="w-4 h-4" />
-            Tem pernoite
-          </label>
-          {hasOvernight && (
+          {nights === 0 ? (
+            <p className="text-[11px] text-slate-500">Período de 1 dia: sem pernoite.</p>
+          ) : (
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+              <input type="checkbox" checked={hasOvernight} onChange={(e) => setHasOvernight(e.target.checked)} className="w-4 h-4" />
+              Tem pernoite
+            </label>
+          )}
+          {hasOvernight && nights > 0 && (
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className={label}>Pessoas</span>
                 <input type="number" min={1} value={people} onChange={(e) => setPeople(e.target.value)} className={field} />
               </label>
               <label className="block">
-                <span className={label}>Noites</span>
-                <input type="number" min={1} value={nights} onChange={(e) => setNights(e.target.value)} className={field} />
+                <span className={label}>Pernoite</span>
+                <input type="number" value={nights} readOnly disabled title="Calculado pelo período: dias úteis - 1" className={`${field} bg-slate-100 text-slate-500 cursor-not-allowed`} />
               </label>
             </div>
           )}

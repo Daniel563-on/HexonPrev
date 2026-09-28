@@ -109,7 +109,7 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
                   {l.technicianName} • {dayBR(l.periodStart)}{l.periodEnd !== l.periodStart ? ` a ${dayBR(l.periodEnd)}` : ''} • {l.orderIds.length} OS
                 </span>
                 <span className="text-slate-600">
-                  {l.overnight ? `Pernoite: ${l.overnight.people} pessoa(s) × ${l.overnight.nights} noite(s)` : 'Sem pernoite'}
+                  {l.overnight ? `${l.overnight.people} pessoa(s) × ${l.overnight.nights} pernoite(s)` : 'Sem pernoite'}
                   {canViewCosts && l.overnight && ` • ${brl(cost.total)} (${brl(cost.perOrder)} por OS)`}
                 </span>
               </div>
