@@ -115,6 +115,8 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Coluna "Ações" só quando há importados na lista (os usuários com login são alterados em Colaboradores)
+  const showActions = filtered.some((r) => !r.hasLogin);
   const activeTotal = rows.filter((r) => r.status === 'Ativo').length;
   const activeLogin = rows.filter((r) => r.status === 'Ativo' && r.hasLogin).length;
 
@@ -225,7 +227,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                   <th className="p-3">Gerência</th>
                   <th className="p-3">Origem</th>
                   <th className="p-3">Situação</th>
-                  <th className="p-3 text-right">Ações</th>
+                  {showActions && <th className="p-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -251,8 +253,9 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                     <td className="p-3">
                       <span className={`font-bold ${r.status === 'Ativo' ? 'text-emerald-600' : 'text-slate-500'}`}>{r.status}</span>
                     </td>
+                    {showActions && (
                     <td className="p-3 text-right whitespace-nowrap">
-                      {r.person ? (
+                      {r.person && (
                         <>
                           <button type="button" onClick={() => toggleStatus(r.person!)} className="px-2.5 py-1 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer mr-1.5">
                             {r.status === 'Ativo' ? 'Inativar' : 'Reativar'}
@@ -261,15 +264,14 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                             Excluir
                           </button>
                         </>
-                      ) : (
-                        <span className="text-[10px] text-slate-400">editar em Colaboradores</span>
                       )}
                     </td>
+                    )}
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
+                    <td colSpan={showActions ? 6 : 5} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
                   </tr>
                 )}
               </tbody>
