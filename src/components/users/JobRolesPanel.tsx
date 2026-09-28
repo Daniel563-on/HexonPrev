@@ -1,6 +1,97 @@
-import React, { useState } from 'react';
-import { JobRole } from '../../types';
-import { cargoKey, dbSetJobRoleRate, dbSyncJobRoles, localTodayStr } from '../../db/firebase';
+import React, { useEffect, useState } from 'react';
+import { JobRole, OvernightRateSetting } from '../../types';
+import { cargoKey, dbGetOvernightRate, dbSetJobRoleRate, dbSetOvernightRate, dbSyncJobRoles, localTodayStr } from '../../db/firebase';
+
+// VALOR DO PERNOITE (único, por pessoa por noite). Cada lote usa o valor vigente na data do agendamento.
+function OvernightRateCard({ currentUserName, card, strong }: { currentUserName: string; card: string; strong: string }) {
+  const [setting, setSetting] = useState<OvernightRateSetting | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState('');
+  const [from, setFrom] = useState(localTodayStr());
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
+
+  const load = () => dbGetOvernightRate().then(setSetting);
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async () => {
+    const raw = value.trim();
+    const parsed = Number(raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw);
+    if (!raw || !Number.isFinite(parsed) || parsed <= 0) return setError('Informe um valor maior que zero (ex.: 150,00).');
+    if (!from) return setError('Informe a data de início.');
+    setSaving(true);
+    setError(null);
+    try {
+      await dbSetOvernightRate(setting, Math.round(parsed * 100) / 100, from, currentUserName);
+      setEditing(false);
+      await load();
+    } catch (err: any) {
+      setError(`Não foi possível salvar: ${err?.message || err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className={`border rounded-xl p-4 space-y-2 ${card}`}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="text-xs">
+          <p className={`font-bold ${strong}`}>Valor do pernoite (por pessoa, por noite)</p>
+          <p className="text-slate-500">
+            Valor único. Cada lote usa o valor vigente na data em que foi agendado; um reajuste vale para os lotes agendados depois.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`text-lg font-black ${setting ? 'text-emerald-600' : 'text-amber-600'}`}>
+            {setting ? brl(setting.value) : 'Não informado'}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setEditing(true); setValue(setting ? String(setting.value).replace('.', ',') : ''); setFrom(localTodayStr()); setError(null); }}
+            className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-bold cursor-pointer"
+          >
+            {setting ? 'Alterar valor' : 'Informar valor'}
+          </button>
+        </div>
+      </div>
+      {setting && <p className="text-[11px] text-slate-500">Vigência: desde {dateBR(setting.from)}</p>}
+      {setting && setting.history.length > 0 && (
+        <button type="button" onClick={() => setShowHistory(!showHistory)} className="text-[11px] font-bold text-slate-500 cursor-pointer">
+          {showHistory ? '▾' : '▸'} Histórico ({setting.history.length})
+        </button>
+      )}
+      {showHistory && setting && (
+        <ul className="text-[11px] text-slate-500 space-y-0.5">
+          {[...setting.history].reverse().map((h, i) => (
+            <li key={i}>{brl(h.value)} desde {dateBR(h.from)} — por {h.setBy}</li>
+          ))}
+        </ul>
+      )}
+      {editing && (
+        <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-slate-100">
+          <label className="block">
+            <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Valor (R$)</span>
+            <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" placeholder="Ex.: 150,00" className="h-9 px-3 text-xs border border-slate-200 rounded-lg" />
+          </label>
+          <label className="block">
+            <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Vale a partir de</span>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 px-3 text-xs border border-slate-200 rounded-lg" />
+          </label>
+          <button type="button" onClick={() => setEditing(false)} disabled={saving} className="h-9 px-3 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold cursor-pointer">Cancelar</button>
+          <button type="button" onClick={save} disabled={saving} className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50">
+            {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+          {error && <p className="w-full text-xs font-bold text-rose-600">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // CARGOS: valor da hora de cada cargo (vale para todos do cargo), com histórico. Só o Super Administrador.
 
@@ -86,6 +177,8 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
 
   return (
     <div className="space-y-4">
+      <OvernightRateCard currentUserName={currentUserName} card={card} strong={strong} />
+
       <div className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 ${card}`}>
         <div className="text-xs">
           <p className={`font-bold ${strong}`}>Cargos e valor da hora</p>

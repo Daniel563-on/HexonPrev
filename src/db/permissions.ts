@@ -114,6 +114,13 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Ações',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
+  view_costs: {
+    id: 'view_costs',
+    name: 'Visualizar Valores (R$)',
+    description: 'Ver valores em reais: pernoite, homem-hora e materiais (telas e relatórios).',
+    category: 'Ações',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   dispatch_orders: {
     id: 'dispatch_orders',
     name: 'Disparar OS',

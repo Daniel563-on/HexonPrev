@@ -210,6 +210,7 @@ export default function SolicitationsView({
         status: 'Planejada',
         scheduledDate: new Date().toISOString().split('T')[0],
         assignedTechnician: prev.assignedTechnician || 'Técnico de Plantão',
+        assignedTechnicianMatricula: prev.assignedTechnicianMatricula,
         checklist: sol.failedItems.map((item, index) => ({
           id: `ck_sp_corr_${Date.now()}_${index}`,
           task: `Corrigir: ${item.task}`,

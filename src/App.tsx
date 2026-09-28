@@ -359,7 +359,11 @@ export default function App() {
     if (!userProfile || userProfile.perfil !== 'Profissional') return;
     const names = technicianCandidates(userProfile.name, userProfile.matricula);
     if (names.length === 0) return;
-    return subscribeServiceOrders({ units: visibleUnits, technicianNames: names }, localMonthKey(), setOrders);
+    return subscribeServiceOrders(
+      { units: visibleUnits, technicianNames: names, technicianMatricula: (userProfile.matricula || '').trim() || undefined },
+      localMonthKey(),
+      setOrders
+    );
   }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula, visibleUnitsKey]);
 
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
@@ -459,7 +463,7 @@ export default function App() {
       if (actionId === 'delete_asset' || actionId === 'delete_order') {
         return false; // strictly Super Admin
       }
-      if (actionId === 'delete_templates' || actionId === 'dispatch_orders') return false; // padrão: só Super Administrador
+      if (actionId === 'delete_templates' || actionId === 'dispatch_orders' || actionId === 'view_costs') return false; // padrão: só Super Administrador
       if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'create_order' || actionId === 'manage_templates') {
         return userProfile.perfil === 'Administrador';
       }

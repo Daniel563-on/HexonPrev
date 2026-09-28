@@ -180,6 +180,21 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 4m. VALORES (pernoite): só quem tem "Visualizar Valores (R$)" lê; só o Super Administrador altera
+    match /costSettings/{settingId} {
+      allow read: if isStaff() && hasPermission('view_costs');
+      allow write: if isSuperAdmin();
+    }
+
+    // 4n. LOTES DE PLANEJAMENTO — por unidade; o planejador cria e ajusta os da sua unidade (o técnico só lê)
+    match /planningLots/{lotId} {
+      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow create, update: if isStaff() && me().perfil != 'Profissional'
+        && (seesAllUnits()
+            || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
+      allow delete: if isSuperAdmin();
+    }
+
     // 5. MODELOS DE CHECKLIST
     // Criar/editar: permissão "Configurar Modelos de Cronograma", só nas gerências do perfil.
     // Excluir: permissão "Excluir Modelos" (padrão: só o Super Administrador).
