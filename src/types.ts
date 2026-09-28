@@ -84,6 +84,8 @@ export interface ServiceOrder {
   surveyType?: string;           // e.g., "Inspeção de Ambientes", "Casa de Máquinas", "Quadro Elétrico"
   surveyLocation?: string;       // Location/room name for independent surveys
   periodicity?: string;          // e.g., "Semanal", "Quinzenal", "Mensal"
+  assignedTechnicianMatricula?: string; // matrícula do técnico (o nome acima é só para exibir)
+  lotId?: string;                // lote de planejamento (agendamento em bloco) do qual a OS faz parte
   templateId?: string;           // modelo usado no disparo (formato novo)
   templateVersion?: number;      // versão do modelo no momento do disparo
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
@@ -354,6 +356,30 @@ export interface CycleSetting {
   cycleStart: string;    // "AAAA-MM"
   setAt: string;
   setBy: string;
+}
+
+// LOTE DE PLANEJAMENTO: OS agendadas juntas (mesmo período e técnico), com o pernoite da viagem.
+// O custo do pernoite NÃO fica na OS: é calculado para quem pode ver valores, assim:
+// valor do pernoite vigente na data do agendamento × pessoas × noites ÷ OS que continuam no lote.
+export interface PlanningLot {
+  id: string;
+  unit: string;
+  periodStart: string;   // "AAAA-MM-DD"
+  periodEnd: string;
+  technicianName: string;
+  technicianMatricula: string;
+  orderIds: string[];    // OS que continuam no lote (quem sai é retirada daqui)
+  overnight: { people: number; nights: number } | null;
+  createdAt: string;     // data do agendamento (define o valor do pernoite usado)
+  createdBy: string;
+  updatedAt: string;
+}
+
+// VALOR DO PERNOITE (único, por pessoa por noite), com histórico e vigência
+export interface OvernightRateSetting {
+  value: number;
+  from: string;          // "AAAA-MM-DD"
+  history: { value: number; from: string; setAt: string; setBy: string }[];
 }
 
 // PERFIL DE ACESSO (criado e editado pelo Super Administrador; o nome é livre)

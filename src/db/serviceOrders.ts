@@ -262,14 +262,19 @@ export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: st
 export interface ServiceOrdersScope {
   units: string[] | null; // unidades (campo "unit" da OS: GMMR, GMEE...); null = todas
   technicianNames?: string[]; // técnico: só as OS atribuídas a ele (variações do nome/matrícula)
+  technicianMatricula?: string; // técnico: também as OS gravadas com a matrícula dele (planejamento novo)
 }
 
 // Filtros de cada busca: uma busca por unidade (as regras do banco só liberam a unidade do usuário).
 // null = uma busca sem filtro de unidade (Super Administrador / todas as unidades).
+// Técnico: uma busca pelo nome (OS antigas) e outra pela matrícula (OS novas); o resultado é juntado.
 function scopeFilterSets(scope: ServiceOrdersScope): any[][] {
-  const base = scope.technicianNames ? [where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))] : [];
-  if (!scope.units) return [base];
-  return scope.units.map((u) => [...base, where('unit', '==', u)]);
+  const bases: any[][] = [];
+  if (scope.technicianNames) bases.push([where('assignedTechnician', 'in', scope.technicianNames.slice(0, 5))]);
+  if (scope.technicianMatricula) bases.push([where('assignedTechnicianMatricula', '==', scope.technicianMatricula)]);
+  if (bases.length === 0) bases.push([]);
+  if (!scope.units) return bases;
+  return scope.units.flatMap((u) => bases.map((base) => [...base, where('unit', '==', u)]));
 }
 
 // Variações do nome/matrícula com que a OS pode ter sido atribuída ao técnico (máx. 5)
@@ -1263,7 +1268,7 @@ export async function dbGetOrdersForTechnician(
   if (firebaseActive && dbInstance) {
     try {
       // Só as OS abertas do técnico + as que ele fechou no mês atual (não baixa o histórico inteiro)
-      const filterSets = scopeFilterSets({ units, technicianNames: candidates });
+      const filterSets = scopeFilterSets({ units, technicianNames: candidates, technicianMatricula: (matricula || '').trim() || undefined });
       const snaps = await Promise.all(
         filterSets.map((filters) =>
           Promise.all([
