@@ -8,6 +8,7 @@ import {
   ShieldCheck, 
   QrCode,
   MapPin,
+  Package,
   X 
 } from 'lucide-react';
 import { HexonUser } from '../types';
@@ -192,6 +193,26 @@ export default function Sidebar({
                 currentTab === 'templates' ? 'text-white scale-110' : 'text-slate-400'
               }`} />
               <span className="text-sm font-semibold tracking-tight">Modelos e Protocolos</span>
+            </button>
+          )}
+
+          {/* Materiais (permissão "Visualizar Materiais"; padrão: só Super Administrador) */}
+          {userHasTabPermission('materials') && (
+            <button
+              onClick={() => {
+                onChangeTab('materials');
+                if (onClose) onClose();
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl duration-200 text-left active:scale-[0.98] transition-all cursor-pointer ${
+                currentTab === 'materials'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Package className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+                currentTab === 'materials' ? 'text-white scale-110' : 'text-slate-400'
+              }`} />
+              <span className="text-sm font-semibold tracking-tight">Materiais</span>
             </button>
           )}
 

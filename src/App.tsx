@@ -10,6 +10,7 @@ import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
 import AddressesView from './components/AddressesView';
 import QrCodeBatchView from './components/QrCodeBatchView';
+import MaterialsView from './components/materials/MaterialsView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
@@ -424,6 +425,7 @@ export default function App() {
     else if (tab === 'assets') permId = 'view_assets';
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
+    else if (tab === 'materials') permId = 'view_materials';
 
     if (!permId) return true;
 
@@ -433,6 +435,7 @@ export default function App() {
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
       if (tab === 'templates') return userProfile.perfil !== 'Profissional';
+      if (tab === 'materials') return false; // padrão: só Super Administrador
       return true;
     }
 
@@ -452,6 +455,7 @@ export default function App() {
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
+      if (actionId === 'manage_materials') return false; // padrão: só Super Administrador
       if (actionId === 'delete_asset' || actionId === 'delete_order') {
         return false; // strictly Super Admin
       }
@@ -472,7 +476,7 @@ export default function App() {
     if (!userProfile) return;
 
     // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
-    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'qr-codes'].find((t) =>
+    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'materials', 'qr-codes'].find((t) =>
       userHasTabPermission(t)
     );
 
@@ -689,6 +693,8 @@ export default function App() {
         return 'Modelos e Protocolos';
       case 'solicitations':
         return 'Solicitações';
+      case 'materials':
+        return 'Materiais';
       case 'user-control':
         return 'Painel de Controle e Auditoria';
       case 'qr-codes':
@@ -1002,6 +1008,14 @@ export default function App() {
             <UserControlView 
               currentUserProfile={userProfile}
               darkMode={darkMode}
+            />
+          )}
+
+          {currentTab === 'materials' && userProfile && (
+            <MaterialsView
+              userProfile={userProfile}
+              visibleUnits={visibleUnits}
+              canManage={userHasActionPermission('manage_materials')}
             />
           )}
 
