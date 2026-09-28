@@ -180,19 +180,19 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 4m. VALOR DO PERNOITE — lê quem tem a permissão "Visualizar Valores (R$)"; só o Super Administrador define
+    // 4m. VALORES (pernoite): só quem tem "Visualizar Valores (R$)" lê; só o Super Administrador altera
     match /costSettings/{settingId} {
-      allow read: if isStaff() && (hasPermission('view_costs') || isSuperAdmin());
+      allow read: if isStaff() && hasPermission('view_costs');
       allow write: if isSuperAdmin();
     }
 
-    // 4n. LOTES DE PLANEJAMENTO — agendamento conjunto e pernoite da viagem
+    // 4n. LOTES DE PLANEJAMENTO — por unidade; o planejador cria e ajusta os da sua unidade (o técnico só lê)
     match /planningLots/{lotId} {
       allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
-      allow create, update: if isStaff()
+      allow create, update: if isStaff() && me().perfil != 'Profissional'
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
-      allow delete: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow delete: if isSuperAdmin();
     }
 
     // 5. MODELOS DE CHECKLIST
