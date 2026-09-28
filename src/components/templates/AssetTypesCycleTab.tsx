@@ -244,7 +244,7 @@ export default function AssetTypesCycleTab({ units, assets, userName, canManage,
           <p className="font-black">{unit} não tem equipamentos cadastrados.</p>
           <p className="mt-1">
             As preventivas desta gerência são as <strong>vistorias por endereço</strong> (Semanal e Diária), configuradas na aba
-            <strong> 2. Modelos</strong>. Os tipos de ativo abaixo só se aplicam a gerências com equipamentos. O início do ciclo acima vale
+            <strong> 2. Modelos</strong>. Tipos de ativo só se aplicam a gerências com equipamentos. O início do ciclo acima vale
             também para marcar quando os disparos da {unit} deixam de ser teste.
           </p>
         </div>
