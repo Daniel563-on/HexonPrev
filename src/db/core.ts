@@ -90,7 +90,6 @@ if (isFirebaseConfigured) {
   console.log('Firebase não configurado. Utilizando banco de dados local seguro do navegador (LocalStorage).');
 }
 
-// Recursively remove any 'undefined' values from an object before sending to Firestore, to avoid crashes
 // OS sem técnico NÃO grava o campo (nem ""): os índices de técnico do banco são esparsos
 // e só guardam entrada para OS que têm técnico (cada entrada de índice custa gravação).
 export function withoutEmptyTechnician<T extends { assignedTechnician?: string; assignedTechnicianMatricula?: string }>(order: T): T {
@@ -100,6 +99,7 @@ export function withoutEmptyTechnician<T extends { assignedTechnician?: string; 
   return out;
 }
 
+// Recursively remove any 'undefined' values from an object before sending to Firestore, to avoid crashes
 export function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') {
     return obj;
