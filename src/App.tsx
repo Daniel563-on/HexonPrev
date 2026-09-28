@@ -476,19 +476,13 @@ export default function App() {
       userHasTabPermission(t)
     );
 
-    // 1. Strict Security Guard: only Super Administrador can access 'user-control'
+    // Tela sem permissão não aparece (o menu já esconde): vai direto para a primeira permitida, sem aviso
     if (currentTab === 'user-control' && userProfile.perfil !== 'Super Administrador') {
       if (firstAllowedTab) setCurrentTab(firstAllowedTab);
-      alert('Acesso Restrito: Somente o Super Administrador corporativo conta com privilégios para acessar a central de controle de acessos.');
       return;
     }
-
-    // 2. Aba sem permissão: vai para a primeira permitida (sem aviso quando é só a tela inicial)
     if (!userHasTabPermission(currentTab) && firstAllowedTab && firstAllowedTab !== currentTab) {
       setCurrentTab(firstAllowedTab);
-      if (currentTab !== 'dashboard') {
-        alert('Acesso Restrito: Seu perfil de acesso atual não possui as permissões necessárias para visualizar este módulo.');
-      }
     }
   }, [currentTab, userProfile, permissionsMatrix, accessProfiles]);
 
