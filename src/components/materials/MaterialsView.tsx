@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { HexonUser, Material } from '../../types';
 import {
   dbGetManagements,
+  dbDeleteMaterial,
   dbGetMaterials,
   dbSaveMaterial,
   dbSetMaterialCost,
@@ -36,6 +37,25 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
   const [isNew, setIsNew] = useState(false);
   const [costOf, setCostOf] = useState<Material | null>(null);
   const [historyOf, setHistoryOf] = useState<Material | null>(null);
+  const [toDelete, setToDelete] = useState<Material | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const isSuperAdmin = userProfile.perfil === 'Super Administrador';
+
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await dbDeleteMaterial(toDelete.id);
+      setToDelete(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(`Não foi possível excluir: ${err?.message || err}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const load = async (force = true) => {
     setLoading(true);
@@ -153,6 +173,15 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
                       Histórico
                     </button>
                   )}
+                  {isSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteError(null); setToDelete(m); }}
+                      className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-700 cursor-pointer ml-1.5"
+                    >
+                      Excluir
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -201,6 +230,27 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
           onClose={() => setCostOf(null)}
           onSaved={() => { setCostOf(null); load(); }}
         />
+      )}
+
+      {toDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+            <h3 className="text-base font-black text-slate-800">Excluir material</h3>
+            <p className="text-xs text-slate-600">
+              Excluir <strong>{toDelete.code} - {toDelete.description}</strong> ({toDelete.unit})? Use para corrigir um cadastro errado.
+              As OS que já usaram este material mantêm o registro delas.
+            </p>
+            {deleteError && <p className="text-xs font-bold text-rose-600">{deleteError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setToDelete(null)} disabled={deleting} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold cursor-pointer">
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmDelete} disabled={deleting} className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50">
+                {deleting ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {historyOf && (

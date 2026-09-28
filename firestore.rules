@@ -156,9 +156,11 @@ service cloud.firestore {
     match /materials/{materialId} {
       allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
         && (hasPermission('view_materials') || me().perfil == 'Profissional');
-      allow write: if isStaff() && hasPermission('manage_materials')
+      allow create, update: if isStaff() && hasPermission('manage_materials')
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
+      // Excluir (correção de erro de cadastro): só o Super Administrador
+      allow delete: if isSuperAdmin();
     }
 
     // 5. MODELOS DE CHECKLIST
