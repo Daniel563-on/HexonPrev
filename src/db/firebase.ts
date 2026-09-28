@@ -17,6 +17,7 @@ export * from './dispatchIndex';
 export * from './addresses';
 export * from './monthlySummaries';
 export * from './profiles';
+export * from './workforce';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';
@@ -36,6 +37,7 @@ import { clearAuditCache } from './audit';
 import { clearQrTemplatesCache } from './qrTemplates';
 import { configurePreventiveEngineDeps } from './preventiveEngine';
 import { clearProfilesCache } from './profiles';
+import { clearWorkforceCache } from './workforce';
 
 /**
  * Invalidate all domain-specific caches and pending promises across the system
@@ -52,6 +54,7 @@ export function clearAllCaches(): void {
   clearAuditCache();
   clearQrTemplatesCache();
   clearProfilesCache();
+  clearWorkforceCache();
 }
 
 /**

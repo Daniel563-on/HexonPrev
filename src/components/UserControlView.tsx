@@ -17,11 +17,14 @@ import {
   dbGetProfiles,
   resolveUserProfile,
   legacyPerfilOf,
-  SYSTEM_PROFILE_IDS
+  SYSTEM_PROFILE_IDS,
+  dbGetJobRoles,
+  dbRemoveImportedPersonForUser
 } from '../db/firebase';
-import { AccessProfile, HexonUser, Management, SystemPermission } from '../types';
+import { AccessProfile, HexonUser, JobRole, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
+import WorkforceTab from './users/WorkforceTab';
 
 interface UserControlViewProps {
   currentUserProfile: HexonUser;
@@ -29,7 +32,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -37,6 +40,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const [permissionsMatrix, setPermissionsMatrix] = useState<{ [key: string]: SystemPermission }>({});
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [profiles, setProfiles] = useState<AccessProfile[]>([]);
+  const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null); // aviso após salvar (a janela de alerta é bloqueada no preview)
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -80,12 +85,13 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const loadAllData = async (force: boolean = false) => {
     setIsLoading(true);
     try {
-      if (activeSubTab === 'users' || activeSubTab === 'permissions') {
+      if (activeSubTab === 'users' || activeSubTab === 'permissions' || activeSubTab === 'workforce') {
         const uList = await dbGetUsers(force);
         setUsers(uList);
         const mList = await dbGetManagements();
         setManagements(mList);
         setProfiles(await dbGetProfiles(force, true));
+        if (activeSubTab === 'users') setJobRoles(await dbGetJobRoles(force));
       } else if (activeSubTab === 'managements') {
         const mList = await dbGetManagements();
         setManagements(mList);
@@ -189,6 +195,14 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       };
 
       await dbSaveUser(newUser);
+
+      // Usuário do sistema tem prioridade: quem estava importado com a mesma matrícula sai do efetivo importado
+      const replaced = await dbRemoveImportedPersonForUser(newUser).catch(() => null);
+      setSaveNotice(
+        replaced
+          ? `Aviso: ${replaced.name} (matrícula ${replaced.matricula}) estava no efetivo importado e foi substituído por este usuário do sistema.`
+          : null
+      );
 
       if (!editingUser) {
         const result = await createAuthAccountForUser(matriculaToAuthEmail(newUser.matricula), finalSenha);
@@ -494,10 +508,28 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           <span className="material-symbols-outlined text-base">shield_lock</span>
           Perfis de Acesso
         </button>
+        <button
+          onClick={() => { setActiveSubTab('workforce'); setSearchQuery(''); }}
+          className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'workforce' 
+              ? 'border-blue-600 text-blue-600' 
+              : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">groups</span>
+          Efetivo
+        </button>
       </div>
 
       {/* SEARCH AND FILTER BAR */}
-      {activeSubTab !== 'permissions' && (
+      {saveNotice && activeSubTab === 'users' && (
+        <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs font-bold flex items-start justify-between gap-3">
+          <span>{saveNotice}</span>
+          <button type="button" onClick={() => setSaveNotice(null)} className="cursor-pointer text-amber-700">✕</button>
+        </div>
+      )}
+
+      {activeSubTab !== 'permissions' && activeSubTab !== 'workforce' && (
         <div className="flex relative">
           <span className={`material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             search
@@ -706,6 +738,17 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             </div>
           )}
 
+          {/* TAB 4: EFETIVO */}
+          {activeSubTab === 'workforce' && (
+            <WorkforceTab
+              users={users}
+              managements={managements}
+              profiles={profiles}
+              currentUserName={currentUserProfile.name}
+              darkMode={darkMode}
+            />
+          )}
+
           {/* TAB 3: PERFIS DE ACESSO */}
           {activeSubTab === 'permissions' && (
             <ProfilesTab
@@ -849,15 +892,34 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 {/* Cargo */}
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cargo / Função</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Técnico Mecânico HVAC"
-                    value={userForm.cargo}
-                    onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
-                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
-                    }`}
-                  />
+                  {jobRoles.length > 0 ? (
+                    // Lista de cargos cadastrados (aba Efetivo > Cargos); mantém o cargo atual se ainda não estiver na lista
+                    <select
+                      value={userForm.cargo}
+                      onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
+                      className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
+                        darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <option value="">Selecione o cargo...</option>
+                      {userForm.cargo && !jobRoles.some((r) => r.name === userForm.cargo) && (
+                        <option value={userForm.cargo}>{userForm.cargo} (não cadastrado)</option>
+                      )}
+                      {jobRoles.map((r) => (
+                        <option key={r.id} value={r.name}>{r.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Ex: Técnico"
+                      value={userForm.cargo}
+                      onChange={(e) => setUserForm({...userForm, cargo: e.target.value})}
+                      className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
+                        darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                      }`}
+                    />
+                  )}
                 </div>
 
                 {/* Gerência */}

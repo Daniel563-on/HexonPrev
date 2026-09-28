@@ -1021,7 +1021,7 @@ export default function TechnicianMobileView({
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300">
-                    {userProfile.perfil}
+                    {userProfile.cargo || 'Colaborador'}
                   </span>
                   {userProfile.gerencia && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 truncate">
