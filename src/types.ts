@@ -84,6 +84,10 @@ export interface ServiceOrder {
   surveyType?: string;           // e.g., "Inspeção de Ambientes", "Casa de Máquinas", "Quadro Elétrico"
   surveyLocation?: string;       // Location/room name for independent surveys
   periodicity?: string;          // e.g., "Semanal", "Quinzenal", "Mensal"
+  templateId?: string;           // modelo usado no disparo (formato novo)
+  templateVersion?: number;      // versão do modelo no momento do disparo
+  cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
+  isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
 }
 
 // ENDEREÇO CADASTRADO (Controle de Endereços): cada endereço ativo recebe sua ronda semanal

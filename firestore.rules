@@ -92,7 +92,9 @@ service cloud.firestore {
       allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
       allow create: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && (seesAllUnits() || request.resource.data.unit in myUnits());
+      // A data de criação nunca muda: um disparo que tente regravar uma OS existente é recusado
       allow update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
+        && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
         && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
         && (resource.data.status != 'Concluída'
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'solicitationStatus', 'updatedAt'])
@@ -111,7 +113,7 @@ service cloud.firestore {
     // 4c. REGISTRO DO DISPARO — números das OS já disparadas por período (evita duplicar sem ler as ordens)
     match /dispatchIndex/{indexId} {
       allow read: if isStaff();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || hasPermission('dispatch_orders');
     }
 
     // 4d. ENDEREÇOS — cadastro das unidades que recebem ronda; só o Super Administrador altera

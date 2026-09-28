@@ -18,7 +18,7 @@ import {
 } from '../types';
 import PdfTemplateMapper from './PdfTemplateMapper';
 import CreateTemplateModal from './templates/CreateTemplateModal';
-import TemplateGeneratorTab from './templates/TemplateGeneratorTab';
+import DispatchTab from './templates/DispatchTab';
 import AssetTypesCycleTab from './templates/AssetTypesCycleTab';
 import ModelsTab from './templates/ModelsTab';
 import {
@@ -37,9 +37,10 @@ interface TemplatesViewProps {
   visibleUnits: string[] | null; // gerências do perfil (null = todas)
   canManage: boolean;            // permissão "Configurar Modelos de Cronograma"
   canDelete: boolean;            // permissão "Excluir Modelos"
+  canDispatch: boolean;          // permissão "Disparar OS"
 }
 
-export default function TemplatesView({ onTemplatesUpdated, userProfile, visibleUnits, canManage, canDelete }: TemplatesViewProps) {
+export default function TemplatesView({ onTemplatesUpdated, userProfile, visibleUnits, canManage, canDelete, canDispatch }: TemplatesViewProps) {
   // Navigation states (ordem do trabalho: 1. tipos e ciclo, 2. modelos, 3. disparo)
   const [subTab, setSubTab] = useState<'types' | 'templates' | 'generation'>('types');
   const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
@@ -276,15 +277,15 @@ export default function TemplatesView({ onTemplatesUpdated, userProfile, visible
           }}
         />
       ) : (
-        <TemplateGeneratorTab
-          templates={templates}
+        <DispatchTab
+          units={visibleUnits || managements.map((m) => m.name).filter((n) => n && n !== 'Todas')}
           assets={assets}
-          existingComarcas={existingComarcas}
-          existingSectors={existingSectors}
-          managements={managements}
+          templates={templates}
           addresses={addresses}
-          onRefreshData={loadData}
-          onTemplatesUpdated={onTemplatesUpdated}
+          canDispatch={canDispatch}
+          onDispatched={() => {
+            if (onTemplatesUpdated) onTemplatesUpdated();
+          }}
         />
       )}
 
