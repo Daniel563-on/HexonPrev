@@ -26,7 +26,9 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
   const [saving, setSaving] = useState(false);
   const [historyOf, setHistoryOf] = useState<string | null>(null);
 
-  const withoutRate = roles.filter((r) => !r.rateFrom).length;
+  // Só os cargos que alguém tem hoje (os arquivados ficam guardados, fora da lista)
+  const visibleRoles = roles.filter((r) => !r.archived);
+  const withoutRate = visibleRoles.filter((r) => !r.rateFrom).length;
   const card = darkMode ? 'bg-[#0a1122]/40 border-slate-800' : 'bg-white border-slate-200';
   const strong = darkMode ? 'text-slate-200' : 'text-slate-800';
 
@@ -34,8 +36,13 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
     setSyncing(true);
     setMessage(null);
     try {
-      const created = await dbSyncJobRoles(cargoNames);
-      setMessage(created.length > 0 ? `Cargos novos (com R$ 0,00): ${created.join(', ')}.` : 'Nenhum cargo novo: todos já estão cadastrados.');
+      const res = await dbSyncJobRoles(cargoNames);
+      const parts = [
+        res.created.length > 0 ? `Novos (com R$ 0,00): ${res.created.join(', ')}` : '',
+        res.archived.length > 0 ? `Removidos da lista (ninguém tem mais): ${res.archived.join(', ')}` : '',
+        res.restored.length > 0 ? `Voltaram (com o valor que tinham): ${res.restored.join(', ')}` : ''
+      ].filter(Boolean);
+      setMessage(parts.length > 0 ? `${parts.join('. ')}.` : 'A lista já está igual aos cargos do sistema.');
       onChanged();
     } catch (err: any) {
       setMessage(`Não foi possível atualizar: ${err?.message || err}`);
@@ -102,12 +109,12 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
           {withoutRate} cargo(s) ainda com R$ 0,00. Informe o valor da hora de cada um.
         </p>
       )}
-      {roles.length === 0 && (
+      {visibleRoles.length === 0 && (
         <p className="text-xs text-slate-500">Nenhum cargo cadastrado. Clique em "Atualizar cargos" para gerar os cargos que existem no sistema.</p>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {roles.map((r) => (
+        {visibleRoles.map((r) => (
           <div key={r.id} className={`border rounded-xl p-4 space-y-2 ${card} ${!r.rateFrom ? 'border-amber-300' : ''}`}>
             <div className="flex items-start justify-between gap-2">
               <p className={`text-sm font-black ${strong}`}>{r.name}</p>
