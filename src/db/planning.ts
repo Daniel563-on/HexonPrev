@@ -1,4 +1,4 @@
-import { arrayRemove, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayRemove, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
@@ -116,7 +116,8 @@ export async function dbScheduleLot(input: ScheduleLotInput): Promise<PlanningLo
       assignedTechnician: input.technician.name,
       assignedTechnicianMatricula: input.technician.matricula,
       lotId: lotRef.id,
-      updatedAt: now
+      updatedAt: now,
+      syncAt: serverTimestamp()
     });
   }
   await batch.commit();
@@ -129,6 +130,6 @@ export async function dbDetachOrderFromLot(order: ServiceOrder): Promise<void> {
   const now = new Date().toISOString();
   const batch = writeBatch(dbInstance);
   batch.set(doc(dbInstance, 'planningLots', order.lotId), { orderIds: arrayRemove(order.id), updatedAt: now }, { merge: true });
-  batch.update(doc(dbInstance, 'serviceOrders', order.id), { lotId: deleteField(), updatedAt: now });
+  batch.update(doc(dbInstance, 'serviceOrders', order.id), { lotId: deleteField(), updatedAt: now, syncAt: serverTimestamp() });
   await batch.commit();
 }

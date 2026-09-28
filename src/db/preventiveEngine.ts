@@ -1,4 +1,4 @@
-import { collection, doc, documentId, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate, resolveOrderUnit } from '../types';
 import {
   firebaseActive,
@@ -633,7 +633,7 @@ export async function dbAutoGeneratePreventiveActivities(
         try {
           const batch = writeBatch(dbInstance);
           for (const order of chunk) {
-            batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(withoutEmptyTechnician(order)));
+            batch.set(doc(dbInstance, 'serviceOrders', order.id), { ...cleanUndefined(withoutEmptyTechnician(order)), syncAt: serverTimestamp() });
           }
           // Registra as OS disparadas no mesmo lote (grava tudo ou nada)
           addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));

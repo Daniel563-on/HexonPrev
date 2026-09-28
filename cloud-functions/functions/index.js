@@ -1,7 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 initializeApp();
 const DB_ID = 'ai-studio-f520b7fc-edf5-4548-b2db-299670f2da9a';
@@ -106,9 +106,9 @@ function computeDeadlineStatus(o, todayStr) {
   return o.status;
 }
 
-// 1) ROTINA DE PRAZOS — todo dia às 02:00
+// 1) ROTINA DE PRAZOS — todo dia às 00:00 (logo que o dia vira: prazo vencido ontem já não pode ser executado)
 // Marca "Atrasada" (janela do técnico venceu) e "Não Executada" (período do Super Admin venceu).
-exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 2 * * *' }, async () => {
+exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *' }, async () => {
   const today = todayBR();
   const snap = await db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).get();
   const updatedAt = new Date().toISOString();
@@ -119,7 +119,7 @@ exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 2 * * *'
     const o = d.data();
     const status = computeDeadlineStatus(o, today);
     if (status === o.status) continue;
-    const fields = { status, updatedAt };
+    const fields = { status, updatedAt, syncAt: FieldValue.serverTimestamp() };
     // Mês de encerramento: a OS "Não Executada" conta no mês em que terminou o período
     if (status === 'Não Executada') fields.closedMonth = (o.endDate || today).slice(0, 7);
     batch.update(d.ref, fields);

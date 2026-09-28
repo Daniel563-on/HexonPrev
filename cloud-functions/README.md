@@ -18,7 +18,7 @@ guardar o código do servidor e permitir republicá-lo.
 
 ## Funções agendadas (rodam sozinhas, horário de Brasília)
 
-- `dailyDeadlines` — todo dia às **02:00**: marca "Atrasada" e "Não Executada" (mesma regra do app,
+- `dailyDeadlines` — todo dia às **00:00**: marca "Atrasada" e "Não Executada" (mesma regra do app,
   `computeDeadlineStatus`) e grava `closedMonth` nas que viram "Não Executada".
 - `monthlyClosing` — todo dia **1º às 03:30**: grava o resumo congelado do mês anterior em
   `monthlySummaries/{AAAA-MM}__{GERENCIA}` (contagens por periodicidade, técnico, CRAAI, comarca e resultado).
