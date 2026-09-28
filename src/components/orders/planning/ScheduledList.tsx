@@ -32,12 +32,13 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
 
   // Agrupa por técnico (pela matrícula; OS antigas pelo nome)
   const groups = useMemo(() => {
-    const map = new Map<string, { title: string; items: ServiceOrder[] }>();
+    const map = new Map<string, { key: string; title: string; items: ServiceOrder[] }>();
     for (const o of orders) {
-      const key = o.assignedTechnicianMatricula || o.assignedTechnician || '(sem técnico)';
       const tech = technicians.find((t) => isOrderOfTechnician(o, t));
+      // Mesmo técnico = um grupo só (OS com matrícula e OS antigas só com o nome)
+      const key = tech ? `u:${tech.id}` : `n:${o.assignedTechnicianMatricula || o.assignedTechnician || '(sem técnico)'}`;
       const title = tech ? `${tech.name} (${tech.matricula})` : o.assignedTechnician || 'Sem técnico';
-      const g = map.get(key) || { title, items: [] };
+      const g = map.get(key) || { key, title, items: [] };
       g.items.push(o);
       map.set(key, g);
     }
@@ -122,7 +123,7 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
 
       {groups.map((g) => (
-        <div key={g.title} className="border border-slate-200 rounded-xl overflow-hidden">
+        <div key={g.key} className="border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <span className="text-xs font-black text-slate-800">{g.title}</span>
             <span className="text-[10px] font-bold text-slate-500">{g.items.length} OS</span>
