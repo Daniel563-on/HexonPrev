@@ -91,6 +91,15 @@ if (isFirebaseConfigured) {
 }
 
 // Recursively remove any 'undefined' values from an object before sending to Firestore, to avoid crashes
+// OS sem técnico NÃO grava o campo (nem ""): os índices de técnico do banco são esparsos
+// e só guardam entrada para OS que têm técnico (cada entrada de índice custa gravação).
+export function withoutEmptyTechnician<T extends { assignedTechnician?: string; assignedTechnicianMatricula?: string }>(order: T): T {
+  const out = { ...order };
+  if (!String(out.assignedTechnician ?? '').trim()) delete out.assignedTechnician;
+  if (!String(out.assignedTechnicianMatricula ?? '').trim()) delete out.assignedTechnicianMatricula;
+  return out;
+}
+
 export function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') {
     return obj;

@@ -22,6 +22,7 @@ import {
   firebaseActive,
   dbInstance,
   cleanUndefined,
+  withoutEmptyTechnician,
   isCacheValid,
   updateCacheTimestamp,
   checkQuotaException,
@@ -696,7 +697,8 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(orderWithUpdate));
+      // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
+      await setDoc(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate)));
     } catch (err: any) {
       console.warn('Firestore write serviceOrder failed, utilizing local fallback state:', err);
       checkQuotaException(err);

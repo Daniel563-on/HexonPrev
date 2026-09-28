@@ -349,7 +349,7 @@ export default function ServiceOrdersView({
       const matchComarca = osComarca.toLowerCase().includes(q);
       const matchTitle = os.title.toLowerCase().includes(q);
       const matchDesc = os.description.toLowerCase().includes(q);
-      const matchTech = os.assignedTechnician.toLowerCase().includes(q);
+      const matchTech = (os.assignedTechnician || '').toLowerCase().includes(q);
       
       matchesSmart = matchId || matchPatrimonio || matchComarca || matchTitle || matchDesc || matchTech;
     }

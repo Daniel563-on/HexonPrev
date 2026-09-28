@@ -3,7 +3,8 @@ import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate, resolveOrderUn
 import {
   firebaseActive,
   dbInstance,
-  cleanUndefined
+  cleanUndefined,
+  withoutEmptyTechnician
 } from './core';
 import { dbGetTemplates } from './templates';
 import { dbGetManagements } from './organization';
@@ -632,7 +633,7 @@ export async function dbAutoGeneratePreventiveActivities(
         try {
           const batch = writeBatch(dbInstance);
           for (const order of chunk) {
-            batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(order));
+            batch.set(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(withoutEmptyTechnician(order)));
           }
           // Registra as OS disparadas no mesmo lote (grava tudo ou nada)
           addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));
