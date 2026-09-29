@@ -11,9 +11,10 @@ interface Props {
   unit: string;
   editorName: string;    // quem está editando (fica registrado)
   onClose?: () => void;
+  compact?: boolean;     // perfil do técnico: título discreto (a seção já se chama "Equipe")
 }
 
-export default function UsualTeamEditor({ matricula, techName, unit, editorName, onClose }: Props) {
+export default function UsualTeamEditor({ matricula, techName, unit, editorName, onClose, compact }: Props) {
   const [members, setMembers] = useState<OrderParticipant[]>([]);
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [search, setSearch] = useState('');
@@ -57,10 +58,17 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
 
   return (
     <div className="space-y-3">
-      <div>
-        <p className="text-sm font-black text-slate-800">Equipe habitual — {techName}</p>
-        <p className="text-[11px] text-slate-500">Pessoas da {unit} que costumam executar com o técnico. Entram automaticamente como participantes ao iniciar uma OS.</p>
-      </div>
+      {compact ? (
+        <div>
+          <p className="text-xs font-bold">Equipe habitual</p>
+          <p className="text-[11px] text-slate-500">Entram como participantes ao iniciar uma OS.</p>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm font-black text-slate-800">Equipe habitual — {techName}</p>
+          <p className="text-[11px] text-slate-500">Pessoas da {unit} que costumam executar com o técnico. Entram automaticamente como participantes ao iniciar uma OS.</p>
+        </div>
+      )}
       {loading ? (
         <p className="text-xs text-slate-400">Carregando...</p>
       ) : (

@@ -960,18 +960,6 @@ export default function TechnicianMobileView({
       {/* ================= TAB 3: PERFIL & AJUSTES ================= */}
       {activeTab === 'profile' && (
         <main className="flex-1 px-4 pt-4 space-y-4">
-          {/* Equipe habitual (Etapa 6.2): entra como participante ao iniciar uma OS */}
-          {userProfile.matricula && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (
-            <div className="p-4 rounded-2xl border bg-white border-slate-200 text-slate-800">
-              <UsualTeamEditor
-                matricula={userProfile.matricula}
-                techName={userProfile.name}
-                unit={userProfile.gerencia}
-                editorName={userProfile.name}
-              />
-            </div>
-          )}
-
           {/* User Card */}
           <div className={`p-4 rounded-2xl border ${
             darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
@@ -1026,6 +1014,26 @@ export default function TechnicianMobileView({
               </button>
             </div>
           </div>
+
+          {/* Section: Equipe habitual (Etapa 6.2): entra como participante ao iniciar uma OS */}
+          {userProfile.matricula && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+                Equipe
+              </h4>
+              <div className={`p-4 rounded-2xl border ${
+                darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <UsualTeamEditor
+                  matricula={userProfile.matricula}
+                  techName={userProfile.name}
+                  unit={userProfile.gerencia}
+                  editorName={userProfile.name}
+                  compact
+                />
+              </div>
+            </div>
+          )}
 
           {/* Section: Visual & Acessibilidade */}
           <div className="space-y-1.5">
