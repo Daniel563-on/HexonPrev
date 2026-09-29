@@ -221,6 +221,12 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // 4o. EQUIPE HABITUAL DO TÉCNICO (Etapa 6.2)
+    match /usualTeams/{matricula} {
+      allow read: if isStaff();
+      allow write: if isStaff() && (me().matricula == matricula || isAdmin());
+    }
+
     // 5. MODELOS DE CHECKLIST
     // Criar/editar: permissão "Configurar Modelos de Cronograma", só nas gerências do perfil.
     // Excluir: permissão "Excluir Modelos" (padrão: só o Super Administrador).

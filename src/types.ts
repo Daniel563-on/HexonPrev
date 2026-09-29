@@ -98,8 +98,32 @@ export interface ServiceOrder {
   startedBy?: { matricula: string; name: string };
   completedAt?: string;          // hora do aparelho na conclusão (a do servidor fica em completedAtServer)
   inExecution?: { matricula: string; name: string; deviceStartedAt: string }; // só na memória: OS iniciada agora
+  // Execução (Etapa 6.2): participantes da execução e linha do tempo da OS
+  participants?: OrderParticipant[];
+  timeline?: OrderTimelineEvent[];
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
   isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
+}
+
+// EXECUÇÃO (Etapa 6.2): participantes da equipe de execução, linha do tempo e equipe habitual
+export interface OrderParticipant {
+  matricula: string;
+  name: string;
+  cargo?: string;
+}
+
+export interface OrderTimelineEvent {
+  at: string;
+  event: string;
+  by?: string;
+  detail?: string;
+}
+
+export interface UsualTeam {
+  matricula: string;
+  members?: OrderParticipant[];
+  participants?: OrderParticipant[];
+  updatedAt?: string;
 }
 
 // ENDEREÇO CADASTRADO (Controle de Endereços): cada endereço ativo recebe sua ronda semanal

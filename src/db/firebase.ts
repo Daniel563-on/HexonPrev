@@ -16,6 +16,7 @@ export * from './orderSync';
 export * from './checklistVersions';
 export * from './orderStarts';
 export * from './executionDraft';
+export * from './executionTeam';
 export * from './serviceOrders';
 export * from './dispatchIndex';
 export * from './addresses';
