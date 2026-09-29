@@ -27,6 +27,7 @@ export * from './materials';
 export * from './cycle';
 export * from './dispatch';
 export * from './planning';
+export * from './manHours';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';

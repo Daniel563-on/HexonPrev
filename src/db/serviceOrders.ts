@@ -12,6 +12,7 @@ import {
   startAfter,
   serverTimestamp,
   setDoc,
+  Timestamp,
   where,
   writeBatch
 } from 'firebase/firestore';
@@ -27,7 +28,8 @@ import {
   isCacheValid,
   updateCacheTimestamp,
   checkQuotaException,
-  ensureFirebaseAuthReady
+  ensureFirebaseAuthReady,
+  awaitWrite
 } from './core';
 import { isMockOrLegacyId } from './templates';
 import { ensureChecklistVersions, hydrateOrders, onChecklistVersionLoaded, toStoredOrder } from './checklistVersions';
@@ -593,11 +595,12 @@ export async function dbGetOrderSignature(orderId: string): Promise<string | nul
 async function saveOrderSignature(orderId: string, signature: string): Promise<boolean> {
   if (!firebaseActive || !dbInstance) return false;
   try {
-    await setDoc(doc(dbInstance, 'orderSignatures', orderId), {
+    // Sem internet: fica na fila do aparelho e sobe sozinha depois
+    await awaitWrite(setDoc(doc(dbInstance, 'orderSignatures', orderId), {
       orderId,
       signature,
       savedAt: new Date().toISOString()
-    });
+    }));
     signatureCache.set(orderId, signature);
     return true;
   } catch (err: any) {
@@ -607,8 +610,17 @@ async function saveOrderSignature(orderId: string, signature: string): Promise<b
   }
 }
 
+// Hora do servidor lida do banco volta ao formato do banco (a cópia local guarda como { seconds, nanoseconds })
+function asTimestamp(v: any): unknown {
+  if (v && typeof v.toMillis === 'function') return v;
+  if (v && typeof v.seconds === 'number') return new Timestamp(v.seconds, v.nanoseconds || 0);
+  return v;
+}
+
 // Save or Update service order
-export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Record<string, unknown> = {}): Promise<void> {
+// Retorna "queued" quando a gravação ficou no aparelho (sem internet) e vai subir sozinha depois
+export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Record<string, unknown> = {}): Promise<'saved' | 'queued'> {
+  let result: 'saved' | 'queued' = 'saved';
   // Assinatura nova: vai para "orderSignatures" e sai do documento da OS
   let signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = {
     signature: order.signature,
@@ -721,16 +733,20 @@ export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Reco
     try {
       // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
       // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
-      await setDoc(doc(dbInstance, 'serviceOrders', order.id), {
-        ...cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))),
+      const stored: Record<string, unknown> = cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))) as any;
+      // Hora do servidor da conclusão: regrava no mesmo formato (senão o banco recusa mexer na OS concluída)
+      if (stored.completedAtServer) stored.completedAtServer = asTimestamp(stored.completedAtServer);
+      result = await awaitWrite(setDoc(doc(dbInstance, 'serviceOrders', order.id), {
+        ...stored,
         ...serverFields,
         syncAt: serverTimestamp()
-      });
+      }));
     } catch (err: any) {
       console.warn('Firestore write serviceOrder failed, utilizing local fallback state:', err);
       checkQuotaException(err);
     }
   }
+  return result;
 }
 
 // Delete service order from memory cache, local storage, and database
@@ -841,7 +857,7 @@ export async function dbAddHistoryLog(log: MaintenanceLog): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'histories', log.id), cleanUndefined(log));
+      await awaitWrite(setDoc(doc(dbInstance, 'histories', log.id), cleanUndefined(log)));
     } catch (err: any) {
       console.warn('Firestore write history failed:', err);
       checkQuotaException(err);

@@ -30,7 +30,10 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart } from '../../db/firebase';
+import {
+  dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart,
+  dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes
+} from '../../db/firebase';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
@@ -180,7 +183,37 @@ export default function TechnicianMobileView({
 
   // OS em execução deste técnico (registro de início à parte; no máximo 1)
   const [myStart, setMyStart] = useState<OrderStart | null>(null);
-  useEffect(() => subscribeMyActiveStart((userProfile.matricula || '').trim(), setMyStart), [userProfile.matricula]);
+  useEffect(() => subscribeMyActiveStart((userProfile.matricula || '').trim(), (s) => setMyStart(s)), [userProfile.matricula]);
+
+  // Alerta de tempo longo (Etapa 7): OS em execução há mais de 10h (calculado no aparelho, sem gravar nada)
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const runningMin = myStart ? (nowMs - Date.parse(myStart.deviceStartedAt)) / 60000 : 0;
+
+  // Sem internet (Etapa 7): uma vez por dia, deixa no aparelho o que a execução usa
+  // (materiais da gerência, pessoas da gerência e equipe habitual), para iniciar e concluir mesmo sem sinal
+  useEffect(() => {
+    const unit = userProfile.gerencia || '';
+    const mat = (userProfile.matricula || '').trim();
+    if (!unit || unit === 'Todas' || !mat || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+    const key = `hexon_offline_prefetch_${mat}`;
+    const today = localTodayStr();
+    try {
+      if (localStorage.getItem(key) === today) return;
+    } catch {
+      /* sem armazenamento: busca de novo */
+    }
+    Promise.all([dbGetMaterials([unit]), dbGetUnitPeople(unit), dbGetUsualTeam(mat)]).then(() => {
+      try {
+        localStorage.setItem(key, today);
+      } catch {
+        /* ignora */
+      }
+    });
+  }, [userProfile.gerencia, userProfile.matricula]);
 
   // OS atribuídas a este técnico. Concluídas saem da lista; a iniciada aparece "Em Execução".
   const myOrders = useMemo(() => {
@@ -477,7 +510,15 @@ export default function TechnicianMobileView({
       {/* ================= TAB 1: MINHAS PREVENTIVAS ================= */}
       {activeTab === 'orders' && (
         <main className="flex-1 px-4 pt-4 space-y-4">
-          
+          {myStart && runningMin > SUSPICIOUS_MIN && (
+            <div className="p-3 rounded-xl border bg-amber-50 border-amber-300 text-amber-900 text-xs font-bold flex gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                A OS #{formatOrderNumber(myStart.orderId)} está em execução há {fmtMinutes(runningMin)} (mais de 10h). Conclua ou desfaça o início: acima de 10h ela fica marcada como "tempo suspeito".
+              </span>
+            </div>
+          )}
+
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

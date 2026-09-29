@@ -88,7 +88,7 @@ Legenda: ✅ já existe · 🟡 existe, mas precisa ajustar · 🔴 não existe
 | Equipe habitual do técnico | 🔴 | |
 | Participantes da OS | 🔴 | |
 | Materiais usados na OS | 🔴 | |
-| Homem-hora automático | 🔴 | |
+| Homem-hora automático | 🟢 | Etapa 7: tempo e homem-hora gravados na conclusão; custo em R$ calculado na OS para quem vê valores. |
 | Bloqueio após assinatura | 🟡 | A tela bloqueia, mas **o banco ainda aceitaria a alteração**. |
 | Concluída sai da lista do técnico | 🟡 | Hoje existe um contador ou aba de concluídas no app do técnico; ver pergunta 9. |
 | Não Executada automática | ✅ | Rotina diária no servidor e no app. Os horários serão revistos (00:00 / 00:30). |
@@ -193,6 +193,14 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 33. **Execução (Etapa 6), em 2 partes:** 6.1 = iniciar + executar + concluir; 6.2 = materiais + participantes + equipe habitual + linha do tempo. Respostas de 29/09/2026: o técnico **pode desfazer** o início (o preenchido no aparelho é descartado); **só 1 OS em execução por vez** por técnico; equipe habitual editada pelo **técnico e pelo planejador**, a qualquer momento; participantes **só da mesma gerência**; materiais com **casas decimais**, **uma linha por material** (repetido soma na mesma linha).
     - **6.1 feito:** abrir = só ver; "Iniciar Preventiva" (só o técnico da OS, só OS "Planejada" e a partir do dia programado) grava `orderStarts/{OS}` (matrícula, nome, gerência, hora do aparelho e do servidor) sem regravar a OS; planejador vê "Em Execução" em tempo real (e não consegue remarcar/trocar técnico/voltar p/ Novo); checklist e notas ficam só no aparelho (rascunho) até "Assinar e concluir", que grava a OS uma vez (respostas, notas, assinatura, `startedAt`/`startedAtServer`/`startedBy`/`completedAt`/`completedAtServer`) e apaga o registro de início; "Desfazer início" apaga o registro e o rascunho; concluídas saem do app do técnico (aba "Concluídas" removida); avisos do navegador trocados por mensagens na tela.
     - **6.2 feito:** materiais usados (só da gerência e com valor > R$ 0; técnico não vê valor; busca por código/descrição; uma linha por material; quantidade com vírgula) e participantes (pessoas ativas da mesma gerência: usuários + efetivo; quem executa entra sempre) no rascunho, gravados na conclusão (`materialsUsed`, `participants`); equipe habitual em `usualTeams/{matrícula}` (técnico edita no Perfil do celular; planejador no botão "Equipe" da visão "Por técnico"), preenche os participantes ao iniciar; linha do tempo dentro da OS (`timeline`): "Disparada" vem da data de criação (não é gravada), "Programada" (lote), "Técnico trocado", "Remarcada", "Voltou para Novo", "Iniciada" e "Concluída" (na conclusão), exibida no detalhe da OS.
+    - **Regras de início confirmadas (29/09/2026):** só OS "Planejada" e a partir do dia programado (Atrasada precisa ser remarcada); só o técnico da OS inicia (planejador e Super Admin só veem); OS antiga "Em Execução" pode ser iniciada; "1 por vez" garantido pelo app.
+
+34. **Homem-hora (Etapa 7), respostas de 29/09/2026:**
+    - **Sem internet:** o técnico chega com as OS carregadas; iniciar, preencher, desfazer, assinar e concluir funcionam sem sinal (ficam na fila do aparelho e sobem sozinhos quando a internet volta; a tela avisa "salvo no celular"). Uma vez por dia, com internet, o app deixa no aparelho os materiais e as pessoas da gerência e a equipe habitual. O app precisa ter sido aberto com internet (abrir o sistema do zero sem internet = "app instalável", fica para depois).
+    - **Tempo (opção 1):** minutos pela hora do celular (início → conclusão), gravados na conclusão (`durationMin`); as horas do servidor ficam guardadas. Com internet no início e na conclusão, se a conta do servidor diferir da do celular em mais de 30 min, a OS mostra **"horário divergente"**; feito sem internet, mostra **"horário do celular (sem internet)"** (`execOffline`).
+    - **Homem-hora** em minutos (`manMinutes`) = tempo × pessoas (quem executa + participantes), gravado na conclusão, na mesma gravação.
+    - **Custo em R$** não é gravado: na OS concluída, quem tem "Visualizar Valores (R$)" vê mão de obra (horas × valor do cargo vigente na data da conclusão, por pessoa), materiais (qtd × valor vigente na data), parte do pernoite do lote e o total. Cargo/material sem valor aparece em vermelho e fica fora do total.
+    - **Tempo suspeito:** mais de 10h. O técnico vê um alerta no app enquanto a OS passa de 10h em execução; a OS concluída fica marcada. Totais e relatórios ficam para a Etapa 9.
 
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
@@ -206,6 +214,7 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 | P7 | Registro de acessos (`accessLogs`) | Lê ~300 para mostrar 150 | Índice `timestamp` decrescente. |
 | P8 | Teste de volume | Medições até agora com 1.266 OS e modelo de 3 itens (~7,8 unidades por OS no disparo) | Disparar ~8.000 OS em teste, com modelos reais (até ~20 itens), medir disparo, programação, execução e leituras; ajustar; zerar o banco (manter só Super Admins). |
 | P9 | Fechamento mensal (`monthlyClosing`) | Roda dia 1º às 03:30 | Passar para 00:30 (Etapa 10). |
+| P10 | Carga diária para uso sem internet (Etapa 7) | Cada técnico lê, 1 vez por dia, a lista de materiais e as pessoas da sua gerência | Medir no teste de volume; se pesar, ler só o que mudou. |
 
 ## 6. Perguntas em aberto
 
