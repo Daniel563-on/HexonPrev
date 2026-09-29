@@ -1,7 +1,8 @@
 import { collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
-import { Address, Asset, AssetTypeConfig, ChecklistItem, CycleSetting, MaintenanceTemplate, ServiceOrder } from '../types';
+import { Address, Asset, AssetTypeConfig, CycleSetting, MaintenanceTemplate, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, withoutEmptyTechnician, checkQuotaException } from './core';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
+import { dbEnsureTemplateVersion, toStoredOrder } from './checklistVersions';
 import { addMonths, assetTypeKey, cycleMonthIndex, duePeriodicity } from './cycle';
 import { isSectorInGerencia } from '../types';
 
@@ -32,6 +33,7 @@ export interface DispatchPlan {
   toCreate: ServiceOrder[];
   blocked: ServiceOrder[];     // já existem (não serão criadas de novo)
   skipped: DispatchSkip[];     // o que não gera OS e por quê
+  usedModels: MaintenanceTemplate[]; // modelos usados (a versão de cada um é congelada ao gravar)
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -49,23 +51,6 @@ export function monthRange(start: string, end: string): string[] {
   const out: string[] = [];
   for (let m = start; m <= end && out.length < 60; m = addMonths(m, 1)) out.push(m);
   return out;
-}
-
-function checklistFrom(model: MaintenanceTemplate, prefix: string): ChecklistItem[] {
-  return model.checklistItems
-    .filter((item) => item.isActive)
-    .map((item, idx) => ({
-      id: `${prefix}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
-      task: item.task,
-      checked: item.defaultChecked ?? false,
-      checkedAt: null,
-      observations: null,
-      criticality: item.criticality || 'Média',
-      autoCreateCorrective: item.autoCreateCorrective ?? false,
-      observationRequired: item.observationRequired ?? false,
-      responseType: item.responseType || 'three_states',
-      naObservationRequired: item.naObservationRequired ?? false
-    } as any));
 }
 
 const assetComarca = (a: Asset) =>
@@ -138,6 +123,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
   };
   const orders: ServiceOrder[] = [];
   const summary: DispatchMonthSummary[] = [];
+  const usedModels = new Map<string, MaintenanceTemplate>();
   const isSurveyUnit = unit.trim().toUpperCase() === 'DOM';
 
   for (const month of months) {
@@ -180,7 +166,9 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
         startDate: monthStart,
         endDate: monthEnd,
         assignedTechnician: '',
-        checklist: checklistFrom(model, `ck_${token(asset.id)}`),
+        checklist: [], // formato enxuto: o texto vem da versão congelada do modelo; a OS guarda só as respostas
+        checklistFormat: 2,
+        answers: {},
         notes: '',
         signature: null,
         signedBy: null,
@@ -224,7 +212,9 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
             startDate: p.start,
             endDate: p.end,
             assignedTechnician: '',
-            checklist: checklistFrom(model, `ck_${token(addr.id)}`),
+            checklist: [],
+            checklistFormat: 2,
+            answers: {},
             notes: '',
             signature: null,
             signedBy: null,
@@ -253,7 +243,11 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
   }
 
   const skipped = Array.from(skipMap.entries()).map(([reason, set]) => ({ reason, items: Array.from(set).sort() }));
-  return { unit, months, isTest, summary, toCreate: orders, blocked: [], skipped };
+  orders.forEach((o) => {
+    const model = models.find((t) => t.id === o.templateId);
+    if (model) usedModels.set(model.id, model);
+  });
+  return { unit, months, isTest, summary, toCreate: orders, blocked: [], skipped, usedModels: Array.from(usedModels.values()) };
 }
 
 // Separa as que já existem (registro do disparo + conferência direta pelo número) — poucas leituras
@@ -290,11 +284,13 @@ export async function dbSplitExistingOrders(plan: DispatchPlan): Promise<Dispatc
 export async function dbApplyDispatch(plan: DispatchPlan, onProgress?: (done: number, total: number) => void): Promise<number> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
+  // Congela a versão de cada modelo usado (1 gravação por versão; as OS só guardam as respostas)
+  for (const model of plan.usedModels || []) await dbEnsureTemplateVersion(model);
   let done = 0;
   for (let i = 0; i < plan.toCreate.length; i += 200) {
     const chunk = plan.toCreate.slice(i, i + 200);
     const batch = writeBatch(db);
-    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), { ...cleanUndefined(withoutEmptyTechnician(o)), syncAt: serverTimestamp() }));
+    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), { ...cleanUndefined(toStoredOrder(withoutEmptyTechnician(o))), syncAt: serverTimestamp() }));
     addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));
     await batch.commit();
     done += chunk.length;

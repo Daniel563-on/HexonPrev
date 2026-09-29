@@ -88,6 +88,10 @@ export interface ServiceOrder {
   lotId?: string;                // lote de planejamento (agendamento em bloco) do qual a OS faz parte
   templateId?: string;           // modelo usado no disparo (formato novo)
   templateVersion?: number;      // versão do modelo no momento do disparo
+  // Checklist no formato enxuto (1.2): a OS guarda só as respostas; o texto dos itens vem da versão congelada do modelo
+  checklistFormat?: 2;
+  answers?: Record<string, ChecklistAnswer>; // chave = posição do item na versão congelada ("0", "1", ...)
+  checklistPending?: boolean;    // só na memória: a versão do modelo ainda está sendo baixada (não salvar)
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
   isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
 }
@@ -188,6 +192,29 @@ export interface PdfTemplateConfig {
   pdfSize?: number;       // Tamanho em bytes
   pageCount?: number;     // Número total de páginas
   pins: PdfMappingPin[];  // Lista de marcadores/pinças mapeados
+}
+
+// Resposta de um item (formato enxuto). Campos curtos para a OS ficar pequena no banco.
+export interface ChecklistAnswer {
+  c?: boolean;                                  // checked
+  t?: string | null;                            // checkedAt
+  o?: string | null;                            // observations
+  s?: ChecklistItem['statusCheck'];             // statusCheck
+  ca?: ChecklistItem['autoCorrectiveAnswer'];   // resposta do item de solicitação de corretiva
+  cs?: ChecklistItem['autoCorrectiveStatus'];   // andamento da solicitação
+}
+
+// Versão congelada de um modelo (coleção "templateVersions", id = modelo + "__v" + versão). Nunca muda.
+export interface TemplateVersionSnapshot {
+  id: string;
+  templateId: string;
+  version: number;
+  name: string;
+  unit?: string;
+  type: MaintenanceTemplate['type'];
+  periodicity: string;
+  items: Omit<ChecklistTemplateItem, 'id' | 'isActive'>[]; // só os itens ativos, na ordem do checklist
+  createdAt: string;
 }
 
 export interface MaintenanceTemplate {
