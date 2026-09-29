@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder, dbGetOrdersForTechnician } from '../../db/firebase';
+import { dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart } from '../../db/firebase';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
@@ -177,33 +177,21 @@ export default function TechnicianMobileView({
     );
   };
 
-  // Filter orders strictly assigned to this technician
+  // OS em execução deste técnico (registro de início à parte; no máximo 1)
+  const [myStart, setMyStart] = useState<OrderStart | null>(null);
+  useEffect(() => subscribeMyActiveStart((userProfile.matricula || '').trim(), setMyStart), [userProfile.matricula]);
+
+  // OS atribuídas a este técnico. Concluídas saem da lista; a iniciada aparece "Em Execução".
   const myOrders = useMemo(() => {
-    return sourceOrders.filter(o => isOrderAssignedToUser(o));
-  }, [sourceOrders, userProfile]);
+    return sourceOrders
+      .filter(o => isOrderAssignedToUser(o) && o.status !== 'Concluída')
+      .map(o => (myStart && myStart.orderId === o.id && o.status !== 'Não Executada'
+        ? { ...o, status: 'Em Execução' as const, inExecution: { matricula: myStart.matricula, name: myStart.name, deviceStartedAt: myStart.deviceStartedAt } }
+        : o));
+  }, [sourceOrders, userProfile, myStart]);
 
-  // Check if an order is in progress
-  const isOrderInProgress = (o: ServiceOrder): boolean => {
-    if (o.status === 'Concluída' || o.status === 'Não Executada') return false;
-
-    const norm = (o.status || '').trim().toLowerCase();
-    if (norm === 'em execução' || norm === 'em execucao' || norm === 'em andamento' || norm === 'executando') {
-      return true;
-    }
-
-    if (o.checklist && Array.isArray(o.checklist) && o.checklist.length > 0) {
-      const hasProgress = o.checklist.some(
-        c => Boolean(c.checked) || 
-             Boolean(c.checkedAt) || 
-             (c.statusCheck !== undefined && c.statusCheck !== null) || 
-             (c.autoCorrectiveAnswer !== undefined && c.autoCorrectiveAnswer !== null) ||
-             (typeof c.observations === 'string' && c.observations.trim().length > 0)
-      );
-      if (hasProgress) return true;
-    }
-
-    return false;
-  };
+  // Em execução = iniciada (registro de início), não mais "tem algum item preenchido"
+  const isOrderInProgress = (o: ServiceOrder): boolean => o.status === 'Em Execução';
 
   // Helper to determine the comarca of an order
   const getOrderComarca = (os: ServiceOrder): string => {
@@ -513,8 +501,8 @@ export default function TechnicianMobileView({
             )}
           </div>
 
-          {/* Status Tabs - exactly 3 tabs: Pendentes, Execução, Concluídas (sem 'Todas') */}
-          <div className="grid grid-cols-3 gap-2 w-full">
+          {/* Abas: Pendentes e Execução (concluídas saem do app do técnico) */}
+          <div className="grid grid-cols-2 gap-2 w-full">
             <button
               type="button"
               onClick={() => setFilterStatus('pending')}
@@ -550,25 +538,6 @@ export default function TechnicianMobileView({
                 filterStatus === 'in_progress' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-semibold'
               }`}>
                 ({inProgressCount})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterStatus('completed')}
-              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                filterStatus === 'completed'
-                  ? 'bg-indigo-600 text-white shadow-xs font-black'
-                  : darkMode
-                  ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 font-bold'
-                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
-              }`}
-            >
-              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Concluídas</span>
-              <span className={`text-[11px] font-mono leading-none mt-1 ${
-                filterStatus === 'completed' ? 'text-indigo-100 font-bold' : 'text-slate-400 font-semibold'
-              }`}>
-                ({completedCount})
               </span>
             </button>
           </div>
@@ -638,21 +607,8 @@ export default function TechnicianMobileView({
                         } catch {}
                       }
 
-                      if (order.status !== 'Concluída' && order.status !== 'Não Executada' && order.status !== 'Em Execução') {
-                        const updated = { 
-                          ...order, 
-                          status: 'Em Execução' as const,
-                          assignedTechnician: order.assignedTechnician && order.assignedTechnician !== 'Não Atribuído' && order.assignedTechnician !== 'Equipe Técnica'
-                            ? order.assignedTechnician
-                            : (userProfile.name || order.assignedTechnician)
-                        };
-                        dbSaveServiceOrder(updated).catch(console.error);
-                        setSelectedOrder(updated);
-                        setSourceOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
-                        onReloadOrders();
-                      } else {
-                        setSelectedOrder(order);
-                      }
+                      // Abrir é só ver (nada é gravado). A execução começa em "Iniciar Preventiva", dentro da OS.
+                      setSelectedOrder(order);
                       setIsOrderDrawerOpen(true);
                     }}
                     className={`p-4 rounded-2xl border transition-all active:scale-[0.99] cursor-pointer shadow-xs ${

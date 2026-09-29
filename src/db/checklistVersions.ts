@@ -126,12 +126,13 @@ function answersFromChecklist(o: ServiceOrder): Record<string, ChecklistAnswer> 
 // Documento que vai para o banco: no formato enxuto, sem o checklist (só as respostas).
 // Com a versão ainda não baixada (checklistPending), mantém as respostas que já estavam na OS.
 export function toStoredOrder(o: ServiceOrder): ServiceOrder {
+  // checklistPending e inExecution existem só na memória: nunca vão para o banco
   if (o.checklistFormat !== 2) {
-    const { checklistPending, ...rest } = o;
+    const { checklistPending, inExecution, ...rest } = o;
     return rest as ServiceOrder;
   }
   const answers = o.checklistPending || !o.checklist || o.checklist.length === 0 ? o.answers || {} : answersFromChecklist(o);
-  const { checklist, checklistPending, ...rest } = o;
+  const { checklist, checklistPending, inExecution, ...rest } = o;
   return { ...rest, answers } as ServiceOrder;
 }
 

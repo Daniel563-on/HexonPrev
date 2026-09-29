@@ -608,7 +608,7 @@ async function saveOrderSignature(orderId: string, signature: string): Promise<b
 }
 
 // Save or Update service order
-export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
+export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Record<string, unknown> = {}): Promise<void> {
   // Assinatura nova: vai para "orderSignatures" e sai do documento da OS
   let signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = {
     signature: order.signature,
@@ -722,6 +722,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
       // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
       await setDoc(doc(dbInstance, 'serviceOrders', order.id), {
         ...cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))),
+        ...serverFields,
         syncAt: serverTimestamp()
       });
     } catch (err: any) {
