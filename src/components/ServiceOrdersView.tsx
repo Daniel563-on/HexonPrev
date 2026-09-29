@@ -30,7 +30,9 @@ interface ServiceOrdersViewProps {
   userProfile?: HexonUser | null;
   visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   userHasActionPermission?: (actionId: string) => boolean;
-  activeUnit?: string; // quem vê todas as gerências: a gerência escolhida no topo
+  activeUnit?: string; // quem vê todas as gerências: a gerência escolhida (uma por vez)
+  unitOptions?: string[];
+  onActiveUnitChange?: (unit: string) => void;
 }
 
 export default function ServiceOrdersView({ 
@@ -41,7 +43,9 @@ export default function ServiceOrdersView({
   userProfile,
   visibleUnits = null,
   userHasActionPermission,
-  activeUnit
+  activeUnit,
+  unitOptions,
+  onActiveUnitChange
 }: ServiceOrdersViewProps) {
   // Unidades com prazo de planejamento acompanhado (perfis limitados a unidades)
   const planUnits = visibleUnits || [];
@@ -705,6 +709,8 @@ export default function ServiceOrdersView({
           currentCalendarDate={currentCalendarDate}
           setCurrentCalendarDate={setCurrentCalendarDate}
           activeUnit={activeUnit}
+          unitOptions={unitOptions}
+          onActiveUnitChange={onActiveUnitChange}
         />
       ) : subTab === 'consulta' && userProfile?.perfil !== 'Profissional' ? (
         <OrdersSearchPanel
@@ -716,6 +722,22 @@ export default function ServiceOrdersView({
         />
       ) : (
         <>
+          {/* Quem vê todas as gerências: escolhe a gerência exibida (uma por vez) */}
+          {unitOptions && unitOptions.length > 0 && onActiveUnitChange && (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Gerência</span>
+              <select
+                value={activeUnit || ''}
+                onChange={(e) => onActiveUnitChange(e.target.value)}
+                className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer"
+              >
+                {unitOptions.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* SECTION: Smart Search & Filtros Inteligentes (EXTRACTED IN STAGE 3) */}
           <OrdersFilterBar
             smartSearch={smartSearch}

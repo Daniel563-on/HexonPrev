@@ -29,14 +29,16 @@ interface Props {
   onViewOrder: (os: ServiceOrder) => void;
   currentCalendarDate: Date;
   setCurrentCalendarDate: (d: Date) => void;
-  activeUnit?: string; // quem vê todas as gerências: a gerência escolhida no topo (as OS carregadas são só dela)
+  activeUnit?: string; // quem vê todas as gerências: a gerência escolhida (as OS carregadas são só dela)
+  unitOptions?: string[];
+  onActiveUnitChange?: (unit: string) => void;
 }
 
 const comarcaOf = (o: ServiceOrder) => o.comarca || o.surveyLocation || 'Sem comarca';
 
 export default function PlanningBoard({
   orders, users, userProfile, visibleUnits, userHasActionPermission, canRevertUnexecutedOrder, deadlines, getCountdownText,
-  onReload, onViewOrder, currentCalendarDate, setCurrentCalendarDate, activeUnit
+  onReload, onViewOrder, currentCalendarDate, setCurrentCalendarDate, activeUnit, unitOptions, onActiveUnitChange
 }: Props) {
   const todayStr = localTodayStr();
   const year = currentCalendarDate.getFullYear();
@@ -66,7 +68,7 @@ export default function PlanningBoard({
   // Gerências do perfil (ou todas, para quem vê todas)
   useEffect(() => {
     if (activeUnit) {
-      setUnitNames([activeUnit]);
+      setUnitNames(unitOptions && unitOptions.length > 0 ? unitOptions : [activeUnit]);
       setUnit(activeUnit);
       return;
     }
@@ -82,7 +84,7 @@ export default function PlanningBoard({
         setUnit((u) => (u && names.includes(u) ? u : names[0] || ''));
       })
       .catch(() => {});
-  }, [(visibleUnits || []).join('|'), activeUnit]);
+  }, [(visibleUnits || []).join('|'), activeUnit, (unitOptions || []).join('|')]);
 
   useEffect(() => {
     if (canViewCosts) dbGetOvernightRate().then(setOvernightRate);
@@ -248,7 +250,7 @@ export default function PlanningBoard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {unitNames.length > 1 ? (
-            <select value={unit} onChange={(e) => setUnit(e.target.value)} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white">
+            <select value={unit} onChange={(e) => (activeUnit && onActiveUnitChange ? onActiveUnitChange(e.target.value) : setUnit(e.target.value))} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white">
               {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           ) : (

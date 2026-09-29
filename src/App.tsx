@@ -955,7 +955,7 @@ export default function App() {
           currentTab={currentTab}
           orders={orders}
           onUpdateUserProfile={(updated) => setUserProfile(updated)}
-          unitOptions={visibleUnits === null && (currentTab === 'dashboard' || currentTab === 'service-orders') ? managementNames : undefined}
+          unitOptions={visibleUnits === null && currentTab === 'dashboard' ? managementNames : undefined}
           activeUnit={adminUnit}
           onActiveUnitChange={changeAdminUnit}
         />
@@ -1010,6 +1010,8 @@ export default function App() {
               visibleUnits={visibleUnits}
               userHasActionPermission={userHasActionPermission}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
+              unitOptions={visibleUnits === null ? managementNames : undefined}
+              onActiveUnitChange={changeAdminUnit}
             />
           )}
 
