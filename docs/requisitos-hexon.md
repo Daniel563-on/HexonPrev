@@ -188,6 +188,21 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - **Teste de volume** (~8.000 OS em modo teste), medir, ajustar e zerar o banco antes de produção.
     - **Uso:** disparar o mês seguinte por gerência em dias diferentes na última semana do mês.
 
+32. **Leituras e gravações: revisão depois do sistema completo (combinado em 29/09/2026).** O que muda formato de dados já foi feito (1.1 cópia local, 1.2 OS enxuta) e a Etapa 6 já nasce leve. Os ajustes abaixo ficam para uma rodada final, antes da produção:
+
+### Pendências de leitura e gravação
+| # | Item | O que foi visto | O que fazer |
+|---|---|---|---|
+| P1 | Rotina de prazos na nuvem (`dailyDeadlines`, 00:00) | Lê **todas** as OS abertas todo dia (3.922 em 29/09; em produção, ~9 a 25 mil/dia) | Ler só as que vencem: prazo do Super Admin vencido e Planejadas com janela do técnico vencida (campo novo com a data limite da janela + índice). Junto com a Etapa 10. Republicar pelo Cloud Shell. |
+| P2 | Checagem de prazos no navegador (`dbCheckAndExpirePlanningOrders`, perfil que vê todas as gerências, a cada 15 min) | Lê todas as OS abertas do banco | Remover (a tela já recalcula o status; quem grava é a rotina da nuvem). |
+| P3 | Pico de ~21 mil leituras no disparo de dez/26 (1.266 OS) | Causa não confirmada (hipóteses: P2 + conferência do disparo) | Confirmar no Query Insights e corrigir. |
+| P4 | Índices `solicitationStatus + updatedAt` e `addressId + endDate` | Não podem ser esparsos (toda OS tem `updatedAt`/`endDate`): +1 unidade cada por OS gravada | Avaliar mudar as consultas para permitir índice esparso. |
+| P5 | Painel do Super Admin | Mostra uma gerência por vez (cópia local por gerência) | Avaliar resumo com todas (ex.: resumos mensais já gravados pela nuvem). |
+| P6 | Arquivo principal do sistema (~2,9 MB) | Primeira abertura pesada | Carregar cada aba sob demanda. |
+| P7 | Registro de acessos (`accessLogs`) | Lê ~300 para mostrar 150 | Índice `timestamp` decrescente. |
+| P8 | Teste de volume | Medições até agora com 1.266 OS e modelo de 3 itens (~7,8 unidades por OS no disparo) | Disparar ~8.000 OS em teste, com modelos reais (até ~20 itens), medir disparo, programação, execução e leituras; ajustar; zerar o banco (manter só Super Admins). |
+| P9 | Fechamento mensal (`monthlyClosing`) | Roda dia 1º às 03:30 | Passar para 00:30 (Etapa 10). |
+
 ## 6. Perguntas em aberto
 
 (nenhuma no momento)
