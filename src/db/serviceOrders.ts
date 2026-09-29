@@ -71,7 +71,7 @@ export function clearPlanningDeadlinesCache(): void {
 
 // Newest first. Sorts by creation date because OS numbers are no longer purely numeric
 // (e.g. "AS_GMMR_2702-MEN-20260901"), so numeric comparison would break the order.
-function compareOrdersNewestFirst(a: ServiceOrder, d: ServiceOrder): number {
+export function compareOrdersNewestFirst(a: ServiceOrder, d: ServiceOrder): number {
   const byCreatedAt = (d.createdAt || '').localeCompare(a.createdAt || '');
   if (byCreatedAt !== 0) return byCreatedAt;
   return String(d.id).localeCompare(String(a.id));
@@ -223,7 +223,7 @@ export async function dbGetServiceOrders(): Promise<ServiceOrder[]> {
 // ORDENS EM TEMPO REAL (lista e calendário da gestão)
 // Carrega só o necessário: TODAS as OS abertas da gerência + as fechadas do mês visto.
 // Depois da primeira carga, o banco envia apenas as OS que mudarem (ex.: técnico concluiu).
-const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
+export const OPEN_STATUSES: ServiceOrder['status'][] = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
 
 // Histórico das vistorias de um endereço (as mais recentes primeiro, até 100)
 export async function dbGetAddressVistorias(addressId: string): Promise<ServiceOrder[]> {

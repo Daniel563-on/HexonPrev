@@ -30,6 +30,7 @@ interface ServiceOrdersViewProps {
   userProfile?: HexonUser | null;
   visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   userHasActionPermission?: (actionId: string) => boolean;
+  activeUnit?: string; // quem vê todas as gerências: a gerência escolhida no topo
 }
 
 export default function ServiceOrdersView({ 
@@ -39,7 +40,8 @@ export default function ServiceOrdersView({
   highlightOSId,
   userProfile,
   visibleUnits = null,
-  userHasActionPermission
+  userHasActionPermission,
+  activeUnit
 }: ServiceOrdersViewProps) {
   // Unidades com prazo de planejamento acompanhado (perfis limitados a unidades)
   const planUnits = visibleUnits || [];
@@ -702,6 +704,7 @@ export default function ServiceOrdersView({
           onViewOrder={handleViewPreventive}
           currentCalendarDate={currentCalendarDate}
           setCurrentCalendarDate={setCurrentCalendarDate}
+          activeUnit={activeUnit}
         />
       ) : subTab === 'consulta' && userProfile?.perfil !== 'Profissional' ? (
         <OrdersSearchPanel

@@ -22,6 +22,9 @@ interface NavbarProps {
   currentTab: string;
   orders: ServiceOrder[];
   onUpdateUserProfile?: (user: HexonUser) => void;
+  unitOptions?: string[];          // quem vê todas as gerências: escolhe uma por vez
+  activeUnit?: string;
+  onActiveUnitChange?: (unit: string) => void;
 }
 
 export default function Navbar({ 
@@ -39,7 +42,10 @@ export default function Navbar({
   setDaltonism,
   currentTab,
   orders,
-  onUpdateUserProfile
+  onUpdateUserProfile,
+  unitOptions,
+  activeUnit,
+  onActiveUnitChange
 }: NavbarProps) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -72,6 +78,18 @@ export default function Navbar({
           </button>
         )}
         <h2 className="text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
+        {unitOptions && unitOptions.length > 0 && onActiveUnitChange && (
+          <select
+            value={activeUnit || ''}
+            onChange={(e) => onActiveUnitChange(e.target.value)}
+            title="Gerência exibida"
+            className="h-8 px-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 cursor-pointer"
+          >
+            {unitOptions.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Actionable Controls matching the attached mockup */}

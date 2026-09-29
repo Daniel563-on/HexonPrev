@@ -18,6 +18,9 @@ import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
 import { 
   subscribeServiceOrders,
+  subscribeUnitOrders,
+  stopOrderSync,
+  dbGetManagements,
   subscribePendingSolicitations,
   technicianCandidates,
   localMonthKey, 
@@ -346,13 +349,42 @@ export default function App() {
   // Unidades que o usuário enxerga dentro do sistema (null = todas), conforme o perfil de acesso
   const visibleUnits = useMemo(() => userVisibleUnits(userProfile, accessProfiles), [userProfile, accessProfiles]);
 
-  // Gestão (Planejador / Super Admin): OS em tempo real, só das unidades do usuário (campo "unit" da OS).
-  // Todas as abertas + as fechadas do mês visto; o banco envia apenas o que mudar.
+  // Quem vê todas as gerências trabalha com uma por vez (escolhida no topo da tela)
+  const [managementNames, setManagementNames] = useState<string[]>([]);
+  const [adminUnit, setAdminUnit] = useState<string>(() => {
+    try {
+      return localStorage.getItem('hexon_admin_unit') || '';
+    } catch {
+      return '';
+    }
+  });
+  useEffect(() => {
+    if (!userProfile || userProfile.perfil === 'Profissional' || visibleUnits !== null) return;
+    dbGetManagements()
+      .then((list) => {
+        const names = list.map((m) => m.name).filter((n) => n !== 'Todas');
+        setManagementNames(names);
+        setAdminUnit((u) => (u && names.includes(u) ? u : names[0] || ''));
+      })
+      .catch(() => {});
+  }, [userProfile?.id, userProfile?.perfil, visibleUnits === null]);
+  const changeAdminUnit = (unit: string) => {
+    setAdminUnit(unit);
+    try {
+      localStorage.setItem('hexon_admin_unit', unit);
+    } catch {}
+  };
+  // Gerências cujas OS ficam na cópia local deste aparelho
+  const dataUnits = visibleUnits !== null ? visibleUnits : adminUnit ? [adminUnit] : [];
+
+  // Gestão (Planejador / Super Admin): cópia local das OS no aparelho; do banco só chega o que mudou.
+  // Todas as abertas + as fechadas do mês visto, das gerências acima.
   const visibleUnitsKey = visibleUnits === null ? '*' : visibleUnits.join('|');
+  const dataUnitsKey = dataUnits.join('|');
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
-    return subscribeServiceOrders({ units: visibleUnits }, ordersMonth, setOrders);
-  }, [userProfile?.id, userProfile?.perfil, visibleUnitsKey, ordersMonth]);
+    return subscribeUnitOrders(dataUnits, ordersMonth, setOrders);
+  }, [userProfile?.id, userProfile?.perfil, dataUnitsKey, ordersMonth]);
 
   // Técnico: OS em tempo real, só as atribuídas a ele (abertas + as que fechou no mês atual)
   useEffect(() => {
@@ -604,6 +636,7 @@ export default function App() {
     localStorage.removeItem('hexon_current_session_id');
     setUserProfile(null);
     setCurrentUser(null);
+    stopOrderSync();
     signOutHexon().catch(() => {});
   };
 
@@ -922,6 +955,9 @@ export default function App() {
           currentTab={currentTab}
           orders={orders}
           onUpdateUserProfile={(updated) => setUserProfile(updated)}
+          unitOptions={visibleUnits === null && (currentTab === 'dashboard' || currentTab === 'service-orders') ? managementNames : undefined}
+          activeUnit={adminUnit}
+          onActiveUnitChange={changeAdminUnit}
         />
 
         {/* COMPARTIMENTALIZED SCROLLABLE SUBVIEW PANEL */}
@@ -973,6 +1009,7 @@ export default function App() {
               userProfile={userProfile}
               visibleUnits={visibleUnits}
               userHasActionPermission={userHasActionPermission}
+              activeUnit={visibleUnits === null ? adminUnit : undefined}
             />
           )}
 
