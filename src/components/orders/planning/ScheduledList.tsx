@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../../../types';
-import { dbDetachOrderFromLot, dbSaveServiceOrder, lotOvernightCost } from '../../../db/firebase';
+import { dbDetachOrderFromLot, dbSaveServiceOrder, lotOvernightCost, timelineEvent } from '../../../db/firebase';
 import { formatOrderNumber } from '../../../utils/orderNumber';
 import { dayBR, isOrderOfTechnician, isWeekend, scheduledRange, STATUS_STYLE } from './planningUtils';
 
@@ -18,11 +18,12 @@ interface Props {
   canRevertUnexecutedOrder: (os: ServiceOrder) => boolean;
   onViewOrder: (os: ServiceOrder) => void;
   onChanged: (msg?: string) => void;
+  userName?: string; // quem mexeu (linha do tempo da OS)
 }
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export default function ScheduledList({ orders, technicians, lots, overnightRate, canViewCosts, locked, todayStr, canRevertUnexecutedOrder, onViewOrder, onChanged }: Props) {
+export default function ScheduledList({ orders, technicians, lots, overnightRate, canViewCosts, locked, todayStr, canRevertUnexecutedOrder, onViewOrder, onChanged, userName }: Props) {
   const [editing, setEditing] = useState<{ id: string; mode: 'tech' | 'date' | 'revert' } | null>(null);
   const [newTech, setNewTech] = useState('');
   const [newStart, setNewStart] = useState('');
@@ -81,6 +82,9 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
       updated = { ...base, status: 'Novo', scheduledDate: '', scheduledEndDate: undefined, assignedTechnician: '', assignedTechnicianMatricula: undefined };
       msg = `OS ${formatOrderNumber(o.id)} voltou para "Novo".`;
     }
+    // Linha do tempo da OS (vai na mesma gravação)
+    const eventName = editing.mode === 'tech' ? 'Técnico trocado' : editing.mode === 'date' ? 'Remarcada' : 'Voltou para Novo';
+    updated = { ...updated, timeline: [...(o.timeline || []), timelineEvent(eventName, userName, msg)] };
     setBusy(true);
     try {
       if (o.lotId) await dbDetachOrderFromLot(o);

@@ -3,9 +3,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../../../types';
 import {
   dbDetachOrderFromLot, dbGetManagements, dbGetOvernightRate, dbGetPlanningLots, dbSaveServiceOrder,
-  isSectorVisible, localTodayStr, PlanningDeadline
+  isSectorVisible, localTodayStr, PlanningDeadline, timelineEvent
 } from '../../../db/firebase';
 import { formatOrderNumber } from '../../../utils/orderNumber';
+import UsualTeamEditor from '../execution/UsualTeamEditor';
 import ScheduleLotModal from './ScheduleLotModal';
 import ScheduledList from './ScheduledList';
 import {
@@ -64,11 +65,12 @@ export default function PlanningBoard({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [weekIdx, setWeekIdx] = useState(0);
+  const [teamOf, setTeamOf] = useState<HexonUser | null>(null); // equipe habitual sendo editada
 
   // Gerências do perfil (ou todas, para quem vê todas)
   useEffect(() => {
     if (activeUnit) {
-      setUnitNames(unitOptions || [activeUnit]);
+      setUnitNames(unitOptions && unitOptions.length > 0 ? unitOptions : [activeUnit]);
       setUnit(activeUnit);
       return;
     }
@@ -217,7 +219,8 @@ export default function PlanningBoard({
         if (o.lotId) await dbDetachOrderFromLot(o);
         await dbSaveServiceOrder({
           ...o, lotId: undefined, status: 'Novo', scheduledDate: '', scheduledEndDate: undefined,
-          assignedTechnician: '', assignedTechnicianMatricula: undefined, updatedAt: new Date().toISOString()
+          assignedTechnician: '', assignedTechnicianMatricula: undefined, updatedAt: new Date().toISOString(),
+          timeline: [...(o.timeline || []), timelineEvent('Voltou para Novo', userProfile?.name, 'Atrasada revertida em lote')]
         });
       }
       setConfirmRevert(false);
@@ -250,14 +253,7 @@ export default function PlanningBoard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {unitNames.length > 1 ? (
-            <select
-              value={unit}
-              onChange={(e) => {
-                setUnit(e.target.value);
-                onActiveUnitChange?.(e.target.value);
-              }}
-              className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer"
-            >
+            <select value={unit} onChange={(e) => (activeUnit && onActiveUnitChange ? onActiveUnitChange(e.target.value) : setUnit(e.target.value))} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white">
               {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           ) : (
@@ -356,7 +352,11 @@ export default function PlanningBoard({
                   <tbody>
                     {technicians.map((t) => (
                       <tr key={t.id} className="border-t border-slate-100">
-                        <td className="p-1.5 font-bold text-slate-700 whitespace-nowrap">{t.name}</td>
+                        <td className="p-1.5 font-bold text-slate-700 whitespace-nowrap">
+                          {t.name}
+                          <button type="button" onClick={() => setTeamOf(t)} title="Equipe habitual do técnico"
+                            className="ml-2 h-6 px-2 rounded-md border border-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer">Equipe</button>
+                        </td>
                         {week.map((d) => {
                           const n = unitOrders.filter((o) => passFilter(o) && scheduledIn(o, d, d) && isOrderOfTechnician(o, t)).length;
                           const selected = !!sel && d >= sel[0] && d <= sel[1];
@@ -465,12 +465,27 @@ export default function PlanningBoard({
                   canRevertUnexecutedOrder={(o) => canRevertUnexecutedOrder(o, currentCalendarDate)}
                   onViewOrder={onViewOrder}
                   onChanged={changed}
+                  userName={userProfile?.name}
                 />
               </div>
             </>
           )}
         </div>
       </div>
+
+      {teamOf && (
+        <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-5">
+            <UsualTeamEditor
+              matricula={teamOf.matricula}
+              techName={teamOf.name}
+              unit={unit}
+              editorName={userProfile?.name || ''}
+              onClose={() => setTeamOf(null)}
+            />
+          </div>
+        </div>
+      )}
 
       {showSchedule && sel && (
         <ScheduleLotModal

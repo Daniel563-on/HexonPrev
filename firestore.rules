@@ -120,6 +120,15 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // 4e. EQUIPE HABITUAL DO TÉCNICO (id = matrícula) — o próprio técnico ou o planejador/admin da gerência editam
+    match /usualTeams/{matricula} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && request.resource.data.matricula == matricula
+        && (matricula == me().matricula || me().perfil in ['Super Administrador', 'Administrador'])
+        && (seesAllUnits() || request.resource.data.unit in myUnits());
+      allow delete: if isSuperAdmin();
+    }
+
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local
     match /orderDeletions/{orderId} {
       allow read: if isStaff();
@@ -219,12 +228,6 @@ service cloud.firestore {
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
       allow delete: if isSuperAdmin();
-    }
-
-    // 4o. EQUIPE HABITUAL DO TÉCNICO (Etapa 6.2)
-    match /usualTeams/{matricula} {
-      allow read: if isStaff();
-      allow write: if isStaff() && (me().matricula == matricula || isAdmin());
     }
 
     // 5. MODELOS DE CHECKLIST

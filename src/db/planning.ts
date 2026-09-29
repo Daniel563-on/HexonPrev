@@ -1,6 +1,7 @@
-import { arrayRemove, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { timelineEvent } from './executionTeam';
 
 // PLANEJAMENTO (Etapa 5): lotes de agendamento e valor do pernoite.
 // A OS guarda só o lote (lotId); o custo do pernoite é calculado na hora, para quem pode ver valores.
@@ -117,7 +118,11 @@ export async function dbScheduleLot(input: ScheduleLotInput): Promise<PlanningLo
       assignedTechnicianMatricula: input.technician.matricula,
       lotId: lotRef.id,
       updatedAt: now,
-      syncAt: serverTimestamp()
+      syncAt: serverTimestamp(),
+      // Linha do tempo da OS (Etapa 6.2)
+      timeline: arrayUnion(
+        timelineEvent('Programada', input.createdBy, `${input.technician.name} • ${input.periodStart}${input.periodEnd > input.periodStart ? ` a ${input.periodEnd}` : ''}`)
+      )
     });
   }
   await batch.commit();

@@ -15,8 +15,10 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
-  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft
+  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam
 } from '../../db/firebase';
+import ExecutionExtras from './execution/ExecutionExtras';
+import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
@@ -173,6 +175,16 @@ export default function OrderDetailsDrawer({
     setExecMsg(null);
     try {
       await dbStartOrder(selectedOrder, userProfile);
+      // Participantes já vêm com a equipe habitual do técnico (dá para mudar na OS)
+      const team = await dbGetUsualTeam(myMatricula);
+      const me = { matricula: myMatricula, name: userProfile.name, cargo: userProfile.cargo || '' };
+      const prefilled: ServiceOrder = {
+        ...selectedOrder,
+        participants: [me, ...(team?.members || []).filter((m) => m.matricula !== myMatricula)],
+        materialsUsed: selectedOrder.materialsUsed || []
+      };
+      setSelectedOrderState(prefilled);
+      saveExecutionDraft(prefilled);
       setExecMsg({ type: 'ok', text: 'Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.' });
     } catch (err: any) {
       setExecMsg({ type: 'error', text: err?.message || 'Não foi possível iniciar.' });
@@ -524,8 +536,14 @@ export default function OrderDetailsDrawer({
     if (userHasActionPermission && !userHasActionPermission('sign_order')) return stop('Seu perfil não tem autorização para assinar e concluir.');
     if (!isStartedByMe) return stop('Inicie a preventiva antes de concluir.');
 
+    // Quem executa entra sempre como participante
+    const executor = { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' };
+    const participants = [executor, ...(selectedOrder.participants || []).filter((p) => p.matricula !== myMatricula)];
+
     const completedOrder: ServiceOrder = {
       ...selectedOrder,
+      participants,
+      materialsUsed: (selectedOrder.materialsUsed || []).filter((m) => m.qty > 0),
       status: 'Concluída',
       signature: signatureBase64,
       signedBy: signeeName,
@@ -1353,6 +1371,20 @@ export default function OrderDetailsDrawer({
                 )}
               </div>
 
+              {/* Materiais usados e participantes (Etapa 6.2): editáveis só durante a execução, por quem iniciou */}
+              {(isStartedByMe || (selectedOrder.materialsUsed || []).length > 0 || (selectedOrder.participants || []).length > 0) && (
+                <ExecutionExtras
+                  unit={selectedOrder.unit || ''}
+                  editable={isStartedByMe}
+                  executor={isStartedByMe
+                    ? { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' }
+                    : selectedOrder.startedBy ? { ...selectedOrder.startedBy, cargo: '' } : null}
+                  materials={selectedOrder.materialsUsed || []}
+                  participants={selectedOrder.participants || []}
+                  onChange={(next) => commitDraft({ ...selectedOrder, ...next })}
+                />
+              )}
+
               {/* Technician Notes Card - Fully Editable Free Textarea */}
               <div className="space-y-2">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -1377,6 +1409,8 @@ export default function OrderDetailsDrawer({
                   </div>
                 </div>
               </div>
+
+              <OrderTimeline order={selectedOrder} />
 
               {/* Display closed digital signature badge if completed */}
               {selectedOrder.status === 'Concluída' && (selectedOrder.signature || selectedOrder.hasSignature) && (
@@ -1479,6 +1513,11 @@ export default function OrderDetailsDrawer({
                         }, 100);
                       }
                       setExecMsg({ type: 'error', text: `Falta preencher itens obrigatórios: ${errors.join(' ')}` });
+                      return;
+                    }
+                    const noQty = (selectedOrder.materialsUsed || []).filter((m) => !(m.qty > 0));
+                    if (noQty.length > 0) {
+                      setExecMsg({ type: 'error', text: `Informe a quantidade (maior que zero) de: ${noQty.map((m) => m.description).join(', ')}. Ou tire o material da lista.` });
                       return;
                     }
                     setExecMsg(null);
