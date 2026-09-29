@@ -38,6 +38,11 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
   }, [people, search, members, matricula]);
 
   const save = async () => {
+    // Texto digitado que não virou pessoa da lista: não salva (só entra quem for escolhido na lista)
+    if (search.trim()) {
+      setMsg({ ok: false, text: results.length > 0 ? 'Escolha a pessoa na lista abaixo da busca (ou apague o texto) antes de salvar.' : `"${search.trim()}" não foi encontrado na ${unit}. Apague o texto para salvar.` });
+      return;
+    }
     setSaving(true);
     setMsg(null);
     try {
@@ -81,8 +86,12 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
                 ))}
               </div>
             )}
+            {search.trim() && results.length === 0 && (
+              <p className="text-[11px] font-bold text-rose-600 mt-1">Nenhuma pessoa encontrada na {unit} com "{search.trim()}".</p>
+            )}
+            {people.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Nenhuma pessoa ativa cadastrada na {unit} (usuários ou efetivo).</p>}
           </div>
-          {msg && <p className={`text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
+          {msg &&<p className={`text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
           <div className="flex justify-end gap-2">
             {onClose && <button type="button" onClick={onClose} disabled={saving} className="h-9 px-4 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 cursor-pointer">Fechar</button>}
             <button type="button" onClick={save} disabled={saving} className="h-9 px-4 rounded-lg bg-[#3525cd] text-white text-xs font-bold cursor-pointer disabled:opacity-50">

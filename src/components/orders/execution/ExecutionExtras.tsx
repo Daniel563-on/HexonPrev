@@ -116,7 +116,7 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
                 ))}
               </div>
             )}
-            {matSearch.trim() && matResults.length === 0 && <p className="text-[10px] text-slate-400 mt-1">Nenhum material encontrado.</p>}
+            {matSearch.trim() && matResults.length === 0 && <p className="text-[11px] font-bold text-rose-600 mt-1">Nenhum material encontrado na {unit} com "{matSearch.trim()}".</p>}
           </div>
         )}
         {msg && <p className="text-[11px] font-bold text-amber-700">{msg}</p>}
@@ -153,6 +153,10 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
                 ))}
               </div>
             )}
+            {personSearch.trim() && personResults.length === 0 && (
+              <p className="text-[11px] font-bold text-rose-600 mt-1">Nenhuma pessoa encontrada na {unit} com "{personSearch.trim()}".</p>
+            )}
+            <p className="text-[10px] text-slate-400 mt-1">Só entra quem for escolhido na lista (pessoas ativas da {unit}).</p>
           </div>
         )}
       </div>
