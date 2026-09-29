@@ -31,6 +31,7 @@ import {
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart } from '../../db/firebase';
+import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
@@ -959,7 +960,18 @@ export default function TechnicianMobileView({
       {/* ================= TAB 3: PERFIL & AJUSTES ================= */}
       {activeTab === 'profile' && (
         <main className="flex-1 px-4 pt-4 space-y-4">
-          
+          {/* Equipe habitual (Etapa 6.2): entra como participante ao iniciar uma OS */}
+          {userProfile.matricula && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (
+            <div className="p-4 rounded-2xl border bg-white border-slate-200 text-slate-800">
+              <UsualTeamEditor
+                matricula={userProfile.matricula}
+                techName={userProfile.name}
+                unit={userProfile.gerencia}
+                editorName={userProfile.name}
+              />
+            </div>
+          )}
+
           {/* User Card */}
           <div className={`p-4 rounded-2xl border ${
             darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'

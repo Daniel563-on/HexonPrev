@@ -1,4 +1,4 @@
-import { ChecklistItem, ServiceOrder } from '../types';
+import { ChecklistItem, OrderParticipant, ServiceOrder, UsedMaterial } from '../types';
 
 // RASCUNHO DA EXECUÇÃO (Etapa 6.1): o que o técnico preenche fica só no aparelho até a assinatura.
 // Nada vai para o banco enquanto ele preenche. Se não concluir (trocou de aparelho, apagou os dados), refaz o checklist.
@@ -6,6 +6,8 @@ import { ChecklistItem, ServiceOrder } from '../types';
 interface ExecutionDraft {
   checklist: Pick<ChecklistItem, 'id' | 'checked' | 'checkedAt' | 'observations' | 'statusCheck' | 'autoCorrectiveAnswer'>[];
   notes: string;
+  materialsUsed?: UsedMaterial[];
+  participants?: OrderParticipant[];
   savedAt: string;
 }
 
@@ -23,6 +25,8 @@ export function saveExecutionDraft(order: ServiceOrder): void {
         autoCorrectiveAnswer: c.autoCorrectiveAnswer
       })),
       notes: order.notes || '',
+      materialsUsed: order.materialsUsed || [],
+      participants: order.participants || [],
       savedAt: new Date().toISOString()
     };
     localStorage.setItem(key(order.id), JSON.stringify(draft));
@@ -52,7 +56,9 @@ export function applyExecutionDraft(order: ServiceOrder): ServiceOrder {
         const d = byId.get(c.id);
         return d ? { ...c, ...d } : c;
       }),
-      notes: draft.notes ?? order.notes
+      notes: draft.notes ?? order.notes,
+      materialsUsed: draft.materialsUsed ?? order.materialsUsed,
+      participants: draft.participants ?? order.participants
     };
   } catch {
     return order;

@@ -98,6 +98,10 @@ export interface ServiceOrder {
   startedBy?: { matricula: string; name: string };
   completedAt?: string;          // hora do aparelho na conclusão (a do servidor fica em completedAtServer)
   inExecution?: { matricula: string; name: string; deviceStartedAt: string }; // só na memória: OS iniciada agora
+  // Etapa 6.2: gravados junto na conclusão (sem valor em R$; o custo é calculado nos relatórios)
+  materialsUsed?: UsedMaterial[];
+  participants?: OrderParticipant[];
+  timeline?: OrderTimelineEvent[];  // linha do tempo da OS (disparada, programada, iniciada, concluída...)
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
   isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
 }
@@ -198,6 +202,36 @@ export interface PdfTemplateConfig {
   pdfSize?: number;       // Tamanho em bytes
   pageCount?: number;     // Número total de páginas
   pins: PdfMappingPin[];  // Lista de marcadores/pinças mapeados
+}
+
+// EXECUÇÃO (Etapa 6.2)
+// Material usado na OS: uma linha por material (repetido soma na mesma linha); quantidade com casas decimais
+export interface UsedMaterial {
+  id: string;           // id do material na lista da gerência
+  code: string;
+  description: string;
+  measureUnit: string;
+  qty: number;
+}
+// Pessoa que participou da OS inteira (do efetivo da mesma gerência)
+export interface OrderParticipant {
+  matricula: string;
+  name: string;
+  cargo: string;
+}
+export interface OrderTimelineEvent {
+  at: string;           // data/hora (ISO)
+  event: string;        // "Disparada", "Programada", "Iniciada", "Concluída"...
+  by?: string;          // quem fez
+  detail?: string;
+}
+// Equipe habitual do técnico (coleção "usualTeams", id = matrícula): o técnico e o planejador editam
+export interface UsualTeam {
+  matricula: string;    // técnico dono da equipe
+  unit: string;
+  members: OrderParticipant[];
+  updatedAt: string;
+  updatedBy: string;
 }
 
 // Resposta de um item (formato enxuto). Campos curtos para a OS ficar pequena no banco.

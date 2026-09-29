@@ -2,6 +2,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverT
 import { HexonUser, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { dbSaveServiceOrder } from './serviceOrders';
+import { timelineEvent } from './executionTeam';
 
 // EXECUÇÃO (Etapa 6.1): o início fica num registro pequeno à parte ("orderStarts/{número da OS}"),
 // sem regravar a OS. Só existe enquanto a OS está em execução: ao concluir ou desfazer, o registro é apagado.
@@ -94,6 +95,12 @@ export async function dbCompleteOrder(order: ServiceOrder): Promise<void> {
     startedBy: start ? { matricula: start.matricula, name: start.name } : order.startedBy,
     completedAt: new Date().toISOString()
   };
+  // Linha do tempo: início e conclusão entram na mesma gravação
+  completed.timeline = [
+    ...(order.timeline || []),
+    ...(start ? [{ ...timelineEvent('Iniciada', start.name), at: start.deviceStartedAt }] : []),
+    timelineEvent('Concluída', order.signedBy || start?.name)
+  ];
   await dbSaveServiceOrder(completed, { completedAtServer: serverTimestamp() });
   if (start) await deleteDoc(doc(dbInstance, 'orderStarts', order.id)).catch(() => {});
 }
