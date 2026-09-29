@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder, dbGetOrderSignature } from '../../db/firebase';
+import { dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf } from '../../db/firebase';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
@@ -67,6 +67,18 @@ export default function OrderDetailsDrawer({
       setShowSignaturePad(true);
     }
   }, [order, initialOpenSignature]);
+
+  // Checklist enxuto: a versão do modelo ainda não estava no aparelho — baixa e monta o checklist
+  useEffect(() => {
+    if (!order?.checklistPending || !order.templateId || !order.templateVersion) return;
+    let alive = true;
+    loadChecklistVersion(versionIdOf(order.templateId, order.templateVersion)).then((v) => {
+      if (alive && v) setSelectedOrderState((cur) => (cur && cur.id === order.id ? hydrateOrder({ ...cur, checklistPending: undefined }) : cur));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [order?.id, order?.checklistPending]);
 
   const setSelectedOrder = (updated: ServiceOrder | null) => {
     setSelectedOrderState(updated);
@@ -700,7 +712,9 @@ export default function OrderDetailsDrawer({
                   Checklist de Verificação Técnica
                 </p>
 
-                {selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada' ? (
+                {selectedOrder.checklistPending ? (
+                  <p className="text-xs font-bold text-slate-500 py-4 text-center">Carregando checklist...</p>
+                ) : selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada' ? (
                   /* Completed locked list with custom responseTypes */
                   <div className="space-y-2.5">
                     {selectedOrder.checklist.map((item) => {

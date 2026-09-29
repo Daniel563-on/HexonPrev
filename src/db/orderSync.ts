@@ -13,6 +13,7 @@ import { ServiceOrder } from '../types';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, authInstance, checkQuotaException } from './core';
 import { isMockOrLegacyId } from './templates';
+import { hydrateOrders, onChecklistVersionLoaded } from './checklistVersions';
 import { compareOrdersNewestFirst, computeDeadlineStatus, localMonthKey, localTodayStr, OPEN_STATUSES } from './serviceOrders';
 
 // CÓPIA LOCAL DAS OS (tela de gestão) COM SINCRONIZAÇÃO INCREMENTAL — uma cópia por gerência
@@ -318,10 +319,11 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
         return status === o.status ? o : { ...o, status };
       })
       .sort(compareOrdersNewestFirst);
-    onChange(list);
+    onChange(hydrateOrders(list)); // checklist enxuto montado a partir da versão do modelo
   };
 
   subscribers.add(emit);
+  const stopVersions = onChecklistVersionLoaded(emit);
   Promise.all(syncs.map((u) => u.ready.catch(() => {})))
     .then(async () => {
       if (!inLocalCopy) {
@@ -335,5 +337,6 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
   return () => {
     active = false;
     subscribers.delete(emit);
+    stopVersions();
   };
 }

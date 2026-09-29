@@ -97,9 +97,17 @@ service cloud.firestore {
         && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
         && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
         && (resource.data.status != 'Concluída'
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'solicitationStatus', 'updatedAt', 'syncAt'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt'])
             || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
       allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
+    }
+
+    // 4c. VERSÕES CONGELADAS DOS MODELOS — a OS enxuta guarda só as respostas; o texto vem daqui.
+    // Criada no disparo (1 por versão) e nunca alterada nem apagada: as OS antigas dependem dela.
+    match /templateVersions/{versionId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.keys().hasAll(['templateId', 'version', 'items']);
+      allow update, delete: if false;
     }
 
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local

@@ -30,6 +30,13 @@ import {
   ensureFirebaseAuthReady
 } from './core';
 import { isMockOrLegacyId } from './templates';
+import { ensureChecklistVersions, hydrateOrders, onChecklistVersionLoaded, toStoredOrder } from './checklistVersions';
+
+// Busca de uma vez: baixa as versões de modelo que faltarem e monta o checklist (formato enxuto)
+async function withChecklists(list: ServiceOrder[]): Promise<ServiceOrder[]> {
+  await ensureChecklistVersions(list).catch(() => {});
+  return hydrateOrders(list);
+}
 import { dbRemoveFromDispatchIndex } from './dispatchIndex';
 
 export interface PlanningDeadline {
@@ -232,7 +239,7 @@ export async function dbGetAddressVistorias(addressId: string): Promise<ServiceO
     // Vistorias de endereço são da DOM (as regras do banco exigem o filtro de unidade)
     query(collection(dbInstance, 'serviceOrders'), where('unit', '==', 'DOM'), where('addressId', '==', addressId), orderBy('endDate', 'desc'), limit(100))
   );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data(), signature: null } as ServiceOrder));
+  return withChecklists(snap.docs.map((d) => ({ id: d.id, ...d.data(), signature: null } as ServiceOrder)));
 }
 
 // Cancela as OS abertas dos ativos baixados (busca as OS de 30 ativos por vez).
@@ -335,8 +342,10 @@ export function subscribeServiceOrders(
         return status === o.status ? o : { ...o, status };
       })
       .sort(compareOrdersNewestFirst);
-    onChange(list);
+    onChange(hydrateOrders(list));
   };
+  // Chegou a versão de modelo que faltava: monta o checklist e reenvia
+  const stopVersions = onChecklistVersionLoaded(emit);
 
   const listen = (idx: number, q: any, label: string) =>
     onSnapshot(
@@ -358,7 +367,10 @@ export function subscribeServiceOrders(
     listen(i * 2 + 1, query(ordersRef, ...filters, where('closedMonth', '==', month)), 'closed')
   ]);
 
-  return () => unsubscribers.forEach((u) => u());
+  return () => {
+    stopVersions();
+    unsubscribers.forEach((u) => u());
+  };
 }
 
 // SOLICITAÇÕES DE CORRETIVA
@@ -373,7 +385,7 @@ export function subscribePendingSolicitations(
   }
   const filterSets = scopeFilterSets(scope);
   const parts: ServiceOrder[][] = filterSets.map(() => []);
-  const emit = () => onChange(parts.flat().sort(compareOrdersNewestFirst));
+  const emit = () => onChange(hydrateOrders(parts.flat().sort(compareOrdersNewestFirst)));
   if (filterSets.length === 0) {
     onChange([]);
     return () => {};
@@ -397,7 +409,11 @@ export function subscribePendingSolicitations(
       }
     )
   );
-  return () => unsubscribers.forEach((u) => u());
+  const stopVersions = onChecklistVersionLoaded(emit);
+  return () => {
+    stopVersions();
+    unsubscribers.forEach((u) => u());
+  };
 }
 
 // Com ação (confirmadas / canceladas): só quando o usuário filtra, em páginas, das mais recentes para as mais antigas.
@@ -449,7 +465,7 @@ export async function dbGetHandledSolicitationsPage(
       if (!isMockOrLegacyId(d.id)) orders.push({ id: d.id, ...d.data() } as ServiceOrder);
     });
     return {
-      orders,
+      orders: await withChecklists(orders),
       cursor: nextCursors,
       hasMore: merged.length > pageSize || snaps.some((snap) => snap.docs.length === pageSize)
     };
@@ -529,7 +545,7 @@ export async function dbSearchOrders(
     const status = computeDeadlineStatus(o, todayStr);
     list.push(status === o.status ? o : { ...o, status });
   });
-  return { orders: list, limited: snap.docs.length >= ORDERS_SEARCH_LIMIT };
+  return { orders: await withChecklists(list), limited: snap.docs.length >= ORDERS_SEARCH_LIMIT };
 }
 
 // Get a single service order by its number (1 leitura). Usado para abrir OS antigas pelo histórico do ativo.
@@ -541,7 +557,7 @@ export async function dbGetServiceOrderById(orderId: string): Promise<ServiceOrd
       const snap = await getDoc(doc(dbInstance, 'serviceOrders', orderId));
       if (!snap.exists()) return null;
       const order = { id: snap.id, ...snap.data() } as ServiceOrder;
-      return { ...order, status: computeDeadlineStatus(order) };
+      return (await withChecklists([{ ...order, status: computeDeadlineStatus(order) }]))[0];
     } catch (err: any) {
       console.warn('Firestore fetch single service order failed:', err);
       checkQuotaException(err);
@@ -609,6 +625,11 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     if (unit) order = { ...order, unit };
   }
 
+  // Checklist enxuto ainda sem a versão do modelo baixada: não dá para concluir (as respostas não estão na tela)
+  if (order.checklistPending && order.status === 'Concluída') {
+    throw new Error('O checklist desta OS ainda está carregando. Aguarde e tente de novo.');
+  }
+
   // Grava sempre o status coerente com os prazos (ex.: remarcar uma OS "Atrasada" volta para "Planejada")
   const status = computeDeadlineStatus(order);
   const orderWithUpdate: ServiceOrder = {
@@ -616,7 +637,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     ...signatureFields,
     status,
     closedMonth: computeClosedMonth(order, status),
-    solicitationStatus: computeSolicitationStatus(order),
+    solicitationStatus: order.checklistPending ? order.solicitationStatus : computeSolicitationStatus(order),
     updatedAt: new Date().toISOString()
   };
 
@@ -700,7 +721,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
     try {
       // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
       await setDoc(doc(dbInstance, 'serviceOrders', order.id), {
-        ...cleanUndefined(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate)),
+        ...cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))),
         syncAt: serverTimestamp()
       });
     } catch (err: any) {
@@ -1303,7 +1324,7 @@ export async function dbGetOrdersForTechnician(
         console.warn('LocalStorage limit caching technician orders:', e);
       }
 
-      return processExpiredOrders(list).sort(compareOrdersNewestFirst);
+      return withChecklists(processExpiredOrders(list).sort(compareOrdersNewestFirst));
     } catch (err: any) {
       console.warn('Firestore dbGetOrdersForTechnician failed, falling back to local storage:', err);
       checkQuotaException(err);
@@ -1354,7 +1375,7 @@ export async function dbGetAssetOrdersPublic(assetId: string, assetCode?: string
           list.push({ id: d.id, ...d.data() } as ServiceOrder);
         }
       });
-      return processExpiredOrders(list);
+      return withChecklists(processExpiredOrders(list));
     } catch (err: any) {
       console.warn('dbGetAssetOrdersPublic error querying Firestore:', err);
       checkQuotaException(err);
