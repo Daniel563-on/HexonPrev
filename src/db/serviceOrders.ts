@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   startAfter,
+  serverTimestamp,
   setDoc,
   where,
   writeBatch
@@ -251,7 +252,7 @@ export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: st
     for (let j = 0; j < open.length; j += 400) {
       const batch = writeBatch(dbInstance);
       open.slice(j, j + 400).forEach((d) =>
-        batch.update(d.ref, { status: 'Cancelada', closedMonth: month, cancelReason: reason, cancelledAt: now, updatedAt: now })
+        batch.update(d.ref, { status: 'Cancelada', closedMonth: month, cancelReason: reason, cancelledAt: now, updatedAt: now, syncAt: serverTimestamp() })
       );
       await batch.commit();
     }
@@ -697,8 +698,11 @@ export async function dbSaveServiceOrder(order: ServiceOrder): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
-      await setDoc(doc(dbInstance, 'serviceOrders', order.id), cleanUndefined(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate)));
+      // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
+      await setDoc(doc(dbInstance, 'serviceOrders', order.id), {
+        ...cleanUndefined(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate)),
+        syncAt: serverTimestamp()
+      });
     } catch (err: any) {
       console.warn('Firestore write serviceOrder failed, utilizing local fallback state:', err);
       checkQuotaException(err);
@@ -723,7 +727,11 @@ export async function dbDeleteServiceOrder(orderId: string): Promise<void> {
   // Delete from Firestore if signed-in
   if (firebaseActive && dbInstance) {
     try {
-      await deleteDoc(doc(dbInstance, 'serviceOrders', orderId));
+      // Exclui e registra a exclusão (os outros aparelhos tiram a OS da cópia local)
+      const batch = writeBatch(dbInstance);
+      batch.delete(doc(dbInstance, 'serviceOrders', orderId));
+      batch.set(doc(dbInstance, 'orderDeletions', orderId), { orderId, syncAt: serverTimestamp() });
+      await batch.commit();
     } catch (err: any) {
       console.warn('Firestore delete service order failed:', err);
       checkQuotaException(err);
@@ -961,7 +969,7 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
         for (const c of chunk) {
           // Atualiza só o status, sem sobrescrever a OS inteira (evita apagar edições simultâneas).
           // Ao virar "Não Executada", grava também o mês de encerramento (closedMonth).
-          const fields: { status: ServiceOrder['status']; updatedAt: string; closedMonth?: string } = { status: c.status, updatedAt };
+          const fields: { status: ServiceOrder['status']; updatedAt: string; closedMonth?: string; syncAt: ReturnType<typeof serverTimestamp> } = { status: c.status, updatedAt, syncAt: serverTimestamp() };
           if (c.closedMonth) fields.closedMonth = c.closedMonth;
           batch.update(doc(dbInstance, 'serviceOrders', c.id), fields);
         }
@@ -1448,7 +1456,7 @@ export async function dbBackfillOrderUnits(): Promise<UnitBackfillResult> {
 
   for (let i = 0; i < updates.length; i += 400) {
     const batch = writeBatch(db);
-    updates.slice(i, i + 400).forEach((u) => batch.update(doc(db, 'serviceOrders', u.id), u.fields));
+    updates.slice(i, i + 400).forEach((u) => batch.update(doc(db, 'serviceOrders', u.id), { ...u.fields, syncAt: serverTimestamp() }));
     await batch.commit();
   }
   result.updated = updates.length;
