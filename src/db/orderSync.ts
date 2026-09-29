@@ -14,6 +14,7 @@ import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, authInstance, checkQuotaException } from './core';
 import { isMockOrLegacyId } from './templates';
 import { hydrateOrders, onChecklistVersionLoaded } from './checklistVersions';
+import { OrderStart, subscribeUnitStarts } from './orderStarts';
 import { compareOrdersNewestFirst, computeDeadlineStatus, localMonthKey, localTodayStr, OPEN_STATUSES } from './serviceOrders';
 
 // CÓPIA LOCAL DAS OS (tela de gestão) COM SINCRONIZAÇÃO INCREMENTAL — uma cópia por gerência
@@ -37,6 +38,8 @@ interface UnitSync {
   ready: Promise<void>;
   unsub: Unsubscribe | null;
   persistTimer: ReturnType<typeof setTimeout> | null;
+  starts: Map<string, OrderStart>;       // OS em execução agora (registro à parte, Etapa 6.1)
+  unsubStarts: Unsubscribe | null;
 }
 
 const OPEN = new Set<string>(OPEN_STATUSES);
@@ -209,6 +212,8 @@ function hookVisibility(): void {
 function stopUnit(u: UnitSync): void {
   u.unsub?.();
   u.unsub = null;
+  u.unsubStarts?.();
+  u.unsubStarts = null;
   if (u.persistTimer) clearTimeout(u.persistTimer);
   u.persistTimer = null;
 }
@@ -235,7 +240,9 @@ function ensureUnit(uid: string, unit: string): UnitSync {
     if (!existing.unsub) existing.ready = existing.ready.then(() => startUnitListener(existing));
     return existing;
   }
-  const u: UnitSync = { unit, store: new Map(), lastSyncMs: 0, ready: Promise.resolve(), unsub: null, persistTimer: null };
+  const u: UnitSync = {
+    unit, store: new Map(), lastSyncMs: 0, ready: Promise.resolve(), unsub: null, persistTimer: null, starts: new Map(), unsubStarts: null
+  };
   units.set(unit, u);
   u.ready = (async () => {
     const saved = await idbGet<StoredOrders>(storageKey(uid, unit));
@@ -299,6 +306,15 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
     if (!wanted.has(u.unit)) stopUnit(u);
   });
   const syncs = unitList.map((unit) => ensureUnit(uid, unit));
+  // OS em execução agora (poucos registros por gerência, em tempo real)
+  syncs.forEach((u) => {
+    if (!u.unsubStarts) {
+      u.unsubStarts = subscribeUnitStarts(u.unit, (starts) => {
+        u.starts = starts;
+        notifyAll();
+      });
+    }
+  });
   const inLocalCopy = month >= prevMonthKey();
   let older: ServiceOrder[] = [];
   let active = true;
@@ -313,9 +329,21 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
       })
     );
     const todayStr = localTodayStr();
+    const startOf = (id: string) => {
+      for (const u of syncs) {
+        const s = u.starts.get(id);
+        if (s) return s;
+      }
+      return undefined;
+    };
     const list = Array.from(byId.values())
       .map((o) => {
         const status = computeDeadlineStatus(o, todayStr);
+        const s = startOf(o.id);
+        // Iniciada agora e ainda aberta: aparece "Em Execução" (a OS em si não é regravada ao iniciar)
+        if (s && status !== 'Concluída' && status !== 'Não Executada' && status !== 'Cancelada') {
+          return { ...o, status: 'Em Execução' as const, inExecution: { matricula: s.matricula, name: s.name, deviceStartedAt: s.deviceStartedAt } };
+        }
         return status === o.status ? o : { ...o, status };
       })
       .sort(compareOrdersNewestFirst);

@@ -92,6 +92,12 @@ export interface ServiceOrder {
   checklistFormat?: 2;
   answers?: Record<string, ChecklistAnswer>; // chave = posição do item na versão congelada ("0", "1", ...)
   checklistPending?: boolean;    // só na memória: a versão do modelo ainda está sendo baixada (não salvar)
+  // Execução (Etapa 6.1): horários gravados na conclusão (aparelho e servidor)
+  startedAt?: string;            // hora do aparelho ao tocar em "Iniciar Preventiva"
+  startedAtServer?: string;      // hora em que o servidor recebeu o início
+  startedBy?: { matricula: string; name: string };
+  completedAt?: string;          // hora do aparelho na conclusão (a do servidor fica em completedAtServer)
+  inExecution?: { matricula: string; name: string; deviceStartedAt: string }; // só na memória: OS iniciada agora
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
   isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
 }

@@ -110,6 +110,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 4d. OS EM EXECUÇÃO — registro pequeno enquanto a OS está em andamento (Etapa 6.1).
+    // Quem inicia grava com a própria matrícula; apaga ao concluir ou desfazer (Super Admin também, para corrigir).
+    match /orderStarts/{orderId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.orderId == orderId
+        && request.resource.data.matricula == me().matricula;
+      allow delete: if isStaff() && (resource.data.matricula == me().matricula || isSuperAdmin());
+      allow update: if false;
+    }
+
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local
     match /orderDeletions/{orderId} {
       allow read: if isStaff();

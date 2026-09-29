@@ -190,6 +190,9 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 
 32. **Leituras e gravações: revisão depois do sistema completo (combinado em 29/09/2026).** O que muda formato de dados já foi feito (1.1 cópia local, 1.2 OS enxuta) e a Etapa 6 já nasce leve. Os ajustes abaixo ficam para uma rodada final, antes da produção:
 
+33. **Execução (Etapa 6), em 2 partes:** 6.1 = iniciar + executar + concluir; 6.2 = materiais + participantes + equipe habitual + linha do tempo. Respostas de 29/09/2026: o técnico **pode desfazer** o início (o preenchido no aparelho é descartado); **só 1 OS em execução por vez** por técnico; equipe habitual editada pelo **técnico e pelo planejador**, a qualquer momento; participantes **só da mesma gerência**; materiais com **casas decimais**, **uma linha por material** (repetido soma na mesma linha).
+    - **6.1 feito:** abrir = só ver; "Iniciar Preventiva" (só o técnico da OS, só OS "Planejada" e a partir do dia programado) grava `orderStarts/{OS}` (matrícula, nome, gerência, hora do aparelho e do servidor) sem regravar a OS; planejador vê "Em Execução" em tempo real (e não consegue remarcar/trocar técnico/voltar p/ Novo); checklist e notas ficam só no aparelho (rascunho) até "Assinar e concluir", que grava a OS uma vez (respostas, notas, assinatura, `startedAt`/`startedAtServer`/`startedBy`/`completedAt`/`completedAtServer`) e apaga o registro de início; "Desfazer início" apaga o registro e o rascunho; concluídas saem do app do técnico (aba "Concluídas" removida); avisos do navegador trocados por mensagens na tela.
+
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
 |---|---|---|---|

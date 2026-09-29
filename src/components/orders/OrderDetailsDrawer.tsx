@@ -12,7 +12,11 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
-import { dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf } from '../../db/firebase';
+import {
+  dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
+  OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
+  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft
+} from '../../db/firebase';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
@@ -60,7 +64,8 @@ export default function OrderDetailsDrawer({
   const [photoEvidenceBase64, setPhotoEvidenceBase64] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedOrderState(order);
+    // Em execução neste aparelho: o que já foi preenchido (rascunho) volta para a tela
+    setSelectedOrderState(order ? applyExecutionDraft(order) : order);
     setFailedItemIds([]);
     setPhotoEvidenceBase64(order?.photoEvidence || null);
     if (initialOpenSignature) {
@@ -73,7 +78,7 @@ export default function OrderDetailsDrawer({
     if (!order?.checklistPending || !order.templateId || !order.templateVersion) return;
     let alive = true;
     loadChecklistVersion(versionIdOf(order.templateId, order.templateVersion)).then((v) => {
-      if (alive && v) setSelectedOrderState((cur) => (cur && cur.id === order.id ? hydrateOrder({ ...cur, checklistPending: undefined }) : cur));
+      if (alive && v) setSelectedOrderState((cur) => (cur && cur.id === order.id ? applyExecutionDraft(hydrateOrder({ ...cur, checklistPending: undefined })) : cur));
     });
     return () => {
       alive = false;
@@ -105,7 +110,92 @@ export default function OrderDetailsDrawer({
     );
   }, [userProfile, selectedOrder]);
 
+  // ===== EXECUÇÃO (Etapa 6.1) =====
+  // Abrir a OS é só ver. "Iniciar Preventiva" grava um registro pequeno à parte; o checklist fica só no aparelho
+  // (rascunho) até a assinatura, quando a OS é gravada uma vez com tudo.
+  const [myStart, setMyStart] = useState<OrderStart | null>(null);
+  const [execMsg, setExecMsg] = useState<{ type: 'ok' | 'error' | 'info'; text: string } | null>(null);
+  const [execBusy, setExecBusy] = useState(false);
+  const [confirmUndo, setConfirmUndo] = useState(false);
+  const myMatricula = (userProfile?.matricula || '').trim();
+  useEffect(() => {
+    if (!isOpen || !myMatricula) {
+      setMyStart(null);
+      return;
+    }
+    return subscribeMyActiveStart(myMatricula, setMyStart);
+  }, [isOpen, myMatricula]);
+  useEffect(() => {
+    setExecMsg(null);
+    setConfirmUndo(false);
+  }, [order?.id]);
+  const isStartedByMe = !!selectedOrder && myStart?.orderId === selectedOrder.id;
+
   if (!isOpen || !selectedOrder) return null;
+
+  const isOpenOrder = selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada' && selectedOrder.status !== 'Cancelada';
+  const canExecutePerm = !userHasActionPermission || userHasActionPermission('execute_order');
+  // Motivo para não poder iniciar (vazio = pode)
+  const startBlockReason = (() => {
+    if (!isOpenOrder) return 'OS encerrada.';
+    if (selectedOrder.inExecution) return `Em execução por ${selectedOrder.inExecution.name}.`;
+    // Iniciar: só o técnico da OS (pela matrícula; OS antigas pelo nome) — planejador/admin só visualiza
+    const techMat = (selectedOrder.assignedTechnicianMatricula || '').trim();
+    const isMine = techMat
+      ? techMat === myMatricula
+      : !!userProfile && (selectedOrder.assignedTechnician || '').trim().toLowerCase() === (userProfile.name || '').trim().toLowerCase();
+    if (!isAssignedToCurrentUser || !isMine) return 'Somente o técnico atribuído pode iniciar.';
+    if (!canExecutePerm) return 'Seu perfil não tem permissão para executar OS.';
+    if (!myMatricula) return 'Seu cadastro está sem matrícula.';
+    // "Em Execução" sem registro de início = OS antiga (antes da Etapa 6.1): pode ser iniciada do jeito novo
+    if (selectedOrder.status !== 'Planejada' && selectedOrder.status !== 'Em Execução') return 'Só OS "Planejada" pode ser iniciada.';
+    if (selectedOrder.scheduledDate && localTodayStr() < selectedOrder.scheduledDate.slice(0, 10)) {
+      return `Programada para começar em ${formatDateBR(selectedOrder.scheduledDate)}.`;
+    }
+    if (selectedOrder.checklistPending) return 'Aguarde o checklist carregar.';
+    if (myStart && myStart.orderId !== selectedOrder.id) return `Você já tem a OS #${formatOrderNumber(myStart.orderId)} em execução.`;
+    return '';
+  })();
+
+  // Toda alteração do checklist durante a execução: só na tela e no rascunho do aparelho (nada vai para o banco)
+  const commitDraft = (updated: ServiceOrder) => {
+    if (!isStartedByMe) {
+      setExecMsg({ type: 'info', text: 'Toque em "Iniciar Preventiva" para preencher o checklist.' });
+      return;
+    }
+    setSelectedOrderState(updated);
+    saveExecutionDraft(updated);
+  };
+
+  const handleStart = async () => {
+    if (!userProfile || startBlockReason) return;
+    setExecBusy(true);
+    setExecMsg(null);
+    try {
+      await dbStartOrder(selectedOrder, userProfile);
+      setExecMsg({ type: 'ok', text: 'Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.' });
+    } catch (err: any) {
+      setExecMsg({ type: 'error', text: err?.message || 'Não foi possível iniciar.' });
+    } finally {
+      setExecBusy(false);
+    }
+  };
+
+  const handleUndoStart = async () => {
+    setExecBusy(true);
+    setExecMsg(null);
+    try {
+      await dbUndoStart(selectedOrder.id);
+      clearExecutionDraft(selectedOrder.id);
+      setSelectedOrderState(order);
+      setConfirmUndo(false);
+      setExecMsg({ type: 'ok', text: 'Início desfeito. O que tinha sido preenchido foi descartado.' });
+    } catch (err: any) {
+      setExecMsg({ type: 'error', text: `Não foi possível desfazer: ${err?.message || err}` });
+    } finally {
+      setExecBusy(false);
+    }
+  };
 
   // Change individual checklist compliance status
   const selectItemStatus = async (osId: string, itemId: string, status: 'Atestado' | 'Não Atestado' | 'Não se Aplica') => {
@@ -160,16 +250,10 @@ export default function OrderDetailsDrawer({
 
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
-      checklist: updatedChecklist,
-      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
-      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
-        ? selectedOrder.assignedTechnician
-        : (userProfile?.name || selectedOrder.assignedTechnician)
+      checklist: updatedChecklist
     };
 
-    setSelectedOrder(updatedOrder);
-    await dbSaveServiceOrder(updatedOrder);
-    onReload();
+    commitDraft(updatedOrder);
   };
 
   // Change custom response type value (text, number, boolean, date)
@@ -197,16 +281,10 @@ export default function OrderDetailsDrawer({
 
     const updatedOrder: ServiceOrder = {
       ...selectedOrder,
-      checklist: updatedChecklist,
-      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
-      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
-        ? selectedOrder.assignedTechnician
-        : (userProfile?.name || selectedOrder.assignedTechnician)
+      checklist: updatedChecklist
     };
 
-    setSelectedOrder(updatedOrder);
-    await dbSaveServiceOrder(updatedOrder);
-    onReload();
+    commitDraft(updatedOrder);
   };
 
   // Validation function before closing the service order
@@ -344,8 +422,7 @@ export default function OrderDetailsDrawer({
       checklist: updatedChecklist
     };
 
-    setSelectedOrder(updatedOrder);
-    await dbSaveServiceOrder(updatedOrder);
+    commitDraft(updatedOrder);
   };
 
   // Change custom response fields dynamically keeping focus
@@ -386,8 +463,7 @@ export default function OrderDetailsDrawer({
       checklist: updatedChecklist
     };
 
-    setSelectedOrder(updatedOrder);
-    dbSaveServiceOrder(updatedOrder); // Background async save
+    commitDraft(updatedOrder);
   };
 
   // Change overall technician observation notes in real-time
@@ -405,9 +481,7 @@ export default function OrderDetailsDrawer({
       notes: val
     };
 
-    setSelectedOrder(updatedOrder);
-    await dbSaveServiceOrder(updatedOrder);
-    onReload();
+    commitDraft(updatedOrder);
   };
 
   // Drag and drop photo upload mockup simulation
@@ -441,21 +515,14 @@ export default function OrderDetailsDrawer({
   // Digital signature confirmation action saves as 'Concluída' and feeds asset history logs
   const handleSignConfirm = async (signatureBase64: string, signeeName: string) => {
     if (!selectedOrder) return;
-    if (selectedOrder.status === 'Concluída') {
-      alert('Esta ordem de serviço já foi concluída anteriormente.');
+    const stop = (text: string) => {
+      setExecMsg({ type: 'error', text });
       setShowSignaturePad(false);
-      return;
-    }
-
-    if (!isAssignedToCurrentUser) {
-      alert('Acesso Restrito: Você só pode assinar e concluir ordens de serviço atribuídas diretamente a você.');
-      return;
-    }
-
-    if (userHasActionPermission && !userHasActionPermission('sign_order')) {
-      alert('Acesso Restrito: Seu perfil de usuário não tem autorização para assinar digitalmente e encerrar preventivas.');
-      return;
-    }
+    };
+    if (selectedOrder.status === 'Concluída') return stop('Esta ordem de serviço já foi concluída.');
+    if (!isAssignedToCurrentUser) return stop('Somente o técnico atribuído pode assinar e concluir.');
+    if (userHasActionPermission && !userHasActionPermission('sign_order')) return stop('Seu perfil não tem autorização para assinar e concluir.');
+    if (!isStartedByMe) return stop('Inicie a preventiva antes de concluir.');
 
     const completedOrder: ServiceOrder = {
       ...selectedOrder,
@@ -466,12 +533,20 @@ export default function OrderDetailsDrawer({
       updatedAt: new Date().toISOString()
     };
 
-    setSelectedOrder(completedOrder);
-    await dbSaveServiceOrder(completedOrder);
-    setShowSignaturePad(false);
-    onReload();
-
-    alert(`✅ ORDEM DE SERVIÇO CONCLUÍDA!\nA OS #${completedOrder.id} foi assinada digitalmente por ${signeeName}. Os dados foram gravados automaticamente no histórico do ativo: ${completedOrder.assetName}.`);
+    // 1 gravação com tudo (respostas, notas, horários e assinatura); o registro de início é apagado
+    setExecBusy(true);
+    try {
+      await dbCompleteOrder(completedOrder);
+      clearExecutionDraft(completedOrder.id);
+      setSelectedOrder(completedOrder);
+      setShowSignaturePad(false);
+      setExecMsg({ type: 'ok', text: `OS #${formatOrderNumber(completedOrder.id)} concluída e assinada por ${signeeName}.` });
+      onReload();
+    } catch (err: any) {
+      stop(`Não foi possível concluir: ${err?.message || err}. O preenchimento continua salvo neste aparelho.`);
+    } finally {
+      setExecBusy(false);
+    }
   };
 
   // Helper to determine the comarca of an order
@@ -712,6 +787,11 @@ export default function OrderDetailsDrawer({
                   Checklist de Verificação Técnica
                 </p>
 
+                {isOpenOrder && !isStartedByMe && !startBlockReason && (
+                  <p className="text-[11px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    Visualização. Para preencher, toque em "Iniciar Preventiva" no rodapé.
+                  </p>
+                )}
                 {selectedOrder.checklistPending ? (
                   <p className="text-xs font-bold text-slate-500 py-4 text-center">Carregando checklist...</p>
                 ) : selectedOrder.status === 'Concluída' || selectedOrder.status === 'Não Executada' ? (
@@ -880,16 +960,10 @@ export default function OrderDetailsDrawer({
                           
                           const updatedOrder: ServiceOrder = {
                             ...selectedOrder,
-                            checklist: updatedChecklist,
-                            status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
-                            assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
-                              ? selectedOrder.assignedTechnician
-                              : (userProfile?.name || selectedOrder.assignedTechnician)
+                            checklist: updatedChecklist
                           };
-                          
-                          setSelectedOrder(updatedOrder);
-                          await dbSaveServiceOrder(updatedOrder);
-                          onReload();
+
+                          commitDraft(updatedOrder);
                         }}
                         className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-805 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 rounded-lg shadow-xs active:scale-95 transition-all cursor-pointer flex items-center gap-1"
                       >
@@ -954,15 +1028,9 @@ export default function OrderDetailsDrawer({
                                     });
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
-                                      checklist: updatedChecklist,
-                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
-                                      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
-                                        ? selectedOrder.assignedTechnician
-                                        : (userProfile?.name || selectedOrder.assignedTechnician)
+                                      checklist: updatedChecklist
                                     };
-                                    setSelectedOrder(updatedOrder);
-                                    await dbSaveServiceOrder(updatedOrder);
-                                    onReload();
+                                    commitDraft(updatedOrder);
                                   }}
                                   className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
                                     currentAnswer === 'Sim'
@@ -992,15 +1060,9 @@ export default function OrderDetailsDrawer({
                                     });
                                     const updatedOrder: ServiceOrder = {
                                       ...selectedOrder,
-                                      checklist: updatedChecklist,
-                                      status: (selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada') ? 'Em Execução' : selectedOrder.status,
-                                      assignedTechnician: selectedOrder.assignedTechnician && selectedOrder.assignedTechnician !== 'Não Atribuído' && selectedOrder.assignedTechnician !== 'Equipe Técnica'
-                                        ? selectedOrder.assignedTechnician
-                                        : (userProfile?.name || selectedOrder.assignedTechnician)
+                                      checklist: updatedChecklist
                                     };
-                                    setSelectedOrder(updatedOrder);
-                                    await dbSaveServiceOrder(updatedOrder);
-                                    onReload();
+                                    commitDraft(updatedOrder);
                                   }}
                                   className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
                                     currentAnswer === 'Não'
@@ -1340,6 +1402,18 @@ export default function OrderDetailsDrawer({
 
             </div>
 
+            {/* Mensagens da execução (no lugar de avisos do navegador) */}
+            {execMsg && (
+              <div className={`mx-3 sm:mx-5 mb-2 px-3 py-2 rounded-lg border text-[11px] font-bold flex justify-between gap-2 ${
+                execMsg.type === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : execMsg.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-blue-50 border-blue-200 text-blue-800'
+              }`}>
+                <span>{execMsg.text}</span>
+                <button type="button" onClick={() => setExecMsg(null)} className="cursor-pointer">×</button>
+              </div>
+            )}
+
             {/* Sticky footer actions validation panel */}
             <div className="p-3 sm:p-5 border-t border-gray-100 bg-[#eff4ff]/30 flex flex-wrap sm:flex-nowrap gap-2 sm:gap-3 shrink-0">
               
@@ -1353,10 +1427,38 @@ export default function OrderDetailsDrawer({
                   <AlertTriangle className="w-4 h-4" />
                   ORDEM EXPIRADA / NÃO REALIZADA NO PRAZO
                 </div>
+              ) : selectedOrder.inExecution && !isStartedByMe ? (
+                <div className="flex-grow min-h-[46px] bg-blue-50 text-blue-800 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 border border-blue-200">
+                  Em execução por {selectedOrder.inExecution.name} desde {formatDateBR(selectedOrder.inExecution.deviceStartedAt.replace('T', ' ').slice(0, 16))}
+                </div>
               ) : !isAssignedToCurrentUser ? (
                 <div className="flex-grow min-h-[46px] bg-slate-100 text-slate-500 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 border border-slate-300">
                   <Lock className="w-4 h-4 text-slate-400" />
                   SOMENTE O TÉCNICO ATRIBUÍDO PODE VALIDAR A EXECUÇÃO
+                </div>
+              ) : !isStartedByMe ? (
+                /* Abrir a OS é só ver: a execução começa aqui */
+                <div className="flex-grow flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={handleStart}
+                    disabled={!!startBlockReason || execBusy}
+                    className="min-h-[46px] bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Wrench className="w-4 h-4 text-white" />
+                    {execBusy ? 'INICIANDO...' : 'INICIAR PREVENTIVA'}
+                  </button>
+                  {startBlockReason && <span className="text-[10px] font-bold text-slate-500 text-center">{startBlockReason}</span>}
+                </div>
+              ) : confirmUndo ? (
+                <div className="flex-grow flex flex-col gap-2 p-2 rounded-xl border border-amber-200 bg-amber-50">
+                  <span className="text-[11px] font-bold text-amber-900">Desfazer o início? O que foi preenchido neste aparelho será descartado.</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setConfirmUndo(false)} disabled={execBusy} className="flex-1 h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-600 cursor-pointer">Voltar</button>
+                    <button type="button" onClick={handleUndoStart} disabled={execBusy} className="flex-1 h-9 rounded-lg bg-amber-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50">
+                      {execBusy ? 'Desfazendo...' : 'Desfazer início'}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 /* Primary completion CTA triggers signature box after checking validator rules */
@@ -1376,15 +1478,27 @@ export default function OrderDetailsDrawer({
                           }
                         }, 100);
                       }
-                      alert(`⚠️ FALTA PREENCHER ITENS OBRIGATÓRIOS:\n\n${errors.join('\n')}`);
+                      setExecMsg({ type: 'error', text: `Falta preencher itens obrigatórios: ${errors.join(' ')}` });
                       return;
                     }
+                    setExecMsg(null);
                     setShowSignaturePad(true);
                   }}
-                  className="flex-grow min-h-[46px] bg-[#3525cd] hover:bg-indigo-700 text-white font-black text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-98 cursor-pointer"
+                  disabled={execBusy}
+                  className="flex-grow min-h-[46px] bg-[#3525cd] hover:bg-indigo-700 text-white font-black text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
                 >
                   <FileSignature className="w-4 h-4 text-white" />
-                  VALIDAR EXECUÇÃO DE OS
+                  {execBusy ? 'CONCLUINDO...' : 'ASSINAR E CONCLUIR'}
+                </button>
+              )}
+              {isStartedByMe && !confirmUndo && selectedOrder.status !== 'Concluída' && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmUndo(true)}
+                  disabled={execBusy}
+                  className="px-3 h-11 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-bold cursor-pointer shrink-0"
+                >
+                  Desfazer início
                 </button>
               )}
 
