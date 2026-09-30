@@ -240,9 +240,6 @@ export default function ModelEditor({ template, templates, addresses, canManage,
                 }} className="h-8 px-2 border border-slate-200 rounded-lg font-semibold">
                   {RESPONSE_TYPES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
-                <select value={it.criticality || 'Média'} disabled={ro} onChange={(e) => updateItem(it.id, { criticality: e.target.value as ChecklistTemplateItem['criticality'] })} className="h-8 px-2 border border-slate-200 rounded-lg font-semibold">
-                  {['Baixa', 'Média', 'Alta'].map((c) => <option key={c} value={c}>Criticidade {c}</option>)}
-                </select>
                 {/* "Não conforme" já exige observação; N.A. não pede observação (Etapa 8) */}
                 {[
                   ...((it.responseType || 'three_states') === 'three_states' ? [['autoCreateCorrective', '"Não conforme" gera solicitação de corretiva']] : []),
