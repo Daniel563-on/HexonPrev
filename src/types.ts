@@ -284,6 +284,12 @@ export interface MaintenanceTemplate {
   updatedAt?: string;
 }
 
+// Data e hora LOCAIS do aparelho no formato "AAAA-MM-DD HH:MM" (toISOString() daria a hora de Greenwich, 3h a mais)
+export function localDateTimeStr(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /**
  * Formata qualquer string de data (do tipo YYYY-MM-DD ou ISO de banco) para o padrão brasileiro DD/MM/AAAA.
  * Mantém também o horário, se houver.
@@ -296,6 +302,16 @@ export function formatDateBR(dateStr: string | null | undefined): string {
   // Ignorar se já for um link/imagem/outro tipo de dado
   if (trimmed.startsWith('http') || trimmed.startsWith('data:')) {
     return dateStr;
+  }
+
+  // Data/hora com fuso (ex.: "2026-09-30T10:53:00.000Z", gravada em UTC): mostra no horário local do aparelho
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      const [datePart, timePart] = localDateTimeStr(d).split(' ');
+      const [y, m, day] = datePart.split('-');
+      return `${day}/${m}/${y} ${timePart}`;
+    }
   }
 
   // Formato YYYY-MM-DD ou YYYY-MM-DD HH:MM / ISO
