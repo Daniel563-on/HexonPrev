@@ -200,7 +200,13 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - **Tempo (opção 1):** minutos pela hora do celular (início → conclusão), gravados na conclusão (`durationMin`); as horas do servidor ficam guardadas. Com internet no início e na conclusão, se a conta do servidor diferir da do celular em mais de 30 min, a OS mostra **"horário divergente"**; feito sem internet, mostra **"horário do celular (sem internet)"** (`execOffline`).
     - **Homem-hora** em minutos (`manMinutes`) = tempo × pessoas (quem executa + participantes), gravado na conclusão, na mesma gravação.
     - **Custo em R$** não é gravado: na OS concluída, quem tem "Visualizar Valores (R$)" vê mão de obra (horas × valor do cargo vigente na data da conclusão, por pessoa), materiais (qtd × valor vigente na data), parte do pernoite do lote e o total. Cargo/material sem valor aparece em vermelho e fica fora do total.
-    - **Tempo suspeito:** mais de 10h. O técnico vê um alerta no app enquanto a OS passa de 10h em execução; a OS concluída fica marcada. Totais e relatórios ficam para a Etapa 9.
+    - **Hora da assinatura** gravada na hora local do aparelho (antes ia em UTC, 3h a mais). Pendente: "atualizado em" dos modelos de checklist ainda em UTC.
+    - **Tempo suspeito:** mais de 10h.
+
+35. **Controle do sistema (30/09/2026), aba "Sistema" em Controle de Usuários (só Super Admin):**
+    - **Forçar atualização:** todos os aparelhos abertos veem "Nova versão do sistema" com "Atualizar agora" e recarregam sozinhos em 1 minuto; antes de recarregar, enviam o que foi salvo sem internet. Além do botão, o app confere sozinho a cada 30 min e ao voltar para a aba, lendo o arquivo `version.json` do site (gerado no build; não usa o banco, só a transferência da hospedagem, ~1 KB por conferência).
+    - **Modo manutenção:** ligado, todos menos o Super Admin veem "Aplicativo em manutenção" (com mensagem opcional), são desconectados depois de enviar a fila do aparelho e não conseguem entrar; o Super Admin entra pelo link da tela. Bloqueio só no aplicativo (o banco não bloqueia).
+    - Registro único `appControl/status` (leitura pública, gravação só Super Admin): 1 leitura ao abrir o app e 1 por aparelho a cada botão apertado. O técnico vê um alerta no app enquanto a OS passa de 10h em execução; a OS concluída fica marcada. Totais e relatórios ficam para a Etapa 9.
 
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |

@@ -14,6 +14,8 @@ import MaterialsView from './components/materials/MaterialsView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
+import MaintenanceScreen from './components/MaintenanceScreen';
+import { AppControl, subscribeAppControl, waitPendingWrites } from './db/appControl';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
 import { 
@@ -127,7 +129,23 @@ export default function App() {
   // Perfis de acesso (cadastro do Super Administrador): permissões de cada usuário vêm do perfil dele
   const [accessProfiles, setAccessProfiles] = useState<AccessProfile[]>([]);
   const [sessionChecking, setSessionChecking] = useState<boolean>(false);
-  
+
+  // MODO MANUTENÇÃO: só o Super Administrador usa o sistema; os demais saem (depois de enviar o que estiver na fila)
+  const [appControl, setAppControl] = useState<AppControl | null>(null);
+  const [maintenanceLogin, setMaintenanceLogin] = useState(false);
+  useEffect(() => subscribeAppControl(setAppControl), []);
+  const inMaintenance = !!appControl?.maintenance && userProfile?.perfil !== 'Super Administrador';
+  useEffect(() => {
+    if (!appControl?.maintenance || !userProfile || userProfile.perfil === 'Super Administrador') return;
+    let alive = true;
+    waitPendingWrites().then(() => {
+      if (alive) handleLogoutState();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [appControl?.maintenance, userProfile?.id, userProfile?.perfil]);
+
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authRestricted, setAuthRestricted] = useState<boolean>(false);
   const [dismissedWarning, setDismissedWarning] = useState<boolean>(false);
@@ -886,6 +904,11 @@ export default function App() {
         }}
       />
     );
+  }
+
+  // MODO MANUTENÇÃO: tela de manutenção para todos, menos o Super Administrador (que pode entrar pelo link da tela)
+  if (inMaintenance && !(maintenanceLogin && !userProfile)) {
+    return <MaintenanceScreen message={appControl?.maintenanceMessage} onAdminLogin={() => setMaintenanceLogin(true)} />;
   }
 
   // FORCE LOGIN IF NO VALID ACTIVE USER IS LOGGED IN

@@ -24,6 +24,7 @@ import {
 import { AccessProfile, HexonUser, JobRole, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
+import SystemControlCard from './users/SystemControlCard';
 import WorkforceTab from './users/WorkforceTab';
 
 interface UserControlViewProps {
@@ -32,7 +33,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce' | 'system'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -523,6 +524,19 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           <span className="material-symbols-outlined text-base">groups</span>
           Efetivo
         </button>
+        {currentUserProfile.perfil === 'Super Administrador' && (
+          <button
+            onClick={() => { setActiveSubTab('system'); setSearchQuery(''); }}
+            className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'system'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">settings_suggest</span>
+            Sistema
+          </button>
+        )}
       </div>
 
       {/* SEARCH AND FILTER BAR */}
@@ -533,7 +547,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         </div>
       )}
 
-      {activeSubTab !== 'permissions' && activeSubTab !== 'workforce' && (
+      {activeSubTab !== 'permissions' && activeSubTab !== 'workforce' && activeSubTab !== 'system' && (
         <div className="flex relative">
           <span className={`material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             search
@@ -740,6 +754,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               </div>
 
             </div>
+          )}
+
+          {/* TAB 5: SISTEMA (forçar atualização e modo manutenção) */}
+          {activeSubTab === 'system' && currentUserProfile.perfil === 'Super Administrador' && (
+            <SystemControlCard darkMode={darkMode} userName={currentUserProfile.name} />
           )}
 
           {/* TAB 4: EFETIVO */}
