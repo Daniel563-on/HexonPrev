@@ -137,8 +137,8 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   },
   manage_solicitations: {
     id: 'manage_solicitations',
-    name: 'Operar Chamados (Abrir/Cancelar)',
-    description: 'Permite que usuários confirmem, abram chamados corretivos ou cancelem solicitações de avarias.',
+    name: 'Gerenciar Solicitações',
+    description: 'Decidir as solicitações de corretiva: "Abrir corretiva" (nº do GLPI) ou "Não abrir" (justificativa), e corrigir esses textos.',
     category: 'Ações',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   }

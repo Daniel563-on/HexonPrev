@@ -94,7 +94,13 @@ export function hydrateOrder(o: ServiceOrder): ServiceOrder {
       naObservationRequired: it.naObservationRequired ?? false,
       autoCreateCorrective: it.autoCreateCorrective ?? false,
       autoCorrectiveAnswer: a.ca,
-      autoCorrectiveStatus: a.cs
+      autoCorrectiveStatus: a.cs,
+      correctiveTicket: a.cg,
+      correctiveReason: a.cj,
+      correctiveBy: a.cb,
+      correctiveAt: a.cd,
+      correctiveEditedBy: a.eb,
+      correctiveEditedAt: a.ed
     } as ChecklistItem;
   });
   return { ...o, checklist, checklistPending: false };
@@ -118,6 +124,12 @@ function answersFromChecklist(o: ServiceOrder): Record<string, ChecklistAnswer> 
     if (item.statusCheck) a.s = item.statusCheck;
     if (item.autoCorrectiveAnswer) a.ca = item.autoCorrectiveAnswer;
     if (item.autoCorrectiveStatus) a.cs = item.autoCorrectiveStatus;
+    if (item.correctiveTicket) a.cg = item.correctiveTicket;
+    if (item.correctiveReason) a.cj = item.correctiveReason;
+    if (item.correctiveBy) a.cb = item.correctiveBy;
+    if (item.correctiveAt) a.cd = item.correctiveAt;
+    if (item.correctiveEditedBy) a.eb = item.correctiveEditedBy;
+    if (item.correctiveEditedAt) a.ed = item.correctiveEditedAt;
     if (Object.keys(a).length > 0) out[key] = a;
   });
   return out;

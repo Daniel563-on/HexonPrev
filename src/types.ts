@@ -15,7 +15,14 @@ export interface ChecklistItem {
   observationRequired?: boolean;
   autoCreateCorrective?: boolean;
   autoCorrectiveAnswer?: 'Sim' | 'Não';
-  autoCorrectiveStatus?: 'Pendente' | 'Resolvido' | 'Cancelado';
+  autoCorrectiveStatus?: 'Pendente' | 'Resolvido' | 'Cancelado'; // Resolvido = "Corretiva aberta"; Cancelado = "Não abrir"
+  // Decisão do planejador (Etapa 8), por item: nº do GLPI (corretiva aberta) ou justificativa (não abrir)
+  correctiveTicket?: string;
+  correctiveReason?: string;
+  correctiveBy?: string;
+  correctiveAt?: string;
+  correctiveEditedBy?: string;   // correção do nº/justificativa (a decisão não muda)
+  correctiveEditedAt?: string;
 }
 
 export interface AssetSpecs {
@@ -247,6 +254,12 @@ export interface ChecklistAnswer {
   s?: ChecklistItem['statusCheck'];             // statusCheck
   ca?: ChecklistItem['autoCorrectiveAnswer'];   // resposta do item de solicitação de corretiva
   cs?: ChecklistItem['autoCorrectiveStatus'];   // andamento da solicitação
+  cg?: string;                                  // nº do chamado GLPI (corretiva aberta)
+  cj?: string;                                  // justificativa (não abrir)
+  cb?: string;                                  // quem decidiu
+  cd?: string;                                  // quando decidiu
+  eb?: string;                                  // quem corrigiu o nº/justificativa
+  ed?: string;                                  // quando corrigiu
 }
 
 // Versão congelada de um modelo (coleção "templateVersions", id = modelo + "__v" + versão). Nunca muda.
@@ -282,6 +295,12 @@ export interface MaintenanceTemplate {
   addressScope?: 'rest' | 'selected'; // vistoria: "todos os demais endereços" ou "endereços escolhidos"
   addressIds?: string[];         // vistoria com endereços escolhidos
   updatedAt?: string;
+}
+
+// SOLICITAÇÃO DE CORRETIVA (Etapa 8): pergunta marcada no modelo com "Não conforme gera solicitação de corretiva"
+// e respondida "Não conforme" pelo técnico (OS antigas: pergunta especial respondida "Sim").
+export function isCorrectiveRequested(item: ChecklistItem): boolean {
+  return item.autoCreateCorrective === true && (item.statusCheck === 'Não Atestado' || item.autoCorrectiveAnswer === 'Sim');
 }
 
 // Data e hora LOCAIS do aparelho no formato "AAAA-MM-DD HH:MM" (toISOString() daria a hora de Greenwich, 3h a mais)
