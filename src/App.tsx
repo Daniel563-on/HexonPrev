@@ -133,10 +133,18 @@ export default function App() {
   // MODO MANUTENÇÃO: só o Super Administrador usa o sistema; os demais saem (depois de enviar o que estiver na fila)
   const [appControl, setAppControl] = useState<AppControl | null>(null);
   const [maintenanceLogin, setMaintenanceLogin] = useState(false);
+  const [maintenanceDenied, setMaintenanceDenied] = useState(false);
   useEffect(() => subscribeAppControl(setAppControl), []);
   const inMaintenance = !!appControl?.maintenance && userProfile?.perfil !== 'Super Administrador';
   useEffect(() => {
+    if (!appControl?.maintenance) {
+      setMaintenanceLogin(false);
+      setMaintenanceDenied(false);
+    }
     if (!appControl?.maintenance || !userProfile || userProfile.perfil === 'Super Administrador') return;
+    // Quem não é Super Administrador (logado ou que tentou entrar pelo link) volta para a tela de manutenção
+    if (maintenanceLogin) setMaintenanceDenied(true);
+    setMaintenanceLogin(false);
     let alive = true;
     waitPendingWrites().then(() => {
       if (alive) handleLogoutState();
@@ -908,7 +916,28 @@ export default function App() {
 
   // MODO MANUTENÇÃO: tela de manutenção para todos, menos o Super Administrador (que pode entrar pelo link da tela)
   if (inMaintenance && !(maintenanceLogin && !userProfile)) {
-    return <MaintenanceScreen message={appControl?.maintenanceMessage} onAdminLogin={() => setMaintenanceLogin(true)} />;
+    return (
+      <MaintenanceScreen
+        message={appControl?.maintenanceMessage}
+        denied={maintenanceDenied}
+        onAdminLogin={() => {
+          setMaintenanceDenied(false);
+          setMaintenanceLogin(true);
+        }}
+      />
+    );
+  }
+  // Manutenção: tela de login só para o Super Administrador (com aviso e botão para voltar)
+  if (inMaintenance && !userProfile) {
+    return (
+      <>
+        <div className="fixed top-0 left-0 right-0 z-[150] px-4 py-2 bg-amber-400 text-amber-950 text-xs font-bold flex items-center justify-center gap-3 font-sans">
+          <span>Sistema em manutenção: somente o Super Administrador pode entrar.</span>
+          <button type="button" onClick={() => setMaintenanceLogin(false)} className="underline cursor-pointer">Voltar</button>
+        </div>
+        <LoginView onLoginSuccess={handleLoginSuccess} darkMode={darkMode} />
+      </>
+    );
   }
 
   // FORCE LOGIN IF NO VALID ACTIVE USER IS LOGGED IN
