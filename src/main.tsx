@@ -105,10 +105,12 @@ if (publicAssetParam) {
     );
   });
 } else {
-  import('./App.tsx').then(({ default: App }) => {
+  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner')]).then(([{ default: App }, { default: AppUpdateBanner }]) => {
     root.render(
       <StrictMode>
         <App />
+        {/* Aviso de nova versão (forçar atualização / conferência automática) */}
+        <AppUpdateBanner />
       </StrictMode>
     );
   });

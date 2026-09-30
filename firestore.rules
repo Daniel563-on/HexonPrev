@@ -218,6 +218,12 @@ service cloud.firestore {
     }
 
     // 4m. VALORES (pernoite): só quem tem "Visualizar Valores (R$)" lê; só o Super Administrador altera
+    // 4o. CONTROLE DO SISTEMA — forçar atualização e modo manutenção. Todos leem (até a tela de login); só o Super Admin altera.
+    match /appControl/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     match /costSettings/{settingId} {
       allow read: if isStaff() && hasPermission('view_costs');
       allow write: if isSuperAdmin();
