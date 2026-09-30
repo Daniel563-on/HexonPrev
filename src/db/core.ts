@@ -371,4 +371,37 @@ export function getDatabaseMode(): {
   };
 }
 
+// GRAVAÇÃO SEM INTERNET (Etapa 7): o banco guarda a gravação no aparelho e envia sozinho quando a internet volta,
+// mas só avisa "gravado" depois que o servidor confirma. Para a tela não ficar presa, espera a confirmação por
+// poucos segundos; sem resposta, considera "salvo no aparelho" (a gravação continua na fila e sobe depois).
+let queuedAt = 0;
+const browserOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+export const looksOffline = () => browserOffline() || Date.now() - queuedAt < 60000;
+
+export async function awaitWrite(write: Promise<unknown>, ms = 4000): Promise<'saved' | 'queued'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = browserOffline() ? 0 : looksOffline() ? 1500 : ms;
+  try {
+    const result = await Promise.race([
+      write.then(() => 'saved' as const),
+      new Promise<'queued'>((resolve) => {
+        timer = setTimeout(() => resolve('queued'), wait);
+      })
+    ]);
+    if (result === 'queued') {
+      queuedAt = Date.now();
+      write.catch((err) => {
+        console.warn('Gravação enviada depois foi recusada pelo banco:', err);
+        checkQuotaException(err);
+      });
+    } else {
+      queuedAt = 0;
+    }
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
 

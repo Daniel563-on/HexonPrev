@@ -15,8 +15,9 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
-  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam
+  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes
 } from '../../db/firebase';
+import OrderTimeCost from './execution/OrderTimeCost';
 import ExecutionExtras from './execution/ExecutionExtras';
 import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
@@ -116,6 +117,7 @@ export default function OrderDetailsDrawer({
   // Abrir a OS é só ver. "Iniciar Preventiva" grava um registro pequeno à parte; o checklist fica só no aparelho
   // (rascunho) até a assinatura, quando a OS é gravada uma vez com tudo.
   const [myStart, setMyStart] = useState<OrderStart | null>(null);
+  const [dbOnline, setDbOnline] = useState(true);   // banco conectado ao servidor agora (sem internet = fila no aparelho)
   const [execMsg, setExecMsg] = useState<{ type: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [execBusy, setExecBusy] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
@@ -125,8 +127,13 @@ export default function OrderDetailsDrawer({
       setMyStart(null);
       return;
     }
-    return subscribeMyActiveStart(myMatricula, setMyStart);
+    return subscribeMyActiveStart(myMatricula, (s, online) => {
+      setMyStart(s);
+      setDbOnline(online);
+    });
   }, [isOpen, myMatricula]);
+  const isOffline = () => !dbOnline || looksOffline();
+  const OFFLINE_NOTE = ' Sem internet: ficou salvo no celular e será enviado sozinho quando a internet voltar.';
   useEffect(() => {
     setExecMsg(null);
     setConfirmUndo(false);
@@ -174,7 +181,7 @@ export default function OrderDetailsDrawer({
     setExecBusy(true);
     setExecMsg(null);
     try {
-      await dbStartOrder(selectedOrder, userProfile);
+      const { result } = await dbStartOrder(selectedOrder, userProfile, isOffline());
       // Participantes já vêm com a equipe habitual do técnico (dá para mudar na OS)
       const team = await dbGetUsualTeam(myMatricula);
       const me = { matricula: myMatricula, name: userProfile.name, cargo: userProfile.cargo || '' };
@@ -185,7 +192,7 @@ export default function OrderDetailsDrawer({
       };
       setSelectedOrderState(prefilled);
       saveExecutionDraft(prefilled);
-      setExecMsg({ type: 'ok', text: 'Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.' });
+      setExecMsg({ type: 'ok', text: `Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.${result === 'queued' ? OFFLINE_NOTE : ''}` });
     } catch (err: any) {
       setExecMsg({ type: 'error', text: err?.message || 'Não foi possível iniciar.' });
     } finally {
@@ -197,11 +204,11 @@ export default function OrderDetailsDrawer({
     setExecBusy(true);
     setExecMsg(null);
     try {
-      await dbUndoStart(selectedOrder.id);
+      const result = await dbUndoStart(selectedOrder.id);
       clearExecutionDraft(selectedOrder.id);
       setSelectedOrderState(order);
       setConfirmUndo(false);
-      setExecMsg({ type: 'ok', text: 'Início desfeito. O que tinha sido preenchido foi descartado.' });
+      setExecMsg({ type: 'ok', text: `Início desfeito. O que tinha sido preenchido foi descartado.${result === 'queued' ? OFFLINE_NOTE : ''}` });
     } catch (err: any) {
       setExecMsg({ type: 'error', text: `Não foi possível desfazer: ${err?.message || err}` });
     } finally {
@@ -554,11 +561,11 @@ export default function OrderDetailsDrawer({
     // 1 gravação com tudo (respostas, notas, horários e assinatura); o registro de início é apagado
     setExecBusy(true);
     try {
-      await dbCompleteOrder(completedOrder);
+      const { result, completed } = await dbCompleteOrder(completedOrder, myStart, isOffline());
       clearExecutionDraft(completedOrder.id);
-      setSelectedOrder(completedOrder);
+      setSelectedOrder(completed);
       setShowSignaturePad(false);
-      setExecMsg({ type: 'ok', text: `OS #${formatOrderNumber(completedOrder.id)} concluída e assinada por ${signeeName}.` });
+      setExecMsg({ type: 'ok', text: `OS #${formatOrderNumber(completedOrder.id)} concluída e assinada por ${signeeName}.${result === 'queued' ? OFFLINE_NOTE : ''}` });
       onReload();
     } catch (err: any) {
       stop(`Não foi possível concluir: ${err?.message || err}. O preenchimento continua salvo neste aparelho.`);
@@ -1410,6 +1417,11 @@ export default function OrderDetailsDrawer({
                 </div>
               </div>
 
+              {/* Tempo e homem-hora (Etapa 7); custo em R$ só com a permissão "Visualizar Valores (R$)" */}
+              {selectedOrder.status === 'Concluída' && (
+                <OrderTimeCost order={selectedOrder} canViewCosts={!!userHasActionPermission && userHasActionPermission('view_costs')} />
+              )}
+
               <OrderTimeline order={selectedOrder} />
 
               {/* Display closed digital signature badge if completed */}
@@ -1435,6 +1447,13 @@ export default function OrderDetailsDrawer({
               )}
 
             </div>
+
+            {/* Alerta de tempo longo (Etapa 7): calculado no próprio aparelho, sem gravar nada */}
+            {isStartedByMe && myStart && Date.now() - Date.parse(myStart.deviceStartedAt) > SUSPICIOUS_MIN * 60000 && (
+              <div className="mx-3 sm:mx-5 mb-2 px-3 py-2 rounded-lg border bg-amber-50 border-amber-300 text-amber-900 text-[11px] font-bold">
+                Esta OS está em execução há {fmtMinutes((Date.now() - Date.parse(myStart.deviceStartedAt)) / 60000)} (mais de 10h). Conclua ou desfaça o início: acima de 10h ela fica marcada como "tempo suspeito".
+              </div>
+            )}
 
             {/* Mensagens da execução (no lugar de avisos do navegador) */}
             {execMsg && (

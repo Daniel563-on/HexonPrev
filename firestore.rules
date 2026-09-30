@@ -184,7 +184,9 @@ service cloud.firestore {
 
     // 4i. CARGOS E VALOR DA HORA — só o Super Administrador
     match /jobRoles/{roleId} {
-      allow read, write: if isSuperAdmin();
+      // Ler: também quem pode ver valores (custo da OS: horas × valor do cargo)
+      allow read: if isSuperAdmin() || (isStaff() && hasPermission('view_costs'));
+      allow write: if isSuperAdmin();
     }
 
     // 4j. MATERIAIS — lista de cada gerência (sem estoque).
@@ -192,7 +194,7 @@ service cloud.firestore {
     // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências).
     match /materials/{materialId} {
       allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
-        && (hasPermission('view_materials') || me().perfil == 'Profissional');
+        && (hasPermission('view_materials') || hasPermission('view_costs') || me().perfil == 'Profissional');
       allow create, update: if isStaff() && hasPermission('manage_materials')
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));

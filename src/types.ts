@@ -98,6 +98,11 @@ export interface ServiceOrder {
   startedBy?: { matricula: string; name: string };
   completedAt?: string;          // hora do aparelho na conclusão (a do servidor fica em completedAtServer)
   inExecution?: { matricula: string; name: string; deviceStartedAt: string }; // só na memória: OS iniciada agora
+  // Etapa 7 (homem-hora), gravados na conclusão: minutos pela hora do celular (funciona sem internet)
+  completedAtServer?: unknown;   // hora em que o servidor recebeu a conclusão (Timestamp)
+  durationMin?: number;          // tempo da OS: início → conclusão, em minutos
+  manMinutes?: number;           // homem-hora em minutos: durationMin × pessoas (quem executa + participantes)
+  execOffline?: boolean;         // início ou conclusão feitos sem internet (vale a hora do celular)
   // Etapa 6.2: gravados junto na conclusão (sem valor em R$; o custo é calculado nos relatórios)
   materialsUsed?: UsedMaterial[];
   participants?: OrderParticipant[];
