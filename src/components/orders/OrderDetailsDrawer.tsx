@@ -10,7 +10,7 @@ import {
   Lock,
   X
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR, HexonUser, localDateTimeStr } from '../../types';
+import { ServiceOrder, Asset, formatDateBR, HexonUser, localDateTimeStr, isCorrectiveRequested } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
@@ -18,6 +18,7 @@ import {
   applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes
 } from '../../db/firebase';
 import OrderTimeCost from './execution/OrderTimeCost';
+import CorrectiveDecisionNote from './execution/CorrectiveDecisionNote';
 import ExecutionExtras from './execution/ExecutionExtras';
 import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
@@ -314,11 +315,7 @@ export default function OrderDetailsDrawer({
       const type = item.responseType || 'three_states';
       const questionLabel = item.task || `Item #${index + 1}`;
       
-      if (item.autoCreateCorrective) {
-        if (!item.autoCorrectiveAnswer) {
-          errors.push(`"${questionLabel}": responda Sim ou Não para a solicitação de corretiva.`);
-        }
-      } else if (type === 'three_states') {
+      if (type === 'three_states') {
         const currentStatus = item.statusCheck || (item.checked ? 'Atestado' : undefined);
         if (!currentStatus) {
           errors.push(`"${questionLabel}": precisa escolher Atestado, Não Atestado ou Não se Aplica.`);
@@ -359,11 +356,7 @@ export default function OrderDetailsDrawer({
     order.checklist.forEach((item) => {
       const type = item.responseType || 'three_states';
       
-      if (item.autoCreateCorrective) {
-        if (!item.autoCorrectiveAnswer) {
-          failedIds.push(item.id);
-        }
-      } else if (type === 'three_states') {
+      if (type === 'three_states') {
         const currentStatus = item.statusCheck || (item.checked ? 'Atestado' : undefined);
         if (!currentStatus) {
           failedIds.push(item.id);
@@ -825,7 +818,8 @@ export default function OrderDetailsDrawer({
                     {selectedOrder.checklist.map((item) => {
                       const type = item.responseType || 'three_states';
                       
-                      if (item.autoCreateCorrective) {
+                      // OS antigas: pergunta especial "Sim/Não" (hoje o "Não conforme" é que gera a solicitação)
+                      if (item.autoCreateCorrective && item.autoCorrectiveAnswer) {
                         const answer = item.autoCorrectiveAnswer || 'Não';
                         const isSim = answer === 'Sim';
                         const bgClass = isSim ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-850';
@@ -883,6 +877,7 @@ export default function OrderDetailsDrawer({
                                 Obs: {item.observations}
                               </p>
                             )}
+                            {isCorrectiveRequested(item) && <CorrectiveDecisionNote item={item} />}
                           </div>
                         );
                       } else if (type === 'text') {
@@ -1001,122 +996,6 @@ export default function OrderDetailsDrawer({
                       const type = item.responseType || 'three_states';
                       const isFailed = failedItemIds.includes(item.id);
                       
-                      if (item.autoCreateCorrective) {
-                        const currentAnswer = item.autoCorrectiveAnswer;
-                        return (
-                          <div 
-                            key={item.id} 
-                            id={`checklist_item_${item.id}`}
-                            className={`p-4 rounded-xl border transition-all duration-300 space-y-3 text-xs ${
-                              isFailed 
-                                ? 'border-rose-500 bg-rose-50/15 shadow-sm ring-2 ring-rose-200/50 animate-pulse' 
-                                : 'border-slate-150 bg-white shadow-xs'
-                            }`}
-                          >
-                            {isFailed && (
-                              <div className="flex items-center gap-1.5 text-rose-800 font-extrabold text-[9.5px] uppercase tracking-wider bg-rose-100/60 border border-rose-200 p-2 rounded-lg">
-                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                <span>Por favor, escolha uma opção (Sim ou Não)</span>
-                              </div>
-                            )}
-
-                            <div>
-                              <div className="flex items-center gap-1.5 text-slate-805 mb-2.5">
-                                <span className="material-symbols-outlined text-rose-500 font-extrabold text-base shrink-0">notification_important</span>
-                                <h4 className="font-extrabold text-slate-900 text-[11.5px] leading-tight select-none">
-                                  {item.task}
-                                </h4>
-                              </div>
-                              
-                              <p className="text-[10.5px] text-slate-500 font-semibold mb-3 leading-snug">
-                                Solicitar a abertura automática de ordem de serviço corretiva para este ativo?
-                              </p>
-
-                              {/* Sim / Não buttons */}
-                              <div className="flex gap-2.5">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (!selectedOrder) return;
-                                    setFailedItemIds(prev => prev.filter(id => id !== item.id));
-                                    const updatedChecklist = selectedOrder.checklist.map(c => {
-                                      if (c.id === item.id) {
-                                        return {
-                                          ...c,
-                                          checked: true,
-                                          checkedAt: new Date().toISOString(),
-                                          autoCorrectiveAnswer: 'Sim' as const,
-                                          statusCheck: 'Não Atestado' as const, // Backward compatibility for older UI mappings
-                                        };
-                                      }
-                                      return c;
-                                    });
-                                    const updatedOrder: ServiceOrder = {
-                                      ...selectedOrder,
-                                      checklist: updatedChecklist
-                                    };
-                                    commitDraft(updatedOrder);
-                                  }}
-                                  className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
-                                    currentAnswer === 'Sim'
-                                      ? 'bg-rose-600 border-rose-700 text-white shadow-sm scale-102 font-black'
-                                      : 'bg-rose-50/40 border-rose-100/50 text-rose-850 hover:bg-rose-100'
-                                  }`}
-                                >
-                                  Sim
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (!selectedOrder) return;
-                                    setFailedItemIds(prev => prev.filter(id => id !== item.id));
-                                    const updatedChecklist = selectedOrder.checklist.map(c => {
-                                      if (c.id === item.id) {
-                                        return {
-                                          ...c,
-                                          checked: true,
-                                          checkedAt: new Date().toISOString(),
-                                          autoCorrectiveAnswer: 'Não' as const,
-                                          statusCheck: 'Atestado' as const, // Backward compatibility
-                                        };
-                                      }
-                                      return c;
-                                    });
-                                    const updatedOrder: ServiceOrder = {
-                                      ...selectedOrder,
-                                      checklist: updatedChecklist
-                                    };
-                                    commitDraft(updatedOrder);
-                                  }}
-                                  className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider border transition-all text-center cursor-pointer ${
-                                    currentAnswer === 'Não'
-                                      ? 'bg-slate-700 border-slate-800 text-white shadow-sm scale-102 font-black'
-                                      : 'bg-slate-100/60 border-slate-200 text-slate-705 hover:bg-slate-200/50'
-                                  }`}
-                                >
-                                  Não
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Observations input fields */}
-                            <div className="pt-2.5 border-t border-gray-100 flex flex-col gap-1">
-                              <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
-                                Relato Técnico / Observações da Avaria (Opcional)
-                              </span>
-                              <textarea
-                                value={item.observations || ''}
-                                rows={2}
-                                onChange={(e) => handleChecklistObservationChange(item.id, e.target.value)}
-                                placeholder="Informe observações ou detalhes das falhas encontradas..."
-                                className="w-full text-xs p-2 bg-slate-50 border border-slate-250 rounded-lg text-slate-800 font-semibold focus:ring-1 focus:ring-slate-400 focus:outline-none focus:bg-white placeholder:text-gray-400 focus:border-slate-350"
-                              />
-                            </div>
-                          </div>
-                        );
-                      }
-
                       if (type === 'three_states') {
                         const currentStatus = item.statusCheck || (item.checked ? 'Atestado' : undefined);
                         
@@ -1141,7 +1020,12 @@ export default function OrderDetailsDrawer({
                               <h4 className="font-extrabold text-slate-800 text-[11.5px] leading-tight mb-2.5">
                                 {item.task}
                               </h4>
-                              
+                              {item.autoCreateCorrective && (
+                                <p className="text-[10px] font-bold text-rose-700 -mt-1.5 mb-2">
+                                  "Não conforme" gera solicitação de corretiva (descreva o problema na observação).
+                                </p>
+                              )}
+
                               {/* Three compliance interactive buttons */}
                               <div className="flex gap-1.5">
                                 <button

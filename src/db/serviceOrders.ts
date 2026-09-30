@@ -16,7 +16,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { MaintenanceLog, ServiceOrder, resolveOrderUnit, localDateTimeStr } from '../types';
+import { MaintenanceLog, ServiceOrder, resolveOrderUnit, localDateTimeStr, isCorrectiveRequested } from '../types';
 import { dbGetManagements } from './organization';
 import { dbGetAssets } from './assets';
 import { getAssetComarca, getAssetCraai } from './preventiveEngine';
@@ -115,13 +115,14 @@ function computeClosedMonth(o: ServiceOrder, status: ServiceOrder['status']): st
   return undefined;
 }
 
-// Situação da solicitação de corretiva (itens do checklist respondidos "Sim"), gravada na OS:
-// permite buscar direto as solicitações pendentes, sem varrer as ordens.
+// Situação da solicitação de corretiva, gravada na OS (permite buscar direto as pendentes, sem varrer as ordens).
+// Decisão por item (Etapa 8): "Pendente" enquanto algum item estiver sem decisão; depois "Resolvido" se algum item
+// teve corretiva aberta, ou "Cancelado" se todos foram "Não abrir".
 function computeSolicitationStatus(o: ServiceOrder): ServiceOrder['solicitationStatus'] {
-  const requested = (o.checklist || []).filter((item) => item.autoCreateCorrective === true && item.autoCorrectiveAnswer === 'Sim');
+  const requested = (o.checklist || []).filter(isCorrectiveRequested);
   if (requested.length === 0) return undefined;
-  const withStatus = requested.find((item) => item.autoCorrectiveStatus);
-  return withStatus?.autoCorrectiveStatus || 'Pendente';
+  if (requested.some((item) => !item.autoCorrectiveStatus || item.autoCorrectiveStatus === 'Pendente')) return 'Pendente';
+  return requested.some((item) => item.autoCorrectiveStatus === 'Resolvido') ? 'Resolvido' : 'Cancelado';
 }
 
 // REGRA DE PRAZOS DA OS

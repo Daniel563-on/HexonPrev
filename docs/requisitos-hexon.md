@@ -208,6 +208,11 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - **Modo manutenção:** ligado, todos menos o Super Admin veem "Aplicativo em manutenção" (com mensagem opcional), são desconectados depois de enviar a fila do aparelho e não conseguem entrar; o Super Admin entra pelo link da tela. Bloqueio só no aplicativo (o banco não bloqueia).
     - Registro único `appControl/status` (leitura pública, gravação só Super Admin): 1 leitura ao abrir o app e 1 por aparelho a cada botão apertado. O técnico vê um alerta no app enquanto a OS passa de 10h em execução; a OS concluída fica marcada. Totais e relatórios ficam para a Etapa 9.
 
+36. **Solicitações de corretiva (Etapa 8), respostas de 30/09/2026:**
+    - No modelo, a pergunta Conforme / Não conforme / N.A. tem a opção **"Não conforme gera solicitação de corretiva"** (substitui "Item de solicitação de corretiva"; a pergunta especial Sim/Não deixou de existir). "Observação obrigatória" e "Observação no N.A." saíram do modelo: o Não conforme já exige observação e o N.A. não pede.
+    - **Decisão por item** (cada Não conforme): **"Abrir corretiva"** exige o **nº do chamado GLPI** e só finaliza ao salvar; **"Não abrir"** exige **justificativa**. Fica registrado quem decidiu e quando. A decisão não muda; quem tem a permissão **"Gerenciar Solicitações"** (padrão Administrador e Super Admin; pode ser dada a outros perfis) só corrige o nº do GLPI ou a justificativa (registra quem corrigiu). Removido o botão que criava OS corretiva dentro do Hexon.
+    - A OS continua **Concluída** (conta em tudo). Enquanto houver item sem decisão, ela aparece para o técnico na aba **"Solicitações"** do celular, com o andamento de cada item, e só sai de lá quando todos tiverem decisão.
+
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
 |---|---|---|---|

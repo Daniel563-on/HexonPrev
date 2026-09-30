@@ -233,16 +233,19 @@ export default function ModelEditor({ template, templates, addresses, canManage,
                 )}
               </div>
               <div className="pl-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
-                <select value={it.responseType || 'three_states'} disabled={ro} onChange={(e) => updateItem(it.id, { responseType: e.target.value as ChecklistTemplateItem['responseType'] })} className="h-8 px-2 border border-slate-200 rounded-lg font-semibold">
+                <select value={it.responseType || 'three_states'} disabled={ro} onChange={(e) => {
+                  const responseType = e.target.value as ChecklistTemplateItem['responseType'];
+                  // Solicitação de corretiva só existe na pergunta Conforme / Não conforme / N.A.
+                  updateItem(it.id, responseType === 'three_states' ? { responseType } : { responseType, autoCreateCorrective: false });
+                }} className="h-8 px-2 border border-slate-200 rounded-lg font-semibold">
                   {RESPONSE_TYPES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
                 <select value={it.criticality || 'Média'} disabled={ro} onChange={(e) => updateItem(it.id, { criticality: e.target.value as ChecklistTemplateItem['criticality'] })} className="h-8 px-2 border border-slate-200 rounded-lg font-semibold">
                   {['Baixa', 'Média', 'Alta'].map((c) => <option key={c} value={c}>Criticidade {c}</option>)}
                 </select>
+                {/* "Não conforme" já exige observação; N.A. não pede observação (Etapa 8) */}
                 {[
-                  ['observationRequired', 'Observação obrigatória'],
-                  ['naObservationRequired', 'Observação no N.A.'],
-                  ['autoCreateCorrective', 'Item de solicitação de corretiva'],
+                  ...((it.responseType || 'three_states') === 'three_states' ? [['autoCreateCorrective', '"Não conforme" gera solicitação de corretiva']] : []),
                   ['isActive', 'Ativo']
                 ].map(([key, text]) => (
                   <label key={key} className="flex items-center gap-1.5 font-semibold text-slate-600 cursor-pointer">
