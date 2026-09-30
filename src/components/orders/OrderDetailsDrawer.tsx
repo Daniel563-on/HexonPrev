@@ -10,7 +10,7 @@ import {
   Lock,
   X
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR, HexonUser } from '../../types';
+import { ServiceOrder, Asset, formatDateBR, HexonUser, localDateTimeStr } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
@@ -554,7 +554,7 @@ export default function OrderDetailsDrawer({
       status: 'Concluída',
       signature: signatureBase64,
       signedBy: signeeName,
-      signedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      signedAt: localDateTimeStr(),
       updatedAt: new Date().toISOString()
     };
 
@@ -1482,7 +1482,7 @@ export default function OrderDetailsDrawer({
                 </div>
               ) : selectedOrder.inExecution && !isStartedByMe ? (
                 <div className="flex-grow min-h-[46px] bg-blue-50 text-blue-800 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 border border-blue-200">
-                  Em execução por {selectedOrder.inExecution.name} desde {formatDateBR(selectedOrder.inExecution.deviceStartedAt.replace('T', ' ').slice(0, 16))}
+                  Em execução por {selectedOrder.inExecution.name} desde {formatDateBR(selectedOrder.inExecution.deviceStartedAt)}
                 </div>
               ) : !isAssignedToCurrentUser ? (
                 <div className="flex-grow min-h-[46px] bg-slate-100 text-slate-500 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 border border-slate-300">

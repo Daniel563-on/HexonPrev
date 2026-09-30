@@ -16,7 +16,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { MaintenanceLog, ServiceOrder, resolveOrderUnit } from '../types';
+import { MaintenanceLog, ServiceOrder, resolveOrderUnit, localDateTimeStr } from '../types';
 import { dbGetManagements } from './organization';
 import { dbGetAssets } from './assets';
 import { getAssetComarca, getAssetCraai } from './preventiveEngine';
@@ -697,7 +697,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Reco
       addressId: order.addressId,
       osId: order.id,
       osTitle: order.title,
-      date: order.signedAt || new Date().toISOString().replace('T', ' ').slice(0, 16),
+      date: order.signedAt || localDateTimeStr(),
       technician: order.assignedTechnician,
       status: 'Concluída',
       notes: order.notes || 'Manutenção concluída e assinada digitalmente.',
