@@ -8,7 +8,6 @@ import { firebaseActive, dbInstance, checkQuotaException } from './core';
 
 declare const __APP_VERSION__: string;
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const PAGE_LOADED_AT = Date.now();
 
 export interface AppControl {
   forceReloadAt?: number;       // "Forçar atualização": aparelhos abertos antes disso recarregam
@@ -22,26 +21,61 @@ export interface AppControl {
 let current: AppControl | null = null;
 let unsub: (() => void) | null = null;
 const listeners = new Set<(c: AppControl | null) => void>();
+// "Forçar atualização" vigente quando este aparelho abriu (lido do servidor). Só um valor DIFERENTE deste,
+// que chegue depois, pede para recarregar — não depende do relógio de cada aparelho.
+let baselineForceAt: number | null | undefined = undefined;
+
+function startListening(): void {
+  if (unsub || !firebaseActive || !dbInstance) return;
+  unsub = onSnapshot(
+    doc(dbInstance, 'appControl', 'status'),
+    { includeMetadataChanges: true },
+    (snap) => {
+      const data = snap.exists() ? (snap.data() as AppControl) : {};
+      // A primeira resposta do servidor (não a cópia do aparelho) define o ponto de partida
+      if (baselineForceAt === undefined) {
+        if (snap.metadata.fromCache) return;
+        baselineForceAt = data.forceReloadAt ?? null;
+      }
+      current = data;
+      listeners.forEach((l) => l(current));
+    },
+    (err) => {
+      // Ex.: sem permissão (regras ainda não publicadas) — tenta de novo em 30 s
+      console.warn('Escuta do controle do sistema interrompida:', err);
+      checkQuotaException(err);
+      unsub = null;
+      setTimeout(() => listeners.size > 0 && startListening(), 30000);
+    }
+  );
+}
 
 export function subscribeAppControl(cb: (c: AppControl | null) => void): () => void {
   listeners.add(cb);
   cb(current);
-  if (!unsub && firebaseActive && dbInstance) {
-    unsub = onSnapshot(
-      doc(dbInstance, 'appControl', 'status'),
-      (snap) => {
-        current = snap.exists() ? (snap.data() as AppControl) : {};
-        listeners.forEach((l) => l(current));
-      },
-      (err) => {
-        console.warn('Escuta do controle do sistema interrompida:', err);
-        checkQuotaException(err);
-      }
-    );
-  }
+  startListening();
   return () => {
     listeners.delete(cb);
   };
+}
+
+// Pedido de atualização novo (apertado depois que este aparelho abriu), ou null
+export function newForceReloadAt(c: AppControl | null): number | null {
+  const at = c?.forceReloadAt;
+  if (!at || baselineForceAt === undefined || at === baselineForceAt || forceReloadHandled(at)) return null;
+  return at;
+}
+
+// Aviso "Sistema atualizado" depois da recarga
+const JUST_UPDATED_KEY = 'hexon_just_updated';
+export function takeJustUpdated(): boolean {
+  try {
+    const v = sessionStorage.getItem(JUST_UPDATED_KEY) === '1';
+    sessionStorage.removeItem(JUST_UPDATED_KEY);
+    return v;
+  } catch {
+    return false;
+  }
 }
 
 const HANDLED_KEY = 'hexon_force_reload_handled';
@@ -92,6 +126,11 @@ export async function waitPendingWrites(): Promise<void> {
 export async function reloadSafely(forceAt?: number): Promise<void> {
   if (forceAt) markForceReloadHandled(forceAt);
   await waitPendingWrites();
+  try {
+    sessionStorage.setItem(JUST_UPDATED_KEY, '1');
+  } catch {
+    /* ignora */
+  }
   window.location.reload();
 }
 

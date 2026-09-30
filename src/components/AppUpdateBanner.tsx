@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { APP_VERSION, PAGE_LOADED_AT, fetchDeployedVersion, forceReloadHandled, reloadSafely, subscribeAppControl } from '../db/appControl';
+import { APP_VERSION, fetchDeployedVersion, newForceReloadAt, reloadSafely, subscribeAppControl, takeJustUpdated } from '../db/appControl';
 
 // NOVA VERSÃO DO SISTEMA: aviso com "Atualizar agora" e recarga sozinha em 1 minuto.
 // Aparece quando o Super Administrador aperta "Forçar atualização" ou quando o app percebe sozinho
@@ -16,12 +16,20 @@ export default function AppUpdateBanner() {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
+  // Depois de recarregar: aviso rápido "Sistema atualizado"
+  const [justUpdated, setJustUpdated] = useState(() => takeJustUpdated());
+  useEffect(() => {
+    if (!justUpdated) return;
+    const t = setTimeout(() => setJustUpdated(false), 6000);
+    return () => clearTimeout(t);
+  }, [justUpdated]);
+
   // Botão "Forçar atualização" do Super Administrador
   useEffect(
     () =>
       subscribeAppControl((c) => {
-        const at = c?.forceReloadAt;
-        if (at && at > PAGE_LOADED_AT && !forceReloadHandled(at) && !pendingRef.current) {
+        const at = newForceReloadAt(c);
+        if (at && !pendingRef.current) {
           setPending({ forceAt: at, auto: true });
         }
       }),
@@ -70,10 +78,18 @@ export default function AppUpdateBanner() {
     return () => clearTimeout(t);
   }, [pending, left, reloading]);
 
-  if (!pending) return null;
+  if (!pending) {
+    if (!justUpdated) return null;
+    return (
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2rem)] max-w-md p-3 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 shadow-2xl flex items-center gap-3 font-sans">
+        <span className="flex-1 text-xs font-bold">Sistema atualizado para a versão mais recente.</span>
+        <button type="button" onClick={() => setJustUpdated(false)} className="text-emerald-700 text-sm font-bold cursor-pointer">×</button>
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2rem)] max-w-md p-3 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-900 shadow-2xl flex items-center gap-3 font-sans">
+    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2rem)] max-w-md p-3 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-900 shadow-2xl flex items-center gap-3 font-sans">
       <div className="flex-1 min-w-0 text-xs font-bold">
         {reloading ? (
           'Atualizando... (enviando antes o que estiver salvo no aparelho)'
