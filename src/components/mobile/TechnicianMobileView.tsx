@@ -32,8 +32,10 @@ import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart,
-  dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes
+  dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
+  subscribePendingSolicitations, requestedItems
 } from '../../db/firebase';
+import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
@@ -60,7 +62,7 @@ export interface TechnicianMobileViewProps {
 }
 
 type MobileTab = 'orders' | 'scanner' | 'profile';
-type FilterStatus = 'pending' | 'in_progress' | 'completed';
+type FilterStatus = 'pending' | 'in_progress' | 'completed' | 'solicitations';
 
 export default function TechnicianMobileView({
   orders,
@@ -185,6 +187,18 @@ export default function TechnicianMobileView({
   const [myStart, setMyStart] = useState<OrderStart | null>(null);
   useEffect(() => subscribeMyActiveStart((userProfile.matricula || '').trim(), (s) => setMyStart(s)), [userProfile.matricula]);
 
+  // Solicitações de corretiva das preventivas dele (Etapa 8): ficam aqui até todos os itens terem decisão
+  const [mySolicitations, setMySolicitations] = useState<ServiceOrder[]>([]);
+  useEffect(() => {
+    const mat = (userProfile.matricula || '').trim();
+    if (!mat) {
+      setMySolicitations([]);
+      return;
+    }
+    const units = visibleUnits ?? (userProfile.gerencia && userProfile.gerencia !== 'Todas' ? [userProfile.gerencia] : null);
+    return subscribePendingSolicitations({ units, technicianMatricula: mat }, setMySolicitations);
+  }, [userProfile.matricula, userProfile.gerencia, (visibleUnits || []).join('|')]);
+
   // Alerta de tempo longo (Etapa 7): OS em execução há mais de 10h (calculado no aparelho, sem gravar nada)
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -305,6 +319,8 @@ export default function TechnicianMobileView({
         if (!isOrderInProgress(o)) return false;
       } else if (filterStatus === 'completed') {
         if (o.status !== 'Concluída') return false;
+      } else if (filterStatus === 'solicitations') {
+        return false; // a aba Solicitações tem lista própria
       }
 
       // 2. Search query filter
@@ -518,7 +534,7 @@ export default function TechnicianMobileView({
               </span>
             </div>
           )}
-          
+
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -543,8 +559,8 @@ export default function TechnicianMobileView({
             )}
           </div>
 
-          {/* Abas: Pendentes e Execução (concluídas saem do app do técnico) */}
-          <div className="grid grid-cols-2 gap-2 w-full">
+          {/* Abas: Pendentes, Execução e Solicitações (concluídas saem do app do técnico) */}
+          <div className="grid grid-cols-3 gap-2 w-full">
             <button
               type="button"
               onClick={() => setFilterStatus('pending')}
@@ -582,7 +598,57 @@ export default function TechnicianMobileView({
                 ({inProgressCount})
               </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterStatus('solicitations')}
+              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                filterStatus === 'solicitations'
+                  ? 'bg-indigo-600 text-white shadow-xs font-black'
+                  : darkMode
+                  ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 font-bold'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
+              }`}
+            >
+              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Solicitações</span>
+              <span className={`text-[11px] font-mono leading-none mt-1 ${
+                filterStatus === 'solicitations' ? 'text-indigo-100 font-bold' : mySolicitations.length > 0 ? 'text-rose-500 font-bold' : 'text-slate-400 font-semibold'
+              }`}>
+                ({mySolicitations.length})
+              </span>
+            </button>
           </div>
+
+          {/* Solicitações de corretiva aguardando o planejador (Etapa 8) */}
+          {filterStatus === 'solicitations' && (
+            <div className="space-y-3">
+              {mySolicitations.length === 0 ? (
+                <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
+                  Nenhuma solicitação de corretiva aguardando decisão.
+                </div>
+              ) : (
+                mySolicitations.map((o) => (
+                  <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
+                    <div className="flex justify-between gap-2">
+                      <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
+                      <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
+                    </div>
+                    <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
+                    {o.checklistPending ? (
+                      <p className="text-xs text-slate-400">Carregando...</p>
+                    ) : (
+                      requestedItems(o).map((item) => (
+                        <div key={item.id} className="space-y-1">
+                          <p className="text-xs font-semibold">• {item.task}</p>
+                          <CorrectiveDecisionNote item={item} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
 
           {/* Pagination Summary Info */}
           {totalOrdersCount > 0 && (
@@ -597,7 +663,7 @@ export default function TechnicianMobileView({
           )}
 
           {/* Orders Cards List */}
-          {paginatedOrders.length === 0 ? (
+          {filterStatus === 'solicitations' ? null : paginatedOrders.length === 0 ? (
             <div className={`p-8 rounded-2xl border text-center space-y-3 mt-6 ${
               darkMode ? 'bg-slate-900/40 border-slate-800/80 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
             }`}>
