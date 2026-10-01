@@ -38,7 +38,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
   const [textFilter, setTextFilter] = useState('');
 
   const [managements, setManagements] = useState<Management[]>([]);
-  const [technicians, setTechnicians] = useState<string[]>([]);
+  const [technicians, setTechnicians] = useState<{ name: string; matricula: string }[]>([]);
   const [results, setResults] = useState<ServiceOrder[] | null>(null);
   const [limited, setLimited] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -51,7 +51,11 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
     dbGetUsers()
       .then((list) =>
         setTechnicians(
-          Array.from(new Set(list.filter((u) => u.perfil === 'Profissional' && (visibleUnits === null || u.gerencia === 'Todas' || visibleUnits.includes(u.gerencia))).map((u) => u.name))).sort((a, b) => a.localeCompare(b))
+          // Filtro pela matrícula (a OS guarda o técnico pela matrícula)
+          list
+            .filter((u) => u.perfil === 'Profissional' && !!(u.matricula || '').trim() && (visibleUnits === null || u.gerencia === 'Todas' || visibleUnits.includes(u.gerencia)))
+            .map((u) => ({ name: u.name, matricula: (u.matricula || '').trim() }))
+            .sort((a, b) => a.name.localeCompare(b.name))
         )
       )
       .catch(() => {});
@@ -210,8 +214,8 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
             <label className={labelClass}>Técnico</label>
             <select value={technician} onChange={(e) => setTechnician(e.target.value)} className={inputClass}>
               <option value="">Todos</option>
-              {technicians.map((v) => (
-                <option key={v} value={v}>{v}</option>
+              {technicians.map((t) => (
+                <option key={t.matricula} value={t.matricula}>{t.name} • {t.matricula}</option>
               ))}
             </select>
           </div>

@@ -378,6 +378,57 @@ export function subscribeServiceOrders(
 
 // SOLICITAÇÕES DE CORRETIVA
 // Pendentes: carregadas em tempo real (são poucas; somem da lista assim que recebem uma ação).
+// OS do técnico em tempo real: só as abertas atribuídas à matrícula dele (as concluídas saem do app).
+// Uma escuta por gerência do técnico.
+export function subscribeTechnicianOrders(
+  units: string[] | null,
+  matricula: string,
+  onChange: (orders: ServiceOrder[]) => void
+): () => void {
+  const mat = (matricula || '').trim();
+  if (!firebaseActive || !dbInstance || !mat) {
+    onChange([]);
+    return () => {};
+  }
+  const filterSets = scopeFilterSets({ units, technicianMatricula: mat });
+  const parts: (ServiceOrder[] | null)[] = filterSets.map(() => null);
+  const emit = () => {
+    if (parts.some((p) => p === null)) return;
+    const todayStr = localTodayStr();
+    const list = (parts.flat() as ServiceOrder[])
+      .map((o) => {
+        const status = computeDeadlineStatus(o, todayStr);
+        return status === o.status ? o : { ...o, status };
+      })
+      .sort(compareOrdersNewestFirst);
+    onChange(hydrateOrders(list));
+  };
+  const stopVersions = onChecklistVersionLoaded(emit);
+  const unsubscribers = filterSets.map((filters, i) =>
+    onSnapshot(
+      query(collection(dbInstance!, 'serviceOrders'), ...filters, where('status', 'in', OPEN_STATUSES)),
+      (snap) => {
+        const list: ServiceOrder[] = [];
+        snap.forEach((d) => {
+          if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
+        });
+        parts[i] = list;
+        emit();
+      },
+      (err) => {
+        console.warn('Firestore listen technician orders failed:', err);
+        checkQuotaException(err);
+        parts[i] = parts[i] || [];
+        emit();
+      }
+    )
+  );
+  return () => {
+    stopVersions();
+    unsubscribers.forEach((u) => u());
+  };
+}
+
 export function subscribePendingSolicitations(
   scope: ServiceOrdersScope,
   onChange: (orders: ServiceOrder[]) => void
@@ -514,7 +565,7 @@ export interface OrdersSearchParams {
   status: ServiceOrder['status'] | '';
   craai: string;
   comarca: string;
-  technician: string;
+  technician: string;         // matrícula do técnico ou ""
 }
 
 export const ORDERS_SEARCH_LIMIT = 500;
@@ -531,7 +582,7 @@ export async function dbSearchOrders(
   if (params.status) constraints.push(where('status', '==', params.status));
   if (params.craai) constraints.push(where('craai', '==', params.craai));
   if (params.comarca) constraints.push(where('comarca', '==', params.comarca));
-  if (params.technician) constraints.push(where('assignedTechnician', '==', params.technician));
+  if (params.technician) constraints.push(where('assignedTechnicianMatricula', '==', params.technician)); // matrícula
   if (params.month) {
     constraints.push(where('endDate', '>=', `${params.month}-01`));
     constraints.push(where('endDate', '<=', `${params.month}-31`));
@@ -620,7 +671,12 @@ function asTimestamp(v: any): unknown {
 
 // Save or Update service order
 // Retorna "queued" quando a gravação ficou no aparelho (sem internet) e vai subir sozinha depois
-export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Record<string, unknown> = {}): Promise<'saved' | 'queued'> {
+// options.skipHistory: OS já concluída (ex.: decisão de solicitação) não regrava o histórico do ativo
+export async function dbSaveServiceOrder(
+  order: ServiceOrder,
+  serverFields: Record<string, unknown> = {},
+  options: { skipHistory?: boolean } = {}
+): Promise<'saved' | 'queued'> {
   let result: 'saved' | 'queued' = 'saved';
   // Assinatura nova: vai para "orderSignatures" e sai do documento da OS
   let signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = {
@@ -655,7 +711,7 @@ export async function dbSaveServiceOrder(order: ServiceOrder, serverFields: Reco
   };
 
   // If the status is completed 'Concluída', we must create an entry in the equipment history!
-  if (order.status === 'Concluída') {
+  if (order.status === 'Concluída' && !options.skipHistory) {
     const checkedCount = order.checklist.filter(c => c.checked).length;
     const totalCount = order.checklist.length;
 
@@ -967,459 +1023,6 @@ export async function dbSavePlanningDeadline(deadline: PlanningDeadline): Promis
     }
   }
 }
-
-let lastExpireCheck = 0;
-
-export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
-  // Throttle to at most once every 15 minutes to prevent hammering Firestore write limits
-  const nowMs = Date.now();
-  if (nowMs - lastExpireCheck < 15 * 60 * 1000) {
-    return;
-  }
-  lastExpireCheck = nowMs;
-
-  if (!firebaseActive || !dbInstance) return;
-
-  try {
-    // Lê do banco SOMENTE as OS em aberto, com o status realmente gravado.
-    // (A lista em memória já vem com o status recalculado para exibição, então
-    //  comparar com ela nunca detectava mudança e nada era gravado.)
-    const snap = await getDocs(query(
-      collection(dbInstance, 'serviceOrders'),
-      where('status', 'in', ['Novo', 'Planejada', 'Em Execução', 'Atrasada'])
-    ));
-
-    const todayStr = localTodayStr();
-    // OS em execução agora (registro de início) não vira "Atrasada" (mesma regra da rotina da nuvem)
-    const startsSnap = await getDocs(collection(dbInstance, 'orderStarts'));
-    const started = new Set(startsSnap.docs.map((d) => d.id));
-    const changes: { id: string; status: ServiceOrder['status']; closedMonth?: string }[] = [];
-    snap.forEach((d) => {
-      if (isMockOrLegacyId(d.id)) return;
-      const stored = { id: d.id, ...d.data() } as ServiceOrder;
-      const status = computeDeadlineStatus(stored, todayStr);
-      if (status === 'Atrasada' && started.has(d.id)) return;
-      if (status !== stored.status) changes.push({ id: d.id, status, closedMonth: computeClosedMonth(stored, status) });
-    });
-
-    if (changes.length > 0) {
-      console.log(`[Prazos] Atualizando o status de ${changes.length} ordens de serviço.`);
-      const updatedAt = new Date().toISOString();
-      const batchSize = 100;
-      for (let i = 0; i < changes.length; i += batchSize) {
-        const chunk = changes.slice(i, i + batchSize);
-        const batch = writeBatch(dbInstance);
-        for (const c of chunk) {
-          // Atualiza só o status, sem sobrescrever a OS inteira (evita apagar edições simultâneas).
-          // Ao virar "Não Executada", grava também o mês de encerramento (closedMonth).
-          const fields: { status: ServiceOrder['status']; updatedAt: string; closedMonth?: string; syncAt: ReturnType<typeof serverTimestamp> } = { status: c.status, updatedAt, syncAt: serverTimestamp() };
-          if (c.closedMonth) fields.closedMonth = c.closedMonth;
-          batch.update(doc(dbInstance, 'serviceOrders', c.id), fields);
-        }
-        await batch.commit();
-      }
-
-      // Mantém o cache local coerente com o que foi gravado
-      if (cacheServiceOrders) {
-        const byId = new Map(changes.map((c) => [c.id, c.status]));
-        cacheServiceOrders = cacheServiceOrders.map((o) =>
-          byId.has(o.id) ? { ...o, status: byId.get(o.id)!, updatedAt } : o
-        );
-      }
-    }
-  } catch (err) {
-    console.warn('Error checking and expiring planning orders:', err);
-  }
-}
-
-export interface TechnicianOrdersFilterOptions {
-  technicianName: string;
-  matricula?: string;
-  filterStatus: 'pending' | 'in_progress' | 'completed' | 'all';
-  page: number;
-  pageSize: number;
-  searchQuery?: string;
-  isAdmin?: boolean;
-}
-
-export interface TechnicianOrdersResult {
-  orders: ServiceOrder[];
-  totalCount: number;
-  pendingCount: number;
-  inProgressCount: number;
-  completedCount: number;
-  totalPages: number;
-  currentPage: number;
-}
-
-/**
- * Fast, Server-Side Filtered & Paginated loader for Field Technicians.
- * Strictly limits download to the technician's assigned orders and only the current page (e.g. 20 items).
- * Does NOT download the entire database, preventing mobile memory overload and network latency.
- */
-export async function dbGetTechnicianOrdersPaginated(
-  options: TechnicianOrdersFilterOptions
-): Promise<TechnicianOrdersResult> {
-  const { technicianName, matricula, filterStatus, page, pageSize, searchQuery, isAdmin } = options;
-
-  const rawName = (technicianName || '').trim();
-  const rawMatricula = (matricula || '').trim();
-
-  const candidates = Array.from(new Set([
-    rawName,
-    rawName.toLowerCase(),
-    rawName.toUpperCase(),
-    rawMatricula,
-    rawMatricula.toLowerCase()
-  ])).filter(Boolean) as string[];
-
-  // If not admin and no technician candidates identified, return empty
-  if (!isAdmin && candidates.length === 0) {
-    return {
-      orders: [],
-      totalCount: 0,
-      pendingCount: 0,
-      inProgressCount: 0,
-      completedCount: 0,
-      totalPages: 1,
-      currentPage: 1
-    };
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      // 1. Fetch exact server-side counts using Firestore's fast getCountFromServer
-      let pendingCount = 0;
-      let inProgressCount = 0;
-      let completedCount = 0;
-      let allCount = 0;
-
-      try {
-        if (isAdmin) {
-          const [cPending, cExec, cDone, cAll] = await Promise.all([
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']))),
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Em Execução'))),
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Concluída'))),
-            getCountFromServer(collection(dbInstance, 'serviceOrders'))
-          ]);
-          pendingCount = cPending.data().count;
-          inProgressCount = cExec.data().count;
-          completedCount = cDone.data().count;
-          allCount = cAll.data().count;
-        } else {
-          const [cPending, cExec, cDone, cAll] = await Promise.all([
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']))),
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Em Execução'))),
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Concluída'))),
-            getCountFromServer(query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates)))
-          ]);
-          pendingCount = cPending.data().count;
-          inProgressCount = cExec.data().count;
-          completedCount = cDone.data().count;
-          allCount = cAll.data().count;
-        }
-      } catch (errCount) {
-        console.warn('getCountFromServer fallback for technician:', errCount);
-      }
-
-      const hasSearch = typeof searchQuery === 'string' && searchQuery.trim().length > 0;
-
-      // 2. If user is searching by text, retrieve filtered set and search client-side
-      if (hasSearch) {
-        let baseQ;
-        if (isAdmin) {
-          if (filterStatus === 'pending') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']));
-          } else if (filterStatus === 'in_progress') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Em Execução'));
-          } else if (filterStatus === 'completed') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Concluída'));
-          } else {
-            baseQ = collection(dbInstance, 'serviceOrders');
-          }
-        } else {
-          if (filterStatus === 'pending') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']));
-          } else if (filterStatus === 'in_progress') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Em Execução'));
-          } else if (filterStatus === 'completed') {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Concluída'));
-          } else {
-            baseQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates));
-          }
-        }
-
-        const snap = await getDocs(baseQ);
-        const allList: ServiceOrder[] = [];
-        snap.forEach(d => {
-          if (!isMockOrLegacyId(d.id)) {
-            allList.push({ id: d.id, ...(d.data() as any) } as ServiceOrder);
-          }
-        });
-
-        const qLower = searchQuery.toLowerCase().trim();
-        const filtered = allList.filter(o => {
-          const mTitle = (o.title || '').toLowerCase().includes(qLower);
-          const mAsset = (o.assetName || '').toLowerCase().includes(qLower);
-          const mCode = (o.assetCode || '').toLowerCase().includes(qLower);
-          const mId = (o.id || '').toLowerCase().includes(qLower);
-          const mSector = (o.sector || '').toLowerCase().includes(qLower);
-          const mDesc = (o.description || '').toLowerCase().includes(qLower);
-          return mTitle || mAsset || mCode || mId || mSector || mDesc;
-        });
-
-        const totalCount = filtered.length;
-        const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-        const safePage = Math.min(Math.max(1, page), totalPages);
-        const startIndex = (safePage - 1) * pageSize;
-        const paginated = filtered.slice(startIndex, startIndex + pageSize);
-
-        return {
-          orders: paginated,
-          totalCount,
-          pendingCount,
-          inProgressCount,
-          completedCount,
-          totalPages,
-          currentPage: safePage
-        };
-      }
-
-      // 3. Normal view: Fetch strictly the required page documents (pageSize items)
-      const fetchLimit = Math.max(pageSize, page * pageSize);
-      let pageQ;
-
-      if (isAdmin) {
-        if (filterStatus === 'pending') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']), limit(fetchLimit));
-        } else if (filterStatus === 'in_progress') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Em Execução'), limit(fetchLimit));
-        } else if (filterStatus === 'completed') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('status', '==', 'Concluída'), limit(fetchLimit));
-        } else {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), limit(fetchLimit));
-        }
-      } else {
-        if (filterStatus === 'pending') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', 'in', ['Novo', 'Planejada', 'Atrasada']), limit(fetchLimit));
-        } else if (filterStatus === 'in_progress') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Em Execução'), limit(fetchLimit));
-        } else if (filterStatus === 'completed') {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), where('status', '==', 'Concluída'), limit(fetchLimit));
-        } else {
-          pageQ = query(collection(dbInstance, 'serviceOrders'), where('assignedTechnician', 'in', candidates), limit(fetchLimit));
-        }
-      }
-
-      const snap = await getDocs(pageQ);
-      const docsList: ServiceOrder[] = [];
-      snap.forEach(d => {
-        if (!isMockOrLegacyId(d.id)) {
-          docsList.push({ id: d.id, ...(d.data() as any) } as ServiceOrder);
-        }
-      });
-
-      const activeTotal = filterStatus === 'pending' ? pendingCount
-        : filterStatus === 'in_progress' ? inProgressCount
-        : filterStatus === 'completed' ? completedCount
-        : allCount;
-
-      const totalPages = Math.max(1, Math.ceil(activeTotal / pageSize));
-      const safePage = Math.min(Math.max(1, page), totalPages);
-      const startIndex = (safePage - 1) * pageSize;
-      const paginated = docsList.slice(startIndex, startIndex + pageSize);
-
-      return {
-        orders: paginated,
-        totalCount: activeTotal,
-        pendingCount,
-        inProgressCount,
-        completedCount,
-        totalPages,
-        currentPage: safePage
-      };
-    } catch (e: any) {
-      console.warn('Firestore technician paginated query failed, falling back to local data:', e);
-      checkQuotaException(e);
-    }
-  }
-
-  // 4. Offline / LocalStorage Fallback (strictly scoped to technician)
-  let localData: ServiceOrder[] = [];
-  try {
-    const saved = localStorage.getItem('hexon_service_orders');
-    if (saved) {
-      localData = JSON.parse(saved);
-    }
-  } catch {}
-
-  const techOrders = isAdmin 
-    ? localData 
-    : localData.filter(o => {
-        const tech = (o.assignedTechnician || '').trim().toLowerCase();
-        return candidates.some(c => c.toLowerCase() === tech);
-      });
-
-  const pendingCount = techOrders.filter(o => o.status !== 'Concluída' && o.status !== 'Não Executada' && o.status !== 'Em Execução').length;
-  const inProgressCount = techOrders.filter(o => o.status === 'Em Execução').length;
-  const completedCount = techOrders.filter(o => o.status === 'Concluída').length;
-  const allCount = techOrders.length;
-
-  let filtered = techOrders;
-  if (filterStatus === 'pending') {
-    filtered = filtered.filter(o => o.status !== 'Concluída' && o.status !== 'Não Executada' && o.status !== 'Em Execução');
-  } else if (filterStatus === 'in_progress') {
-    filtered = filtered.filter(o => o.status === 'Em Execução');
-  } else if (filterStatus === 'completed') {
-    filtered = filtered.filter(o => o.status === 'Concluída');
-  }
-
-  if (searchQuery && searchQuery.trim()) {
-    const qLower = searchQuery.toLowerCase().trim();
-    filtered = filtered.filter(o => {
-      const mTitle = (o.title || '').toLowerCase().includes(qLower);
-      const mAsset = (o.assetName || '').toLowerCase().includes(qLower);
-      const mCode = (o.assetCode || '').toLowerCase().includes(qLower);
-      const mId = (o.id || '').toLowerCase().includes(qLower);
-      return mTitle || mAsset || mCode || mId;
-    });
-  }
-
-  const totalCount = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const startIndex = (safePage - 1) * pageSize;
-  const paginated = filtered.slice(startIndex, startIndex + pageSize);
-
-  return {
-    orders: paginated,
-    totalCount,
-    pendingCount,
-    inProgressCount,
-    completedCount,
-    totalPages,
-    currentPage: safePage
-  };
-}
-
-/**
- * Optimized Server-Side query for Field Technicians.
- * Strictly queries orders where assignedTechnician matches the technician's name or matricula.
- * Does NOT download all 10,000+ orders, saving massive bandwidth and database reads.
- */
-export async function dbGetOrdersForTechnician(
-  technicianName: string,
-  matricula?: string,
-  units: string[] | null = null // unidades do técnico (as regras do banco só liberam as dele)
-): Promise<ServiceOrder[]> {
-  const candidates = technicianCandidates(technicianName, matricula);
-
-  if (candidates.length === 0) {
-    return [];
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      // Só as OS abertas do técnico + as que ele fechou no mês atual (não baixa o histórico inteiro)
-      const filterSets = scopeFilterSets({ units, technicianNames: candidates, technicianMatricula: (matricula || '').trim() || undefined });
-      const snaps = await Promise.all(
-        filterSets.map((filters) =>
-          Promise.all([
-            getDocs(query(collection(dbInstance!, 'serviceOrders'), ...filters, where('status', 'in', OPEN_STATUSES))),
-            getDocs(query(collection(dbInstance!, 'serviceOrders'), ...filters, where('closedMonth', '==', localMonthKey())))
-          ])
-        )
-      );
-      const byId = new Map<string, ServiceOrder>();
-      snaps.forEach(([, closedSnap]) => closedSnap.forEach((d) => {
-        if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
-      }));
-      snaps.forEach(([openSnap]) => openSnap.forEach((d) => {
-        if (!isMockOrLegacyId(d.id)) byId.set(d.id, { id: d.id, ...d.data() } as ServiceOrder);
-      }));
-      const list = Array.from(byId.values());
-
-      // Update local storage cache for offline protection
-      try {
-        localStorage.setItem('hexon_service_orders', JSON.stringify(list));
-      } catch (e) {
-        console.warn('LocalStorage limit caching technician orders:', e);
-      }
-
-      return withChecklists(processExpiredOrders(list).sort(compareOrdersNewestFirst));
-    } catch (err: any) {
-      console.warn('Firestore dbGetOrdersForTechnician failed, falling back to local storage:', err);
-      checkQuotaException(err);
-    }
-  }
-
-  // Offline fallback
-  try {
-    const saved = localStorage.getItem('hexon_service_orders');
-    if (saved) {
-      const parsed: ServiceOrder[] = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(o => {
-          const tech = (o.assignedTechnician || '').trim().toLowerCase();
-          return candidates.some(c => c.toLowerCase() === tech);
-        });
-      }
-    }
-  } catch (e) {
-    console.warn('LocalStorage fallback error in dbGetOrdersForTechnician:', e);
-  }
-
-  return [];
-}
-
-// SECURE PUBLIC ASSET ORDERS (Fetches only active/recent orders belonging strictly to this single asset)
-export async function dbGetAssetOrdersPublic(assetId: string, assetCode?: string): Promise<ServiceOrder[]> {
-  if (!assetId && !assetCode) return [];
-
-  const candidateIds = Array.from(new Set([
-    assetId,
-    assetCode,
-    assetCode?.toUpperCase(),
-    assetCode?.toLowerCase()
-  ])).filter(Boolean) as string[];
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await ensureFirebaseAuthReady(1500);
-      const q = query(
-        collection(dbInstance, 'serviceOrders'),
-        where('assetId', 'in', candidateIds.slice(0, 10))
-      );
-      const snap = await getDocs(q);
-      const list: ServiceOrder[] = [];
-      snap.forEach((d) => {
-        if (!isMockOrLegacyId(d.id)) {
-          list.push({ id: d.id, ...d.data() } as ServiceOrder);
-        }
-      });
-      return withChecklists(processExpiredOrders(list));
-    } catch (err: any) {
-      console.warn('dbGetAssetOrdersPublic error querying Firestore:', err);
-      checkQuotaException(err);
-    }
-  }
-
-  // Offline fallback
-  try {
-    const saved = localStorage.getItem('hexon_service_orders');
-    if (saved) {
-      const parsed: ServiceOrder[] = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(o => 
-          candidateIds.some(c => c.toLowerCase() === (o.assetId || '').toLowerCase())
-        );
-      }
-    }
-  } catch (e) {}
-
-  return [];
-}
-
 
 // CORREÇÃO DAS OS (Super Administrador, antes das novas regras do banco). Só preenche o que falta; nada é apagado:
 // 1) unidade (GMMR, GMEE, GMC, DOM...);
