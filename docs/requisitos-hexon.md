@@ -220,6 +220,15 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - Conclusão feita sem internet dentro do prazo e enviada depois da meia-noite continua valendo (hora do celular; relógio alterado aparece como "horário divergente").
     - P1 e P2 (leituras da rotina de prazos) ficam para a rodada final de leituras e gravações.
 
+38. **Otimização de leituras e gravações (01/10/2026), aprovada:**
+    - Removida a checagem de prazos no navegador (P2): só a rotina da nuvem grava prazos.
+    - Rotina das 00:00 lê só as OS que vencem (P1): abertas com `endDate` < hoje e "Planejada" com `scheduledDate` < hoje.
+    - Técnico: 1 escuta só (gerência + matrícula + OS abertas); saíram a escuta por nome e a das fechadas do mês; "Atualizar" não relê as OS.
+    - Consulta de OS filtra o técnico pela matrícula.
+    - Decisão de solicitação não regrava o histórico do ativo.
+    - Removidas funções de busca sem uso.
+    - "Sentinela" (documento único avisando a última OS mudada) avaliado e não adotado: a cópia local com `syncAt` já lê só o que mudou, sem gravação extra e sem perder alterações em lote.
+
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
 |---|---|---|---|

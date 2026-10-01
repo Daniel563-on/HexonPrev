@@ -37,7 +37,7 @@ export async function dbDecideCorrective(order: ServiceOrder, itemId: string, de
       correctiveAt: new Date().toISOString()
     };
   });
-  await dbSaveServiceOrder(updated);
+  await dbSaveServiceOrder(updated, {}, { skipHistory: true });
   return updated;
 }
 
@@ -56,6 +56,6 @@ export async function dbFixCorrective(order: ServiceOrder, itemId: string, text:
       correctiveEditedAt: new Date().toISOString()
     };
   });
-  await dbSaveServiceOrder(updated);
+  await dbSaveServiceOrder(updated, {}, { skipHistory: true });
   return updated;
 }

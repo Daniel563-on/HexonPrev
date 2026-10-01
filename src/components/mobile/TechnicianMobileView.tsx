@@ -31,7 +31,7 @@ import {
 import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
-  dbGetOrdersForTechnician, OrderStart, subscribeMyActiveStart,
+  OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
   subscribePendingSolicitations, requestedItems
 } from '../../db/firebase';
@@ -97,19 +97,13 @@ export default function TechnicianMobileView({
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<Record<string, Asset>>({});
 
-  // Direct server-side refresh for technician's orders (Step 2 Optimization)
+  // Atualizar: as OS já chegam em tempo real; aqui só recarrega os modelos (não relê as OS)
   const handleRefreshTechnicianOrders = async () => {
     setIsRefreshingOrders(true);
     try {
-      const freshOrders = await dbGetOrdersForTechnician(userProfile.name, userProfile.matricula, visibleUnits);
-      if (freshOrders && freshOrders.length > 0) {
-        setSourceOrders(freshOrders);
-      }
-    } catch (err) {
-      console.warn('Erro ao atualizar ordens do técnico:', err);
+      await onReloadOrders();
     } finally {
       setIsRefreshingOrders(false);
-      onReloadOrders();
     }
   };
 

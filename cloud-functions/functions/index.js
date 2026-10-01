@@ -110,7 +110,17 @@ function computeDeadlineStatus(o, todayStr) {
 // Marca "Atrasada" (janela do técnico venceu) e "Não Executada" (período do Super Admin venceu).
 exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *' }, async () => {
   const today = todayBR();
-  const snap = await db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).get();
+  // Lê só as OS que podem mudar hoje (não todas as abertas):
+  // a) abertas com o prazo do Super Admin vencido  -> "Não Executada"  (índice status + endDate)
+  // b) "Planejada" com o dia programado já passado -> "Atrasada"       (índice status + scheduledDate)
+  // (Atrasada remarcada e Não Executada com prazo prorrogado são acertadas pelo app ao gravar a OS.)
+  const [expiredSnap, lateSnap] = await Promise.all([
+    db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).where('endDate', '<', today).get(),
+    db.collection('serviceOrders').where('status', '==', 'Planejada').where('scheduledDate', '<', today).get()
+  ]);
+  const seen = new Set();
+  const docs = [...expiredSnap.docs, ...lateSnap.docs].filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
+  const snap = { docs, size: docs.length };
   // OS em execução agora (registro de início): não vira "Atrasada"; se o período venceu, vira
   // "Não Executada" e o início é apagado (sai da execução do técnico)
   const startsSnap = await db.collection('orderStarts').get();
@@ -143,7 +153,7 @@ exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *'
     }
   }
   if (pending > 0) await batch.commit();
-  console.log(`[Prazos] ${today}: ${snap.size} OS abertas verificadas, ${changed} atualizadas, ${closedStarts} em execução encerradas.`);
+  console.log(`[Prazos] ${today}: ${snap.size} OS candidatas lidas, ${changed} atualizadas, ${closedStarts} em execução encerradas.`);
 });
 
 // Resultado da OS para os gráficos (mesma regra do Dashboard):

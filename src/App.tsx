@@ -19,7 +19,7 @@ import { AppControl, subscribeAppControl, waitPendingWrites } from './db/appCont
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
 import { 
-  subscribeServiceOrders,
+  subscribeTechnicianOrders,
   subscribeUnitOrders,
   stopOrderSync,
   dbGetManagements,
@@ -48,7 +48,6 @@ import {
   signOutHexon,
   dbGetPlanningDeadlines,
   dbSavePlanningDeadline,
-  dbCheckAndExpirePlanningOrders,
   PlanningDeadline
 } from './db/firebase';
 
@@ -412,17 +411,11 @@ export default function App() {
     return subscribeUnitOrders(dataUnits, ordersMonth, setOrders);
   }, [userProfile?.id, userProfile?.perfil, dataUnitsKey, ordersMonth]);
 
-  // Técnico: OS em tempo real, só as atribuídas a ele (abertas + as que fechou no mês atual)
+  // Técnico: OS em tempo real, só as abertas atribuídas à matrícula dele (as concluídas saem do app)
   useEffect(() => {
     if (!userProfile || userProfile.perfil !== 'Profissional') return;
-    const names = technicianCandidates(userProfile.name, userProfile.matricula);
-    if (names.length === 0) return;
-    return subscribeServiceOrders(
-      { units: visibleUnits, technicianNames: names, technicianMatricula: (userProfile.matricula || '').trim() || undefined },
-      localMonthKey(),
-      setOrders
-    );
-  }, [userProfile?.id, userProfile?.perfil, userProfile?.name, userProfile?.matricula, visibleUnitsKey]);
+    return subscribeTechnicianOrders(visibleUnits, userProfile.matricula || '', setOrders);
+  }, [userProfile?.id, userProfile?.perfil, userProfile?.matricula, visibleUnitsKey]);
 
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
   const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
@@ -435,13 +428,7 @@ export default function App() {
   const loadServiceOrders = async (targetUser?: HexonUser | null) => {
     try {
       const activeProfile = targetUser !== undefined ? targetUser : userProfile;
-      // A atualização de prazos (Atrasada / Não Executada) é gravada por perfis de gestão.
-      // Técnicos não executam essa rotina: evita 175 aparelhos repetindo o mesmo trabalho;
-      // a tela deles já exibe o status recalculado.
-      // Só quem vê todas as unidades (a Cloud Function diária também faz isso no servidor)
-      if (activeProfile && activeProfile.perfil !== 'Profissional' && visibleUnits === null) {
-        await dbCheckAndExpirePlanningOrders().catch(() => {});
-      }
+      // Prazos (Atrasada / Não Executada): gravados só pela rotina da nuvem às 00:00; as telas mostram o status recalculado
 
       // STEP 1 OPTIMIZATION: If user is a field technician ('Profissional'), do NOT download 10,000+ assets or all orders!
       // Strictly download only the technician's assigned orders and checklist templates.
