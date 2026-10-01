@@ -145,6 +145,8 @@ export default function OrderDetailsDrawer({
 
   const isOpenOrder = selectedOrder.status !== 'Concluída' && selectedOrder.status !== 'Não Executada' && selectedOrder.status !== 'Cancelada';
   const canExecutePerm = !userHasActionPermission || userHasActionPermission('execute_order');
+  // Prazo da OS (período do Super Admin) vencido: passou da meia-noite do último dia, não inicia nem conclui (Etapa 10)
+  const deadlinePassed = !!selectedOrder.endDate && localTodayStr() > selectedOrder.endDate.slice(0, 10);
   // Motivo para não poder iniciar (vazio = pode)
   const startBlockReason = (() => {
     if (!isOpenOrder) return 'OS encerrada.';
@@ -159,6 +161,7 @@ export default function OrderDetailsDrawer({
     if (!myMatricula) return 'Seu cadastro está sem matrícula.';
     // "Em Execução" sem registro de início = OS antiga (antes da Etapa 6.1): pode ser iniciada do jeito novo
     if (selectedOrder.status !== 'Planejada' && selectedOrder.status !== 'Em Execução') return 'Só OS "Planejada" pode ser iniciada.';
+    if (deadlinePassed) return `Prazo da OS encerrado em ${formatDateBR(selectedOrder.endDate)}: ela fica Não Executada.`;
     if (selectedOrder.scheduledDate && localTodayStr() < selectedOrder.scheduledDate.slice(0, 10)) {
       return `Programada para começar em ${formatDateBR(selectedOrder.scheduledDate)}.`;
     }
@@ -535,6 +538,7 @@ export default function OrderDetailsDrawer({
     if (!isAssignedToCurrentUser) return stop('Somente o técnico atribuído pode assinar e concluir.');
     if (userHasActionPermission && !userHasActionPermission('sign_order')) return stop('Seu perfil não tem autorização para assinar e concluir.');
     if (!isStartedByMe) return stop('Inicie a preventiva antes de concluir.');
+    if (deadlinePassed) return stop(`Prazo da OS encerrado em ${formatDateBR(selectedOrder.endDate)}: não é possível concluir. Ela fica Não Executada.`);
 
     // Quem executa entra sempre como participante
     const executor = { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' };

@@ -990,11 +990,15 @@ export async function dbCheckAndExpirePlanningOrders(): Promise<void> {
     ));
 
     const todayStr = localTodayStr();
+    // OS em execução agora (registro de início) não vira "Atrasada" (mesma regra da rotina da nuvem)
+    const startsSnap = await getDocs(collection(dbInstance, 'orderStarts'));
+    const started = new Set(startsSnap.docs.map((d) => d.id));
     const changes: { id: string; status: ServiceOrder['status']; closedMonth?: string }[] = [];
     snap.forEach((d) => {
       if (isMockOrLegacyId(d.id)) return;
       const stored = { id: d.id, ...d.data() } as ServiceOrder;
       const status = computeDeadlineStatus(stored, todayStr);
+      if (status === 'Atrasada' && started.has(d.id)) return;
       if (status !== stored.status) changes.push({ id: d.id, status, closedMonth: computeClosedMonth(stored, status) });
     });
 
