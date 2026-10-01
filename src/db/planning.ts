@@ -2,6 +2,7 @@ import { arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDo
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { timelineEvent } from './executionTeam';
+import { orderControlUpdate } from './orderControl';
 
 // PLANEJAMENTO (Etapa 5): lotes de agendamento e valor do pernoite.
 // A OS guarda só o lote (lotId); o custo do pernoite é calculado na hora, para quem pode ver valores.
@@ -119,6 +120,15 @@ export async function dbScheduleLot(input: ScheduleLotInput): Promise<PlanningLo
       lotId: lotRef.id,
       updatedAt: now,
       syncAt: serverTimestamp(),
+      // Campos de controle (índices esparsos) coerentes com a OS programada
+      ...orderControlUpdate({
+        ...o,
+        status: 'Planejada',
+        scheduledDate: input.periodStart,
+        scheduledEndDate: input.periodEnd > input.periodStart ? input.periodEnd : undefined,
+        assignedTechnicianMatricula: input.technician.matricula,
+        updatedAt: now
+      }),
       // Linha do tempo da OS (Etapa 6.2)
       timeline: arrayUnion(
         timelineEvent('Programada', input.createdBy, `${input.technician.name} • ${input.periodStart}${input.periodEnd > input.periodStart ? ` a ${input.periodEnd}` : ''}`)

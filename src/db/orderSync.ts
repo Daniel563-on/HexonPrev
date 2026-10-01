@@ -92,7 +92,8 @@ async function fullDownload(u: UnitSync): Promise<void> {
   const db = dbInstance!;
   const ref = collection(db, 'serviceOrders');
   const [openSnap, closedSnap] = await Promise.all([
-    getDocs(query(ref, where('unit', '==', u.unit), where('status', 'in', OPEN_STATUSES))),
+    // Abertas da gerência pelo campo de controle unitOpen (índice esparso: só OS abertas)
+    getDocs(query(ref, where('unitOpen', '==', u.unit))),
     getDocs(query(ref, where('unit', '==', u.unit), where('closedMonth', 'in', [localMonthKey(), prevMonthKey()])))
   ]);
   u.store.clear();
