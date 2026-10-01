@@ -1036,6 +1036,48 @@ export async function dbGetPlanningDeadlines(): Promise<PlanningDeadline[]> {
   return pendingPlanningDeadlinesPromise.then(list => [...list]);
 }
 
+// Prazos de planejamento em tempo real (poucos documentos: 1 por gerência).
+// Lê ao abrir e depois só quando o Super Administrador muda um prazo; a contagem regressiva é calculada na tela.
+export function subscribePlanningDeadlines(onChange: (list: PlanningDeadline[]) => void): () => void {
+  if (!firebaseActive || !dbInstance) {
+    dbGetPlanningDeadlines().then(onChange);
+    return () => {};
+  }
+  const db = dbInstance;
+  let unsub: (() => void) | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+  const start = () => {
+    unsub = onSnapshot(
+      collection(db, 'planningDeadlines'),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PlanningDeadline));
+        cachePlanningDeadlines = list;
+        cachePlanningDeadlinesFromFirebase = true;
+        try {
+          localStorage.setItem('hexon_planning_deadlines', JSON.stringify(list));
+        } catch {
+          /* ignora */
+        }
+        onChange([...list]);
+      },
+      (err) => {
+        console.warn('Escuta dos prazos de planejamento interrompida:', err);
+        checkQuotaException(err);
+        if (cachePlanningDeadlines) onChange([...cachePlanningDeadlines]);
+        // Tenta de novo em 30 s (ex.: login ainda não estava pronto)
+        if (!stopped) retry = setTimeout(start, 30000);
+      }
+    );
+  };
+  start();
+  return () => {
+    stopped = true;
+    if (retry) clearTimeout(retry);
+    unsub?.();
+  };
+}
+
 export async function dbSavePlanningDeadline(deadline: PlanningDeadline): Promise<void> {
   if (cachePlanningDeadlines === null) {
     cachePlanningDeadlines = [];
