@@ -409,7 +409,7 @@ export default function App() {
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
     return subscribeUnitOrders(dataUnits, ordersMonth, setOrders);
-  }, [userProfile?.id, userProfile?.perfil, dataUnitsKey, ordersMonth]);
+  }, [userProfile?.id, userProfile?.perfil, dataUnitsKey, ordersMonth, currentUser?.uid]);
 
   // Técnico: OS em tempo real, só as abertas atribuídas à matrícula dele (as concluídas saem do app)
   useEffect(() => {
