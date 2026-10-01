@@ -19,8 +19,9 @@ guardar o código do servidor e permitir republicá-lo.
 ## Funções agendadas (rodam sozinhas, horário de Brasília)
 
 - `dailyDeadlines` — todo dia às **00:00**: marca "Atrasada" e "Não Executada" (mesma regra do app,
-  `computeDeadlineStatus`) e grava `closedMonth` nas que viram "Não Executada".
-- `monthlyClosing` — todo dia **1º às 03:30**: grava o resumo congelado do mês anterior em
+  `computeDeadlineStatus`) e grava `closedMonth` nas que viram "Não Executada". OS em execução (`orderStarts`)
+  não vira "Atrasada"; se o prazo venceu, vira "Não Executada" e o registro de início é apagado.
+- `monthlyClosing` — todo dia **1º às 00:10**: grava o resumo congelado do mês anterior em
   `monthlySummaries/{AAAA-MM}__{GERENCIA}` (contagens por periodicidade, técnico, CRAAI, comarca e resultado).
   O mês da OS é o mês do fim do período do Super Admin (`endDate`). Precisa do índice `serviceOrders.endDate`.
 - Para rodar na hora (teste): Google Cloud Console → **Cloud Scheduler** → job da função → **Forçar execução**.
