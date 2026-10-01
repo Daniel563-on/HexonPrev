@@ -213,6 +213,13 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - **Decisão por item** (cada Não conforme): **"Abrir corretiva"** exige o **nº do chamado GLPI** e só finaliza ao salvar; **"Não abrir"** exige **justificativa**. Fica registrado quem decidiu e quando. A decisão não muda; quem tem a permissão **"Gerenciar Solicitações"** (padrão Administrador e Super Admin; pode ser dada a outros perfis) só corrige o nº do GLPI ou a justificativa (registra quem corrigiu). Removido o botão que criava OS corretiva dentro do Hexon.
     - A OS continua **Concluída** (conta em tudo). Enquanto houver item sem decisão, ela aparece para o técnico na aba **"Solicitações"** do celular, com o andamento de cada item, e só sai de lá quando todos tiverem decisão.
 
+37. **Prazos e horários (Etapa 10), respostas de 01/10/2026:** (Etapa 9, Relatórios, adiada a pedido)
+    - **Trava rígida:** passou da meia-noite do último dia do prazo da OS (período do Super Admin), não inicia nem conclui — OS de 1 dia vai até 23:59 daquele dia; OS do mês, até 23:59 do último dia do período. Vale para todas as periodicidades (Diária, Semanal, Mensal...). Não planejada ou não executada no prazo vira **Não Executada**.
+    - **Rotina das 00:00:** OS em execução (com início registrado) não vira "Atrasada"; se o prazo venceu, vira **Não Executada** e o início é apagado (sai da execução do técnico). A checagem do navegador segue a mesma regra.
+    - **Fechamento do mês:** dia 1º às **00:10** (antes 03:30).
+    - Conclusão feita sem internet dentro do prazo e enviada depois da meia-noite continua valendo (hora do celular; relógio alterado aparece como "horário divergente").
+    - P1 e P2 (leituras da rotina de prazos) ficam para a rodada final de leituras e gravações.
+
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
 |---|---|---|---|

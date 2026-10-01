@@ -111,27 +111,39 @@ function computeDeadlineStatus(o, todayStr) {
 exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *' }, async () => {
   const today = todayBR();
   const snap = await db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).get();
+  // OS em execução agora (registro de início): não vira "Atrasada"; se o período venceu, vira
+  // "Não Executada" e o início é apagado (sai da execução do técnico)
+  const startsSnap = await db.collection('orderStarts').get();
+  const started = new Set(startsSnap.docs.map((d) => d.id));
   const updatedAt = new Date().toISOString();
   let batch = db.batch();
   let pending = 0;
   let changed = 0;
+  let closedStarts = 0;
   for (const d of snap.docs) {
     const o = d.data();
     const status = computeDeadlineStatus(o, today);
     if (status === o.status) continue;
+    if (status === 'Atrasada' && started.has(d.id)) continue;
     const fields = { status, updatedAt, syncAt: FieldValue.serverTimestamp() };
     // Mês de encerramento: a OS "Não Executada" conta no mês em que terminou o período
     if (status === 'Não Executada') fields.closedMonth = (o.endDate || today).slice(0, 7);
     batch.update(d.ref, fields);
+    pending++;
     changed++;
-    if (++pending === 400) {
+    if (status === 'Não Executada' && started.has(d.id)) {
+      batch.delete(db.doc(`orderStarts/${d.id}`));
+      pending++;
+      closedStarts++;
+    }
+    if (pending >= 400) {
       await batch.commit();
       batch = db.batch();
       pending = 0;
     }
   }
   if (pending > 0) await batch.commit();
-  console.log(`[Prazos] ${today}: ${snap.size} OS abertas verificadas, ${changed} atualizadas.`);
+  console.log(`[Prazos] ${today}: ${snap.size} OS abertas verificadas, ${changed} atualizadas, ${closedStarts} em execução encerradas.`);
 });
 
 // Resultado da OS para os gráficos (mesma regra do Dashboard):
@@ -151,10 +163,10 @@ function sectorToken(value) {
     .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase() || 'SEM_GERENCIA';
 }
 
-// 2) FECHAMENTO DO MÊS — dia 1º às 03:30 (depois da rotina de prazos)
+// 2) FECHAMENTO DO MÊS — dia 1º às 00:10 (logo depois da rotina de prazos das 00:00)
 // Grava o resumo congelado do mês anterior. O mês da OS é o mês em que termina o período do
 // Super Admin (endDate). Um documento por gerência: monthlySummaries/{AAAA-MM}__{GERENCIA}.
-exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '30 3 1 * *' }, async () => {
+exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '10 0 1 * *' }, async () => {
   const [y, m] = todayBR().split('-').map(Number);
   const prev = new Date(Date.UTC(y, m - 2, 1));
   const month = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
