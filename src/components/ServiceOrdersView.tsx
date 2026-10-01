@@ -12,7 +12,7 @@ import {
   FileSearch
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, getSectorGerencia } from '../types';
-import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, dbGetPlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline, isSectorVisible } from '../db/firebase';
+import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, subscribePlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline, isSectorVisible } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -77,54 +77,51 @@ export default function ServiceOrdersView({
     return { text: textStr, hoursLeft: diff / (1000 * 60 * 60), isExpired: false };
   }
 
-  const loadDeadlines = () => {
-    dbGetPlanningDeadlines().then((list) => {
-      setDeadlines([...list]);
-    });
-  };
-
+  // Prazos de planejamento em tempo real: a mudança feita pelo Super Administrador chega na hora para todos
+  useEffect(() => subscribePlanningDeadlines(setDeadlines), []);
+  // Atualiza o tempo restante na tela a cada minuto (só redesenha; não lê o banco)
+  const [, setClockTick] = useState(0);
   useEffect(() => {
-    loadDeadlines();
-  }, [orders]);
+    const t = setInterval(() => setClockTick((n) => n + 1), 60000);
+    return () => clearInterval(t);
+  }, []);
 
-  // Handle countdown updates & alerts
+  // Contagem regressiva e aviso (calculados na tela, sem ler o banco)
   useEffect(() => {
     if (planUnits.length > 0) {
       const runCheck = () => {
-        dbGetPlanningDeadlines().then((list) => {
-          setDeadlines([...list]);
-          // Aviso da primeira unidade do perfil com prazo terminando em até 24h
-          const deadline =
-            list.find(d => planUnits.includes(d.id) && d.expiresAt && d.expiresAt !== 'none' && (() => {
-              const c = getCountdownText(d.expiresAt);
-              return !c.isExpired && c.hoursLeft <= 24;
-            })()) || list.find(d => planUnits.includes(d.id));
-          if (deadline && deadline.expiresAt) {
-            const { isExpired, hoursLeft, text } = getCountdownText(deadline.expiresAt);
-            if (!isExpired && hoursLeft <= 24) {
-               if (!hasDismissedTemp) {
-                setWarnPopupManagement(deadline.id);
-                setWarnPopupTimeText(text);
-                setShowDeadlineWarnPopup(true);
-              }
-            } else {
-              // If deadline is reset to >24h, we can allow showing again next time it hits limit
-              setHasDismissedTemp(false);
-              setShowDeadlineWarnPopup(false);
+        const list = deadlines;
+        // Aviso da primeira unidade do perfil com prazo terminando em até 24h
+        const deadline =
+          list.find(d => planUnits.includes(d.id) && d.expiresAt && d.expiresAt !== 'none' && (() => {
+            const c = getCountdownText(d.expiresAt);
+            return !c.isExpired && c.hoursLeft <= 24;
+          })()) || list.find(d => planUnits.includes(d.id));
+        if (deadline && deadline.expiresAt) {
+          const { isExpired, hoursLeft, text } = getCountdownText(deadline.expiresAt);
+          if (!isExpired && hoursLeft <= 24) {
+            if (!hasDismissedTemp) {
+              setWarnPopupManagement(deadline.id);
+              setWarnPopupTimeText(text);
+              setShowDeadlineWarnPopup(true);
             }
           } else {
-            // No custom deadline is defined, hide any warning alerts
-            setShowDeadlineWarnPopup(false);
+            // If deadline is reset to >24h, we can allow showing again next time it hits limit
             setHasDismissedTemp(false);
+            setShowDeadlineWarnPopup(false);
           }
-        });
+        } else {
+          // No custom deadline is defined, hide any warning alerts
+          setShowDeadlineWarnPopup(false);
+          setHasDismissedTemp(false);
+        }
       };
       
       runCheck();
       const interval = setInterval(runCheck, 10000); // Check every 10 seconds
       return () => clearInterval(interval);
     }
-  }, [planUnitsKey, hasDismissedTemp]);
+  }, [planUnitsKey, hasDismissedTemp, deadlines]);
 
   // Regra de reagendamento:
   // - Só a OS "Atrasada" (passou do período do encarregado) pode voltar para "Novo" e ser reagendada.
@@ -608,7 +605,6 @@ export default function ServiceOrdersView({
                             await dbSavePlanningDeadline({ id: mId, expiresAt: isoString });
                             alert(`Prazo da gerência ${mId} definido com sucesso para ${new Date(isoString).toLocaleString('pt-BR')}!`);
                             onReload();
-                            loadDeadlines();
                           }}
                           className="px-6 bg-[#3525cd] hover:bg-[#281bbb] active:scale-98 text-white text-[10.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center shadow-3xs h-[34px] shrink-0 w-full sm:w-auto"
                         >
