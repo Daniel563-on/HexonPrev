@@ -229,6 +229,12 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - Removidas funções de busca sem uso.
     - "Sentinela" (documento único avisando a última OS mudada) avaliado e não adotado: a cópia local com `syncAt` já lê só o que mudou, sem gravação extra e sem perder alterações em lote.
 
+39. **Campos de controle e índices esparsos (01/10/2026):** teste do disparo de 1.279 OS (GMMR) mostrou ~11 unidades de gravação por OS (1 do documento + 10 índices) e ~10 mil leituras na conferência do "Conferir".
+    - Removida a conferência OS a OS do disparo (fica só o registro do disparo; o banco recusa regravar OS existente).
+    - A OS ganha campos que só existem quando necessários (`src/db/orderControl.ts`): `unitOpen`, `openEnd`, `plannedEnd`, `techOpen`, `techSol`, `solAt`, `addrEnd`. Os índices passam a ser esparsos sobre eles; meta ~6 unidades por OS no disparo.
+    - Regras: listagem também por `unitOpen` (gerência), `techOpen` e `techSol` (próprio técnico); OS concluída aceita mudar `techSol`, `solAt` e `addrEnd`.
+    - OS gravadas antes desta mudança não têm os campos (o banco será zerado antes da produção).
+
 ### Pendências de leitura e gravação
 | # | Item | O que foi visto | O que fazer |
 |---|---|---|---|

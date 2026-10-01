@@ -111,12 +111,12 @@ function computeDeadlineStatus(o, todayStr) {
 exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *' }, async () => {
   const today = todayBR();
   // Lê só as OS que podem mudar hoje (não todas as abertas):
-  // a) abertas com o prazo do Super Admin vencido  -> "Não Executada"  (índice status + endDate)
-  // b) "Planejada" com o dia programado já passado -> "Atrasada"       (índice status + scheduledDate)
+  // a) abertas com o prazo do Super Admin vencido  -> "Não Executada"  (campo de controle openEnd, índice esparso)
+  // b) "Planejada" com o dia programado já passado -> "Atrasada"       (campo de controle plannedEnd, índice esparso)
   // (Atrasada remarcada e Não Executada com prazo prorrogado são acertadas pelo app ao gravar a OS.)
   const [expiredSnap, lateSnap] = await Promise.all([
-    db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).where('endDate', '<', today).get(),
-    db.collection('serviceOrders').where('status', '==', 'Planejada').where('scheduledDate', '<', today).get()
+    db.collection('serviceOrders').where('openEnd', '<', today).get(),
+    db.collection('serviceOrders').where('plannedEnd', '<', today).get()
   ]);
   const seen = new Set();
   const docs = [...expiredSnap.docs, ...lateSnap.docs].filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
@@ -136,6 +136,13 @@ exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *'
     if (status === o.status) continue;
     if (status === 'Atrasada' && started.has(d.id)) continue;
     const fields = { status, updatedAt, syncAt: FieldValue.serverTimestamp() };
+    // Campos de controle (mesma regra do app, src/db/orderControl.ts): fechada perde os de OS aberta;
+    // Atrasada deixa de ser "Planejada"
+    if (status === 'Não Executada') {
+      for (const k of ['unitOpen', 'openEnd', 'plannedEnd', 'techOpen']) fields[k] = FieldValue.delete();
+    } else if (status === 'Atrasada') {
+      fields.plannedEnd = FieldValue.delete();
+    }
     // Mês de encerramento: a OS "Não Executada" conta no mês em que terminou o período
     if (status === 'Não Executada') fields.closedMonth = (o.endDate || today).slice(0, 7);
     batch.update(d.ref, fields);

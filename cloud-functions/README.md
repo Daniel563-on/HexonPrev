@@ -18,7 +18,7 @@ guardar o código do servidor e permitir republicá-lo.
 
 ## Funções agendadas (rodam sozinhas, horário de Brasília)
 
-- `dailyDeadlines` — todo dia às **00:00**: lê só as OS que vencem (índices `status + endDate` e `status + scheduledDate`) e marca "Atrasada" e "Não Executada" (mesma regra do app,
+- `dailyDeadlines` — todo dia às **00:00**: lê só as OS que vencem (campos de controle `openEnd` e `plannedEnd`, índices esparsos) e marca "Atrasada" e "Não Executada" (mesma regra do app,
   `computeDeadlineStatus`) e grava `closedMonth` nas que viram "Não Executada". OS em execução (`orderStarts`)
   não vira "Atrasada"; se o prazo venceu, vira "Não Executada" e o registro de início é apagado.
 - `monthlyClosing` — todo dia **1º às 00:10**: grava o resumo congelado do mês anterior em

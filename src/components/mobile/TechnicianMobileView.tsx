@@ -33,7 +33,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribePendingSolicitations, requestedItems
+  subscribeTechnicianSolicitations, requestedItems
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
@@ -189,9 +189,8 @@ export default function TechnicianMobileView({
       setMySolicitations([]);
       return;
     }
-    const units = visibleUnits ?? (userProfile.gerencia && userProfile.gerencia !== 'Todas' ? [userProfile.gerencia] : null);
-    return subscribePendingSolicitations({ units, technicianMatricula: mat }, setMySolicitations);
-  }, [userProfile.matricula, userProfile.gerencia, (visibleUnits || []).join('|')]);
+    return subscribeTechnicianSolicitations(mat, setMySolicitations);
+  }, [userProfile.matricula]);
 
   // Alerta de tempo longo (Etapa 7): OS em execução há mais de 10h (calculado no aparelho, sem gravar nada)
   const [nowMs, setNowMs] = useState(() => Date.now());

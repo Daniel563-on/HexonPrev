@@ -9,6 +9,7 @@ import {
 import { dbGetTemplates } from './templates';
 import { dbGetManagements } from './organization';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
+import { withOrderControl } from './orderControl';
 import { dbGetAddresses, buildSurveyTargets } from './addresses';
 
 // Forward references to service orders / assets functions
@@ -633,7 +634,7 @@ export async function dbAutoGeneratePreventiveActivities(
         try {
           const batch = writeBatch(dbInstance);
           for (const order of chunk) {
-            batch.set(doc(dbInstance, 'serviceOrders', order.id), { ...cleanUndefined(withoutEmptyTechnician(order)), syncAt: serverTimestamp() });
+            batch.set(doc(dbInstance, 'serviceOrders', order.id), { ...withOrderControl(cleanUndefined(withoutEmptyTechnician(order))), syncAt: serverTimestamp() });
           }
           // Registra as OS disparadas no mesmo lote (grava tudo ou nada)
           addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));

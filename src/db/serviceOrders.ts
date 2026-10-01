@@ -32,6 +32,7 @@ import {
   awaitWrite
 } from './core';
 import { isMockOrLegacyId } from './templates';
+import { withOrderControl, orderControlUpdate } from './orderControl';
 import { ensureChecklistVersions, hydrateOrders, onChecklistVersionLoaded, toStoredOrder } from './checklistVersions';
 
 // Busca de uma vez: baixa as versões de modelo que faltarem e monta o checklist (formato enxuto)
@@ -240,7 +241,7 @@ export async function dbGetAddressVistorias(addressId: string): Promise<ServiceO
   if (!firebaseActive || !dbInstance || !addressId) return [];
   const snap = await getDocs(
     // Vistorias de endereço são da DOM (as regras do banco exigem o filtro de unidade)
-    query(collection(dbInstance, 'serviceOrders'), where('unit', '==', 'DOM'), where('addressId', '==', addressId), orderBy('endDate', 'desc'), limit(100))
+    query(collection(dbInstance, 'serviceOrders'), where('unit', '==', 'DOM'), where('addressId', '==', addressId), orderBy('addrEnd', 'desc'), limit(100))
   );
   return withChecklists(snap.docs.map((d) => ({ id: d.id, ...d.data(), signature: null } as ServiceOrder)));
 }
@@ -262,7 +263,10 @@ export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: st
     for (let j = 0; j < open.length; j += 400) {
       const batch = writeBatch(dbInstance);
       open.slice(j, j + 400).forEach((d) =>
-        batch.update(d.ref, { status: 'Cancelada', closedMonth: month, cancelReason: reason, cancelledAt: now, updatedAt: now, syncAt: serverTimestamp() })
+        batch.update(d.ref, {
+          status: 'Cancelada', closedMonth: month, cancelReason: reason, cancelledAt: now, updatedAt: now, syncAt: serverTimestamp(),
+          ...orderControlUpdate({ ...(d.data() as any), status: 'Cancelada', updatedAt: now })
+        })
       );
       await batch.commit();
     }
@@ -390,7 +394,8 @@ export function subscribeTechnicianOrders(
     onChange([]);
     return () => {};
   }
-  const filterSets = scopeFilterSets({ units, technicianMatricula: mat });
+  // Campo de controle techOpen: só as OS abertas deste técnico (não precisa filtrar a gerência)
+  const filterSets = [[where('techOpen', '==', mat)]];
   const parts: (ServiceOrder[] | null)[] = filterSets.map(() => null);
   const emit = () => {
     if (parts.some((p) => p === null)) return;
@@ -406,7 +411,7 @@ export function subscribeTechnicianOrders(
   const stopVersions = onChecklistVersionLoaded(emit);
   const unsubscribers = filterSets.map((filters, i) =>
     onSnapshot(
-      query(collection(dbInstance!, 'serviceOrders'), ...filters, where('status', 'in', OPEN_STATUSES)),
+      query(collection(dbInstance!, 'serviceOrders'), ...filters),
       (snap) => {
         const list: ServiceOrder[] = [];
         snap.forEach((d) => {
@@ -426,6 +431,38 @@ export function subscribeTechnicianOrders(
   return () => {
     stopVersions();
     unsubscribers.forEach((u) => u());
+  };
+}
+
+// Solicitações pendentes do técnico (campo de controle techSol): aba Solicitações do celular
+export function subscribeTechnicianSolicitations(matricula: string, onChange: (orders: ServiceOrder[]) => void): () => void {
+  const mat = (matricula || '').trim();
+  if (!firebaseActive || !dbInstance || !mat) {
+    onChange([]);
+    return () => {};
+  }
+  let last: ServiceOrder[] = [];
+  const emit = () => onChange(hydrateOrders([...last].sort(compareOrdersNewestFirst)));
+  const unsub = onSnapshot(
+    query(collection(dbInstance, 'serviceOrders'), where('techSol', '==', mat)),
+    (snap) => {
+      last = [];
+      snap.forEach((d) => {
+        if (!isMockOrLegacyId(d.id)) last.push({ id: d.id, ...d.data() } as ServiceOrder);
+      });
+      emit();
+    },
+    (err) => {
+      console.warn('Firestore listen technician solicitations failed:', err);
+      checkQuotaException(err);
+      last = [];
+      emit();
+    }
+  );
+  const stopVersions = onChecklistVersionLoaded(emit);
+  return () => {
+    stopVersions();
+    unsub();
   };
 }
 
@@ -499,7 +536,7 @@ export async function dbGetHandledSolicitationsPage(
             collection(dbInstance!, 'serviceOrders'),
             ...filters,
             where('solicitationStatus', 'in', statuses),
-            orderBy('updatedAt', 'desc'),
+            orderBy('solAt', 'desc'),
             ...(cursors[i] ? [startAfter(cursors[i])] : []),
             limit(pageSize)
           )
@@ -508,7 +545,7 @@ export async function dbGetHandledSolicitationsPage(
     );
     // Junta, ordena pelas mais recentes e pega uma página
     const merged = snaps.flatMap((snap, i) => snap.docs.map((d) => ({ i, d })));
-    merged.sort((x, y) => String(y.d.data().updatedAt || '').localeCompare(String(x.d.data().updatedAt || '')));
+    merged.sort((x, y) => String(y.d.data().solAt || '').localeCompare(String(x.d.data().solAt || '')));
     const taken = merged.slice(0, pageSize);
     const nextCursors = filterSets.map((_, i) => {
       const mine = taken.filter((t) => t.i === i);
@@ -790,7 +827,8 @@ export async function dbSaveServiceOrder(
     try {
       // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
       // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
-      const stored: Record<string, unknown> = cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))) as any;
+      // Campos de controle (índices esparsos): só os que a OS precisa agora
+      const stored: Record<string, unknown> = withOrderControl(cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))) as any);
       // Hora do servidor da conclusão: regrava no mesmo formato (senão o banco recusa mexer na OS concluída)
       if (stored.completedAtServer) stored.completedAtServer = asTimestamp(stored.completedAtServer);
       result = await awaitWrite(setDoc(doc(dbInstance, 'serviceOrders', order.id), {
@@ -1098,7 +1136,11 @@ export async function dbBackfillOrderUnits(): Promise<UnitBackfillResult> {
       }
     }
 
-    if (Object.keys(fields).length > 0) updates.push({ id: d.id, fields });
+    if (Object.keys(fields).length > 0) {
+      // OS aberta: campos de controle coerentes com a unidade corrigida
+      if (OPEN_STATUSES.includes(o.status)) Object.assign(fields, orderControlUpdate({ ...o, ...fields }));
+      updates.push({ id: d.id, fields });
+    }
   });
 
   for (let i = 0; i < updates.length; i += 400) {

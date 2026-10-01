@@ -89,7 +89,11 @@ service cloud.firestore {
     // Excluir: só o Super Administrador, e só OS "Novo".
     match /serviceOrders/{orderId} {
       allow get: if isStaff() && (resource == null || seesAllUnits() || resource.data.unit in myUnits());
-      allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      // Também pelos campos de controle (índices esparsos): abertas da gerência e OS/solicitações do próprio técnico
+      allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits()
+        || resource.data.unitOpen in myUnits()
+        || resource.data.techOpen == me().matricula
+        || resource.data.techSol == me().matricula);
       allow create: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && (seesAllUnits() || request.resource.data.unit in myUnits());
       // A data de criação nunca muda: um disparo que tente regravar uma OS existente é recusado
@@ -97,7 +101,7 @@ service cloud.firestore {
         && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
         && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
         && (resource.data.status != 'Concluída'
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd'])
             || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
       allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
     }

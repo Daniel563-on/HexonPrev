@@ -1,7 +1,8 @@
-import { collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Address, Asset, AssetTypeConfig, CycleSetting, MaintenanceTemplate, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, withoutEmptyTechnician, checkQuotaException } from './core';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
+import { withOrderControl } from './orderControl';
 import { dbEnsureTemplateVersion, toStoredOrder } from './checklistVersions';
 import { addMonths, assetTypeKey, cycleMonthIndex, duePeriodicity } from './cycle';
 import { isSectorInGerencia } from '../types';
@@ -250,23 +251,11 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
   return { unit, months, isTest, summary, toCreate: orders, blocked: [], skipped, usedModels: Array.from(usedModels.values()) };
 }
 
-// Separa as que já existem (registro do disparo + conferência direta pelo número) — poucas leituras
+// Separa as que já existem pelo registro do disparo (poucas leituras). Não há conferência OS a OS: o registro é gravado
+// junto com as OS (tudo ou nada) e o banco recusa um disparo que tente regravar uma OS existente.
 export async function dbSplitExistingOrders(plan: DispatchPlan): Promise<DispatchPlan> {
   if (!firebaseActive || !dbInstance || plan.toCreate.length === 0) return plan;
   const existing = await dbGetDispatchedIds(plan.toCreate.map((o) => o.startDate || ''));
-  // Conferência direta pelo número (OS gravadas fora do registro), filtrando pela unidade (regras do banco)
-  const pending = plan.toCreate.filter((o) => !existing.has(o.id)).map((o) => o.id);
-  try {
-    for (let i = 0; i < pending.length; i += 30) {
-      const snap = await getDocs(
-        query(collection(dbInstance, 'serviceOrders'), where('unit', '==', plan.unit), where(documentId(), 'in', pending.slice(i, i + 30)))
-      );
-      snap.forEach((d) => existing.add(d.id));
-    }
-  } catch (err: any) {
-    console.warn('Conferência direta das OS existentes falhou (segue só com o registro do disparo):', err);
-    checkQuotaException(err);
-  }
   const blocked = plan.toCreate.filter((o) => existing.has(o.id));
   const toCreate = plan.toCreate.filter((o) => !existing.has(o.id));
   const summary = plan.summary.map((s) => {
@@ -290,7 +279,7 @@ export async function dbApplyDispatch(plan: DispatchPlan, onProgress?: (done: nu
   for (let i = 0; i < plan.toCreate.length; i += 200) {
     const chunk = plan.toCreate.slice(i, i + 200);
     const batch = writeBatch(db);
-    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), { ...cleanUndefined(toStoredOrder(withoutEmptyTechnician(o))), syncAt: serverTimestamp() }));
+    chunk.forEach((o) => batch.set(doc(db, 'serviceOrders', o.id), { ...withOrderControl(cleanUndefined(toStoredOrder(withoutEmptyTechnician(o)))), syncAt: serverTimestamp() }));
     addToDispatchIndexInBatch(batch, chunk.map((o) => o.id));
     await batch.commit();
     done += chunk.length;
