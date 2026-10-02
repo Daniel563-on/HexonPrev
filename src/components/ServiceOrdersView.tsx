@@ -215,13 +215,18 @@ export default function ServiceOrdersView({
     }
   }, [highlightOSId, orders]);
 
+  // Ativos por código: busca direta (antes percorria a lista inteira para cada OS)
+  const assetsById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
+
   // Helper to determine the comarca of an order
   const getOrderComarca = (os: ServiceOrder) => {
     if (os.isSurvey && os.surveyLocation) {
       return os.surveyLocation;
     }
+    // Comarca gravada na própria OS no disparo (as antigas, sem o campo, buscam no ativo)
+    if (os.comarca && os.comarca.trim()) return os.comarca.trim();
     if (os.assetId && assets.length > 0) {
-      const asset = assets.find(a => a.id === os.assetId);
+      const asset = assetsById.get(os.assetId);
       if (asset) {
         return asset.specs?.COMARCA || asset.specs?.comarca || (asset.location && asset.location.includes(' - ') ? asset.location.split(' - ')[0] : asset.location) || 'Geral';
       }
@@ -237,7 +242,7 @@ export default function ServiceOrdersView({
   const getOrderCRAAI = (os: ServiceOrder) => {
     if (os.craai) return os.craai;
     if (os.assetId && assets.length > 0) {
-      const asset = assets.find(a => a.id === os.assetId);
+      const asset = assetsById.get(os.assetId);
       if (asset) {
         return asset.specs?.CRAAI || asset.specs?.craai || '—';
       }
@@ -322,17 +327,18 @@ export default function ServiceOrdersView({
   };
 
   // Generate unique list of comarcas and patrimonios for select dropdowns
-  const comarcasList = Array.from(
+  // (recalculados só quando as OS ou os ativos mudam; trocar de mês no calendário não refaz)
+  const comarcasList = useMemo(() => Array.from(
     new Set(orders.map(os => getOrderComarca(os)).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
+  ).sort((a, b) => a.localeCompare(b)), [orders, assetsById]);
 
-  const patrimoniosList = Array.from(
+  const patrimoniosList = useMemo(() => Array.from(
     new Set(orders.map(os => os.assetCode).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
+  ).sort((a, b) => a.localeCompare(b)), [orders]);
 
   // Dynamic filtered orders listings
   const currentMonthKey = localMonthKey();
-  const ordersBeforeStatus = orders.filter((os) => {
+  const ordersBeforeStatus = useMemo(() => orders.filter((os) => {
     // Realização: abertas sempre; fechadas só as do mês atual (as antigas ficam na Consulta de OS)
     if ((os.status === 'Concluída' || os.status === 'Não Executada' || os.status === 'Cancelada') && os.closedMonth !== currentMonthKey) {
       return false;
@@ -367,7 +373,7 @@ export default function ServiceOrdersView({
     const matchesExecutionDate = !selectedExecutionDate || os.scheduledDate === selectedExecutionDate;
 
     return matchesSmart && matchesComarca && matchesPatrimonio && matchesExecutionDate;
-  });
+  }), [orders, assetsById, currentMonthKey, smartSearch, selectedComarca, selectedPatrimonio, selectedExecutionDate]);
 
   // Quantidade de cada status (respeitando os outros filtros) e o filtro de status
   const statusCounts = ordersBeforeStatus.reduce<Record<string, number>>((acc, os) => {
@@ -444,7 +450,7 @@ export default function ServiceOrdersView({
     return true;
   };
 
-  const activeLinkedAsset = selectedOrder ? assets.find(a => a.id === selectedOrder.assetId) : null;
+  const activeLinkedAsset = selectedOrder ? assetsById.get(selectedOrder.assetId || '') || null : null;
 
   return (
     <div className="space-y-6 font-sans">
