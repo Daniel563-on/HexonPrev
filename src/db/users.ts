@@ -11,7 +11,7 @@ import {
   setDoc,
   updateDoc,
   where
-} from 'firebase/firestore';
+} from './guard';
 import { HexonUser } from '../types';
 import {
   firebaseActive,

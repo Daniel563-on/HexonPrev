@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, setDoc } from './guard';
 import { MaintenanceTemplate } from '../types';
 import {
   firebaseActive,

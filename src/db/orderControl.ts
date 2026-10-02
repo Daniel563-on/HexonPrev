@@ -1,4 +1,4 @@
-import { deleteField } from 'firebase/firestore';
+import { deleteField } from './guard';
 
 // CAMPOS DE CONTROLE DA OS (otimização de gravações)
 // Cada campo só existe enquanto a OS precisa dele. Os índices do banco usam estes campos (índices esparsos):

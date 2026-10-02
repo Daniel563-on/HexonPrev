@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc } from './guard';
 import { SavedQrTemplate } from '../types';
 import { DEFAULT_SAVED_TEMPLATES } from '../utils/qrDefaults';
 import {

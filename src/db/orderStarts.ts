@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, getDocsFromCache, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, getDocsFromCache, onSnapshot, query, serverTimestamp, setDoc, where } from './guard';
 import { HexonUser, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException, awaitWrite } from './core';
 import { dbSaveServiceOrder } from './serviceOrders';

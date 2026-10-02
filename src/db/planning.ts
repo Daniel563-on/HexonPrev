@@ -1,4 +1,4 @@
-import { arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from './guard';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { timelineEvent } from './executionTeam';

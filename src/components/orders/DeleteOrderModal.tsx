@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { dbDeleteServiceOrder } from '../../db/firebase';
+import { dbDeleteServiceOrder, runBulk } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface DeleteOrderModalProps {
@@ -26,7 +26,7 @@ export default function DeleteOrderModal({
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      await Promise.all(orderIds.map((id) => dbDeleteServiceOrder(id)));
+      await runBulk(() => Promise.all(orderIds.map((id) => dbDeleteServiceOrder(id))));
       onSuccess();
       onClose();
     } catch (err) {

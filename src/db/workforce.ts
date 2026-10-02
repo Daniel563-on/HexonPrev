@@ -1,4 +1,5 @@
-import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from './guard';
 import { HexonUser, JobRole, WorkforcePerson } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
@@ -139,7 +140,11 @@ export function planWorkforceImport(
   return plan;
 }
 
-export async function dbApplyWorkforceImport(plan: WorkforceImportPlan): Promise<void> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbApplyWorkforceImport(...args: Parameters<typeof dbApplyWorkforceImportNow>): ReturnType<typeof dbApplyWorkforceImportNow> {
+  return runBulk(() => dbApplyWorkforceImportNow(...args));
+}
+async function dbApplyWorkforceImportNow(plan: WorkforceImportPlan): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
   const now = new Date().toISOString();

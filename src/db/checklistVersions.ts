@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from './guard';
 import { ChecklistAnswer, ChecklistItem, MaintenanceTemplate, ServiceOrder, TemplateVersionSnapshot } from '../types';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';

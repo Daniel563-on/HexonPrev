@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, query, orderBy, limit } from './guard';
 import { AccessLog, AuditLog } from '../types';
 import {
   firebaseActive,

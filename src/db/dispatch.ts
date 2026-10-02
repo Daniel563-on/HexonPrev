@@ -1,4 +1,5 @@
-import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { doc, serverTimestamp, writeBatch } from './guard';
 import { Address, Asset, AssetTypeConfig, CycleSetting, MaintenanceTemplate, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, withoutEmptyTechnician, checkQuotaException } from './core';
 import { addToDispatchIndexInBatch, dbGetDispatchedIds } from './dispatchIndex';
@@ -270,7 +271,11 @@ export async function dbSplitExistingOrders(plan: DispatchPlan): Promise<Dispatc
 }
 
 // Grava as OS em lotes (cada lote grava também o registro do disparo: tudo ou nada)
-export async function dbApplyDispatch(plan: DispatchPlan, onProgress?: (done: number, total: number) => void): Promise<number> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbApplyDispatch(...args: Parameters<typeof dbApplyDispatchNow>): ReturnType<typeof dbApplyDispatchNow> {
+  return runBulk(() => dbApplyDispatchNow(...args));
+}
+async function dbApplyDispatchNow(plan: DispatchPlan, onProgress?: (done: number, total: number) => void): Promise<number> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
   // Congela a versão de cada modelo usado (1 gravação por versão; as OS só guardam as respostas)

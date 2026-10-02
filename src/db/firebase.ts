@@ -29,6 +29,9 @@ export * from './dispatch';
 export * from './planning';
 export * from './manHours';
 export * from './solicitations';
+// Disjuntor do banco (proteção contra loops): só o que as telas usam
+export { runBulk, onGuardTrip, guardTripped, GuardError } from './guard';
+export type { GuardTrip } from './guard';
 
 // Internal module imports for orchestration
 import { clearAssetsCache, dbGetAssets } from './assets';

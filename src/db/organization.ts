@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc } from './guard';
 import { Management, Unit } from '../types';
 import {
   firebaseActive,

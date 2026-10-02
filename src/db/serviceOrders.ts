@@ -1,3 +1,4 @@
+import { runBulk } from './guard';
 import {
   collection,
   deleteDoc,
@@ -15,7 +16,7 @@ import {
   Timestamp,
   where,
   writeBatch
-} from 'firebase/firestore';
+} from './guard';
 import { MaintenanceLog, ServiceOrder, resolveOrderUnit, localDateTimeStr, isCorrectiveRequested } from '../types';
 import { dbGetManagements } from './organization';
 import { dbGetAssets } from './assets';
@@ -248,7 +249,11 @@ export async function dbGetAddressVistorias(addressId: string): Promise<ServiceO
 
 // Cancela as OS abertas dos ativos baixados (busca as OS de 30 ativos por vez).
 // Só altera status e datas; a OS continua guardada para consulta.
-export async function dbCancelOpenOrdersForAssets(assetIds: string[], reason: string, sector = ''): Promise<number> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbCancelOpenOrdersForAssets(...args: Parameters<typeof dbCancelOpenOrdersForAssetsNow>): ReturnType<typeof dbCancelOpenOrdersForAssetsNow> {
+  return runBulk(() => dbCancelOpenOrdersForAssetsNow(...args));
+}
+async function dbCancelOpenOrdersForAssetsNow(assetIds: string[], reason: string, sector = ''): Promise<number> {
   if (!firebaseActive || !dbInstance || assetIds.length === 0) return 0;
   // Unidade da importação (as regras do banco exigem o filtro de unidade para quem não vê todas)
   const unitNames = (await dbGetManagements().catch(() => [])).map((m) => m.name);
@@ -1123,7 +1128,11 @@ export interface UnitBackfillResult {
   historiesFixed: number;
 }
 
-export async function dbBackfillOrderUnits(): Promise<UnitBackfillResult> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbBackfillOrderUnits(...args: Parameters<typeof dbBackfillOrderUnitsNow>): ReturnType<typeof dbBackfillOrderUnitsNow> {
+  return runBulk(() => dbBackfillOrderUnitsNow(...args));
+}
+async function dbBackfillOrderUnitsNow(): Promise<UnitBackfillResult> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
   const unitNames = (await dbGetManagements()).map((m) => m.name).filter((n) => n && n !== 'Todas');

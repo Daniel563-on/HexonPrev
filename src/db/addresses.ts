@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { collection, doc, getDocs, setDoc, writeBatch } from './guard';
 import { Address, Asset } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
@@ -42,7 +43,11 @@ export async function dbSaveAddress(address: Address): Promise<void> {
 
 // Importação da planilha (ITEM, CRAAI, COMARCA, ENDEREÇO). Cria ou atualiza pelo código;
 // não altera a situação (ativo/inativo) de endereços que já existem.
-export async function dbImportAddresses(
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbImportAddresses(...args: Parameters<typeof dbImportAddressesNow>): ReturnType<typeof dbImportAddressesNow> {
+  return runBulk(() => dbImportAddressesNow(...args));
+}
+async function dbImportAddressesNow(
   rows: Array<{ code: string; craai: string; comarca: string; address: string }>
 ): Promise<number> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível.');

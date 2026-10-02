@@ -8,7 +8,7 @@ import {
   Timestamp,
   Unsubscribe,
   where
-} from 'firebase/firestore';
+} from './guard';
 import { Asset } from '../types';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, authInstance } from './core';

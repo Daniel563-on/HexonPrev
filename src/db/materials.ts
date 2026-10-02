@@ -1,4 +1,5 @@
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch } from './guard';
 import { Material } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { localTodayStr } from './serviceOrders';
@@ -157,7 +158,11 @@ export function planMaterialImport(unit: string, rows: MaterialImportRow[], exis
   return plan;
 }
 
-export async function dbApplyMaterialImport(plan: MaterialImportPlan): Promise<void> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbApplyMaterialImport(...args: Parameters<typeof dbApplyMaterialImportNow>): ReturnType<typeof dbApplyMaterialImportNow> {
+  return runBulk(() => dbApplyMaterialImportNow(...args));
+}
+async function dbApplyMaterialImportNow(plan: MaterialImportPlan): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const db = dbInstance;
   const writes: Material[] = [...plan.toCreate, ...plan.toUpdate.map((u) => u.after), ...plan.toZero];

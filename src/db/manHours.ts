@@ -1,4 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from './guard';
 import { JobRole, Material, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { cargoKey, dbGetJobRoles } from './workforce';

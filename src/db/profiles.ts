@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from './guard';
 import { AccessProfile, HexonUser, ProfileKind, isSectorInGerencia } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { DEFAULT_PERMISSIONS, dbGetPermissions } from './permissions';

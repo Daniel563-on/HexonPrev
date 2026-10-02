@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../../../types';
 import {
   dbDetachOrderFromLot, dbGetManagements, dbGetOvernightRate, dbGetPlanningLots, dbSaveServiceOrder,
-  isSectorVisible, localTodayStr, PlanningDeadline, timelineEvent
+  isSectorVisible, runBulk, localTodayStr, PlanningDeadline, timelineEvent
 } from '../../../db/firebase';
 import { formatOrderNumber } from '../../../utils/orderNumber';
 import UsualTeamEditor from '../execution/UsualTeamEditor';
@@ -215,14 +215,15 @@ export default function PlanningBoard({
   const revertAll = async () => {
     setBusy(true);
     try {
-      for (const o of revertible) {
+      // Operação em massa: liberada do disjuntor enquanto roda
+      await runBulk(async () => { for (const o of revertible) {
         if (o.lotId) await dbDetachOrderFromLot(o);
         await dbSaveServiceOrder({
           ...o, lotId: undefined, status: 'Novo', scheduledDate: '', scheduledEndDate: undefined,
           assignedTechnician: '', assignedTechnicianMatricula: undefined, updatedAt: new Date().toISOString(),
           timeline: [...(o.timeline || []), timelineEvent('Voltou para Novo', userProfile?.name, 'Atrasada revertida em lote')]
         });
-      }
+      } });
       setConfirmRevert(false);
       changed(`${revertible.length} OS atrasada(s) voltaram para "Novo".`);
     } catch (err: any) {
