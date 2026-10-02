@@ -1,4 +1,4 @@
-import { arrayRemove, arrayUnion, collection, doc, getDocs, query, setDoc, where, WriteBatch } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, doc, getDocs, query, setDoc, where, WriteBatch } from './guard';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 
 // REGISTRO DO DISPARO ("dispatchIndex")

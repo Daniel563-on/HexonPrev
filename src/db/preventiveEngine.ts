@@ -1,4 +1,5 @@
-import { collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from './guard';
 import { Asset, ServiceOrder, ChecklistItem, MaintenanceTemplate, resolveOrderUnit } from '../types';
 import {
   firebaseActive,
@@ -319,7 +320,11 @@ function alignPeriodDatesLocal(baseDateStr: string, periodicity: string): { star
 let lastAutoGenTimestamp = 0;
 
 // AUTOMATED PREVENTIVE MAINTENANCE AND SURVEY GENERATOR
-export async function dbAutoGeneratePreventiveActivities(
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbAutoGeneratePreventiveActivities(...args: Parameters<typeof dbAutoGeneratePreventiveActivitiesNow>): ReturnType<typeof dbAutoGeneratePreventiveActivitiesNow> {
+  return runBulk(() => dbAutoGeneratePreventiveActivitiesNow(...args));
+}
+async function dbAutoGeneratePreventiveActivitiesNow(
   filtersOrTemplateId: AutoGenFilter[] | string = 'all',
   comarcaFilter: string = 'all',
   sectorFilter: string = 'all',

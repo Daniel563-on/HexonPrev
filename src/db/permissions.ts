@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from './guard';
 import { SystemPermission } from '../types';
 import {
   firebaseActive,

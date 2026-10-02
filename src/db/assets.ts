@@ -1,3 +1,4 @@
+import { runBulk } from './guard';
 import {
   collection,
   deleteDoc,
@@ -11,7 +12,7 @@ import {
   setDoc,
   where,
   writeBatch
-} from 'firebase/firestore';
+} from './guard';
 import { Address, Asset, MaintenanceLog } from '../types';
 import { idbGet, idbSet } from '../utils/idbCache';
 import { sanitizePublicAsset, sanitizePublicLog } from '../utils/lgpdUtils';
@@ -434,7 +435,11 @@ export async function dbSaveAsset(asset: Asset): Promise<void> {
 }
 
 // Save or Update multiple assets at once (e.g. from bulk import)
-export async function dbSaveAssetsBulk(assets: Asset[]): Promise<void> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbSaveAssetsBulk(...args: Parameters<typeof dbSaveAssetsBulkNow>): ReturnType<typeof dbSaveAssetsBulkNow> {
+  return runBulk(() => dbSaveAssetsBulkNow(...args));
+}
+async function dbSaveAssetsBulkNow(assets: Asset[]): Promise<void> {
   const cleanedAssets = assets.map((a) => {
     const clean = { ...a };
     if (clean.qrCode) delete clean.qrCode;
@@ -505,7 +510,11 @@ export async function dbDeleteAsset(assetId: string): Promise<void> {
 }
 
 // DELETE ALL ASSETS BY SECTOR
-export async function dbDeleteAssetsBySector(sectorName: string): Promise<void> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbDeleteAssetsBySector(...args: Parameters<typeof dbDeleteAssetsBySectorNow>): ReturnType<typeof dbDeleteAssetsBySectorNow> {
+  return runBulk(() => dbDeleteAssetsBySectorNow(...args));
+}
+async function dbDeleteAssetsBySectorNow(sectorName: string): Promise<void> {
   const target = sectorName.toLowerCase();
   const isMatch = (sec: string) => {
     const s = (sec || '').toLowerCase();

@@ -1,4 +1,5 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { runBulk } from './guard';
+import { doc, getDoc } from './guard';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 
 // RESUMOS MENSAIS CONGELADOS (gravados pela função monthlyClosing no dia 1º)
@@ -30,7 +31,11 @@ export function summarySectorToken(value: string): string {
 }
 
 // Lê os resumos dos meses e gerências informados (1 leitura por mês e gerência)
-export async function dbGetMonthlySummaries(months: string[], sectors: string[]): Promise<StatRow[]> {
+// Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
+export function dbGetMonthlySummaries(...args: Parameters<typeof dbGetMonthlySummariesNow>): ReturnType<typeof dbGetMonthlySummariesNow> {
+  return runBulk(() => dbGetMonthlySummariesNow(...args));
+}
+async function dbGetMonthlySummariesNow(months: string[], sectors: string[]): Promise<StatRow[]> {
   if (!firebaseActive || !dbInstance || months.length === 0 || sectors.length === 0) return [];
   const reads: Promise<StatRow[]>[] = [];
   for (const month of months) {

@@ -105,12 +105,14 @@ if (publicAssetParam) {
     );
   });
 } else {
-  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner')]).then(([{ default: App }, { default: AppUpdateBanner }]) => {
+  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner'), import('./components/GuardBanner')]).then(([{ default: App }, { default: AppUpdateBanner }, { default: GuardBanner }]) => {
     root.render(
       <StrictMode>
         <App />
         {/* Aviso de nova versão (forçar atualização / conferência automática) */}
         <AppUpdateBanner />
+        {/* Aviso do disjuntor do banco (uso anormal) */}
+        <GuardBanner />
       </StrictMode>
     );
   });
