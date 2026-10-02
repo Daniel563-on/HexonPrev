@@ -54,24 +54,35 @@ service cloud.firestore {
       return profileScope() == 'selected' ? get(myProfilePath()).data.get('units', []) : [me().get('gerencia', '')];
     }
 
-    // 1. ATIVOS — leitura pública (QR Code); gravação só equipe
+    // 1. ATIVOS — QR Code: qualquer um abre 1 ativo (ou busca com no máximo 1 resultado); listar só a equipe
     match /assets/{assetId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff() || request.query.limit <= 1;
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['name', 'status']);
       allow delete: if isAdmin();
     }
 
-    // 2. HISTÓRICO — leitura pública (QR Code); permanente
+    // 2. HISTÓRICO — QR Code: quem não é da equipe busca no máximo 13 por vez (páginas de 12); permanente
     match /histories/{historyId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff() || request.query.limit <= 13;
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
       allow delete: if false;
     }
 
     // 3. LOGS DE ACESSO — imutáveis
+    // Gravar: também quem ainda não entrou (falha de login), mas só os campos do registro e textos curtos
     match /accessLogs/{logId} {
       allow read: if isSuperAdmin();
-      allow create: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['id', 'userId', 'userName', 'userMatricula', 'event', 'timestamp', 'ipAddress'])
+        && request.resource.data.get('id', '').size() <= 60
+        && request.resource.data.get('userId', '').size() <= 100
+        && request.resource.data.get('userName', '').size() <= 150
+        && request.resource.data.get('userMatricula', '').size() <= 60
+        && request.resource.data.get('event', '').size() <= 150
+        && request.resource.data.get('timestamp', '').size() <= 40
+        && request.resource.data.get('ipAddress', '').size() <= 60;
       allow update, delete: if false;
     }
 
@@ -144,8 +155,11 @@ service cloud.firestore {
     // 4b. ASSINATURAS DAS ORDENS — fora da OS para deixar as listas leves; só a equipe vê
     match /orderSignatures/{orderId} {
       allow read: if isStaff();
+      // Assinatura: imagem de no máximo 150 KB (a maior possível no quadro do app fica em ~124 KB)
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['orderId', 'signature'])
-        && request.resource.data.orderId == orderId;
+        && request.resource.data.orderId == orderId
+        && request.resource.data.signature is string
+        && request.resource.data.signature.size() <= 153600;
       allow delete: if isAdmin();
     }
 
@@ -158,7 +172,8 @@ service cloud.firestore {
     // 4d. ENDEREÇOS — cadastro das unidades que recebem ronda; só o Super Administrador altera
     // Leitura pública: o QR Code do imóvel abre a ficha do endereço sem login (só código, CRAAI, comarca e endereço)
     match /addresses/{addressId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff();
       allow write: if isSuperAdmin();
     }
 

@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
-import { dbGetSingleAssetPublic, dbGetAssetHistoryPublic } from '../db/firebase';
+import { dbGetSingleAssetPublic } from '../db/firebase';
+import { useHistoryPages, HistoryPagerControls } from './assets/HistoryPager';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
 interface PublicAssetViewProps {
@@ -31,7 +32,6 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
   onGoToLogin
 }) => {
   const [asset, setAsset] = useState<Asset | null>(null);
-  const [history, setHistory] = useState<MaintenanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -62,16 +62,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
         }
 
         setAsset(found);
-
-        // Página pública mostra só o histórico de preventivas concluídas (as OS não são públicas).
-        // Vistoria de endereço: o histórico é gravado com o mesmo id do QR do imóvel ("addr:...").
-        const hist = await dbGetAssetHistoryPublic(found.id).catch(() => []);
-
-        if (active) {
-          const sortedHist = [...hist].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-          setHistory(sortedHist);
-          setLoading(false);
-        }
+        setLoading(false);
       } catch (err: any) {
         console.error('Erro ao carregar consulta pública do ativo:', err);
         if (active) {
@@ -87,6 +78,11 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
       active = false;
     };
   }, [assetIdentifier, retryCount]);
+
+  // Página pública mostra só o histórico de preventivas concluídas (as OS não são públicas), em páginas de 12.
+  // Vistoria de endereço: o histórico é gravado com o mesmo id do QR do imóvel ("addr:...").
+  const historyPages = useHistoryPages(asset?.id, true);
+  const history = historyPages.items;
 
   // Renderização de carregamento
   if (loading) {
@@ -150,7 +146,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
   const tipo = asset.specs?.tipo || asset.specs?.TIPO || '';
 
   // Última preventiva realizada
-  const lastMaintenance = history.length > 0 ? history[0] : null;
+  const lastMaintenance = historyPages.latest;
 
   return (
     <div className="min-h-screen bg-slate-100/70 font-sans pb-12">
@@ -347,11 +343,11 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4 text-[#3525cd]" />
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                Histórico de Preventivas ({history.length})
+                Histórico de Preventivas
               </h3>
             </div>
             <span className="text-[10px] font-bold text-slate-450 uppercase">
-              Ordenado por data
+              {historyPages.loading ? 'Carregando...' : 'Mais recentes primeiro'}
             </span>
           </div>
 
@@ -415,6 +411,14 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
               ))}
             </div>
           )}
+          <HistoryPagerControls
+            pageNumber={historyPages.pageNumber}
+            hasNext={historyPages.hasNext}
+            hasPrev={historyPages.hasPrev}
+            loading={historyPages.loading}
+            onNext={historyPages.next}
+            onPrev={historyPages.prev}
+          />
         </div>
 
         {/* Rodapé Informativo e Selo de Autenticidade Digital */}
