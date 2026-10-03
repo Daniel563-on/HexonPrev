@@ -25,6 +25,7 @@ import { AccessProfile, HexonUser, JobRole, Management, SystemPermission } from 
 import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
 import SystemControlCard from './users/SystemControlCard';
+import AuditLogsTab from './users/AuditLogsTab';
 import WorkforceTab from './users/WorkforceTab';
 
 interface UserControlViewProps {
@@ -33,7 +34,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce' | 'system'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce' | 'system' | 'audit'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -537,6 +538,19 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             Sistema
           </button>
         )}
+        {currentUserProfile.perfil === 'Super Administrador' && (
+          <button
+            onClick={() => { setActiveSubTab('audit'); setSearchQuery(''); }}
+            className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'audit'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">fact_check</span>
+            Auditoria
+          </button>
+        )}
       </div>
 
       {/* SEARCH AND FILTER BAR */}
@@ -760,6 +774,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           {activeSubTab === 'system' && currentUserProfile.perfil === 'Super Administrador' && (
             <SystemControlCard darkMode={darkMode} userName={currentUserProfile.name} />
           )}
+
+          {/* TAB 6: AUDITORIA (ações registradas e acessos) */}
+          {activeSubTab === 'audit' && currentUserProfile.perfil === 'Super Administrador' && <AuditLogsTab darkMode={darkMode} />}
 
           {/* TAB 4: EFETIVO */}
           {activeSubTab === 'workforce' && (

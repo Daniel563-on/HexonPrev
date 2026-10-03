@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, query, orderBy, limit } from './guard';
+import { collection, doc, getDocs, setDoc, query, orderBy, limit, startAfter, QueryDocumentSnapshot } from './guard';
 import { AccessLog, AuditLog } from '../types';
 import {
   firebaseActive,
@@ -228,3 +228,37 @@ export async function dbAddAuditLog(log: Omit<AuditLog, 'id'>): Promise<void> {
     }
   }
 }
+
+// AUDITORIA EM PÁGINAS (aba "Auditoria" do Controle de Usuários, só Super Admin)
+// 20 por página, as mais recentes primeiro (busca 21 para saber se há próxima).
+// Índices: auditLogs → timestamp ↓ ; accessLogs → timestamp ↓
+export const LOG_PAGE_SIZE = 20;
+
+export interface LogPage<T> {
+  items: T[];
+  cursor: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}
+
+async function logPage<T>(coll: 'auditLogs' | 'accessLogs', after: QueryDocumentSnapshot | null): Promise<LogPage<T>> {
+  if (!firebaseActive || !dbInstance) return { items: [], cursor: null, hasMore: false };
+  const parts: any[] = [orderBy('timestamp', 'desc')];
+  if (after) parts.push(startAfter(after));
+  parts.push(limit(LOG_PAGE_SIZE + 1));
+  try {
+    const snap = await getDocs(query(collection(dbInstance, coll), ...parts));
+    const docs = snap.docs.slice(0, LOG_PAGE_SIZE);
+    return {
+      items: docs.map((d) => ({ ...(d.data() as T), id: d.id })),
+      cursor: docs[docs.length - 1] || null,
+      hasMore: snap.docs.length > LOG_PAGE_SIZE
+    };
+  } catch (err: any) {
+    console.warn(`Não foi possível ler ${coll}:`, err);
+    checkQuotaException(err);
+    throw new Error(`Não foi possível carregar os registros: ${err?.message || err}`);
+  }
+}
+
+export const dbGetAuditLogsPage = (after: QueryDocumentSnapshot | null) => logPage<AuditLog>('auditLogs', after);
+export const dbGetAccessLogsPage = (after: QueryDocumentSnapshot | null) => logPage<AccessLog>('accessLogs', after);

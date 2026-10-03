@@ -105,6 +105,9 @@ export default function OrderDetailsDrawer({
     if (!selectedOrder) return false;
     const userName = (userProfile.name || '').trim().toLowerCase();
     const userMat = (userProfile.matricula || '').trim().toLowerCase();
+    // OS com matrícula do técnico: vale a matrícula (o nome pode mudar no cadastro); OS antigas: pelo nome
+    const techMat = (selectedOrder.assignedTechnicianMatricula || '').trim().toLowerCase();
+    if (techMat) return !!userMat && techMat === userMat;
     const tech = (selectedOrder.assignedTechnician || '').trim().toLowerCase();
     return Boolean(
       tech &&
