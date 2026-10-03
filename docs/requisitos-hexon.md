@@ -291,9 +291,9 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 ## 6. Perguntas em aberto
 
 Hexon 2.0 (seção 11), feitas em 03/10/2026:
-1. O Hexon principal: temos acesso ao código e ao banco? Também é Firebase? Os dados antigos (OS, GLPI, ponto) vêm para o 2.0 ou começa do zero?
+1. O Hexon principal: **também é Firebase** e está em uso (resposta de 03/10/2026). O usuário vai trazer o **código-fonte** para análise. Falta: os dados antigos (OS, GLPI, ponto) vêm para o 2.0 ou começa do zero?
 2. Os dois sistemas rodam juntos por um tempo? Qual a data desejada para desligar o antigo?
-3. Volume por mês de corretivas, layouts e acompanhamentos (e quantos usuários a mais: administrativos, engenheiros, gerentes, requerentes).
+3. Usuários e ativos **quase não mudam** com a unificação (resposta de 03/10/2026). Falta: volume por mês de corretivas, layouts e acompanhamentos.
 4. Quem abre chamado: só usuários com login ou também requerentes de fora (ex.: servidor da comarca)? Abertura vem do GLPI?
 5. As 4 assinaturas: quem é o "cliente" e onde assina (no celular do técnico?); engenheiro e gerente assinam no sistema? Alguma pode ser dispensada?
 6. Hora extra: regra de cálculo (preventiva não tem).
