@@ -277,14 +277,7 @@ export default function AssetsView({
     });
   }, [userProfile, orders]);
 
-  // Update selected asset and load history when selection shifts
-  useEffect(() => {
-    if (selectedAsset && selectedAsset.kind !== 'address') {
-      dbGetAssetHistory(selectedAsset.id).then((hist) => {
-        setHistory(hist);
-      });
-    }
-  }, [selectedAsset]);
+  // Histórico do ativo: carregado em páginas de 12 dentro do painel do ativo (AssetDetailPanel)
 
   // Handle external QR code scanning triggers from App routing
   useEffect(() => {
@@ -453,7 +446,6 @@ export default function AssetsView({
       ) : selectedAsset ? (
         <AssetDetailPanel
           asset={selectedAsset}
-          history={history}
           onBackToList={() => setSelectedAsset(null)}
           onBackToMobileList={() => setMobileView('list')}
           onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}

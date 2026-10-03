@@ -16,7 +16,7 @@ import {
 import { Asset, MaintenanceLog, formatDateBR } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { downloadAssetQrCode, printAssetTag } from '../../utils/qrUtils';
-import { dbGetAssetHistory } from '../../db/firebase';
+import { useHistoryPages, HistoryPagerControls } from './HistoryPager';
 import { formatOrderNumber } from '../../utils/orderNumber';
 
 export interface AssetDetailPanelProps {
@@ -40,29 +40,10 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   onEditAsset,
   onViewOrder
 }) => {
-  const [internalHistory, setInternalHistory] = useState<MaintenanceLog[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  // Load history if not supplied via props
-  useEffect(() => {
-    if (propHistory !== undefined) {
-      setInternalHistory(propHistory);
-    } else if (asset) {
-      setLoadingHistory(true);
-      dbGetAssetHistory(asset.id)
-        .then((hist) => {
-          setInternalHistory(hist);
-        })
-        .catch((err) => {
-          console.error('Erro ao carregar histórico do ativo:', err);
-        })
-        .finally(() => {
-          setLoadingHistory(false);
-        });
-    }
-  }, [asset?.id, propHistory]);
-
-  const history = propHistory !== undefined ? propHistory : internalHistory;
+  // Histórico em páginas de 12 (busca a próxima só ao avançar)
+  const historyPages = useHistoryPages(propHistory !== undefined ? undefined : asset?.id);
+  const history = propHistory !== undefined ? propHistory : historyPages.items;
+  const loadingHistory = historyPages.loading;
 
   if (!asset) return null;
 
@@ -396,7 +377,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
             Histórico Operacional de Manutenções
           </h4>
           <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-            {loadingHistory ? 'Carregando...' : `${history.length} Eventos Registrados`}
+            {loadingHistory ? 'Carregando...' : `Página ${historyPages.pageNumber}`}
           </span>
         </div>
 
@@ -533,6 +514,14 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
             })}
           </div>
         )}
+        <HistoryPagerControls
+          pageNumber={historyPages.pageNumber}
+          hasNext={historyPages.hasNext}
+          hasPrev={historyPages.hasPrev}
+          loading={historyPages.loading}
+          onNext={historyPages.next}
+          onPrev={historyPages.prev}
+        />
       </div>
     </div>
   );
