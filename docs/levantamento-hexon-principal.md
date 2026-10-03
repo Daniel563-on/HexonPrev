@@ -237,9 +237,9 @@ Os dados de CRAAIs/comarcas do principal (`craaiTerritoryData.ts`, `rjGeoData.ts
 
 | Ideia do principal | Para que serve | Como ficaria no nosso |
 |---|---|---|
-| **Aviso de nova versão** (`appVersionGuard`): consulta um arquivo `version.json` a cada 3 min; mostra "Nova versão disponível"; recarrega sozinho em 60 s se a pessoa estiver no Dashboard ou no login, senão pede para salvar antes; dá para adiar 10 min | Acaba com o "Force update" manual depois de cada deploy | Arquivo gerado no build. **Não lê o banco** (custo zero). Recomendo fazer cedo |
+| Aviso de nova versão (`appVersionGuard`): consulta `version.json` a cada 3 min; recarrega sozinho em 60 s no Dashboard/login, senão pede para salvar; adiar 10 min | Atualizar os aparelhos após deploy | **Já temos** (`AppUpdateBanner`: confere a cada 30 min e ao voltar à aba, recarrega em 1 min, botão "Forçar atualização"). Ideia pequena: não recarregar sozinho no meio de uma OS aberta e opção de adiar |
 | **Versão por módulo** (`system_control/global.cacheVersions.cargos`, `.rates`...) | Recarrega só o cadastro que mudou | Evolução do nosso `dataVersionAt` (hoje 1 número só) |
-| **Modo manutenção** e "forçar atualização em todos os aparelhos" | Avisar e travar o uso durante uma correção | Campo no `appControl` que já escutamos (custo zero a mais) |
+| Modo manutenção e "forçar atualização em todos os aparelhos" | Avisar e travar o uso durante uma correção | **Já temos** (`MaintenanceScreen` + `SystemControlCard`) |
 | **Disjuntor com nova tentativa progressiva** (15 s → 5 min), limite por alvo e bloqueio de escuta duplicada | Evita loop que alterna documentos e escuta aberta 2 vezes | Melhorar o nosso `guard.ts` (hoje desarma até recarregar) |
 | **Botão "Sincronizar" com tempo de espera** (10 s / 5 min) | Recarregar à mão sem deixar a pessoa clicar sem parar | Nas telas de cadastro |
 | **Confirmar a senha antes de mudar valores** (tarifas, cargos) | Segurança extra em ações sensíveis | `reauthenticateWithCredential` do Firebase |
@@ -270,15 +270,14 @@ Os dados de CRAAIs/comarcas do principal (`craaiTerritoryData.ts`, `rjGeoData.ts
 ---
 
 ## 7. Proposta de ordem (cada etapa só começa com sua aprovação)
-1. **Aviso de nova versão + modo manutenção** (pequeno, custo zero, ajuda em todas as próximas entregas).
-2. **Base da OS corretiva:** emitir à mão, número sequencial, pausa/pendência, cancelamento com motivo, GLPI. Usa o motor de execução que já temos.
-3. **Assinaturas em sequência** + fila "precisam da minha assinatura" + validação por link (Cloud Function).
-4. **Hora extra, feriados e custo fixo** (depois das respostas 1 e 2) + "minha equipe" do técnico.
-5. **Solicitações** de hora extra e pernoite com aprovação e teto de gastos.
-6. **Modelos ampliados** (fases, condicionais, bloco repetível).
-7. **Quadro de Avisos** e **Contratos** (simples).
-8. **Programação Semanal** (ligada aos lotes) e depois o mapa.
-9. **Relatórios (Etapa 9)** com SLA, custos e MTBF pelo `assetId`.
-10. Ponto e GLPI só depois das respostas 4 e 5.
+1. **Base da OS corretiva:** emitir à mão, número sequencial, pausa/pendência, cancelamento com motivo, GLPI. Usa o motor de execução que já temos.
+2. **Assinaturas em sequência** + fila "precisam da minha assinatura" + validação por link (Cloud Function).
+3. **Hora extra, feriados e custo fixo** (depois das respostas 1 e 2) + "minha equipe" do técnico.
+4. **Solicitações** de hora extra e pernoite com aprovação e teto de gastos.
+5. **Modelos ampliados** (fases, condicionais, bloco repetível).
+6. **Quadro de Avisos** e **Contratos** (simples).
+7. **Programação Semanal** (ligada aos lotes) e depois o mapa.
+8. **Relatórios (Etapa 9)** com SLA, custos e MTBF pelo `assetId`.
+9. Ponto e GLPI só depois das respostas 4 e 5.
 
-Os itens 2 a 5 mudam o banco (coleções novas, regras, índices). Cada um terá desenho, custo estimado e regras completas antes de programar.
+Os itens 1 a 4 mudam o banco (coleções novas, regras, índices). Cada um terá desenho, custo estimado e regras completas antes de programar.
