@@ -74,6 +74,23 @@ export function clearAllCaches(): void {
   clearMaterialsCache();
 }
 
+// Cadastros mudaram em outro aparelho (aviso do Super Admin em appControl): a próxima leitura vem do banco
+export function refreshCadastros(): void {
+  clearUsersCache();
+  clearPermissionsCache();
+  clearTemplatesCache();
+  clearOrganizationCache();
+  clearProfilesCache();
+  clearWorkforceCache();
+  try {
+    const timestamps = JSON.parse(localStorage.getItem('hexon_cache_timestamps') || '{}');
+    ['users', 'permissions', 'templates', 'managements', 'units'].forEach((k) => delete timestamps[k]);
+    localStorage.setItem('hexon_cache_timestamps', JSON.stringify(timestamps));
+  } catch {
+    /* ignora */
+  }
+}
+
 /**
  * Force refetch of all core data entities across all modules
  */

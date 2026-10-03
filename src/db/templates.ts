@@ -39,8 +39,10 @@ export function clearTemplatesCache(): void {
 }
 
 // GET ALL CHECKLIST/MAINTENANCE TEMPLATES
-export async function dbGetTemplates(): Promise<MaintenanceTemplate[]> {
+// forceFresh: lê do banco agora (tela de Modelos e Disparo: o disparo nunca pode usar um modelo desatualizado)
+export async function dbGetTemplates(forceFresh = false): Promise<MaintenanceTemplate[]> {
   const hasUser = !!(firebaseActive && dbInstance);
+  if (forceFresh && hasUser) clearTemplatesCache();
 
   // Try retrieving from local storage fallback first
   let localData: MaintenanceTemplate[] | null = null;
@@ -57,7 +59,7 @@ export async function dbGetTemplates(): Promise<MaintenanceTemplate[]> {
   if (cacheTemplates !== null && (!hasUser || cacheTemplatesFromFirebase)) {
     return [...cacheTemplates];
   }
-  if (isCacheValid('templates') && localData && localData.length > 0) {
+  if (!(forceFresh && hasUser) && isCacheValid('templates') && localData && localData.length > 0) {
     cacheTemplates = localData;
     cacheTemplatesFromFirebase = true;
     return [...cacheTemplates];

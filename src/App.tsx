@@ -15,13 +15,14 @@ import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import MaintenanceScreen from './components/MaintenanceScreen';
-import { AppControl, subscribeAppControl, waitPendingWrites } from './db/appControl';
+import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
 import { 
   subscribeTechnicianOrders,
   subscribeUnitOrders,
   stopOrderSync,
+  refreshCadastros,
   dbGetManagements,
   subscribePendingSolicitations,
   technicianCandidates,
@@ -133,7 +134,21 @@ export default function App() {
   const [appControl, setAppControl] = useState<AppControl | null>(null);
   const [maintenanceLogin, setMaintenanceLogin] = useState(false);
   const [maintenanceDenied, setMaintenanceDenied] = useState(false);
+  // Limpeza: cópias antigas do navegador que não são mais usadas (podiam mostrar dados velhos e ocupar espaço)
+  useEffect(() => {
+    try {
+      ['hexon_histories', 'hexon_service_orders'].forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* ignora */
+    }
+  }, []);
   useEffect(() => subscribeAppControl(setAppControl), []);
+  // Cadastros mudaram em outro aparelho (aviso do Super Admin): limpa as cópias guardadas e relê permissões/perfis
+  useEffect(() => {
+    if (!takeDataVersionChange(appControl)) return;
+    refreshCadastros();
+    if (userProfile) loadPermissions();
+  }, [appControl]);
   const inMaintenance = !!appControl?.maintenance && userProfile?.perfil !== 'Super Administrador';
   useEffect(() => {
     if (!appControl?.maintenance) {

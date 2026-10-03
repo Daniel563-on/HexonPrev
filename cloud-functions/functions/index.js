@@ -197,7 +197,7 @@ exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '10 0 1 * *
   for (const d of snap.docs) {
     const o = d.data();
     if (o.status === 'Cancelada') continue; // OS cancelada (ativo baixado) não entra nas estatísticas
-    const sector = o.sector || 'Sem gerência';
+    const sector = o.unit || o.sector || 'Sem gerência'; // gerência da OS (o mesmo que o Dashboard filtra)
     if (!bySector.has(sector)) bySector.set(sector, new Map());
     const rows = bySector.get(sector);
     const row = {

@@ -4,6 +4,7 @@ import {
   addMonths,
   dbApplyDispatch,
   dbGetAssetTypes,
+  dbGetTemplates,
   dbGetCycleSettings,
   dbSplitExistingOrders,
   DispatchPlan,
@@ -84,7 +85,9 @@ export default function DispatchTab({ units, assets, templates, addresses, canDi
     if (monthRange(startMonth, endMonth).length > MAX_DISPATCH_MONTHS) return setError(`No máximo ${MAX_DISPATCH_MONTHS} meses por disparo.`);
     setChecking(true);
     try {
-      const draft = planDispatch({ unit, startMonth, endMonth, assets, assetTypes, templates, addresses, cycle, todayStr: localTodayStr() });
+      // Modelos lidos do banco agora (nunca a cópia guardada: outro computador pode ter editado ou criado um modelo)
+      const freshTemplates = await dbGetTemplates(true);
+      const draft = planDispatch({ unit, startMonth, endMonth, assets, assetTypes, templates: freshTemplates, addresses, cycle, todayStr: localTodayStr() });
       setPlan(await dbSplitExistingOrders(draft));
     } catch (err: any) {
       setError(`Não foi possível conferir: ${err?.message || err}`);
