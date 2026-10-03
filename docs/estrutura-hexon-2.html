@@ -1,0 +1,334 @@
+<title>Estrutura do Hexon 2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: planta do sistema — menu desenhado à esquerda, ficha de cada página à direita; uma coluna no celular */
+:root{
+  --bg:#f3f5f7; --paper:#ffffff; --ink:#15202b; --muted:#5b6876; --line:#d9dfe5;
+  --navy:#16263a; --navy-ink:#dfe7f0; --navy-muted:#8fa2b6;
+  --accent:#1f6fb2;
+  --keep:#5b6876; --keep-bg:#e8ecf0;
+  --up:#1f6fb2; --up-bg:#e1eefa;
+  --new:#1d7a4f; --new-bg:#dff3e8;
+  --ask:#9a6100; --ask-bg:#fbefd6;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Public Sans","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(26px,4vw,36px);font-weight:800}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:10px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.tag{font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap;line-height:1.5}
+.t-keep{color:var(--keep);background:var(--keep-bg)}
+.t-up{color:var(--up);background:var(--up-bg)}
+.t-new{color:var(--new);background:var(--new-bg)}
+.t-ask{color:var(--ask);background:var(--ask-bg)}
+section{display:flex;flex-direction:column;gap:14px}
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.principles div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.principles b{font-family:var(--f-display);font-size:15px}
+.principles p{font-size:14px;color:var(--muted)}
+
+.plan{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:760px){.plan{grid-template-columns:1fr}}
+nav.mock{background:var(--navy);color:var(--navy-ink);border-radius:10px;padding:16px 12px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:760px){nav.mock{position:static}}
+.mock .brand{font-family:var(--f-display);font-weight:800;letter-spacing:.22em;font-size:15px;padding:0 8px 12px}
+.mock .grp{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--navy-muted);padding:12px 8px 4px}
+.mock a{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--navy-ink);text-decoration:none;font-size:13.5px;padding:6px 8px;border-radius:6px}
+.mock a:hover,.mock a:focus-visible{background:rgba(255,255,255,.08);outline:none}
+.mock a i{width:8px;height:8px;border-radius:50%;flex:none}
+.dot-keep{background:#9aa8b6}.dot-up{background:#6aaee8}.dot-new{background:#5fcf93}.dot-ask{background:#f0c46a}
+
+.pages{display:flex;flex-direction:column;gap:14px;min-width:0}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.page-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between}
+.page-head small{color:var(--muted);font-size:13px}
+.tabs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.tabs li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tabs li:last-child{border-bottom:0}
+.tabs .nm{font-weight:600}
+.tabs .ds{grid-column:1 / -1;color:var(--muted);font-size:13.5px;max-width:75ch}
+.note{font-size:13.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+.q{font-size:13.5px;background:var(--ask-bg);color:var(--ink);border-radius:6px;padding:8px 10px}
+.q b{color:var(--ask)}
+
+.twocol{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;min-width:640px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.c{text-align:center}
+.yes{color:var(--new);font-weight:700}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+ol.steps li{max-width:75ch}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Rascunho para aprovação · 03/10/2026</span>
+  <h1>Estrutura do Hexon 2.0</h1>
+  <p class="lede">Como o sistema ficaria quando a Preventiva virar o Hexon 2.0: o menu, as páginas, as abas de cada página e o que muda. Nada aqui foi programado. Você muda o que quiser antes de qualquer etapa começar.</p>
+  <div class="legend" aria-label="Legenda">
+    <span><b class="tag t-keep">Mantém</b> já existe na Preventiva e fica igual</span>
+    <span><b class="tag t-up">Melhora</b> já existe e ganha mais recursos</span>
+    <span><b class="tag t-new">Novo</b> ideia tirada do Hexon principal</span>
+    <span><b class="tag t-ask">A decidir</b> depende de uma resposta sua</span>
+  </div>
+</header>
+
+<section>
+  <h2>Ponto de partida</h2>
+  <div class="principles">
+    <div><b>A base é a Preventiva</b><p>Ativos, QR-Code, histórico dos ativos, materiais, endereços, usuários, gerências, efetivo e cargos continuam como estão. Nada disso vem do principal.</p></div>
+    <div><b>Permissões ganham mais detalhe</b><p>Mesma tela de perfis, com mais ações por página e quem pode assinar como engenheiro ou gerente.</p></div>
+    <div><b>Do principal entram só módulos que não temos</b><p>OS corretiva, assinaturas em sequência, hora extra, solicitações, avisos, contratos, programação semanal e relatórios.</p></div>
+    <div><b>Mesmo login, mesmo banco, mesmas proteções</b><p>Regras por perfil e gerência, índices esparsos, disjuntor e cópia local valem para tudo o que for novo.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Menu no computador</h2>
+  <p class="lede">O menu ganha 4 grupos para não ficar comprido. Clique num item para ver as abas.</p>
+
+  <div class="plan">
+    <nav class="mock" aria-label="Menu proposto">
+      <div class="brand">HEXON</div>
+      <div class="grp">Operação</div>
+      <a href="#inicio">Início <i class="dot-up"></i></a>
+      <a href="#os">Ordens de Serviço <i class="dot-up"></i></a>
+      <a href="#solic">Solicitações <i class="dot-up"></i></a>
+      <a href="#prog">Programação Semanal <i class="dot-new"></i></a>
+      <div class="grp">Cadastros</div>
+      <a href="#ativos">Gestão de Ativos <i class="dot-up"></i></a>
+      <a href="#ender">Endereços <i class="dot-keep"></i></a>
+      <a href="#qr">QR-Codes <i class="dot-keep"></i></a>
+      <a href="#mat">Materiais <i class="dot-ask"></i></a>
+      <a href="#contr">Contratos e Fornecedores <i class="dot-new"></i></a>
+      <div class="grp">Configuração</div>
+      <a href="#modelos">Modelos e Protocolos <i class="dot-up"></i></a>
+      <a href="#users">Controle de Usuários <i class="dot-up"></i></a>
+      <div class="grp">Análise</div>
+      <a href="#rel">Relatórios <i class="dot-new"></i></a>
+      <div class="grp">Fora por enquanto</div>
+      <a href="#fora">Ponto · Histórico GLPI <i class="dot-ask"></i></a>
+    </nav>
+
+    <div class="pages">
+
+      <article class="page" id="inicio">
+        <div class="page-head"><h3>Início</h3><small>hoje: "Dashboard e Auditoria"</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Painel das preventivas</span><b class="tag t-keep">Mantém</b><span class="ds">O dashboard atual: performance por gerência e por periodicidade, filtros e planilha.</span></li>
+          <li><span class="nm">Cartões das corretivas</span><b class="tag t-new">Novo</b><span class="ds">Abertas, em andamento, aguardando assinatura, atrasadas. Mesmo estilo de resumo barato que já usamos.</span></li>
+          <li><span class="nm">Quadro de Avisos</span><b class="tag t-new">Novo</b><span class="ds">Comunicados no topo (urgente, atenção, informativo), por gerência ou para todos, com opção de fixar.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="os">
+        <div class="page-head"><h3>Ordens de Serviço</h3><small>hoje: "Preventivas"</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Preventivas</span><b class="tag t-keep">Mantém</b><span class="ds">As três abas de hoje, sem mudança: Planejamento, Realização e Consulta.</span></li>
+          <li><span class="nm">Corretivas · Lista</span><b class="tag t-new">Novo</b><span class="ds">Todas as corretivas da gerência com filtros (status, período, técnico, GLPI) e resumo de custo para quem pode ver valores.</span></li>
+          <li><span class="nm">Corretivas · Emitir OS</span><b class="tag t-new">Novo</b><span class="ds">Abrir à mão: modelo, ativo ou endereço, técnico ou "em aberto", equipe, prazo, nº do chamado GLPI. Número sequencial próprio.</span></li>
+          <li><span class="nm">Minhas assinaturas</span><b class="tag t-new">Novo</b><span class="ds">Fila das OS que esperam a assinatura de quem está logado (engenheiro, gerente). Assinar uma a uma ou em lote.</span></li>
+        </ul>
+        <p class="note">A execução da corretiva usa a mesma tela de execução da preventiva que já funciona (iniciar, checklist, materiais, equipe, assinatura, tempo pelo servidor), com três acréscimos: pausa com motivo, cancelamento com motivo e assinaturas em sequência (técnico → cliente ou validação por link → engenheiro → gerente).</p>
+        <p class="q"><b>A decidir:</b> as 4 assinaturas valem para toda corretiva ou cada modelo escolhe quais usar?</p>
+      </article>
+
+      <article class="page" id="solic">
+        <div class="page-head"><h3>Solicitações</h3><small>hoje: só solicitações de corretiva</small></div>
+        <ul class="tabs">
+          <li><span class="nm">De corretiva</span><b class="tag t-up">Melhora</b><span class="ds">O painel de hoje. A diferença: "Abrir corretiva" passa a criar a OS corretiva no próprio sistema, já preenchida com ativo, local e o item marcado, em vez de mandar para o outro sistema.</span></li>
+          <li><span class="nm">Hora extra</span><b class="tag t-ask">A decidir</b><span class="ds">Pedido com funcionários, datas, horários e motivo; aprovado pelo responsável antes de contar no custo.</span></li>
+          <li><span class="nm">Pernoite</span><b class="tag t-ask">A decidir</b><span class="ds">Pedido de hospedagem (cidade, hotel, datas) com aprovação. Hoje o pernoite é informado direto no lote do planejamento.</span></li>
+          <li><span class="nm">Custos e limite</span><b class="tag t-new">Novo</b><span class="ds">Total de hora extra e pernoite por gerência e mês, com um teto de gastos e aviso quando passar.</span></li>
+        </ul>
+        <p class="q"><b>A decidir:</b> a hora extra precisa de pedido aprovado antes, ou o técnico lança direto na OS? Se for direto na OS, a aba "Hora extra" não existe e o lançamento fica dentro da execução.</p>
+      </article>
+
+      <article class="page" id="prog">
+        <div class="page-head"><h3>Programação Semanal</h3><small>fica para depois</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Grade da semana</span><b class="tag t-new">Novo</b><span class="ds">Por técnico e dia: equipe e roteiro de comarcas em ordem. Montada a partir dos lotes do planejamento que já existem.</span></li>
+          <li><span class="nm">Mapa</span><b class="tag t-new">Novo</b><span class="ds">Mapa do RJ com CRAAIs e comarcas e as OS ativas de cada uma. Etapa posterior.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="ativos">
+        <div class="page-head"><h3>Gestão de Ativos</h3><small>continua no mesmo lugar</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Lista, cadastro, importação e QR</span><b class="tag t-keep">Mantém</b><span class="ds">Tudo como hoje, incluindo a cópia local e a importação que baixa os ausentes.</span></li>
+          <li><span class="nm">Histórico do ativo</span><b class="tag t-up">Melhora</b><span class="ds">O histórico paginado de hoje passa a mostrar também as corretivas do ativo.</span></li>
+          <li><span class="nm">Criticidade, valor e saúde</span><b class="tag t-new">Novo</b><span class="ds">Criticidade (baixa, média, alta), valor do ativo e um indicador de saúde: quanto já se gastou em manutenção comparado ao valor. Ajuda a decidir entre consertar e trocar.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="ender">
+        <div class="page-head"><h3>Endereços</h3><b class="tag t-keep">Mantém</b></div>
+        <p class="note">Como hoje: endereços usados pelas rondas e vistorias. Passam a servir também como local de uma corretiva sem ativo.</p>
+      </article>
+
+      <article class="page" id="qr">
+        <div class="page-head"><h3>QR-Codes</h3><b class="tag t-keep">Mantém</b></div>
+        <p class="note">Como hoje: seleção, layout e pré-visualização das etiquetas.</p>
+      </article>
+
+      <article class="page" id="mat">
+        <div class="page-head"><h3>Materiais</h3><small>lista por gerência com histórico de valor</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Lista de materiais</span><b class="tag t-keep">Mantém</b><span class="ds">Como hoje: por gerência, com valor e vigência, sem estoque.</span></li>
+          <li><span class="nm">Estoque e reposição</span><b class="tag t-ask">A decidir</b><span class="ds">Quantidade, mínimo, alerta de reposição e baixa automática ao lançar na OS. O principal tem; a Preventiva decidiu não ter.</span></li>
+        </ul>
+        <p class="q"><b>A decidir:</b> vocês querem controle de estoque no 2.0?</p>
+      </article>
+
+      <article class="page" id="contr">
+        <div class="page-head"><h3>Contratos e Fornecedores</h3><b class="tag t-new">Novo</b></div>
+        <ul class="tabs">
+          <li><span class="nm">Contratos</span><b class="tag t-new">Novo</b><span class="ds">Empresa, CNPJ, contato, número do contrato, objeto, valor, vigência, situação, ativo ligado e gerência. Aviso automático quando um contrato estiver perto de vencer.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="modelos">
+        <div class="page-head"><h3>Modelos e Protocolos</h3><small>hoje: Tipos e ciclo · Modelos · Disparo</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Preventivas: Tipos e ciclo, Modelos, Disparo</span><b class="tag t-keep">Mantém</b><span class="ds">Os três passos de hoje, com a versão do modelo e a conferência no disparo.</span></li>
+          <li><span class="nm">Modelos de corretiva</span><b class="tag t-new">Novo</b><span class="ds">Formulário em duas partes: o que se preenche ao abrir a OS e o que se preenche na execução. Perguntas condicionais ("se X, mostra Y"), bloco que se repete e quais assinaturas a OS exige.</span></li>
+          <li><span class="nm">PDF mapeado</span><b class="tag t-up">Melhora</b><span class="ds">O de hoje, servindo também às corretivas, com "testar com uma OS real".</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="users">
+        <div class="page-head"><h3>Controle de Usuários</h3><small>hoje: Usuários · Gerências · Permissões · Efetivo · Sistema · Auditoria</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Usuários, Gerências, Sistema, Auditoria</span><b class="tag t-keep">Mantém</b><span class="ds">Como hoje.</span></li>
+          <li><span class="nm">Efetivo e Cargos</span><b class="tag t-up">Melhora</b><span class="ds">Hoje: pessoas, valor da hora com vigência e pernoite. Ganha tarifas de hora extra por cargo e um calendário de feriados, se a hora extra for aprovada.</span></li>
+          <li><span class="nm">Permissões</span><b class="tag t-up">Melhora</b><span class="ds">Mesma tela de perfis, com muito mais detalhe. Veja a tabela abaixo.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="rel">
+        <div class="page-head"><h3>Relatórios</h3><small>a Etapa 9, que já estava prevista</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Produção e prazos</span><b class="tag t-new">Novo</b><span class="ds">Planejadas, executadas, não executadas e atrasadas por gerência, técnico e período; tempo médio de atendimento.</span></li>
+          <li><span class="nm">Custos</span><b class="tag t-new">Novo</b><span class="ds">Homem-hora, hora extra, pernoite e materiais por gerência e por mês, saídos dos resumos mensais (leitura barata).</span></li>
+          <li><span class="nm">Ativos</span><b class="tag t-new">Novo</b><span class="ds">Ativos que mais quebram e mais custam, tempo entre falhas e tempo de reparo, ligados pelo ativo da OS e não pelo texto do título.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="fora">
+        <div class="page-head"><h3>Ponto · Histórico GLPI</h3><b class="tag t-ask">A decidir</b></div>
+        <p class="note">Ficam fora do menu até você responder: o ponto vai substituir o ponto oficial (tem regras legais) ou é controle interno? O histórico GLPI ainda é usado? Na OS corretiva já entra o campo do número do chamado GLPI.</p>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Celular do técnico</h2>
+  <div class="twocol">
+    <div class="box">
+      <h3>Abas de hoje</h3>
+      <ul class="tabs">
+        <li><span class="nm">Minhas OS</span><b class="tag t-up">Melhora</b><span class="ds">Preventivas e corretivas na mesma lista, com uma etiqueta do tipo.</span></li>
+        <li><span class="nm">Escanear</span><b class="tag t-keep">Mantém</b><span class="ds">Lê o QR do ativo e abre a OS dele que está com o técnico.</span></li>
+        <li><span class="nm">Perfil</span><b class="tag t-keep">Mantém</b><span class="ds">Inclui a equipe habitual, que já existe.</span></li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Dentro da OS e abas novas</h3>
+      <ul class="tabs">
+        <li><span class="nm">Pausar com motivo</span><b class="tag t-new">Novo</b><span class="ds">Ex.: aguardando peça, sem acesso ao local. O tempo parado não conta.</span></li>
+        <li><span class="nm">Avisos</span><b class="tag t-new">Novo</b><span class="ds">Os comunicados da gerência do técnico.</span></li>
+        <li><span class="nm">Hora extra na OS</span><b class="tag t-ask">A decidir</b><span class="ds">Só se a hora extra for lançada na própria OS.</span></li>
+        <li><span class="nm">Assinaturas</span><b class="tag t-new">Novo</b><span class="ds">Para engenheiro e gerente que usam o celular: a fila "precisam da minha assinatura".</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Permissões com mais detalhe</h2>
+  <p class="lede">Hoje são 18 permissões soltas (ex.: "Visualizar Ativos", "Disparar OS", "Visualizar Valores") mais as unidades que o perfil enxerga. A proposta é uma tabela por página, com as mesmas regras de sempre: só o Super Administrador cria e altera perfis.</p>
+  <div class="box">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Página</th><th>Ver</th><th>Criar</th><th>Editar</th><th>Excluir</th><th>Executar</th><th>Assinar</th><th>Aprovar</th><th>Exportar</th><th>Valores R$</th></tr></thead>
+        <tbody>
+          <tr><td>Preventivas</td><td class="c yes">●</td><td class="c">disparar</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td class="c yes">●</td><td class="c yes">●</td></tr>
+          <tr><td>Corretivas</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c">cancelar</td><td class="c yes">●</td><td class="c">por papel</td><td></td><td class="c yes">●</td><td class="c yes">●</td></tr>
+          <tr><td>Solicitações</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td class="c yes">●</td><td></td><td></td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td></tr>
+          <tr><td>Ativos</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td></td><td></td><td class="c">importar</td><td class="c yes">●</td></tr>
+          <tr><td>Materiais</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td></td><td></td><td class="c">importar</td><td class="c yes">●</td></tr>
+          <tr><td>Contratos</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td></td><td></td><td class="c yes">●</td><td class="c yes">●</td></tr>
+          <tr><td>Modelos</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>Avisos</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td class="c yes">●</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>Relatórios</td><td class="c yes">●</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c yes">●</td><td class="c yes">●</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Mais três ajustes no perfil: <b>papel de assinatura</b> (pode assinar como engenheiro, como gerente ou nenhum); <b>alcance das OS</b> (só as minhas, as da minha gerência ou todas, junto com as unidades que já existem); e <b>"não operacional"</b> (a pessoa não entra em equipe nem no homem-hora).</p>
+  </div>
+</section>
+
+<section>
+  <h2>Depois de aprovar a estrutura</h2>
+  <p class="lede">Cada página nova vira uma etapa, do jeito que já trabalhamos: desenho da etapa, sua aprovação, programação, trechos para você aplicar e teste. As perguntas "A decidir" só precisam de resposta quando chegarmos na página delas.</p>
+  <div class="box">
+    <h3>Ordem sugerida</h3>
+    <ol class="steps">
+      <li>Menu em 4 grupos e o nome "Hexon" (sem "Preventiva"). Muda só a aparência.</li>
+      <li>Permissões com mais detalhe. As páginas novas já nascem usando essa tabela.</li>
+      <li>OS corretiva: modelo de corretiva, emitir, lista, execução com pausa e cancelamento, número GLPI.</li>
+      <li>Assinaturas em sequência, "Minhas assinaturas" e validação por link.</li>
+      <li>"Abrir corretiva" a partir da solicitação, no próprio sistema.</li>
+      <li>Hora extra e feriados (depois da sua resposta) e Solicitações com limite de gastos.</li>
+      <li>Quadro de Avisos e Contratos.</li>
+      <li>Saúde do ativo e corretivas no histórico do ativo.</li>
+      <li>Relatórios (Etapa 9).</li>
+      <li>Programação Semanal e mapa. Ponto e GLPI só se você decidir incluir.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>Baseado no levantamento do Hexon principal (docs/levantamento-hexon-principal.md) e nas páginas atuais da Preventiva. Rascunho: nada foi programado.</footer>
+
+</div>
