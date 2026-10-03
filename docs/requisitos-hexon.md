@@ -275,7 +275,7 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P4 | Índices não esparsos de solicitações/vistorias | ✅ resolvido (`solAt`, `addrEnd`) | — |
 | P5 | Painel do Super Admin mostra uma gerência por vez | aberto | Avaliar resumo com todas |
 | P6 | Arquivo principal do site (~2,9 MB) | aberto | Carregar cada aba sob demanda |
-| P7 | Registro de acessos lê ~300 por abertura (Query Insights: 3 aberturas = 945 leituras) | aberto | Índice `timestamp` decrescente / paginação |
+| P7 | ✅ (resolvido pela aba Auditoria, paginada) Registro de acessos lê ~300 por abertura (Query Insights: 3 aberturas = 945 leituras) | aberto | Índice `timestamp` decrescente / paginação |
 | P8 | Teste de volume com modelos reais | aberto | Medir execução completa (iniciar → assinar) com algumas OS e trocar estimativas por medidas |
 | P9 | Fechamento mensal | ✅ 00:10 do dia 1º | — |
 | P10 | Carga diária do técnico para uso sem internet | aberto | Medir no teste de volume |
@@ -288,11 +288,11 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P17 | Etapa 9 — Relatórios | adiada | — |
 | P18 | Proteção: Etapa 5 (corte automático) e aba Monitoramento | adiados (usuário não se sentiu confortável agora) | Ver seção 8 |
 | P19 | ✅ (Pacote 1, 03/10/2026: assinatura + histórico + OS num pacote só; erros na tela) **Auditoria 03/10/2026 — gravação de OS falha sem avisar** (`dbSaveServiceOrder`, `dbAddHistoryLog`, `dbSavePlanningDeadline`, `dbSaveAsset` engolem o erro do banco e a tela mostra sucesso; o histórico do ativo é gravado antes da OS) | **ALTA** | Devolver o erro para a tela; gravar o histórico só depois da OS |
-| P20 | **Não existe tela de Auditoria / Registros de acesso** (`auditLogs`, `accessLogs` só no Console). Disjuntor e login com falha gravam, mas ninguém vê no app | **ALTA** | Tela simples para o Super Admin (paginada) |
+| P20 | ✅ (03/10/2026: aba "Auditoria" no Controle de Usuários, 20 por página; índices `auditLogs: timestamp ↓` e `accessLogs: timestamp ↓`) **Não existe tela de Auditoria / Registros de acesso** (`auditLogs`, `accessLogs` só no Console). Disjuntor e login com falha gravam, mas ninguém vê no app | **ALTA** | Tela simples para o Super Admin (paginada) |
 | P21 | ✅ (Pacote 1: sem sementes; banco vazio = lista vazia) **Gerências de exemplo** recriadas se `managements`/`units` ficarem vazias (Refrigeração, Elétrica, Civil, Segurança; unidades fictícias) — risco ao zerar o banco | **ALTA** | Sementes = DOM/GMMR/GMEE/GMC ou nenhuma; manter `managements` ao zerar |
 | P22 | ✅ (Pacote 1: só Super Admin grava) Regra `planningDeadlines`: qualquer usuário da equipe pode gravar o prazo de planejamento | MÉDIA | Gravar só Super Admin |
-| P23 | App do técnico e tela da OS reconhecem "OS dele" pelo **nome** | MÉDIA | Usar a matrícula |
-| P24 | Programar lote com ~500+ OS falha (limite de 500 operações por pacote) | MÉDIA-BAIXA | Dividir em pacotes ou limitar |
+| P23 | ✅ (Pacote 2) App do técnico e tela da OS reconhecem "OS dele" pelo **nome** | MÉDIA | Usar a matrícula |
+| P24 | ✅ (Pacote 2: limite com mensagem clara) Programar lote com ~500+ OS falha (limite de 500 operações por pacote) | MÉDIA-BAIXA | Dividir em pacotes ou limitar |
 | P25 | Dashboard e fechamento mensal agrupam por `sector` (hoje igual ao nome da gerência, então funciona); `isSectorInGerencia` usa `includes('AR')` | BAIXA (robustez) | Usar `unit` |
 | P26 | Regras amplas: técnico pode editar ativo; histórico de outra unidade; `templateVersions` por qualquer um; `dispatchIndex` por Administrador | BAIXA | Apertar quando houver tempo |
 | P27 | 79 janelas `alert/confirm` (9 na OS do técnico) | BAIXA | Trocar por mensagens na tela aos poucos |
@@ -348,7 +348,7 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 
 ---
 
-## 9. Índices do banco (20, conferidos em 03/10/2026)
+## 9. Índices do banco (20 conferidos em 03/10/2026 + 2 da Auditoria)
 
 | Coleção | Campos | Esparso |
 |---|---|---|
@@ -372,6 +372,8 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 | serviceOrders | assetId | — |
 | serviceOrders | openEnd | ✓ |
 | serviceOrders | solicitationStatus + solAt ↓ | ✓ |
+| auditLogs | timestamp ↓ | — (criar com a aba Auditoria) |
+| accessLogs | timestamp ↓ | — (criar com a aba Auditoria) |
 
 Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `unit+assignedTechnicianMatricula+status`, `unit+assignedTechnicianMatricula+solicitationStatus`, `solicitationStatus+updatedAt`, `addressId+endDate`. A considerar no futuro: apagar `histories: assetId` se nada mais usar.
 
