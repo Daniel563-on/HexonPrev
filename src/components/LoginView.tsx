@@ -1,4 +1,4 @@
-// LoginView.tsx - Hexon Preventiva Secure Login Panel
+// LoginView.tsx - tela de login do Hexon
 import React, { useState, useEffect } from 'react';
 import { dbLoginByMatricula } from '../db/firebase';
 import { HexonUser } from '../types';
@@ -126,10 +126,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             HEXON
           </h1>
 
-          {/* Subtitle - Hexon Preventiva */}
-          <p className="text-[10px] sm:text-[11px] font-extrabold text-indigo-400 tracking-[0.25em] uppercase font-sans mt-1">
-            HEXON PREVENTIVA
-          </p>
         </div>
 
         {/* CORE LOGIN CARD */}

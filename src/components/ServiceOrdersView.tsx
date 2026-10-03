@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, 
-  Wrench, 
   Search, 
   Calendar, 
   Clock, 
@@ -33,6 +32,9 @@ interface ServiceOrdersViewProps {
   activeUnit?: string; // quem vê todas as gerências: a gerência escolhida (uma por vez)
   unitOptions?: string[];
   onActiveUnitChange?: (unit: string) => void;
+  // Hexon 2.0: 'execucao' = Ordens de Serviço › Preventivas (só a Realização);
+  // 'pmoc' = PMOC › Preventivas (Planejamento e Consulta)
+  section: 'execucao' | 'pmoc';
 }
 
 export default function ServiceOrdersView({ 
@@ -45,7 +47,8 @@ export default function ServiceOrdersView({
   userHasActionPermission,
   activeUnit,
   unitOptions,
-  onActiveUnitChange
+  onActiveUnitChange,
+  section
 }: ServiceOrdersViewProps) {
   // Unidades com prazo de planejamento acompanhado (perfis limitados a unidades)
   const planUnits = visibleUnits || [];
@@ -160,7 +163,7 @@ export default function ServiceOrdersView({
 
   // New subTabs & calendar state
   const [users, setUsers] = useState<HexonUser[]>([]);
-  const [subTab, setSubTab] = useState<'realizacao' | 'planejamento' | 'consulta'>(userProfile?.perfil === 'Profissional' ? 'realizacao' : 'planejamento');
+  const [subTab, setSubTab] = useState<'realizacao' | 'planejamento' | 'consulta'>(section === 'execucao' || userProfile?.perfil === 'Profissional' ? 'realizacao' : 'planejamento');
   const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number | null>(null);
   const [selectedCalendarEndDay, setSelectedCalendarEndDay] = useState<number | null>(null);
@@ -634,14 +637,16 @@ export default function ServiceOrdersView({
           <div className="flex items-center gap-2 mb-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#3525cd] animate-pulse"></span>
             <span className="text-[10px] font-black text-[#3525cd] tracking-widest uppercase">
-              Cronograma & Execução Técnica
+              {section === 'execucao' ? 'Realização & Execução' : 'Planejamento & Consulta'}
             </span>
           </div>
           <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-snug">
-            Ordens de Serviço — <span className="text-[#3525cd]">Preventivas de Campo</span>
+            {section === 'execucao' ? 'Ordens de Serviço' : 'PMOC'} — <span className="text-[#3525cd]">Preventivas</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-            Consulte os roteiros, checklists operacionais, andamento das execuções e detalhes técnicos por comarca e patrimônio.
+            {section === 'execucao'
+              ? 'Andamento e execução das preventivas: checklists, assinaturas e detalhes por comarca e patrimônio.'
+              : 'Planejamento no calendário e consulta das preventivas.'}
           </p>
         </div>
 
@@ -650,9 +655,9 @@ export default function ServiceOrdersView({
       </section>
 
       {/* SECTION: Sub-Tabs Selector */}
-      {userProfile?.perfil !== 'Profissional' && (
+      {section === 'pmoc' && userProfile?.perfil !== 'Profissional' && (
         <div className="border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-1">
-          <div className="flex bg-slate-100/60 p-1 rounded-xl border border-slate-200/80 gap-1 w-full sm:w-auto md:min-w-[420px]">
+          <div className="flex bg-slate-100/60 p-1 rounded-xl border border-slate-200/80 gap-1 w-full sm:w-auto md:min-w-[320px]">
             <button
               type="button"
               onClick={() => setSubTab('planejamento')}
@@ -664,18 +669,6 @@ export default function ServiceOrdersView({
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>Planejamento & Calendário</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSubTab('realizacao')}
-              className={`flex-1 py-2 px-3 sm:px-4 rounded-lg text-[11px] md:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all duration-205 cursor-pointer ${
-                subTab === 'realizacao'
-                  ? 'bg-[#3525cd] text-white shadow-sm'
-                  : 'text-slate-650 hover:bg-slate-200/50 hover:text-[#0b1c30]'
-              }`}
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>Realização & Execução</span>
             </button>
             <button
               type="button"

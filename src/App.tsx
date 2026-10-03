@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
-import DashboardView from './components/DashboardView';
+import HomeView from './components/HomeView';
+import SettingsView from './components/SettingsView';
 import AssetsView from './components/AssetsView';
 import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
@@ -65,11 +66,16 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
-      return localStorage.getItem('hexon_current_tab') || 'qr-codes';
+      return localStorage.getItem('hexon_current_tab') || 'home';
     } catch {
-      return 'qr-codes';
+      return 'home';
     }
   });
+
+  // Hexon 2.0: o Dashboard saiu; quem tinha ele salvo como última tela abre o Início
+  useEffect(() => {
+    if (currentTab === 'dashboard') setCurrentTab('home');
+  }, [currentTab]);
 
   useEffect(() => {
     if (currentTab) {
@@ -482,12 +488,13 @@ export default function App() {
   const userHasTabPermission = (tab: string): boolean => {
     if (!userProfile) return false;
     if (userProfile.perfil === 'Super Administrador') return true;
-    if (tab === 'user-control') return false; // Strictly restricted to Super Administrador
+    if (tab === 'home') return true;
+    // Só Super Administrador
+    if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses' || tab === 'settings') return false;
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
-    if (tab === 'dashboard') permId = 'view_dashboard';
-    else if (tab === 'service-orders') permId = 'view_service_orders';
+    if (tab === 'service-orders' || tab === 'pmoc-preventivas') permId = 'view_service_orders';
     else if (tab === 'assets') permId = 'view_assets';
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
@@ -543,7 +550,7 @@ export default function App() {
     if (!userProfile) return;
 
     // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
-    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'materials', 'qr-codes'].find((t) =>
+    const firstAllowedTab = ['home', 'service-orders', 'solicitations', 'assets', 'pmoc-preventivas', 'templates', 'materials'].find((t) =>
       userHasTabPermission(t)
     );
 
@@ -624,7 +631,7 @@ export default function App() {
                     if (foundUser.perfil === 'Profissional') {
                       setCurrentTab('service-orders');
                     } else {
-                      const savedTab = localStorage.getItem('hexon_current_tab') || 'dashboard';
+                      const savedTab = localStorage.getItem('hexon_current_tab') || 'home';
                       if (savedTab && (savedTab !== 'user-control' || foundUser.perfil === 'Super Administrador')) {
                         setCurrentTab(savedTab);
                       }
@@ -726,7 +733,7 @@ export default function App() {
       if (savedTab && (savedTab !== 'user-control' || updatedUser.perfil === 'Super Administrador')) {
         setCurrentTab(savedTab);
       } else {
-        setCurrentTab('dashboard');
+        setCurrentTab('home');
       }
     }
 
@@ -751,24 +758,30 @@ export default function App() {
   // Human descriptive title mapping
   const getTabTitle = () => {
     switch (currentTab) {
-      case 'dashboard':
-        return 'Dashboard e Auditoria';
+      case 'home':
+        return 'Início';
       case 'service-orders':
         return 'Ordens de Serviço';
+      case 'pmoc-preventivas':
+        return 'PMOC — Preventivas';
       case 'assets':
         return 'Gerenciamento de Ativos';
       case 'templates':
-        return 'Modelos e Protocolos';
+        return 'PMOC — Modelos e Protocolos';
       case 'solicitations':
         return 'Solicitações';
       case 'materials':
-        return 'Materiais';
+        return 'Gestão de Materiais';
       case 'user-control':
-        return 'Painel de Controle e Auditoria';
+        return 'Usuários';
+      case 'addresses':
+        return 'Endereços';
+      case 'settings':
+        return 'Configurações';
       case 'qr-codes':
         return 'Central de Etiquetas & QR-Codes';
       default:
-        return 'Console Hexon';
+        return 'Hexon';
     }
   };
 
@@ -1011,7 +1024,7 @@ export default function App() {
           currentTab={currentTab}
           orders={orders}
           onUpdateUserProfile={(updated) => setUserProfile(updated)}
-          unitOptions={visibleUnits === null && currentTab === 'dashboard' ? managementNames : undefined}
+          unitOptions={visibleUnits === null && currentTab === 'home' ? managementNames : undefined}
           activeUnit={adminUnit}
           onActiveUnitChange={changeAdminUnit}
         />
@@ -1045,19 +1058,38 @@ export default function App() {
             </div>
           )}
 
-          {currentTab === 'dashboard' && (
-            <DashboardView 
-              orders={filteredOrders} 
-              onNavigateToOS={handleNavigateToOS}
-              onNavigateToAssets={() => setCurrentTab('assets')}
-              onNavigateToSolicitations={() => setCurrentTab('solicitations')}
+          {currentTab === 'home' && (
+            <HomeView
               userProfile={userProfile}
-              visibleUnits={visibleUnits}
+              orders={filteredOrders}
+              pendingSolicitationsCount={pendingSolicitationOrders.length}
+              canSeeOrders={userHasTabPermission('service-orders')}
+              canSeeSolicitations={userHasTabPermission('solicitations')}
+              activeUnit={visibleUnits === null ? adminUnit : undefined}
+              onNavigate={setCurrentTab}
             />
           )}
 
           {currentTab === 'service-orders' && (
             <ServiceOrdersView 
+              section="execucao"
+              orders={filteredOrders}
+              onReload={loadServiceOrders}
+              onViewedMonthChange={setOrdersMonth}
+              highlightOSId={highlightedOSId}
+              userProfile={userProfile}
+              visibleUnits={visibleUnits}
+              userHasActionPermission={userHasActionPermission}
+              activeUnit={visibleUnits === null ? adminUnit : undefined}
+              unitOptions={visibleUnits === null ? managementNames : undefined}
+              onActiveUnitChange={changeAdminUnit}
+            />
+          )}
+
+          {/* PMOC › Preventivas (Planejamento e Consulta); fica separado para abrir do zero ao trocar de tela */}
+          {currentTab === 'pmoc-preventivas' && (
+            <ServiceOrdersView 
+              section="pmoc"
               orders={filteredOrders}
               onReload={loadServiceOrders}
               onViewedMonthChange={setOrdersMonth}
@@ -1122,6 +1154,10 @@ export default function App() {
               visibleUnits={visibleUnits}
               canManage={userHasActionPermission('manage_materials')}
             />
+          )}
+
+          {currentTab === 'settings' && userProfile?.perfil === 'Super Administrador' && (
+            <SettingsView userProfile={userProfile} darkMode={darkMode} />
           )}
 
           {currentTab === 'qr-codes' && (

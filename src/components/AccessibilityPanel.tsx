@@ -127,18 +127,8 @@ export default function AccessibilityPanel({
     const completedOrdersCount = orders.filter(o => o.status === 'Concluída').length;
 
     switch (currentTab) {
-      case 'dashboard': {
-        const hvacOrders = orders.filter(o => {
-          const s = (o.sector || '').toUpperCase();
-          return s.includes('HVAC') || s.includes('MEC') || s.includes('REFR') || s.includes('AR');
-        });
-        const electOrders = orders.filter(o => {
-          const s = (o.sector || '').toUpperCase();
-          return s.includes('ELET') || s.includes('SUBST') || s.includes('FOR');
-        });
-        const civilOrders = orders.length - (hvacOrders.length + electOrders.length);
-
-        summaryText = `Você está na seção do Centro de Controle Gerencial das Preventivas Hexon. O painel indica um total de ${orders.length} ordens de serviço preventivas registradas. Destas, ${completedOrdersCount} foram concluídas e as restantes estão em execução técnica ou aguardando planejamento. Na divisão de diretoria, a Gestão de Manutenção Mecânica e Refrigeração conta com ${hvacOrders.length} ordens. A Gestão de Elétrica e Eletrônica conta com ${electOrders.length} ordens, e a Gestão Civil, Predial e Geral conta com ${civilOrders} preventivas ativas.`;
+      case 'home': {
+        summaryText = `Você está na tela de Início do Hexon. Ela mostra o resumo do mês: ${pendingOrdersCount} preventivas abertas e ${completedOrdersCount} concluídas. Toque em um cartão para abrir a tela correspondente.`;
         break;
       }
       case 'service-orders': {

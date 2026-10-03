@@ -25,8 +25,6 @@ import {
 import { AccessProfile, HexonUser, JobRole, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
-import SystemControlCard from './users/SystemControlCard';
-import AuditLogsTab from './users/AuditLogsTab';
 import { dbBumpDataVersion } from '../db/appControl';
 import WorkforceTab from './users/WorkforceTab';
 
@@ -36,7 +34,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce' | 'system' | 'audit'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -463,10 +461,10 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             Nível: Super Administrador
           </span>
           <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'} mt-1`}>
-            Controle de Acessos e Configurações (RBAC)
+            Usuários, Gerências e Permissões
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Administre logins de profissionais, gerencie vinculações a gerências setoriais e audite logs operacionais críticos em conformidade jurídica.
+            Cadastro de usuários, gerências, perfis de acesso e efetivo, válidos para todo o sistema.
           </p>
         </div>
 
@@ -542,32 +540,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           <span className="material-symbols-outlined text-base">groups</span>
           Efetivo
         </button>
-        {currentUserProfile.perfil === 'Super Administrador' && (
-          <button
-            onClick={() => { setActiveSubTab('system'); setSearchQuery(''); }}
-            className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-              activeSubTab === 'system'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">settings_suggest</span>
-            Sistema
-          </button>
-        )}
-        {currentUserProfile.perfil === 'Super Administrador' && (
-          <button
-            onClick={() => { setActiveSubTab('audit'); setSearchQuery(''); }}
-            className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-              activeSubTab === 'audit'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">fact_check</span>
-            Auditoria
-          </button>
-        )}
       </div>
 
       {/* SEARCH AND FILTER BAR */}
@@ -578,7 +550,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         </div>
       )}
 
-      {activeSubTab !== 'permissions' && activeSubTab !== 'workforce' && activeSubTab !== 'system' && (
+      {activeSubTab !== 'permissions' && activeSubTab !== 'workforce' && (
         <div className="flex relative">
           <span className={`material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             search
@@ -786,14 +758,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
             </div>
           )}
-
-          {/* TAB 5: SISTEMA (forçar atualização e modo manutenção) */}
-          {activeSubTab === 'system' && currentUserProfile.perfil === 'Super Administrador' && (
-            <SystemControlCard darkMode={darkMode} userName={currentUserProfile.name} />
-          )}
-
-          {/* TAB 6: AUDITORIA (ações registradas e acessos) */}
-          {activeSubTab === 'audit' && currentUserProfile.perfil === 'Super Administrador' && <AuditLogsTab darkMode={darkMode} />}
 
           {/* TAB 4: EFETIVO */}
           {activeSubTab === 'workforce' && (
