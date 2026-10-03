@@ -1,3 +1,4 @@
+import { runBulk } from './guard';
 import {
   collection,
   getDocs,
@@ -88,7 +89,11 @@ function schedulePersist(u: UnitSync): void {
 }
 
 // 1ª vez no aparelho: abertas + fechadas do mês atual e do anterior
-async function fullDownload(u: UnitSync): Promise<void> {
+// 1ª carga completa: operação em massa (liberada do disjuntor)
+function fullDownload(...args: Parameters<typeof fullDownloadNow>): ReturnType<typeof fullDownloadNow> {
+  return runBulk(() => fullDownloadNow(...args));
+}
+async function fullDownloadNow(u: UnitSync): Promise<void> {
   const db = dbInstance!;
   const ref = collection(db, 'serviceOrders');
   const [openSnap, closedSnap] = await Promise.all([
