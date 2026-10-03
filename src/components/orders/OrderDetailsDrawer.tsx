@@ -13,7 +13,7 @@ import {
 import { ServiceOrder, Asset, formatDateBR, HexonUser, localDateTimeStr, isCorrectiveRequested } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
-  dbSaveServiceOrder, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
+  dbSaveServiceOrder, dbRevertOrderToNew, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
   applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes
 } from '../../db/firebase';
@@ -755,16 +755,12 @@ export default function OrderDetailsDrawer({
                         <button
                           type="button"
                           onClick={async () => {
-                            const updatedOS: ServiceOrder = {
-                              ...selectedOrder,
-                              status: 'Novo',
-                              scheduledDate: '',
-                              scheduledEndDate: undefined,
-                              assignedTechnician: '',
-                              updatedAt: new Date().toISOString()
-                            };
-                            await dbSaveServiceOrder(updatedOS);
-                            setSelectedOrder(updatedOS);
+                            try {
+                              await dbRevertOrderToNew(selectedOrder, userProfile?.name);
+                            } catch (err: any) {
+                              setExecMsg({ type: 'error', text: `Não foi possível reverter: ${err?.message || err}` });
+                              return;
+                            }
                             onClose();
                             onReload();
                           }}

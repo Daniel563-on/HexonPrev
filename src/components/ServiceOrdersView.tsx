@@ -12,7 +12,7 @@ import {
   FileSearch
 } from 'lucide-react';
 import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, getSectorGerencia } from '../types';
-import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, subscribePlanningDeadlines, dbSavePlanningDeadline, PlanningDeadline, isSectorVisible } from '../db/firebase';
+import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, subscribePlanningDeadlines, dbSavePlanningDeadline, dbRevertOrderToNew, PlanningDeadline, isSectorVisible } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -314,15 +314,12 @@ export default function ServiceOrdersView({
     if (!window.confirm(`Deseja reverter a OS #${os.id} para "Novo"? Ela voltará para a lista de preventivas aguardando agendamento.`)) {
       return;
     }
-    const updatedOS: ServiceOrder = {
-      ...os,
-      status: 'Novo',
-      scheduledDate: '',
-      scheduledEndDate: undefined,
-      assignedTechnician: '',
-      updatedAt: new Date().toISOString()
-    };
-    await dbSaveServiceOrder(updatedOS);
+    try {
+      await dbRevertOrderToNew(os, userProfile?.name);
+    } catch (err: any) {
+      alert(`Não foi possível reverter a OS #${os.id}: ${err?.message || err}`);
+      return;
+    }
     onReload();
   };
 
@@ -608,7 +605,12 @@ export default function ServiceOrdersView({
                                 return [...prev, { id: mId, expiresAt: isoString }];
                               }
                             });
-                            await dbSavePlanningDeadline({ id: mId, expiresAt: isoString });
+                            try {
+                              await dbSavePlanningDeadline({ id: mId, expiresAt: isoString });
+                            } catch (err: any) {
+                              alert(`Não foi possível salvar o prazo da gerência ${mId}: ${err?.message || err}`);
+                              return;
+                            }
                             alert(`Prazo da gerência ${mId} definido com sucesso para ${new Date(isoString).toLocaleString('pt-BR')}!`);
                             onReload();
                           }}

@@ -9,20 +9,8 @@ import {
   updateCacheTimestamp
 } from './core';
 
-export const SEED_MANAGEMENTS: Management[] = [
-  { id: 'm-0', name: 'Todas', description: 'Abrangência de atuação irrestrita' },
-  { id: 'm-1', name: 'Refrigeração', description: 'Climatização, Chillers e HVAC central' },
-  { id: 'm-2', name: 'Elétrica', description: 'Subestações, geradores e quadros de força' },
-  { id: 'm-3', name: 'Civil', description: 'Manutenção de fachada, marcenaria e hidráulica predial' },
-  { id: 'm-4', name: 'Segurança', description: 'CFTV, incêndio e cabeamento estruturado' }
-];
-
-export const SEED_UNITS: Unit[] = [
-  { id: 'u-1', name: 'Sede Principal - Bloco Central', location: 'Edifício Central, Rio de Janeiro' },
-  { id: 'u-2', name: 'Subsede Centro - Apoio Técnico', location: 'Av. Rio Branco 120, Rio de Janeiro' },
-  { id: 'u-3', name: 'Unidade Zona Norte', location: 'Galpão Operacional Triagem, Rio de Janeiro' },
-  { id: 'u-4', name: 'Unidade Zona Sul', location: 'Posto de Atendimento Copacabana, Rio de Janeiro' }
-];
+// Sem gerências/unidades de exemplo: o que existe é só o que está no banco (cadastradas pelo Super Administrador).
+// (Antes o sistema criava "Refrigeração, Elétrica, Civil, Segurança" e unidades fictícias quando a lista estava vazia.)
 
 let cacheManagements: Management[] | null = null;
 let cacheManagementsFromFirebase = false;
@@ -78,7 +66,8 @@ export async function dbGetManagements(): Promise<Management[]> {
         snap.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as Management);
         });
-        if (list.length > 0) {
+        // Banco respondeu: vale o que veio, mesmo vazio
+        {
           cacheManagements = list;
           cacheManagementsFromFirebase = true;
           updateCacheTimestamp('managements');
@@ -96,7 +85,7 @@ export async function dbGetManagements(): Promise<Management[]> {
       }
     }
 
-    cacheManagements = localData || [...SEED_MANAGEMENTS];
+    cacheManagements = localData || [];
     cacheManagementsFromFirebase = false;
     try {
       localStorage.setItem('hexon_managements', JSON.stringify(cacheManagements));
@@ -192,7 +181,8 @@ export async function dbGetUnits(): Promise<Unit[]> {
         snap.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as Unit);
         });
-        if (list.length > 0) {
+        // Banco respondeu: vale o que veio, mesmo vazio
+        {
           cacheUnits = list;
           cacheUnitsFromFirebase = true;
           updateCacheTimestamp('units');
@@ -210,7 +200,7 @@ export async function dbGetUnits(): Promise<Unit[]> {
       }
     }
 
-    cacheUnits = localData || [...SEED_UNITS];
+    cacheUnits = localData || [];
     cacheUnitsFromFirebase = false;
     try {
       localStorage.setItem('hexon_units', JSON.stringify(cacheUnits));

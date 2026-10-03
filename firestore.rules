@@ -281,9 +281,10 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 8. PRAZOS DE PLANEJAMENTO
+    // 8. PRAZOS DE PLANEJAMENTO — a equipe lê; só o Super Administrador define
     match /planningDeadlines/{deadlineId} {
-      allow read, write: if isStaff();
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
     }
 
     // 9. GERÊNCIAS E UNIDADES

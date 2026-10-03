@@ -418,20 +418,22 @@ export async function dbSaveAsset(asset: Asset): Promise<void> {
     delete cleanAsset.qrCode;
   }
 
+  // Grava no banco primeiro; a cópia da tela só muda se o banco aceitou (antes mostrava salvo mesmo recusado)
+  if (firebaseActive && dbInstance) {
+    try {
+      await setDoc(doc(dbInstance, 'assets', cleanAsset.id), { ...cleanUndefined(cleanAsset), syncAt: serverTimestamp() });
+    } catch (err: any) {
+      console.warn('Firestore write asset failed:', err);
+      checkQuotaException(err);
+      throw new Error(err?.code === 'permission-denied' ? 'O banco recusou a gravação do ativo (sem permissão).' : `Não foi possível gravar o ativo: ${err?.message || err}`);
+    }
+  }
+
   upsertLocalAssets([cleanAsset]);
   updateLoadedAssetsCache((list) => {
     const idx = list.findIndex((a) => a.id === cleanAsset.id);
     return idx >= 0 ? list.map((a, i) => (i === idx ? { ...cleanAsset } : a)) : [...list, { ...cleanAsset }];
   });
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await setDoc(doc(dbInstance, 'assets', cleanAsset.id), { ...cleanUndefined(cleanAsset), syncAt: serverTimestamp() });
-    } catch (err: any) {
-      console.warn('Firestore write asset failed, utilizing local fallback state:', err);
-      checkQuotaException(err);
-    }
-  }
 }
 
 // Save or Update multiple assets at once (e.g. from bulk import)

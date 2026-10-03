@@ -3,6 +3,7 @@ import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../t
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { timelineEvent } from './executionTeam';
 import { orderControlUpdate } from './orderControl';
+import { dbSaveServiceOrder } from './serviceOrders';
 
 // PLANEJAMENTO (Etapa 5): lotes de agendamento e valor do pernoite.
 // A OS guarda só o lote (lotId); o custo do pernoite é calculado na hora, para quem pode ver valores.
@@ -147,4 +148,22 @@ export async function dbDetachOrderFromLot(order: ServiceOrder): Promise<void> {
   batch.set(doc(dbInstance, 'planningLots', order.lotId), { orderIds: arrayRemove(order.id), updatedAt: now }, { merge: true });
   batch.update(doc(dbInstance, 'serviceOrders', order.id), { lotId: deleteField(), updatedAt: now, syncAt: serverTimestamp() });
   await batch.commit();
+}
+
+// Volta a OS para "Novo" (sem data, sem técnico e fora do lote), com registro na linha do tempo.
+// Mesmo caminho em todas as telas (antes o botão do cartão e o da OS deixavam a matrícula e o lote: a OS
+// continuava ligada ao técnico e ao custo do pernoite).
+export async function dbRevertOrderToNew(order: ServiceOrder, by: string | undefined, note = 'Voltou para "Novo"'): Promise<void> {
+  if (order.lotId) await dbDetachOrderFromLot(order);
+  await dbSaveServiceOrder({
+    ...order,
+    lotId: undefined,
+    status: 'Novo',
+    scheduledDate: '',
+    scheduledEndDate: undefined,
+    assignedTechnician: '',
+    assignedTechnicianMatricula: undefined,
+    updatedAt: new Date().toISOString(),
+    timeline: [...(order.timeline || []), timelineEvent('Voltou para Novo', by, note)]
+  });
 }

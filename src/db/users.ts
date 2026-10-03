@@ -24,7 +24,6 @@ import {
   signOutHexon
 } from './core';
 import { dbAddAccessLog } from './audit';
-import { SEED_MANAGEMENTS, SEED_UNITS } from './organization';
 
 // SANITIZE USER: Guarantees password hashes are NEVER exposed to client-side state, UI, or local inspection
 export function sanitizeUserForClient(user: HexonUser): HexonUser {
@@ -120,33 +119,6 @@ export async function verifyPassword(passwordInserted: string, storedPassword?: 
   return storedPassword === passwordInserted;
 }
 
-// Helper to check and bootstrap initial tables/collections asynchronously
-async function bootstrapRBACCollectionsIfEmpty() {
-  if (!firebaseActive || !dbInstance) return;
-
-  try {
-    // 2. Seed managements if empty
-    const manSnap = await getDocs(collection(dbInstance, 'managements'));
-    if (manSnap.empty) {
-      console.log('Seeding default managements into Firestore...');
-      for (const m of SEED_MANAGEMENTS) {
-        await setDoc(doc(dbInstance, 'managements', m.id), cleanUndefined(m));
-      }
-    }
-
-    // 3. Seed units if empty
-    const unitSnap = await getDocs(collection(dbInstance, 'units'));
-    if (unitSnap.empty) {
-      console.log('Seeding default units into Firestore...');
-      for (const un of SEED_UNITS) {
-        await setDoc(doc(dbInstance, 'units', un.id), cleanUndefined(un));
-      }
-    }
-  } catch (err) {
-    console.warn('Ignored silent background bootstrap seeding issue:', err);
-  }
-}
-
 // IN-MEMORY USER CACHE
 let cacheUsers: HexonUser[] | null = null;
 let cacheUsersFromFirebase = false;
@@ -193,8 +165,6 @@ export async function dbGetUsers(forceFresh: boolean = false): Promise<HexonUser
     if (firebaseActive && dbInstance) {
       const path = 'users';
       try {
-        await bootstrapRBACCollectionsIfEmpty();
-
         const snap = await getDocs(collection(dbInstance, path));
         const list: HexonUser[] = [];
         snap.forEach((docSnap) => {

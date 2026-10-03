@@ -685,23 +685,56 @@ export async function dbGetOrderSignature(orderId: string): Promise<string | nul
   return null;
 }
 
-// Grava a assinatura em "orderSignatures". Retorna false se não conseguiu (a OS então mantém a imagem consigo).
-async function saveOrderSignature(orderId: string, signature: string): Promise<boolean> {
-  if (!firebaseActive || !dbInstance) return false;
-  try {
-    // Sem internet: fica na fila do aparelho e sobe sozinha depois
-    await awaitWrite(setDoc(doc(dbInstance, 'orderSignatures', orderId), {
-      orderId,
-      signature,
-      savedAt: new Date().toISOString()
-    }));
-    signatureCache.set(orderId, signature);
-    return true;
-  } catch (err: any) {
-    console.warn('Firestore write order signature failed, keeping it inside the order:', err);
-    checkQuotaException(err);
-    return false;
+// Mensagem clara quando o banco recusa uma gravação (a tela mostra; nada é dado como salvo)
+export function writeErrorMessage(err: any): string {
+  if (err?.name === 'GuardError') return err.message;
+  if (err?.code === 'permission-denied') {
+    return 'O banco recusou a gravação (sem permissão para esta OS ou ela já foi encerrada). Atualize a tela e confira.';
   }
+  if (err?.code === 'resource-exhausted') return 'Limite de uso do banco atingido. Tente mais tarde.';
+  return `Não foi possível gravar no banco: ${err?.message || err}`;
+}
+
+// Registro do histórico do ativo (QR público) de uma OS concluída
+function buildHistoryEntry(order: ServiceOrder): MaintenanceLog {
+  const checkedCount = order.checklist.filter((c) => c.checked).length;
+  const totalCount = order.checklist.length;
+  const verifiedItems = order.checklist.filter((c) => c.checked).map((c) => c.task);
+  const nonConforms = order.checklist.filter((c) => !c.checked).map((c) => c.task);
+  const resultStatus = nonConforms.length === 0 ? 'Aprovado' : checkedCount > 0 ? 'Aprovado com Ressalvas' : 'Não Conforme';
+  const preventiveType =
+    order.periodicity ||
+    (order.title.includes('Anual') ? 'Anual' : order.title.includes('Semestral') ? 'Semestral' : order.title.includes('Trimestral') ? 'Trimestral' : order.title.includes('Mensal') ? 'Mensal' : 'Inspeção Geral');
+  // Observações do técnico nos itens do checklist
+  const itemsWithObs = order.checklist.filter((c) => c.observations && c.observations.trim());
+  const correctiveActionsText =
+    itemsWithObs.length > 0
+      ? `📋 Observações e Apontamentos do Checklist:\n${itemsWithObs
+          .map((i) => {
+            const statusLabel = i.statusCheck ? ` [Status: ${i.statusCheck}]` : !i.checked ? ' [Não Conforme]' : '';
+            return `• ${i.task}${statusLabel}:\n   ↳ Relato Técnico: "${i.observations!.trim()}"`;
+          })
+          .join('\n')}`
+      : 'Equipamento operando em conformidade técnica.';
+  return {
+    id: `hist_${order.id}`,
+    // Vistoria de endereço: grava com o mesmo id do QR do imóvel ("addr:...") para aparecer na página pública
+    assetId: order.assetId || (order.addressId ? `addr:${order.addressId}` : 'none'),
+    addressId: order.addressId,
+    osId: order.id,
+    osTitle: order.title,
+    date: order.signedAt || localDateTimeStr(),
+    technician: order.assignedTechnician,
+    status: 'Concluída',
+    notes: order.notes || 'Manutenção concluída e assinada digitalmente.',
+    checklistCount: totalCount,
+    checkedCount,
+    preventiveType,
+    resultStatus: resultStatus as any,
+    verifiedItemsText: verifiedItems.length > 0 ? verifiedItems.join('; ') : 'Nenhuma tarefa checada.',
+    nonConformItemsText: nonConforms.length > 0 ? nonConforms.join('; ') : 'Nenhuma não-conformidade.',
+    correctiveActionsText
+  };
 }
 
 // Hora do servidor lida do banco volta ao formato do banco (a cópia local guarda como { seconds, nanoseconds })
@@ -719,15 +752,11 @@ export async function dbSaveServiceOrder(
   serverFields: Record<string, unknown> = {},
   options: { skipHistory?: boolean } = {}
 ): Promise<'saved' | 'queued'> {
-  let result: 'saved' | 'queued' = 'saved';
-  // Assinatura nova: vai para "orderSignatures" e sai do documento da OS
-  let signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = {
-    signature: order.signature,
-    hasSignature: order.hasSignature
-  };
-  if (order.signature && (await saveOrderSignature(order.id, order.signature))) {
-    signatureFields = { signature: null, hasSignature: true };
-  }
+  // Assinatura nova: vai para "orderSignatures" (no mesmo pacote da OS) e sai do documento da OS
+  const newSignature = order.signature && firebaseActive && dbInstance ? order.signature : null;
+  const signatureFields: Pick<ServiceOrder, 'signature' | 'hasSignature'> = newSignature
+    ? { signature: null, hasSignature: true }
+    : { signature: order.signature, hasSignature: order.hasSignature };
 
   // Unidade da OS (usada pelas regras do banco): calculada uma vez, se ainda não tiver
   if (!order.unit) {
@@ -752,65 +781,8 @@ export async function dbSaveServiceOrder(
     updatedAt: new Date().toISOString()
   };
 
-  // If the status is completed 'Concluída', we must create an entry in the equipment history!
-  if (order.status === 'Concluída' && !options.skipHistory) {
-    const checkedCount = order.checklist.filter(c => c.checked).length;
-    const totalCount = order.checklist.length;
-
-    // Evaluate list of verified and non-compliant tasks
-    const verifiedItems = order.checklist.filter(c => c.checked).map(c => c.task);
-    const nonConforms = order.checklist.filter(c => !c.checked).map(c => c.task);
-
-    const verifiedItemsText = verifiedItems.length > 0 ? verifiedItems.join('; ') : 'Nenhuma tarefa checada.';
-    const nonConformItemsText = nonConforms.length > 0 ? nonConforms.join('; ') : 'Nenhuma não-conformidade.';
-
-    const resultStatus = nonConforms.length === 0 ? 'Aprovado' : (checkedCount > 0 ? 'Aprovado com Ressalvas' : 'Não Conforme');
-    const preventiveType = order.periodicity || (order.title.includes('Anual') ? 'Anual' : order.title.includes('Semestral') ? 'Semestral' : order.title.includes('Trimestral') ? 'Trimestral' : order.title.includes('Mensal') ? 'Mensal' : 'Inspeção Geral');
-
-    // Build clean observations sections (without polluting with desdobramento/ações corretivas)
-    let correctiveActionsText = '';
-    const sections: string[] = [];
-
-    // Items with technician observations
-    const itemsWithObs = order.checklist.filter(c => c.observations && c.observations.trim());
-
-    if (itemsWithObs.length > 0) {
-      const details = itemsWithObs.map(i => {
-        const statusLabel = i.statusCheck ? ` [Status: ${i.statusCheck}]` : (!i.checked ? ' [Não Conforme]' : '');
-        return `• ${i.task}${statusLabel}:\n   ↳ Relato Técnico: "${i.observations!.trim()}"`;
-      }).join('\n');
-      sections.push(`📋 Observações e Apontamentos do Checklist:\n${details}`);
-    }
-
-    // Assemble final clean text
-    if (sections.length > 0) {
-      correctiveActionsText = sections.join('\n\n');
-    } else {
-      correctiveActionsText = 'Equipamento operando em conformidade técnica.';
-    }
-
-    const historyEntry: MaintenanceLog = {
-      id: `hist_${order.id}`,
-      // Vistoria de endereço: grava com o mesmo id do QR do imóvel ("addr:...") para aparecer na página pública
-      assetId: order.assetId || (order.addressId ? `addr:${order.addressId}` : 'none'),
-      addressId: order.addressId,
-      osId: order.id,
-      osTitle: order.title,
-      date: order.signedAt || localDateTimeStr(),
-      technician: order.assignedTechnician,
-      status: 'Concluída',
-      notes: order.notes || 'Manutenção concluída e assinada digitalmente.',
-      checklistCount: totalCount,
-      checkedCount: checkedCount,
-      preventiveType: preventiveType,
-      resultStatus: resultStatus as any,
-      verifiedItemsText: verifiedItemsText,
-      nonConformItemsText: nonConformItemsText,
-      correctiveActionsText: correctiveActionsText
-    };
-
-    await dbAddHistoryLog(historyEntry);
-  }
+  // OS concluída: registro no histórico do ativo (QR público), gravado JUNTO com a OS (tudo ou nada)
+  const historyEntry = order.status === 'Concluída' && !options.skipHistory ? buildHistoryEntry(order) : null;
 
   // Atualiza a lista em memória, se ela já foi carregada (não baixa todas as ordens só para salvar uma)
   if (cacheServiceOrders !== null) {
@@ -820,33 +792,34 @@ export async function dbSaveServiceOrder(
     } else {
       cacheServiceOrders.push(orderWithUpdate);
     }
-
-    try {
-      localStorage.setItem('hexon_service_orders', JSON.stringify(cacheServiceOrders));
-    } catch (lsErr) {
-      console.warn('LocalStorage limit saving service order:', lsErr);
-    }
   }
 
-  if (firebaseActive && dbInstance) {
-    try {
-      // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
-      // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
-      // Campos de controle (índices esparsos): só os que a OS precisa agora
-      const stored: Record<string, unknown> = withOrderControl(cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))) as any);
-      // Hora do servidor da conclusão: regrava no mesmo formato (senão o banco recusa mexer na OS concluída)
-      if (stored.completedAtServer) stored.completedAtServer = asTimestamp(stored.completedAtServer);
-      result = await awaitWrite(setDoc(doc(dbInstance, 'serviceOrders', order.id), {
-        ...stored,
-        ...serverFields,
-        syncAt: serverTimestamp()
-      }));
-    } catch (err: any) {
-      console.warn('Firestore write serviceOrder failed, utilizing local fallback state:', err);
-      checkQuotaException(err);
-    }
+  if (!firebaseActive || !dbInstance) return 'saved';
+  const db = dbInstance;
+  // OS concluída fica como está (o banco só aceita mudar checklist/solicitação nela)
+  // syncAt (horário do servidor): é por ele que os outros aparelhos recebem a alteração
+  // Campos de controle (índices esparsos): só os que a OS precisa agora
+  const stored: Record<string, unknown> = withOrderControl(cleanUndefined(toStoredOrder(status === 'Concluída' ? orderWithUpdate : withoutEmptyTechnician(orderWithUpdate))) as any);
+  // Hora do servidor da conclusão: regrava no mesmo formato (senão o banco recusa mexer na OS concluída)
+  if (stored.completedAtServer) stored.completedAtServer = asTimestamp(stored.completedAtServer);
+
+  // Assinatura + histórico + OS num pacote só: ou grava tudo, ou nada (e a tela mostra o erro)
+  const batch = writeBatch(db);
+  if (newSignature) {
+    batch.set(doc(db, 'orderSignatures', order.id), { orderId: order.id, signature: newSignature, savedAt: new Date().toISOString() });
   }
-  return result;
+  if (historyEntry) batch.set(doc(db, 'histories', historyEntry.id), cleanUndefined(historyEntry));
+  batch.set(doc(db, 'serviceOrders', order.id), { ...stored, ...serverFields, syncAt: serverTimestamp() });
+  try {
+    // Sem internet: fica na fila do aparelho e sobe sozinho depois ("queued")
+    const result = await awaitWrite(batch.commit());
+    if (newSignature) signatureCache.set(order.id, newSignature);
+    return result;
+  } catch (err: any) {
+    console.warn('Gravação da OS recusada pelo banco:', err);
+    checkQuotaException(err);
+    throw new Error(writeErrorMessage(err));
+  }
 }
 
 // Delete service order from memory cache, local storage, and database
@@ -933,36 +906,6 @@ export async function dbGetAssetHistory(assetId: string): Promise<MaintenanceLog
     }
   }
   return sortAndDeduplicate(localData.filter((h) => h.assetId === assetId));
-}
-
-// Adds an entry to the history log
-export async function dbAddHistoryLog(log: MaintenanceLog): Promise<void> {
-  if (cacheAllHistories === null) {
-    cacheAllHistories = [];
-  }
-
-  // Prevent duplicate entries for the same finished service order session, update if exists
-  const existingIndex = cacheAllHistories!.findIndex(h => h.id === log.id || (Boolean(h.osId && log.osId) && h.osId === log.osId));
-  if (existingIndex >= 0) {
-    cacheAllHistories![existingIndex] = log;
-  } else {
-    cacheAllHistories!.unshift(log);
-  }
-
-  try {
-    localStorage.setItem('hexon_histories', JSON.stringify(cacheAllHistories));
-  } catch (lsErr) {
-    console.warn('LocalStorage limit writing history:', lsErr);
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await awaitWrite(setDoc(doc(dbInstance, 'histories', log.id), cleanUndefined(log)));
-    } catch (err: any) {
-      console.warn('Firestore write history failed:', err);
-      checkQuotaException(err);
-    }
-  }
 }
 
 export function appendServiceOrdersCache(newOrders: ServiceOrder[]): void {
@@ -1106,6 +1049,8 @@ export async function dbSavePlanningDeadline(deadline: PlanningDeadline): Promis
     } catch (err: any) {
       console.warn('Firestore write planningDeadlines failed:', err);
       checkQuotaException(err);
+      // A tela mostra o erro (antes o prazo parecia salvo sem estar)
+      throw new Error(writeErrorMessage(err));
     }
   }
 }

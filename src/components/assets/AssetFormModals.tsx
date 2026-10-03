@@ -100,9 +100,9 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
       onSaveSuccess(updatedAsset);
       onClose();
       alert('Equipamento atualizado com sucesso no banco de dados!');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Erro ao atualizar equipamento.');
+      alert(`Erro ao atualizar equipamento: ${err?.message || err}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -490,9 +490,9 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
       alert('Novo ativo cadastrado com sucesso!');
       onCreateSuccess(preparedAsset);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Erro ao persistir ativo.');
+      alert(`Erro ao cadastrar ativo: ${err?.message || err}`);
     } finally {
       setIsSubmitting(false);
     }
