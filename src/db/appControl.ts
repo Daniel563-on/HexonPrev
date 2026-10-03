@@ -13,6 +13,7 @@ export interface AppControl {
   forceReloadAt?: number;       // "Forçar atualização": aparelhos abertos antes disso recarregam
   maintenance?: boolean;        // "Modo manutenção": só o Super Administrador usa o sistema
   maintenanceMessage?: string;
+  dataVersionAt?: number;       // cadastros mudaram (usuários, gerências, perfis, permissões, modelos): aparelhos abertos relêem
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -24,6 +25,8 @@ const listeners = new Set<(c: AppControl | null) => void>();
 // "Forçar atualização" vigente quando este aparelho abriu (lido do servidor). Só um valor DIFERENTE deste,
 // que chegue depois, pede para recarregar — não depende do relógio de cada aparelho.
 let baselineForceAt: number | null | undefined = undefined;
+// Última versão dos cadastros já tratada por este aparelho (a 1ª resposta do servidor é o ponto de partida)
+let seenDataAt: number | null | undefined = undefined;
 
 function startListening(): void {
   if (unsub || !firebaseActive || !dbInstance) return;
@@ -36,6 +39,7 @@ function startListening(): void {
       if (baselineForceAt === undefined) {
         if (snap.metadata.fromCache) return;
         baselineForceAt = data.forceReloadAt ?? null;
+        seenDataAt = data.dataVersionAt ?? null;
       }
       current = data;
       listeners.forEach((l) => l(current));
@@ -64,6 +68,24 @@ export function newForceReloadAt(c: AppControl | null): number | null {
   const at = c?.forceReloadAt;
   if (!at || baselineForceAt === undefined || at === baselineForceAt || forceReloadHandled(at)) return null;
   return at;
+}
+
+// Cadastros mudaram depois que este aparelho abriu? (devolve true uma vez por mudança)
+export function takeDataVersionChange(c: AppControl | null): boolean {
+  const at = c?.dataVersionAt ?? null;
+  if (seenDataAt === undefined || at === seenDataAt) return false;
+  seenDataAt = at;
+  return true;
+}
+
+// Super Administrador mudou um cadastro: avisa os aparelhos abertos para relerem (1 gravação; só o Super Admin pode)
+export async function dbBumpDataVersion(): Promise<void> {
+  if (!firebaseActive || !dbInstance) return;
+  const at = Date.now();
+  seenDataAt = at; // este aparelho já está atualizado
+  await setDoc(doc(dbInstance, 'appControl', 'status'), { dataVersionAt: at }, { merge: true }).catch((err) =>
+    console.warn('Aviso de cadastros alterados não enviado:', err)
+  );
 }
 
 // Aviso "Sistema atualizado" depois da recarga

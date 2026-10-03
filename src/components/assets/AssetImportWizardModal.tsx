@@ -51,7 +51,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
   
   const defaultSector = React.useMemo(() => {
     const valid = managements.filter(m => m.name !== 'Todas');
-    return valid.length > 0 ? valid[0].name : 'Refrigeração';
+    return valid.length > 0 ? valid[0].name : '';
   }, [managements]);
 
   const [importTargetSector, setImportTargetSector] = useState<string>(defaultSector);
@@ -679,9 +679,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                           ))
                         ) : (
                           <>
-                            <option value="Refrigeração">Refrigeração</option>
-                            <option value="Elétrica">Elétrica</option>
-                            <option value="Civil">Civil</option>
+                            <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
                           </>
                         )}
                       </select>

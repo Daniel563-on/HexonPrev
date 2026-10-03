@@ -25,7 +25,7 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
 }) => {
   const [editingCode, setEditingCode] = useState('');
   const [editingName, setEditingName] = useState('');
-  const [editingSector, setEditingSector] = useState('Refrigeração');
+  const [editingSector, setEditingSector] = useState('');
   const [editingLocation, setEditingLocation] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState('');
   const [editingModel, setEditingModel] = useState('');
@@ -163,9 +163,7 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
                     ))
                   ) : (
                     <>
-                      <option value="Refrigeração">Refrigeração</option>
-                      <option value="Elétrica">Elétrica</option>
-                      <option value="Civil">Civil</option>
+                      <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
                     </>
                   )}
                 </select>
@@ -402,7 +400,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
   
   const defaultSector = React.useMemo(() => {
     const active = managements.filter(m => m.name !== 'Todas');
-    return active.length > 0 ? active[0].name : 'Refrigeração';
+    return active.length > 0 ? active[0].name : '';
   }, [managements]);
 
   const [sector, setSector] = useState(defaultSector);
@@ -553,9 +551,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
                     ))
                   ) : (
                     <>
-                      <option value="Refrigeração">Refrigeração</option>
-                      <option value="Elétrica">Elétrica</option>
-                      <option value="Civil">Civil</option>
+                      <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
                     </>
                   )}
                 </select>

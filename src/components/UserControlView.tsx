@@ -7,6 +7,7 @@ import {
   dbGetManagements, 
   dbSaveManagement, 
   dbDeleteManagement, 
+  dbGetAssets,
   dbAddAuditLog,
   dbGetPermissions,
   dbSavePermissions,
@@ -26,6 +27,7 @@ import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
 import SystemControlCard from './users/SystemControlCard';
 import AuditLogsTab from './users/AuditLogsTab';
+import { dbBumpDataVersion } from '../db/appControl';
 import WorkforceTab from './users/WorkforceTab';
 
 interface UserControlViewProps {
@@ -59,7 +61,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     matricula: '',
     email: '',
     cargo: '',
-    gerencia: 'Refrigeração',
+    gerencia: '',
     perfil: 'Profissional' as HexonUser['perfil'],
     profileId: SYSTEM_PROFILE_IDS.execucao as string,
     status: 'Ativo' as HexonUser['status'],
@@ -129,7 +131,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       matricula: suggested,
       email: '',
       cargo: '',
-      gerencia: managements[0]?.name || 'Refrigeração',
+      gerencia: managements[0]?.name || '',
       perfil: 'Profissional',
       profileId: SYSTEM_PROFILE_IDS.execucao,
       status: 'Ativo',
@@ -246,6 +248,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       });
 
       setIsUserModalOpen(false);
+      dbBumpDataVersion(); // outros aparelhos abertos relêem os cadastros
       await loadAllData(true);
     } catch (err: any) {
       console.error(err);
@@ -295,6 +298,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             details: `Excluiu permanentemente o usuário ${userName}`,
             timestamp: new Date().toISOString()
           });
+          dbBumpDataVersion();
           await loadAllData(true);
         } catch (err: any) {
           console.error('Erro ao excluir usuário:', err);
@@ -325,15 +329,25 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         timestamp: new Date().toISOString()
       });
       setIsMgmtModalOpen(false);
+      dbBumpDataVersion();
       loadAllData();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert(`Não foi possível salvar a gerência: ${err?.message || err}`);
     }
   };
 
   const handleDeleteManagement = async (id: string, name: string) => {
     if (name === 'Todas') {
       alert('A gerência de atuação global "Todas" não pode ser excluída.');
+      return;
+    }
+    // Gerência em uso não pode ser excluída (OS, usuários, ativos e regras do banco guardam o nome)
+    const usersIn = users.filter((u) => u.gerencia === name).length;
+    const assetsIn = (await dbGetAssets().catch(() => [])).filter((a) => a.sector === name).length;
+    const profilesIn = profiles.filter((p) => (p.units || []).includes(name)).length;
+    if (usersIn + assetsIn + profilesIn > 0) {
+      alert(`A gerência "${name}" está em uso (${usersIn} usuário(s), ${assetsIn} ativo(s), ${profilesIn} perfil(is)) e não pode ser excluída.`);
       return;
     }
     setGenericConfirm({
@@ -343,9 +357,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       onConfirm: async () => {
         try {
           await dbDeleteManagement(id);
+          dbBumpDataVersion();
           loadAllData();
-        } catch (err) {
+        } catch (err: any) {
           console.error(err);
+          alert(`Não foi possível excluir a gerência: ${err?.message || err}`);
         }
       }
     });
@@ -381,6 +397,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         details: 'Configurou a matriz de controle de acessos (RBAC)',
         timestamp: new Date().toISOString()
       });
+      dbBumpDataVersion();
       alert('Permissões de acesso salvas com sucesso!');
     } catch (err) {
       console.error(err);
@@ -796,7 +813,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               managements={managements}
               users={users}
               darkMode={darkMode}
-              onChanged={() => loadAllData(true)}
+              onChanged={() => { dbBumpDataVersion(); loadAllData(true); }}
             />
           )}
 
@@ -1001,9 +1018,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                     ))}
                     {managements.length === 0 && (
                       <>
-                        <option value="Refrigeração">Refrigeração</option>
-                        <option value="Elétrica">Elétrica</option>
-                        <option value="Civil">Civil</option>
+                        <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
                       </>
                     )}
                   </select>
@@ -1093,9 +1108,15 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   required
                   placeholder="Ex: Predial, Hidráulica, TI"
                   value={mgmtForm.name}
+                  disabled={!!mgmtForm.id}
                   onChange={(e) => setMgmtForm({ ...mgmtForm, name: e.target.value })}
-                  className={`w-full text-xs font-bold px-3 py-2 border rounded-lg ${darkMode ? 'bg-[#121b2d] border-slate-805' : 'bg-white'}`}
+                  className={`w-full text-xs font-bold px-3 py-2 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${darkMode ? 'bg-[#121b2d] border-slate-805' : 'bg-white'}`}
                 />
+                {mgmtForm.id && (
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    O nome não muda depois de criada: OS, usuários, ativos e regras do banco guardam este nome. Só a descrição pode ser editada.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Descrição</label>

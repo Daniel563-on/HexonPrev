@@ -179,7 +179,7 @@ export default function DashboardView({
       .filter((o) => (o.endDate || '').slice(0, 7) === currentMonth && o.status !== 'Cancelada')
       .map((o) => ({
         month: currentMonth,
-        sector: o.sector || 'Sem gerência',
+        sector: o.unit || o.sector || 'Sem gerência', // gerência da OS (o setor pode ter outro nome)
         p: o.periodicity || '',
         t: o.assignedTechnician || '',
         c: o.craai || '',

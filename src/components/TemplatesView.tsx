@@ -124,7 +124,8 @@ export default function TemplatesView({ onTemplatesUpdated, userProfile, visible
   // Load backend configurations
   const loadData = async () => {
     const [tList, aList, mList, adList] = await Promise.all([
-      dbGetTemplates(),
+      // Modelos sempre do banco ao abrir a tela (o disparo não pode usar versão antiga)
+      dbGetTemplates(true),
       dbGetAssets(),
       dbGetManagements(),
       dbGetAddresses(true)

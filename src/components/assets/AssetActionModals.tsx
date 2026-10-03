@@ -245,7 +245,7 @@ export const AssetSectorDeleteModal: React.FC<AssetSectorDeleteModalProps> = ({
 }) => {
   const defaultSector = React.useMemo(() => {
     const valid = managements.filter(m => m.name !== 'Todas');
-    return valid.length > 0 ? valid[0].name : 'Refrigeração';
+    return valid.length > 0 ? valid[0].name : '';
   }, [managements]);
 
   const [sectorToDelete, setSectorToDelete] = useState<string>(defaultSector);
@@ -314,9 +314,7 @@ export const AssetSectorDeleteModal: React.FC<AssetSectorDeleteModalProps> = ({
                 ))
               ) : (
                 <>
-                  <option value="Refrigeração">Refrigeração</option>
-                  <option value="Elétrica">Elétrica</option>
-                  <option value="Civil">Civil</option>
+                  <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
                 </>
               )}
             </select>
