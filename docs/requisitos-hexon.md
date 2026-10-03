@@ -290,7 +290,15 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 
 ## 6. Perguntas em aberto
 
-(nenhuma no momento)
+Hexon 2.0 (seção 11), feitas em 03/10/2026:
+1. O Hexon principal: temos acesso ao código e ao banco? Também é Firebase? Os dados antigos (OS, GLPI, ponto) vêm para o 2.0 ou começa do zero?
+2. Os dois sistemas rodam juntos por um tempo? Qual a data desejada para desligar o antigo?
+3. Volume por mês de corretivas, layouts e acompanhamentos (e quantos usuários a mais: administrativos, engenheiros, gerentes, requerentes).
+4. Quem abre chamado: só usuários com login ou também requerentes de fora (ex.: servidor da comarca)? Abertura vem do GLPI?
+5. As 4 assinaturas: quem é o "cliente" e onde assina (no celular do técnico?); engenheiro e gerente assinam no sistema? Alguma pode ser dispensada?
+6. Hora extra: regra de cálculo (preventiva não tem).
+7. Bater ponto: para que é usado (controle interno ou ponto oficial de jornada)?
+8. Preventivas em produção antes do 2.0 (zerar, ciclos, cadastros) ou só depois?
 
 ---
 
@@ -377,4 +385,18 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 | `src/components/assets/HistoryPager.tsx` | Paginação do histórico |
 | `cloud-functions/functions/index.js` | `resetUserPassword` (chamada, só Super Admin), `dailyDeadlines` (00:00, Brasília), `monthlyClosing` (00:10 do dia 1º) |
 | `firestore.rules` | Regras (publicar no Console) |
+
+---
+
+## 11. Hexon 2.0 — unificar com o Hexon principal (levantamento iniciado em 03/10/2026)
+
+**Ideia do usuário:** transformar este sistema no "Hexon 2.0", substituindo o Hexon principal (hexon.app.br, outro banco e outro domínio), com tudo num lugar só. O que foi feito até agora (preventivas) vira o módulo **"Preventivas"** (no sistema antigo se chama "PMOC"). Os conceitos continuam os mesmos: gerência (cada um só vê a sua), homem-hora, pernoite, hora extra, permissões. A tela de login continua; sai o nome "Preventiva" e entra o logo novo da Hexon. Usuários, Gestão de Ativos e Materiais iriam "para a frente" (fora do módulo de preventivas). Trabalho por etapas, como até agora, com o usuário explicando página por página.
+
+**O que o Hexon principal tem (prints de 02/10/2026)**
+- **Menu:** Dashboard, Bater Ponto, Registros de ponto, Ordens de Serviço (Ver Ordens, Novo Modelo, Homem-Hora), Equipes, Programação Semanal, Solicitações, Gestão de Ativos, Contratos e Fornecedores, PMOC, Gestão de Materiais, Usuários, Relatórios, Histórico GLPI, Quadro de Avisos, Configurações.
+- **Lista de OS:** busca; Modelos; Exportar planilha (XLSX); Baixar PDFs (ZIP); Sincronizar; Zerar cache; Emitir OS; filtro de status. Cada cartão: nº (OS-1234), local, nº GLPI, status (Nova, Em andamento...), abertura, prazo, intervenção (Preventiva, Corretiva, Layout...), categoria (ACJ, Outros...), técnico, gerência, endereço, ativo; resumo financeiro (Total, HH, Hora extra, Pernoite, Materiais); botões Ficha e Executar OS.
+- **Emitir OS:** gerência responsável (privacidade), ativo opcional (busca ou código), técnico (ou em aberto), prazo limite (SLA), custo calculado; **modelo de OS** com formulário próprio (ex.: "MPRJ OS", 19 campos): intervenção, GLPI, data de abertura, requerente (nome, CRAAI, comarca, telefone, e-mail), CRAAI/comarca/endereço de execução, descrição, categoria.
+- **Ficha da OS:** observações; **4 assinaturas em sequência** (Profissional → depois Cliente, Engenheiro e Gerente); materiais de consumo e miudezas; cálculo de custo e homem-hora durante a execução (equipe, início, tempo, materiais, consumíveis, total parcial); linha do tempo; botões Pendente, Cancelar OS, PDF mapeado, Ficha (XLSX).
+
+**Perguntas em aberto (Hexon 2.0)** — ver seção 6.
 
