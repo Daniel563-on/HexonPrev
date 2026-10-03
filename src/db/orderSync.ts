@@ -1,3 +1,4 @@
+import { runBulk } from './guard';
 import {
   collection,
   getDocs,
@@ -88,7 +89,11 @@ function schedulePersist(u: UnitSync): void {
 }
 
 // 1ª vez no aparelho: abertas + fechadas do mês atual e do anterior
-async function fullDownload(u: UnitSync): Promise<void> {
+// 1ª carga completa: operação em massa (liberada do disjuntor)
+function fullDownload(...args: Parameters<typeof fullDownloadNow>): ReturnType<typeof fullDownloadNow> {
+  return runBulk(() => fullDownloadNow(...args));
+}
+async function fullDownloadNow(u: UnitSync): Promise<void> {
   const db = dbInstance!;
   const ref = collection(db, 'serviceOrders');
   const [openSnap, closedSnap] = await Promise.all([
@@ -273,7 +278,8 @@ function olderMonthOrders(unit: string, month: string): Promise<ServiceOrder[]> 
   const key = `${unit}|${month}`;
   let p = olderMonths.get(key);
   if (!p) {
-    p = getDocs(query(collection(dbInstance!, 'serviceOrders'), where('unit', '==', unit), where('closedMonth', '==', month)))
+    // Mês antigo inteiro (milhares de OS em gerências grandes): operação em massa, liberada do disjuntor
+    p = runBulk(() => getDocs(query(collection(dbInstance!, 'serviceOrders'), where('unit', '==', unit), where('closedMonth', '==', month))))
       .then((snap) => snap.docs.filter((d) => !isMockOrLegacyId(d.id)).map((d) => toOrder(d.id, d.data())))
       .catch((err) => {
         console.warn('Falha ao buscar as OS fechadas do mês:', err);

@@ -6,17 +6,18 @@ import * as fs from 'firebase/firestore';
 //   - gravações (cada setDoc/updateDoc/addDoc/deleteDoc ou pacote writeBatch = 1)
 //   - buscas (cada getDoc/getDocs = 1)
 //   - escutas abertas (cada onSnapshot = 1)
+//   - documentos lidos do servidor (soma do que cada busca devolve + a 1ª carga de cada escuta)
 // Se algum passar do limite, o disjuntor desarma: o aparelho para de gravar e buscar,
 // aparece o aviso na tela e fica 1 registro na auditoria. Recarregar a página volta ao normal.
 // Operações em massa legítimas (disparo, importações, correções) rodam dentro de runBulk() e não contam.
 
 export * from 'firebase/firestore';
 
-type Kind = 'write' | 'read' | 'listen';
+type Kind = 'write' | 'read' | 'listen' | 'docs';
 
 const WINDOW_MS = 60 * 1000;
-const LIMITS: Record<Kind, number> = { write: 120, read: 120, listen: 40 };
-const LABEL: Record<Kind, string> = { write: 'gravações', read: 'buscas', listen: 'escutas abertas' };
+const LIMITS: Record<Kind, number> = { write: 120, read: 120, listen: 40, docs: 30000 };
+const LABEL: Record<Kind, string> = { write: 'gravações', read: 'buscas', listen: 'escutas abertas', docs: 'documentos lidos' };
 
 export interface GuardTrip {
   kind: Kind;
@@ -25,7 +26,8 @@ export interface GuardTrip {
   at: string;
 }
 
-const stamps: Record<Kind, number[]> = { write: [], read: [], listen: [] };
+// Cada registro: [horário, quantidade]
+const stamps: Record<Kind, [number, number][]> = { write: [], read: [], listen: [], docs: [] };
 let tripped: GuardTrip | null = null;
 let bulkDepth = 0;
 let lastDb: fs.Firestore | null = null;
@@ -98,18 +100,37 @@ function trip(kind: Kind, count: number): void {
 }
 
 // true = pode seguir; false = bloqueado
-function allow(kind: Kind): boolean {
+function allow(kind: Kind, amount = 1): boolean {
   if (tripped) return false;
   if (bulkDepth > 0) return true;
   const now = Date.now();
   const list = stamps[kind];
-  list.push(now);
-  while (list.length > 0 && now - list[0] > WINDOW_MS) list.shift();
-  if (list.length > LIMITS[kind]) {
-    trip(kind, list.length);
+  list.push([now, amount]);
+  while (list.length > 0 && now - list[0][0] > WINDOW_MS) list.shift();
+  const total = list.reduce((sum, [, n]) => sum + n, 0);
+  if (total > LIMITS[kind]) {
+    trip(kind, total);
     return false;
   }
   return true;
+}
+
+// Documentos que vieram do servidor (os da cópia do aparelho não são cobrados e não contam)
+function countDocs(snap: any): void {
+  if (!snap || snap.metadata?.fromCache || typeof snap.size !== 'number' || snap.size === 0) return;
+  allow('docs', snap.size);
+}
+
+// Escuta: conta só a 1ª carga vinda do servidor (as mudanças seguintes são dados novos de verdade)
+function countFirstLoad(handler: (snap: any) => unknown): (snap: any) => unknown {
+  let counted = false;
+  return (snap: any) => {
+    if (!counted && snap?.metadata && !snap.metadata.fromCache) {
+      counted = true;
+      countDocs(snap);
+    }
+    return handler(snap);
+  };
 }
 
 // ===== Gravações =====
@@ -150,12 +171,23 @@ export const getDoc = ((ref: any) => {
 
 export const getDocs = ((q: any) => {
   remember(q);
-  return allow('read') ? fs.getDocs(q) : Promise.reject(new GuardError());
+  if (!allow('read')) return Promise.reject(new GuardError());
+  return fs.getDocs(q).then((snap) => {
+    countDocs(snap);
+    return snap;
+  });
 }) as typeof fs.getDocs;
 
 // ===== Escutas =====
 // Bloqueada: não abre a escuta (devolve um "parar" vazio para a tela não quebrar)
 export const onSnapshot = ((ref: any, ...rest: any[]) => {
   remember(ref);
-  return allow('listen') ? (fs.onSnapshot as any)(ref, ...rest) : () => {};
+  if (!allow('listen')) return () => {};
+  const args = [...rest];
+  const i = args.findIndex((a) => typeof a === 'function' || (a && typeof a.next === 'function'));
+  if (i >= 0) {
+    const h = args[i];
+    args[i] = typeof h === 'function' ? countFirstLoad(h) : { ...h, next: countFirstLoad(h.next.bind(h)) };
+  }
+  return (fs.onSnapshot as any)(ref, ...args);
 }) as typeof fs.onSnapshot;

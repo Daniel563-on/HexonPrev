@@ -1,3 +1,4 @@
+import { runBulk } from './guard';
 import {
   collection,
   getDocs,
@@ -73,7 +74,11 @@ function notify(): void {
 }
 
 // Baixa a coleção inteira (1ª vez no aparelho ou "Sincronizar tudo")
-async function fullDownload(): Promise<void> {
+// 1ª carga completa: operação em massa (liberada do disjuntor)
+function fullDownload(...args: Parameters<typeof fullDownloadNow>): ReturnType<typeof fullDownloadNow> {
+  return runBulk(() => fullDownloadNow(...args));
+}
+async function fullDownloadNow(): Promise<void> {
   const snap = await getDocs(collection(dbInstance!, 'assets'));
   store.clear();
   let maxSync = 0;
