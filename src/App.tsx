@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
-import DashboardView from './components/DashboardView';
+import HomeView from './components/HomeView';
+import SettingsView from './components/SettingsView';
 import AssetsView from './components/AssetsView';
 import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
@@ -65,11 +66,16 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
-      return localStorage.getItem('hexon_current_tab') || 'qr-codes';
+      return localStorage.getItem('hexon_current_tab') || 'home';
     } catch {
-      return 'qr-codes';
+      return 'home';
     }
   });
+
+  // Hexon 2.0: o Dashboard saiu; quem tinha ele salvo como última tela abre o Início
+  useEffect(() => {
+    if (currentTab === 'dashboard') setCurrentTab('home');
+  }, [currentTab]);
 
   useEffect(() => {
     if (currentTab) {
@@ -480,12 +486,12 @@ export default function App() {
   const userHasTabPermission = (tab: string): boolean => {
     if (!userProfile) return false;
     if (userProfile.perfil === 'Super Administrador') return true;
-    if (tab === 'user-control') return false; // Strictly restricted to Super Administrador
+    if (tab === 'user-control' || tab === 'settings' || tab === 'addresses' || tab === 'qr-codes') return false;
+    if (tab === 'home') return true;
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
-    if (tab === 'dashboard') permId = 'view_dashboard';
-    else if (tab === 'service-orders') permId = 'view_service_orders';
+    if (tab === 'service-orders' || tab === 'pmoc-preventivas') permId = 'view_service_orders';
     else if (tab === 'assets') permId = 'view_assets';
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
@@ -540,8 +546,8 @@ export default function App() {
   useEffect(() => {
     if (!userProfile) return;
 
-    // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
-    const firstAllowedTab = ['dashboard', 'service-orders', 'solicitations', 'assets', 'templates', 'materials', 'qr-codes'].find((t) =>
+    // Primeira aba que o perfil pode ver (quem não tem o Início cai direto na tela dele)
+    const firstAllowedTab = ['home', 'service-orders', 'pmoc-preventivas', 'solicitations', 'assets', 'templates', 'materials', 'qr-codes'].find((t) =>
       userHasTabPermission(t)
     );
 
@@ -622,9 +628,9 @@ export default function App() {
                     if (foundUser.perfil === 'Profissional') {
                       setCurrentTab('service-orders');
                     } else {
-                      const savedTab = localStorage.getItem('hexon_current_tab') || 'dashboard';
+                      const savedTab = localStorage.getItem('hexon_current_tab') || 'home';
                       if (savedTab && (savedTab !== 'user-control' || foundUser.perfil === 'Super Administrador')) {
-                        setCurrentTab(savedTab);
+                        setCurrentTab(savedTab === 'dashboard' ? 'home' : savedTab);
                       }
                     }
                     await loadPermissions();
@@ -722,9 +728,9 @@ export default function App() {
     } else {
       const savedTab = localStorage.getItem('hexon_current_tab');
       if (savedTab && (savedTab !== 'user-control' || updatedUser.perfil === 'Super Administrador')) {
-        setCurrentTab(savedTab);
+        setCurrentTab(savedTab === 'dashboard' ? 'home' : savedTab);
       } else {
-        setCurrentTab('dashboard');
+        setCurrentTab('home');
       }
     }
 
@@ -749,10 +755,12 @@ export default function App() {
   // Human descriptive title mapping
   const getTabTitle = () => {
     switch (currentTab) {
-      case 'dashboard':
-        return 'Dashboard e Auditoria';
+      case 'home':
+        return 'Início';
       case 'service-orders':
         return 'Ordens de Serviço';
+      case 'pmoc-preventivas':
+        return 'PMOC — Preventivas';
       case 'assets':
         return 'Gerenciamento de Ativos';
       case 'templates':
@@ -765,6 +773,10 @@ export default function App() {
         return 'Painel de Controle e Auditoria';
       case 'qr-codes':
         return 'Central de Etiquetas & QR-Codes';
+      case 'addresses':
+        return 'Endereços';
+      case 'settings':
+        return 'Configurações';
       default:
         return 'Console Hexon';
     }
@@ -1009,7 +1021,7 @@ export default function App() {
           currentTab={currentTab}
           orders={orders}
           onUpdateUserProfile={(updated) => setUserProfile(updated)}
-          unitOptions={visibleUnits === null && currentTab === 'dashboard' ? managementNames : undefined}
+          unitOptions={visibleUnits === null && currentTab === 'home' ? managementNames : undefined}
           activeUnit={adminUnit}
           onActiveUnitChange={changeAdminUnit}
         />
@@ -1043,18 +1055,19 @@ export default function App() {
             </div>
           )}
 
-          {currentTab === 'dashboard' && (
-            <DashboardView 
-              orders={filteredOrders} 
-              onNavigateToOS={handleNavigateToOS}
-              onNavigateToAssets={() => setCurrentTab('assets')}
-              onNavigateToSolicitations={() => setCurrentTab('solicitations')}
+          {currentTab === 'home' && userProfile && (
+            <HomeView 
               userProfile={userProfile}
-              visibleUnits={visibleUnits}
+              orders={filteredOrders}
+              pendingSolicitationsCount={pendingSolicitationOrders.length}
+              canSeeOrders={userHasTabPermission('service-orders') || userHasTabPermission('pmoc-preventivas')}
+              canSeeSolicitations={userHasTabPermission('solicitations')}
+              activeUnit={visibleUnits === null ? adminUnit : undefined}
+              onNavigate={(tab) => setCurrentTab(tab)}
             />
           )}
 
-          {currentTab === 'service-orders' && (
+          {(currentTab === 'service-orders' || currentTab === 'pmoc-preventivas') && (
             <ServiceOrdersView 
               orders={filteredOrders}
               onReload={loadServiceOrders}
@@ -1110,6 +1123,13 @@ export default function App() {
           {currentTab === 'user-control' && (
             <UserControlView 
               currentUserProfile={userProfile}
+              darkMode={darkMode}
+            />
+          )}
+
+          {currentTab === 'settings' && userProfile?.perfil === 'Super Administrador' && (
+            <SettingsView 
+              userProfile={userProfile}
               darkMode={darkMode}
             />
           )}
