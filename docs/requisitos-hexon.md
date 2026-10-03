@@ -311,7 +311,7 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 ## 6. Perguntas em aberto
 
 Hexon 2.0 (seção 11), feitas em 03/10/2026:
-1. O Hexon principal: **também é Firebase** e está em uso (resposta de 03/10/2026). O usuário vai trazer o **código-fonte** para análise. Falta: os dados antigos (OS, GLPI, ponto) vêm para o 2.0 ou começa do zero?
+1. O Hexon principal: **também é Firebase** e está em uso. Código-fonte recebido e analisado em 03/10/2026 (ver `docs/levantamento-hexon-principal.md`). **O usuário não tem acesso ao servidor nem ao banco do principal**: o caminho é reproduzir as ideias no nosso sistema, não migrar dados. Perguntas novas do levantamento: seção 6 daquele documento.
 2. Os dois sistemas rodam juntos por um tempo? Qual a data desejada para desligar o antigo?
 3. Usuários e ativos **quase não mudam** com a unificação (resposta de 03/10/2026). Falta: volume por mês de corretivas, layouts e acompanhamentos.
 4. Quem abre chamado: só usuários com login ou também requerentes de fora (ex.: servidor da comarca)? Abertura vem do GLPI?
@@ -424,4 +424,12 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 - **Ficha da OS:** observações; **4 assinaturas em sequência** (Profissional → depois Cliente, Engenheiro e Gerente); materiais de consumo e miudezas; cálculo de custo e homem-hora durante a execução (equipe, início, tempo, materiais, consumíveis, total parcial); linha do tempo; botões Pendente, Cancelar OS, PDF mapeado, Ficha (XLSX).
 
 **Perguntas em aberto (Hexon 2.0)** — ver seção 6.
+
+**Levantamento do código do principal (03/10/2026): `docs/levantamento-hexon-principal.md`** (ler antes de qualquer trabalho no 2.0).
+- Repositório privado `Daniel563-on/Hexon-principal` com o zip do código (só leitura; não alterar). ~88 mil linhas, projeto `hexon-prod`, servidor Express publicado como Cloud Function `api`.
+- **Direção decidida pelo usuário:** não temos acesso ao servidor nem ao banco do principal, então **tiramos ideias e melhorias e reproduzimos no nosso sistema**, devagar e com cautela, uma etapa por vez com aprovação.
+- **Não reproduzir** (segurança do principal): usuários com hash de senha legíveis sem login, OS públicas, coleções abertas, login próprio com entrada anônima e senhas padrão, SSO com chave no endereço; assinatura/PDF dentro do documento; admin lendo todas as OS.
+- Partes do principal que são protótipo: ponto (GPS/IP fixos), números fixos em Equipes, MTBF por texto do título.
+- Diferenças de regra a decidir: HH (principal = seg–sex 08–18 desde a atribuição; nosso = Iniciar→Concluir), hora extra 50/70/100% com sábado/domingo por cargo (não temos), estoque (principal tem; nós decidimos sem).
+- Ordem proposta (aguardando aprovação): 1) aviso de nova versão + modo manutenção; 2) base da OS corretiva (emitir, nº sequencial, pausa, cancelamento, GLPI); 3) assinaturas em sequência + validação por link; 4) hora extra/feriados/custo fixo + "minha equipe"; 5) solicitações HE/pernoite com teto; 6) modelos ampliados; 7) avisos e contratos; 8) programação semanal/mapa; 9) relatórios; 10) ponto e GLPI após respostas.
 
