@@ -287,10 +287,10 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P16 | Botão "zerar sistema" (Super Admin) | adiado | Desenhar quando for zerar o banco |
 | P17 | Etapa 9 — Relatórios | adiada | — |
 | P18 | Proteção: Etapa 5 (corte automático) e aba Monitoramento | adiados (usuário não se sentiu confortável agora) | Ver seção 8 |
-| P19 | **Auditoria 03/10/2026 — gravação de OS falha sem avisar** (`dbSaveServiceOrder`, `dbAddHistoryLog`, `dbSavePlanningDeadline`, `dbSaveAsset` engolem o erro do banco e a tela mostra sucesso; o histórico do ativo é gravado antes da OS) | **ALTA** | Devolver o erro para a tela; gravar o histórico só depois da OS |
+| P19 | ✅ (Pacote 1, 03/10/2026: assinatura + histórico + OS num pacote só; erros na tela) **Auditoria 03/10/2026 — gravação de OS falha sem avisar** (`dbSaveServiceOrder`, `dbAddHistoryLog`, `dbSavePlanningDeadline`, `dbSaveAsset` engolem o erro do banco e a tela mostra sucesso; o histórico do ativo é gravado antes da OS) | **ALTA** | Devolver o erro para a tela; gravar o histórico só depois da OS |
 | P20 | **Não existe tela de Auditoria / Registros de acesso** (`auditLogs`, `accessLogs` só no Console). Disjuntor e login com falha gravam, mas ninguém vê no app | **ALTA** | Tela simples para o Super Admin (paginada) |
-| P21 | **Gerências de exemplo** recriadas se `managements`/`units` ficarem vazias (Refrigeração, Elétrica, Civil, Segurança; unidades fictícias) — risco ao zerar o banco | **ALTA** | Sementes = DOM/GMMR/GMEE/GMC ou nenhuma; manter `managements` ao zerar |
-| P22 | Regra `planningDeadlines`: qualquer usuário da equipe pode gravar o prazo de planejamento | MÉDIA | Gravar só Super Admin |
+| P21 | ✅ (Pacote 1: sem sementes; banco vazio = lista vazia) **Gerências de exemplo** recriadas se `managements`/`units` ficarem vazias (Refrigeração, Elétrica, Civil, Segurança; unidades fictícias) — risco ao zerar o banco | **ALTA** | Sementes = DOM/GMMR/GMEE/GMC ou nenhuma; manter `managements` ao zerar |
+| P22 | ✅ (Pacote 1: só Super Admin grava) Regra `planningDeadlines`: qualquer usuário da equipe pode gravar o prazo de planejamento | MÉDIA | Gravar só Super Admin |
 | P23 | App do técnico e tela da OS reconhecem "OS dele" pelo **nome** | MÉDIA | Usar a matrícula |
 | P24 | Programar lote com ~500+ OS falha (limite de 500 operações por pacote) | MÉDIA-BAIXA | Dividir em pacotes ou limitar |
 | P25 | Dashboard e fechamento mensal agrupam por `sector` (hoje igual ao nome da gerência, então funciona); `isSectorInGerencia` usa `includes('AR')` | BAIXA (robustez) | Usar `unit` |
@@ -298,6 +298,8 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P27 | 79 janelas `alert/confirm` (9 na OS do técnico) | BAIXA | Trocar por mensagens na tela aos poucos |
 | P28 | `hexon_histories` no navegador cresce a cada conclusão (legado sem uso) | BAIXA | Remover |
 | P29 | Código sem uso: `OrdersCalendarPlanning.tsx`, `TemplateGeneratorTab.tsx`, `TemplateManagerTab.tsx` (~3.800 linhas), `dbGetServiceOrders` (lê a coleção inteira), `subscribeServiceOrders`, `forceRefetchAllData`, foto de evidência | LIMPEZA | Apagar |
+| P31 | ✅ (Pacote 1) "Reverter para Novo" no cartão da lista (Realização) e dentro da OS deixava matrícula e lote: OS seguia ligada ao técnico e ao pernoite. Agora todas as telas usam `dbRevertOrderToNew` (planning.ts) | MÉDIA | — |
+| P32 | Telas com "Refrigeração/Elétrica/Civil" como opção quando não há gerências cadastradas (formulário de ativo, importação, usuários) | BAIXA | Trocar por aviso "cadastre as gerências" |
 | P30 | Revisão superficial (não lidos linha a linha): Dashboard, editor de QR/PDF mapeado, importação de ativos, Controle de Usuários/perfis | — | Próxima rodada da auditoria |
 
 ## 6. Perguntas em aberto
