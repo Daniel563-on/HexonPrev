@@ -123,39 +123,20 @@ export default function TechnicianMobileView({
     return Array.from(map.values());
   }, [assets, loadedAssets]);
 
-  // Orders source: initialize with props or cached offline orders
-  const [sourceOrders, setSourceOrders] = useState<ServiceOrder[]>(() => {
-    if (orders && orders.length > 0) return orders;
-    try {
-      const raw = localStorage.getItem('hexon_service_orders');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.warn('Initial localStorage parse error:', e);
-    }
-    return [];
-  });
-
-  // Synchronize with parent orders updates or local storage
+  // OS do técnico: sempre a lista em tempo real (o próprio banco guarda a cópia do celular para uso sem internet).
+  // A cópia antiga "hexon_service_orders" do navegador ficava desatualizada e, quando a lista esvaziava,
+  // mostrava OS velhas (formato antigo, que travavam a tela): não é mais usada e é apagada do aparelho.
+  const [sourceOrders, setSourceOrders] = useState<ServiceOrder[]>(() => orders || []);
   useEffect(() => {
-    if (orders && orders.length > 0) {
-      setSourceOrders(orders);
-    } else {
-      try {
-        const raw = localStorage.getItem('hexon_service_orders');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSourceOrders(parsed);
-          }
-        }
-      } catch (e) {
-        console.warn('LocalStorage sync error:', e);
-      }
-    }
+    setSourceOrders(orders || []);
   }, [orders]);
+  useEffect(() => {
+    try {
+      localStorage.removeItem('hexon_service_orders');
+    } catch {
+      /* ignora */
+    }
+  }, []);
 
   // Check if an order is strictly assigned to the current user (security & execution check)
   const isOrderAssignedToUser = (o: ServiceOrder | null | undefined): boolean => {
