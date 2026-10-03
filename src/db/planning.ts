@@ -89,9 +89,18 @@ export interface ScheduleLotInput {
   createdBy: string;
 }
 
+const MAX_BATCH_OPS = 500;
+
 // Agenda as OS em lote (tudo ou nada). Se alguma OS já estava em outro lote, sai dele (a parte dela é redividida).
 export async function dbScheduleLot(input: ScheduleLotInput): Promise<PlanningLot> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  // O lote é gravado num pacote só (tudo ou nada) e o banco aceita no máximo 500 operações por pacote:
+  // 1 do lote + 1 por OS + 1 por OS que sai de outro lote
+  const ops = 1 + input.orders.length + input.orders.filter((o) => o.lotId).length;
+  if (ops > MAX_BATCH_OPS) {
+    const max = MAX_BATCH_OPS - 1 - input.orders.filter((o) => o.lotId).length;
+    throw new Error(`Muitas OS de uma vez (${input.orders.length}). Programe no máximo ${Math.max(1, max)} OS por lote e repita para o restante.`);
+  }
   const db = dbInstance;
   const now = new Date().toISOString();
   const lotRef = doc(collection(db, 'planningLots'));

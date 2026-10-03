@@ -147,6 +147,9 @@ export default function TechnicianMobileView({
     }
     const userName = (userProfile.name || '').trim().toLowerCase();
     const userMatricula = (userProfile.matricula || '').trim().toLowerCase();
+    // OS com matrícula do técnico: vale a matrícula (o nome pode mudar no cadastro); OS antigas: pelo nome
+    const techMat = (o.assignedTechnicianMatricula || '').trim().toLowerCase();
+    if (techMat) return !!userMatricula && techMat === userMatricula;
     const tech = (o.assignedTechnician || '').trim().toLowerCase();
     return Boolean(
       tech &&
