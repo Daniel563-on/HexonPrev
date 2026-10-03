@@ -278,7 +278,8 @@ function olderMonthOrders(unit: string, month: string): Promise<ServiceOrder[]> 
   const key = `${unit}|${month}`;
   let p = olderMonths.get(key);
   if (!p) {
-    p = getDocs(query(collection(dbInstance!, 'serviceOrders'), where('unit', '==', unit), where('closedMonth', '==', month)))
+    // Mês antigo inteiro (milhares de OS em gerências grandes): operação em massa, liberada do disjuntor
+    p = runBulk(() => getDocs(query(collection(dbInstance!, 'serviceOrders'), where('unit', '==', unit), where('closedMonth', '==', month))))
       .then((snap) => snap.docs.filter((d) => !isMockOrLegacyId(d.id)).map((d) => toOrder(d.id, d.data())))
       .catch((err) => {
         console.warn('Falha ao buscar as OS fechadas do mês:', err);
