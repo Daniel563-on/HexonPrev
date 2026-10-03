@@ -300,6 +300,8 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P29 | Código sem uso: `OrdersCalendarPlanning.tsx`, `TemplateGeneratorTab.tsx`, `TemplateManagerTab.tsx` (~3.800 linhas), `dbGetServiceOrders` (lê a coleção inteira), `subscribeServiceOrders`, `forceRefetchAllData`, foto de evidência | LIMPEZA | Apagar |
 | P31 | ✅ (Pacote 1) "Reverter para Novo" no cartão da lista (Realização) e dentro da OS deixava matrícula e lote: OS seguia ligada ao técnico e ao pernoite. Agora todas as telas usam `dbRevertOrderToNew` (planning.ts) | MÉDIA | — |
 | P32 | Telas com "Refrigeração/Elétrica/Civil" como opção quando não há gerências cadastradas (formulário de ativo, importação, usuários) | BAIXA | Trocar por aviso "cadastre as gerências" |
+| P33 | **Índices revisados (03/10/2026):** 21 de 22 são usados; `histories: assetId` não é mais usado (o histórico paginado usa `assetId + date ↓`) → apagar. Buscas sem índice que provavelmente leem a coleção inteira: `materials` (unit), `workforce` (unit), `users` (gerencia) — carga diária de cada técnico — e `planningLots` (unit + periodStart) | MÉDIA | Criar 4 índices (gravações raras) e conferir no Query Insights |
+| P34 | Consulta de OS: `orderBy endDate` + filtros (unidade, status, técnico...) percorre o índice `endDate` de todas as unidades; filtro raro (ex.: Cancelada) pode ler muito | a medir | Medir no Query Insights; se pesar, exigir mês ou criar `unit + endDate ↓` |
 | P30 | Revisão superficial (não lidos linha a linha): Dashboard, editor de QR/PDF mapeado, importação de ativos, Controle de Usuários/perfis | — | Próxima rodada da auditoria |
 
 ## 6. Perguntas em aberto
@@ -357,7 +359,7 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 | assets | specs.PATRIMONIO | — |
 | assets | syncAt | — |
 | dispatchIndex | startDate | — |
-| histories | assetId | — |
+| histories | assetId | — (sem uso desde 03/10/2026: apagar) |
 | histories | assetId ↑ + date ↓ | — |
 | orderDeletions | syncAt | — |
 | serviceOrders | unitOpen | ✓ |
