@@ -1,8 +1,41 @@
 # Hexon Preventiva — Requisitos, análise e plano
 
 > Documento vivo. Guarda o que o sistema precisa ter, o que já existe, o que muda e a ordem das etapas.
-> Se o contexto da conversa se perder, este arquivo é a referência.
-> Última atualização: 27/09/2026.
+> **Se o contexto da conversa se perder, este arquivo é a referência.** Consultar antes de mexer em qualquer parte e atualizar ao fim de cada entrega.
+> Última atualização: 03/10/2026.
+
+---
+
+## 0. Guia rápido (ler primeiro)
+
+**Onde está o quê**
+| Item | Valor |
+|---|---|
+| Projeto do banco (Firebase) | `core-philosophy-lr5vm` (no Console aparece como "ai-builder-project") |
+| Banco (Firestore **Enterprise**) | `ai-studio-f520b7fc-edf5-4548-b2db-299670f2da9a` |
+| Projeto do site (Hosting) | `hexonpreventiva` → https://hexonpreventiva.web.app |
+| Repositório | `Daniel563-on/HexonPrev` — ramo de desenvolvimento do Claude: `claude/analise-codigo-npm-dev-oqclzj`; produção: `main` |
+| Conta de faturamento | "My Billing Account" (`01BE7A-702576-F19F68`), plano Blaze |
+
+**Como trabalhamos (fluxo de cada entrega)**
+1. Conversar e **desenhar antes de programar**; o usuário aprova. Nada inventado: o que não foi confirmado é dito como "não sei / não confirmei".
+2. Claude programa no ramo `claude/...`, roda `npx tsc --noEmit` e `npm run build`, faz commit e push.
+3. Claude entrega **trechos** (.md, até ~10–15 KB por arquivo; pares "Trocar / Por" ou arquivo inteiro) e **confere aplicando os trechos sobre o `main`** antes de enviar.
+4. O usuário aplica no **Google AI Studio** e faz commit no `main`. Claude confere com `git fetch origin main && git diff --stat -w origin/main -- src firestore.rules`.
+   - Diferenças antigas e inofensivas (ignorar): linhas em branco em `NewModelModal.tsx`, `JobRolesPanel.tsx`, `core.ts`; 1 comentário em `serviceOrders.ts`; `export * from './orderControl'` no `firebase.ts` do `main`; 2 linhas de comentário no `App.tsx`. O `firestore.rules` do `main` fica desatualizado: **vale o que está publicado no Console**.
+5. Deploy do site (usuário): `git pull` → `npm run build` → `firebase deploy` (só hosting) → botão **Forçar atualização** (Controle de Usuários → Sistema).
+6. **Regras do banco:** publicadas à mão no Console → Firestore → banco `ai-studio-…` → aba **Segurança** (Ctrl+A, colar o arquivo inteiro, conferir 1ª linha `rules_version = '2';` e última `}`, Publicar). Mandar o texto completo **no chat**, dentro de um bloco de código (copiar de arquivo falhava). Quando a regra nova depende do app novo, **publicar só depois do deploy**.
+7. **Índices:** criados à mão no Console → Índices (campos, ordem, "Esparso" quando indicado). Criar **antes** do deploy que usa o índice.
+8. **Cloud Functions:** republicadas pelo Cloud Shell:
+   ```
+   cd ~ && rm -rf HexonPrev && git clone --branch claude/analise-codigo-npm-dev-oqclzj --depth 1 https://github.com/Daniel563-on/HexonPrev.git
+   cd ~/HexonPrev/cloud-functions && (cd functions && npm install)
+   npx firebase-tools@latest deploy --only functions --project core-philosophy-lr5vm
+   gcloud run services add-iam-policy-binding resetuserpassword --region=us-central1 --project=core-philosophy-lr5vm --member="allUsers" --role="roles/run.invoker"
+   ```
+9. Testes: o usuário testa no site ou no preview com Super Admin, planejador (Carlos Miguel) e técnico. Medições de custo pelo Console → Uso ("Últimos 60 minutos", passando o mouse no minuto) e Query Insights.
+
+**Preferências do usuário:** respostas diretas e sem invenção; pedir instrução antes de decidir; sem janelas `alert/confirm` do navegador em telas novas (mensagens na própria tela); o banco será **zerado antes da produção** (ficam só os Super Admins).
 
 ---
 
@@ -57,78 +90,66 @@
 
 ---
 
-## 2. Comparação com o sistema atual
+## 2. Situação atual (03/10/2026)
 
-Legenda: ✅ já existe · 🟡 existe, mas precisa ajustar · 🔴 não existe
+Legenda: ✅ feito · 🟡 parcial · 🔴 não existe
 
 | Item | Situação | Observação |
 |---|---|---|
-| Unidades DOM, GMMR, GMEE e GMC | 🟡 | Existe cadastro de gerências, mas a relação com o "setor" das OS é feita por nomes antigos (HVAC, Elétrica...). É preciso padronizar pelos 4 códigos. |
-| Visão por unidade | 🟡 | Aplicada em várias telas, mas não em todas, e **não nas regras do banco**. Hoje um usuário poderia ler dados de outra unidade por fora da tela. |
-| Perfis fixos (Super Admin / Administrador / Profissional) | 🟡 | Os três existem com outros nomes (Administrador = Planejador, Profissional = Técnico). |
-| Criar novos perfis com permissões | 🔴 | Hoje só existem os 3 perfis fixos, e as regras do banco usam esses nomes. |
-| Matriz de permissões | 🟡 | Existe (abas e ações), mas só para os 3 perfis e sem "unidade que pode ver". |
-| Usuários e senhas | ✅ | Criar, alterar, inativar e redefinir senha. |
-| Base de ativos com importação | ✅ | Cópia local sincronizada, importação que grava só o que mudou, baixa automática. |
-| Base de materiais | 🔴 | Não existe. |
-| Base de efetivo (pessoas sem login) | 🔴 | Hoje só existem usuários com login. |
-| Cargo e valor da hora | 🟡 | O cargo é texto livre no usuário. A tela de custo homem-hora foi feita, mas **não foi aplicada**, e será refeita sobre o efetivo. |
-| Modelos com checklist | ✅ | Existe, com versões e histórico de alterações. |
-| Materiais previstos no modelo | 🔴 | |
-| Periodicidades | 🟡 | Hoje: Semanal, Quinzenal, Mensal, Trimestral, Semestral e Anual. Falta Diária; ver pergunta 1. |
-| Disparo por período com data de início e fim | ✅ | Existe (motor de preventivas + tela de disparo). |
-| Validação de datas × periodicidade | 🟡 | Parcial, precisa reforçar. |
-| Duplicidade | ✅ / 🟡 | Número da OS fixo (ativo + modelo + período) e registro de disparos. Revisar para cobrir todas as combinações da regra 10. |
-| Direcionar o lote para a unidade | 🟡 | Hoje vai pelo tipo do ativo e pelo setor; padronizar por unidade. |
-| Calendário de planejamento | ✅ | Com períodos, atrasadas, reversão em lote e bloqueio de datas passadas. |
-| Pernoite | 🔴 | |
-| Técnico vê só as dele | ✅ | Por nome do técnico atribuído. O ideal é passar a usar o código do usuário, não o nome. |
-| **Visualizar ≠ Iniciar** | 🔴 | **Hoje, abrir a OS já a coloca em "Em Execução"**, e o horário de início não é gravado. |
-| Horário de início e de conclusão automáticos | 🔴 / 🟡 | Só a hora da assinatura é gravada, e com o relógio do aparelho. |
-| Equipe habitual do técnico | 🔴 | |
-| Participantes da OS | 🔴 | |
-| Materiais usados na OS | 🔴 | |
-| Homem-hora automático | 🟢 | Etapa 7: tempo e homem-hora gravados na conclusão; custo em R$ calculado na OS para quem vê valores. |
-| Bloqueio após assinatura | 🟡 | A tela bloqueia, mas **o banco ainda aceitaria a alteração**. |
-| Concluída sai da lista do técnico | 🟡 | Hoje existe um contador ou aba de concluídas no app do técnico; ver pergunta 9. |
-| Não Executada automática | ✅ | Rotina diária no servidor e no app. Os horários serão revistos (00:00 / 00:30). |
-| Solicitações de corretiva | ✅ / 🟡 | Existe o painel (Pendente, Resolvido, Cancelado). Ajustar para "Abrir corretiva" / "Não abrir". |
-| Histórico de eventos por OS | 🔴 / 🟡 | Existe uma trilha de auditoria geral, mas não a linha do tempo de cada OS. |
-| Relatórios e Dashboard | 🟡 | Existem, com fechamento mensal. Faltam homem-hora, tempo, materiais, pernoite e produtividade. |
-| Exportação para Excel | 🟡 | Existe em algumas telas (Ativos, Consulta de OS). |
-| DOM: rondas por endereço | ✅ | Endereços como "Imóvel", ficha e QR público. |
+| Unidades DOM, GMMR, GMEE e GMC | ✅ | Unidade exata gravada em cada OS (`unit`); botão "Corrigir unidade das OS". |
+| Visão por unidade (telas e banco) | ✅ | Telas e regras do banco filtram pelas unidades do perfil. |
+| Perfis criados pelo Super Admin + permissões | ✅ | `profiles`; "acesso total" por marca interna (`kind: total`), não pelo nome. |
+| Usuários e senhas | ✅ | Redefinir senha pela Cloud Function `resetUserPassword` (só Super Admin ativo). |
+| Ativos | ✅ | Cópia local sincronizada (`assetSync`), importação, QR público. |
+| Efetivo, cargos e valor da hora | ✅ | Etapa 2. |
+| Materiais | ✅ | Etapa 3 (por gerência, sem estoque). |
+| Tipos de ativo, ciclo, modelos, disparo | ✅ | Etapa 4 (4a/4b/4c). |
+| Planejamento (lotes, pernoite, calendário) | ✅ | Etapa 5. Prazo de planejamento do Super Admin em tempo real (decisão 41). |
+| Execução (iniciar ≠ ver, offline, assinatura) | ✅ | Etapa 6 (6.1 e 6.2). |
+| Homem-hora e custo da OS | ✅ | Etapa 7. |
+| Controle do sistema (forçar atualização, manutenção) | ✅ | Decisão 35. |
+| Solicitações de corretiva (GLPI / justificativa) | ✅ | Etapa 8. |
+| Relatórios | 🔴 | **Etapa 9 adiada** a pedido do usuário. |
+| Prazos e horários (00:00 / fechamento 00:10) | ✅ | Etapa 10. |
+| Otimização de leituras e gravações | ✅ | Decisões 38, 39, 40. |
+| Proteção do banco | ✅ (1, 2, 3) | Etapa 4 (App Check) **não será feita** por ora; Etapa 5 (corte automático) e Monitoramento adiados. Ver seção 8. |
+| Histórico do ativo paginado (12 por página) | ✅ | Dentro do sistema e no QR público. |
+| Exportação Excel/PDF | 🟡 | Existe em algumas telas; completar na Etapa 9. |
+| Botão "zerar sistema" | 🔴 | Discutido e adiado. |
 
 ---
 
-## 3. Como os dados vão ficar gravados
+## 3. Como os dados ficam gravados (coleções do banco)
 
-Explicado sem termos técnicos: cada item abaixo é uma "gaveta" no banco.
-
-| Gaveta | Situação | Para que serve |
+| Coleção | Para que serve | Quem lê / grava (regras) |
 |---|---|---|
-| `units` / `managements` | ajustar | As 4 unidades com código fixo (DOM, GMMR, GMEE, GMC). |
-| `profiles` | nova | Perfis criados pelo Super Administrador, cada um com suas permissões e a unidade que pode ver. |
-| `users` | ajustar | Login. Passa a apontar para um **perfil** e para uma **pessoa do efetivo**. |
-| `workforce` (efetivo) | nova | Todas as pessoas, com nome, matrícula, cargo, unidade, ativo/inativo e se tem login. |
-| `laborRates` | nova, reaproveitada | Valor da hora e adicional de sábado de cada pessoa, com histórico. Só o Super Administrador lê. |
-| `materials` | nova | Base de materiais (código, descrição, unidade de medida). |
-| `technicianTeams` | nova | Equipe habitual de cada técnico. |
-| `templates` | ajustar | Materiais previstos e periodicidades novas. |
-| `serviceOrders` | ajustar | Novos campos: unidade, pernoite, `startedAt` e `completedAt` (hora do servidor), duração, participantes, materiais usados, homem-hora calculado e bloqueio. |
-| `serviceOrders/{id}/events` | nova | Linha do tempo da OS (quem fez o quê e quando). |
-| `monthlySummaries` | ajustar | Passa a guardar também homem-hora, tempo, materiais e pernoites. |
+| `serviceOrders` | OS (formato enxuto: modelo + versão + `answers`; campos de controle, decisão 39) | Equipe das unidades do perfil; técnico pelas próprias (`techOpen`/`techSol`); concluída imutável salvo exceções |
+| `templateVersions` | Versão congelada de cada modelo usada no disparo | Equipe lê; criar só; nunca alterar |
+| `orderStarts` | OS em execução agora (registro pequeno) | Técnico cria a própria; apaga ao concluir/desfazer |
+| `orderSignatures` | Assinatura (PNG em texto) fora da OS | Equipe; **máx. 150 KB** |
+| `orderDeletions` | Avisa os aparelhos para tirar OS excluída da cópia local | Super Admin grava |
+| `dispatchIndex` | Números das OS já disparadas por período (evita duplicar) | Admin / permissão "Disparar OS" |
+| `histories` | Histórico do ativo/endereço (QR público) | `get` público; listar: equipe ou **no máx. 13 por busca** |
+| `assets`, `assetDeletions`, `assetTypes`, `cycleSettings` | Ativos, exclusões, tipos/periodicidades, início do ciclo | `assets`: `get` público; listar só equipe (ou busca de 1 resultado) |
+| `addresses` | Endereços (rondas da DOM) | `get` público; listar só equipe |
+| `templates`, `qrTemplates` | Modelos de checklist e de etiqueta | Equipe |
+| `planningLots`, `planningDeadlines`, `costSettings` | Lotes do planejamento, prazo de planejamento, valor do pernoite | Ver regras |
+| `usualTeams`, `workforce`, `jobRoles`, `materials` | Equipe habitual, efetivo, cargos/valor-hora, materiais | Ver regras |
+| `users`, `authIndex`, `profiles`, `config`, `managements`, `units` | Cadastro, vínculo do login, perfis, permissões, gerências | Ver regras |
+| `monthlySummaries` | Resumos do mês (gravados pela nuvem) | Equipe lê |
+| `accessLogs` | Registro de acesso (inclui login com falha, feito antes de entrar) | Qualquer login grava, **só os campos do registro e textos curtos**; Super Admin lê |
+| `auditLogs` | Auditoria (inclui "Proteção do sistema" do disjuntor) | Equipe grava; Super Admin lê |
+| `appControl/status` | Forçar atualização e modo manutenção | Leitura pública; Super Admin grava |
 
-**Proteções no banco (não só na tela)**
-- Cada usuário só lê e grava dados da própria unidade.
-- Uma OS concluída e assinada não pode mais ser alterada pelo técnico.
-- O início e a conclusão usam o **horário do servidor**, para o relógio do celular não influenciar.
-- Valores de hora só o Super Administrador lê.
+O arquivo `firestore.rules` do ramo `claude/...` é a cópia mais nova das regras (a publicada no Console deve ser igual a ele).
 
 ---
 
 ## 4. Plano em etapas (cada uma só começa com aprovação)
 
 A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o fluxo da OS, por fim os números.
+
+Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 
 | # | Etapa | Conteúdo principal |
 |---|---|---|
@@ -145,7 +166,7 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
 
 ---
 
-## 5. Decisões tomadas (27/09/2026)
+## 5. Decisões tomadas (desde 27/09/2026)
 
 1. **Periodicidades:** Diária, Semanal, Quinzenal, Mensal, Trimestral, Semestral e Anual. Quem define é o Super Administrador.
 2. **Nomes dos perfis editáveis**, inclusive o do Super Administrador. O sistema não pode depender do nome: o perfil "acesso total" é identificado por uma marca interna, não pelo texto.
@@ -233,22 +254,127 @@ A ordem segue as dependências: primeiro quem é quem, depois as bases, depois o
     - Removida a conferência OS a OS do disparo (fica só o registro do disparo; o banco recusa regravar OS existente).
     - A OS ganha campos que só existem quando necessários (`src/db/orderControl.ts`): `unitOpen`, `openEnd`, `plannedEnd`, `techOpen`, `techSol`, `solAt`, `addrEnd`. Os índices passam a ser esparsos sobre eles; meta ~6 unidades por OS no disparo.
     - Regras: listagem também por `unitOpen` (gerência), `techOpen` e `techSol` (próprio técnico); OS concluída aceita mudar `techSol`, `solAt` e `addrEnd`.
-    - OS gravadas antes desta mudança não têm os campos (o banco será zerado antes da produção).
+    - OS gravadas antes desta mudança não têm os campos (o banco será zerado antes da produção). Consequência aceita: OS antigas **não aparecem para o técnico** (nem nas Solicitações dele) e a rotina das 00:00 não as trata.
 
-### Pendências de leitura e gravação
-| # | Item | O que foi visto | O que fazer |
+40. **Resultado medido (01/10/2026), depois de apagar 7 índices antigos:** disparo de 1.288 OS (GMMR, mar/27) = **~7,9 mil unidades de gravação (~6,1 por OS)**, ~2,65 mil leituras em tempo real (1.288 × 2 telas abertas) e ~3 mil leituras comuns (~2,3 por OS; **origem não confirmada** — o Query Insights não mostra consultas no disparo; suspeita: leituras das regras de segurança). Antes: ~13 por OS com os índices antigos e ~10 mil leituras da conferência.
+41. **Prazo de planejamento em tempo real (02/10/2026):** a tela de Preventivas escuta `planningDeadlines` (1 leitura por gerência ao abrir + 1 por mudança). Antes a cópia do navegador nunca atualizava (o planejador via o prazo antigo). A contagem regressiva é recalculada na tela a cada minuto, sem ler o banco.
+42. **Calendário vazio na 1ª entrada (01/10/2026):** a escuta das OS agora recomeça quando o login do Firebase fica pronto (`currentUser?.uid` nas dependências em `App.tsx`).
+43. **Preventivas mais leve (02/10/2026):** a comarca vem da própria OS (gravada no disparo); ativo procurado por código (mapa), não percorrendo a lista; listas e filtros recalculados só quando as OS ou filtros mudam.
+44. **Técnico sem OS antigas (03/10/2026):** a lista do técnico vem só da escuta em tempo real; a cópia antiga do navegador (`hexon_service_orders`), que aparecia quando a lista ficava vazia e travava a tela (OS no formato antigo), não é mais usada e é apagada do aparelho.
+45. **Histórico paginado (03/10/2026):** histórico do ativo/endereço em páginas de 12 (busca 13 para saber se há próxima), do mais recente para o mais antigo, dentro do sistema e no QR público (`src/db/historyPages.ts`, `src/components/assets/HistoryPager.tsx`). Índice `histories`: `assetId ↑ + date ↓`.
+46. **Assinatura medida (03/10/2026, quadro 400×160, traço 2,5 px, PNG):** curta ~7 KB, normal ~13 KB, longa ~43 KB, rabisco máximo ~124 KB. Limite nas regras: **150 KB** (nunca recusa assinatura real).
+47. **Regras de prazo mantidas (02/10/2026):** prazo do planejador expirado = planejador bloqueado (Super Admin nunca); OS não planejada fica "Aguardando" até o fim do período e então vira Não Executada; planejada não feita no dia vira Atrasada (técnico ainda executa até o fim do período). Sem registro de pedido/autorização para mudar o prazo.
+48. **Custo estimado em produção (02/10/2026):** 2 Super Admins, 6–9 planejadores, 180–200 técnicos, 10 mil ativos, ~1.000 materiais, 9.500 OS no disparo mensal, 500 rondas diárias (dias úteis) e 250 semanais (~21.600 OS/mês). Estimativa: **~US$ 0,50 a 2 por mês no 1º ano** (cresce com o armazenamento: ~0,2–0,4 GB/mês). Hosting, Functions e Scheduler não medidos (devem ficar no grátis).
+
+### Pendências (atualizado 03/10/2026)
+| # | Item | Situação | O que fazer |
 |---|---|---|---|
-| P1 | Rotina de prazos na nuvem (`dailyDeadlines`, 00:00) | Lê **todas** as OS abertas todo dia (3.922 em 29/09; em produção, ~9 a 25 mil/dia) | Ler só as que vencem: prazo do Super Admin vencido e Planejadas com janela do técnico vencida (campo novo com a data limite da janela + índice). Junto com a Etapa 10. Republicar pelo Cloud Shell. |
-| P2 | Checagem de prazos no navegador (`dbCheckAndExpirePlanningOrders`, perfil que vê todas as gerências, a cada 15 min) | Lê todas as OS abertas do banco | Remover (a tela já recalcula o status; quem grava é a rotina da nuvem). |
-| P3 | Pico de ~21 mil leituras no disparo de dez/26 (1.266 OS) | Causa não confirmada (hipóteses: P2 + conferência do disparo) | Confirmar no Query Insights e corrigir. |
-| P4 | Índices `solicitationStatus + updatedAt` e `addressId + endDate` | Não podem ser esparsos (toda OS tem `updatedAt`/`endDate`): +1 unidade cada por OS gravada | Avaliar mudar as consultas para permitir índice esparso. |
-| P5 | Painel do Super Admin | Mostra uma gerência por vez (cópia local por gerência) | Avaliar resumo com todas (ex.: resumos mensais já gravados pela nuvem). |
-| P6 | Arquivo principal do sistema (~2,9 MB) | Primeira abertura pesada | Carregar cada aba sob demanda. |
-| P7 | Registro de acessos (`accessLogs`) | Lê ~300 para mostrar 150 | Índice `timestamp` decrescente. |
-| P8 | Teste de volume | Medições até agora com 1.266 OS e modelo de 3 itens (~7,8 unidades por OS no disparo) | Disparar ~8.000 OS em teste, com modelos reais (até ~20 itens), medir disparo, programação, execução e leituras; ajustar; zerar o banco (manter só Super Admins). |
-| P9 | Fechamento mensal (`monthlyClosing`) | Roda dia 1º às 03:30 | Passar para 00:30 (Etapa 10). |
-| P10 | Carga diária para uso sem internet (Etapa 7) | Cada técnico lê, 1 vez por dia, a lista de materiais e as pessoas da sua gerência | Medir no teste de volume; se pesar, ler só o que mudou. |
+| P1 | Rotina de prazos lê todas as OS abertas | ✅ resolvido (decisão 38/39: `openEnd`, `plannedEnd`) | — |
+| P2 | Checagem de prazos no navegador | ✅ removida | — |
+| P3 | Leituras extras no disparo | 🟡 conferência removida (~10 mil → 0); sobram ~3 mil por 1.288 OS sem origem confirmada | Confirmar (suspeita: leituras das regras) |
+| P4 | Índices não esparsos de solicitações/vistorias | ✅ resolvido (`solAt`, `addrEnd`) | — |
+| P5 | Painel do Super Admin mostra uma gerência por vez | aberto | Avaliar resumo com todas |
+| P6 | Arquivo principal do site (~2,9 MB) | aberto | Carregar cada aba sob demanda |
+| P7 | Registro de acessos lê ~300 por abertura (Query Insights: 3 aberturas = 945 leituras) | aberto | Índice `timestamp` decrescente / paginação |
+| P8 | Teste de volume com modelos reais | aberto | Medir execução completa (iniciar → assinar) com algumas OS e trocar estimativas por medidas |
+| P9 | Fechamento mensal | ✅ 00:10 do dia 1º | — |
+| P10 | Carga diária do técnico para uso sem internet | aberto | Medir no teste de volume |
+| P11 | Consulta de `serviceOrders` no Query Insights: 54 execuções, ~252 entradas de índice lidas para 1 resultado | aberto | Abrir o detalhe no Query Insights para identificar |
+| P12 | "Atualizado em" dos modelos em UTC (3h a mais) | aberto | Corrigir para hora local |
+| P13 | "Reverter todas as atrasadas" grava 1 a 1 | aberto (está como operação em massa) | Opcional: gravar em pacote |
+| P14 | Botão OK do prazo de planejamento usa `alert()` do navegador | aberto | Trocar por mensagem na tela |
+| P15 | Lentidão restante do calendário com muitas OS | 🟡 melhorado (decisão 43) | Medir de novo com volume |
+| P16 | Botão "zerar sistema" (Super Admin) | adiado | Desenhar quando for zerar o banco |
+| P17 | Etapa 9 — Relatórios | adiada | — |
+| P18 | Proteção: Etapa 5 (corte automático) e aba Monitoramento | adiados (usuário não se sentiu confortável agora) | Ver seção 8 |
 
 ## 6. Perguntas em aberto
 
 (nenhuma no momento)
+
+---
+
+## 7. Custos e medições do banco (Firestore Enterprise)
+
+**Como cobra (página oficial, pesquisada em 02/10/2026):** grátis por dia **50 mil unidades de leitura**, **40 mil de gravação**, **50 mil leituras em tempo real**, 1 GiB guardado, 10 GiB/mês de saída. Acima disso: leitura **US$ 0,05 / milhão**, gravação **US$ 0,26 / milhão**, tempo real **US$ 0,30 / milhão**, armazenamento ~**US$ 0,24 / GiB / mês**. Leitura = blocos de 4 KB; gravação = blocos de 1 KB + 1 por entrada de índice. Índice não esparso inclui toda OS; esparso só as que têm o campo. Não confirmado: horário em que o grátis "vira" o dia e variação de preço por região.
+
+**Medido no sistema**
+| Situação | Resultado |
+|---|---|
+| Disparo (1.288 OS) | ~6,1 gravações/OS; tempo real = OS × telas de gestão abertas; ~2,3 leituras/OS (origem a confirmar) |
+| Assinatura | 7 a 43 KB (máx. possível ~124 KB) |
+| Gasto real até 02/10/2026 | R$ 0,00 (R$ 0,29 coberto por desconto/crédito) |
+
+---
+
+## 8. Proteção do banco contra erros, loops e abuso
+
+| Etapa | Situação | O que é |
+|---|---|---|
+| 1. Orçamento e alertas | ✅ 02/10/2026 | Google Cloud → Faturamento → "Budgets & caps": orçamento **"Hexon - alerta mensal"**, R$ 30/mês, e-mail em 50%, 90%, 100% (real) e 100% (previsto). Só avisa (atraso de horas), não bloqueia. Subir o valor com o tempo. |
+| 2. Disjuntor no app | ✅ 02–03/10/2026 | `src/db/guard.ts` (ver abaixo) |
+| 3. Regras mais firmes | ✅ 03/10/2026 | `get` público e listagem limitada em `assets`, `addresses`, `histories`; `accessLogs` com campos e tamanhos fixos; assinatura ≤ 150 KB |
+| 4. App Check | ❌ não será feito por ora | Usuário preferiu não arriscar (verificação falhando pode travar aparelhos). Risco restante: abuso externo lento (abrir 1 a 1). |
+| 5. Corte automático | adiado | Desenho aprovado em princípio: orçamento → Pub/Sub → função liga o modo manutenção **uma vez por mês** (se o Super Admin desligar, não religa no mesmo mês); corte sugerido R$ 100; nunca desligar o faturamento. Aviso ao Super Admin e lista de desarmes no cartão Sistema. |
+
+**Disjuntor (`src/db/guard.ts`)**
+- Todo arquivo de `src/db` importa o Firestore de `./guard` (exceto `core.ts`, `appControl.ts` e o próprio `guard.ts`). **Arquivo novo em `src/db` deve importar de `./guard`.**
+- Limites **por aparelho, por minuto**: 120 gravações (pacote = 1), 120 buscas, 40 escutas abertas, **30 mil documentos lidos do servidor** (soma das buscas + 1ª carga de cada escuta; cópia local e mudanças ao vivo não contam).
+- Desarmou: para de gravar e buscar naquele aparelho, aviso vermelho "Proteção do sistema ativada" (`GuardBanner.tsx`), 1 registro em `auditLogs` (ação "Proteção do sistema"). Recarregar a página volta ao normal.
+- **Operações em massa** (`runBulk`, não contam): disparo, gerador antigo, importações (ativos, materiais, efetivo, endereços), exclusão de ativos por setor, cancelamento de OS ao desativar ativos, correção de unidade, resumos do Dashboard, reverter atrasadas, excluir várias OS, 1ª carga completa (ativos e OS da gerência), meses antigos do calendário. **Função nova que grava ou lê muito de uma vez deve ser marcada com `runBulk`.**
+- Riscos restantes aceitos: loop lento abaixo dos limites (centavos/dia; o alerta avisa); abuso externo lento (sem App Check).
+
+---
+
+## 9. Índices do banco (20, conferidos em 03/10/2026)
+
+| Coleção | Campos | Esparso |
+|---|---|---|
+| assetDeletions | syncAt | — |
+| assets | code | — |
+| assets | specs.PATRIMONIO | — |
+| assets | syncAt | — |
+| dispatchIndex | startDate | — |
+| histories | assetId | — |
+| histories | assetId ↑ + date ↓ | — |
+| orderDeletions | syncAt | — |
+| serviceOrders | unitOpen | ✓ |
+| serviceOrders | plannedEnd | ✓ |
+| serviceOrders | techOpen | ✓ |
+| serviceOrders | closedMonth | ✓ |
+| serviceOrders | techSol | ✓ |
+| serviceOrders | addressId + addrEnd ↓ | ✓ |
+| serviceOrders | endDate | — |
+| serviceOrders | assignedTechnicianMatricula | ✓ |
+| serviceOrders | unit + syncAt | — |
+| serviceOrders | assetId | — |
+| serviceOrders | openEnd | ✓ |
+| serviceOrders | solicitationStatus + solAt ↓ | ✓ |
+
+Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `unit+assignedTechnicianMatricula+status`, `unit+assignedTechnicianMatricula+solicitationStatus`, `solicitationStatus+updatedAt`, `addressId+endDate`. A considerar no futuro: apagar `histories: assetId` se nada mais usar.
+
+---
+
+## 10. Mapa técnico (onde fica cada coisa no código)
+
+| Arquivo | Papel |
+|---|---|
+| `src/db/guard.ts` | Disjuntor (seção 8) |
+| `src/db/orderControl.ts` | Campos de controle da OS (`withOrderControl`, `orderControlUpdate`) |
+| `src/db/orderSync.ts` | Cópia local das OS por gerência (IndexedDB + escuta por `syncAt`); meses antigos sob demanda |
+| `src/db/assetSync.ts` | Cópia local dos ativos |
+| `src/db/serviceOrders.ts` | Gravar OS, escutas do técnico (`techOpen`) e solicitações (`techSol`), prazos de planejamento em tempo real, correção de unidade |
+| `src/db/checklistVersions.ts` | Versões congeladas e montagem do checklist (`hydrateOrders`) |
+| `src/db/orderStarts.ts` | Iniciar/desfazer/concluir (offline) |
+| `src/db/dispatch.ts`, `dispatchIndex.ts` | Disparo das OS |
+| `src/db/historyPages.ts` | Histórico em páginas de 12 |
+| `src/db/appControl.ts` | Forçar atualização e manutenção (fora do disjuntor de propósito) |
+| `src/db/manHours.ts` | Tempo, homem-hora e custo da OS |
+| `src/db/solicitations.ts` | Decisões das solicitações de corretiva |
+| `src/components/GuardBanner.tsx`, `AppUpdateBanner.tsx`, `MaintenanceScreen.tsx` | Avisos globais |
+| `src/components/orders/planning/PlanningBoard.tsx` | Calendário do planejador |
+| `src/components/mobile/TechnicianMobileView.tsx` | App do técnico |
+| `src/components/assets/HistoryPager.tsx` | Paginação do histórico |
+| `cloud-functions/functions/index.js` | `resetUserPassword` (chamada, só Super Admin), `dailyDeadlines` (00:00, Brasília), `monthlyClosing` (00:10 do dia 1º) |
+| `firestore.rules` | Regras (publicar no Console) |
+
