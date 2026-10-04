@@ -706,3 +706,100 @@ export interface SavedQrTemplate {
 }
 
 
+
+// ===================== OS (Hexon 2.0): corretiva, layout, acompanhamento =====================
+// "OS" = Ordens de Serviço do sistema principal. Ficam na coleção "workOrders" (as preventivas seguem em "serviceOrders").
+
+export type OsFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox';
+export type OsStage = 'criacao' | 'execucao';
+
+// Pergunta livre do modelo
+export interface OsTemplateField {
+  id: string;
+  label: string;
+  type: OsFieldType;
+  required: boolean;
+  options?: string[]; // lista (uma opção)
+  stage: OsStage;
+  order: number;
+}
+
+// Campos do sistema: o Hexon sabe para que servem (filtros, atribuição, históricos)
+export type OsSystemKey =
+  | 'gerencia' | 'enderecoExecucao' | 'enderecoRequerente' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
+  | 'tecnico' | 'equipe' | 'responsavel' | 'pendencia' | 'materiais' | 'homemHora';
+
+export interface OsSystemField {
+  key: OsSystemKey;
+  label: string;
+  enabled: boolean;
+  required: boolean;
+  options?: string[]; // intervenção
+  order: number;      // ordem junto com as perguntas da mesma etapa
+}
+
+export type OsSignatureRole = 'tecnico' | 'cliente' | 'engenheiro' | 'gerente';
+
+export interface OsTemplate {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  fields: OsTemplateField[];
+  systemFields: OsSystemField[];
+  allowedProfileIds: string[]; // perfis que podem emitir com o modelo (vazio = todos com "Emitir OS")
+  signatures: OsSignatureRole[]; // assinaturas exigidas, na ordem (usadas na execução — Fase 5)
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type WorkOrderStatus = 'Nova' | 'Em andamento' | 'Pendente' | 'Aguardando assinaturas' | 'Concluída' | 'Cancelada';
+
+export interface WorkOrderEvent {
+  at: string;   // ISO
+  by: string;   // nome
+  action: string;
+  note?: string;
+}
+
+export interface WorkOrder {
+  id: string;            // = number, ex.: "OS-2026000001"
+  number: string;
+  year: number;
+  seq: number;
+  templateId: string;
+  templateName: string;
+  templateVersion: number;
+  // Cópia do modelo na emissão (as OS antigas não mudam quando o modelo muda)
+  templateFields: OsTemplateField[];
+  templateSystemFields: OsSystemField[];
+  templateSignatures: OsSignatureRole[];
+  answers: Record<string, any>; // id da pergunta -> resposta
+  // Campos do sistema (copiados das respostas para filtros e históricos)
+  unit: string;                  // gerência responsável
+  execAddressId: string;
+  execAddressText: string;
+  craai?: string;
+  comarca?: string;
+  reqAddressId?: string;
+  reqAddressText?: string;
+  intervencao?: string;
+  glpi?: string;
+  assetCode?: string;            // como foi digitado/colado
+  assetId?: string;              // quando o código existe na Gestão de Ativos
+  assetName?: string;
+  deadline?: string;             // prazo (AAAA-MM-DD)
+  status: WorkOrderStatus;
+  assignedTechnicianMatricula?: string;
+  assignedTechnicianName?: string;
+  assignedAt?: any;              // hora do servidor (o homem-hora conta a partir daqui)
+  createdAt: string;
+  createdByName: string;
+  createdByMatricula: string;
+  updatedAt: string;
+  timeline: WorkOrderEvent[];
+}
+
+
+

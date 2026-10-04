@@ -95,11 +95,10 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_view: {
     id: 'os_view',
     name: 'Ver OS',
-    description: 'Ordens de Serviço › Corretivas, Layout e Acompanhamento.',
+    description: 'Ordens de Serviço › Corretivas, Layout e Acompanhamento (lista das gerências do perfil).',
     category: 'Abas',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false },
-    soon: 'Fase 6'
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
   os_create: {
     id: 'os_create',
@@ -107,8 +106,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     description: 'Abrir OS de corretiva, layout e acompanhamento.',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 4'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   os_assign: {
     id: 'os_assign',
@@ -116,8 +114,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     description: 'Escolher quem executa a OS.',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 4'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   os_edit: {
     id: 'os_edit',
@@ -152,8 +149,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     description: 'Modelos usados em Emitir OS.',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 4'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   os_export: {
     id: 'os_export',
@@ -241,7 +237,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
 // Ordem das áreas na tela de perfis
 export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: string }[] = [
   { id: 'preventiva', label: 'Preventiva / PMOC' },
-  { id: 'os', label: 'OS (corretiva, layout e acompanhamento)', hint: 'Módulos em construção: as permissões já podem ser marcadas e passam a valer quando cada módulo ficar pronto.' },
+  { id: 'os', label: 'OS (corretiva, layout e acompanhamento)', hint: 'As marcadas "em construção" passam a valer quando o módulo ficar pronto.' },
   { id: 'solicitacoes', label: 'Solicitações' },
   { id: 'cadastros', label: 'Cadastros' },
   { id: 'valores', label: 'Valores' }
