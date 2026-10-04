@@ -1,0 +1,199 @@
+<title>Hexon 2.0 Fase 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: planta do sistema — menu desenhado à esquerda, ficha de cada página à direita; uma coluna no celular */
+:root{
+  --bg:#f3f5f7; --paper:#ffffff; --ink:#15202b; --muted:#5b6876; --line:#d9dfe5;
+  --navy:#16263a; --navy-ink:#dfe7f0; --navy-muted:#8fa2b6;
+  --accent:#1f6fb2;
+  --keep:#5b6876; --keep-bg:#e8ecf0;
+  --up:#1f6fb2; --up-bg:#e1eefa;
+  --new:#1d7a4f; --new-bg:#dff3e8;
+  --ask:#9a6100; --ask-bg:#fbefd6;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Public Sans","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(26px,4vw,36px);font-weight:800}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:10px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.tag{font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap;line-height:1.5}
+.t-keep{color:var(--keep);background:var(--keep-bg)}
+.t-up{color:var(--up);background:var(--up-bg)}
+.t-new{color:var(--new);background:var(--new-bg)}
+.t-ask{color:var(--ask);background:var(--ask-bg)}
+section{display:flex;flex-direction:column;gap:14px}
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.principles div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.principles b{font-family:var(--f-display);font-size:15px}
+.principles p{font-size:14px;color:var(--muted)}
+
+.plan{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:760px){.plan{grid-template-columns:1fr}}
+nav.mock{background:var(--navy);color:var(--navy-ink);border-radius:10px;padding:16px 12px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:760px){nav.mock{position:static}}
+.mock .brand{font-family:var(--f-display);font-weight:800;letter-spacing:.22em;font-size:15px;padding:0 8px 12px}
+.mock .grp{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--navy-muted);padding:12px 8px 4px}
+.mock a{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--navy-ink);text-decoration:none;font-size:13.5px;padding:6px 8px;border-radius:6px}
+.mock a:hover,.mock a:focus-visible{background:rgba(255,255,255,.08);outline:none}
+.mock a i{width:8px;height:8px;border-radius:50%;flex:none}
+.dot-keep{background:#9aa8b6}.dot-up{background:#6aaee8}.dot-new{background:#5fcf93}.dot-ask{background:#f0c46a}
+
+.pages{display:flex;flex-direction:column;gap:14px;min-width:0}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.page-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between}
+.page-head small{color:var(--muted);font-size:13px}
+.tabs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.tabs li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tabs li:last-child{border-bottom:0}
+.tabs .nm{font-weight:600}
+.tabs .ds{grid-column:1 / -1;color:var(--muted);font-size:13.5px;max-width:75ch}
+.note{font-size:13.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+.q{font-size:13.5px;background:var(--ask-bg);color:var(--ink);border-radius:6px;padding:8px 10px}
+.q b{color:var(--ask)}
+
+.twocol{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;min-width:640px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.c{text-align:center}
+.yes{color:var(--new);font-weight:700}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+ol.steps li{max-width:75ch}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+.mock .sub{padding-left:22px;font-size:12.5px;color:var(--navy-muted)}
+.mock .btn{margin:2px 8px 6px 22px;background:var(--accent);color:#fff;justify-content:center;font-weight:600;font-size:12.5px}
+.src{font-size:12px;color:var(--muted)}
+.screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.screen{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.screen .bar{background:var(--navy);color:var(--navy-ink);font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;padding:8px 12px;text-transform:uppercase}
+.screen .body{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mini div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.mini b{font-family:var(--f-display);font-size:20px;font-variant-numeric:tabular-nums}
+.mini span{font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.cmp{width:100%;min-width:560px}
+.choice{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.choice div{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--paper);display:flex;flex-direction:column;gap:6px;min-width:0}
+.rec{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+.perm{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line)}
+.perm label{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:4px 10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.perm label span.d{grid-column:2 / -1;color:var(--muted);font-size:12.5px}
+.perm input{margin-top:3px}
+.area{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.area h3{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.areas{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.warn{border:1px solid var(--ask);background:var(--ask-bg);border-radius:10px;padding:12px 14px;font-size:14px}
+.mockwin{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--paper)}
+.mockwin .t{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.mockwin .t span{font-size:12.5px;font-weight:700;padding:4px 10px;border-radius:6px;color:var(--muted)}
+.mockwin .t span.on{background:var(--accent);color:#fff}
+.mockwin .r{padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.mockwin .r:last-child{border-bottom:0}
+.meter{height:10px;border-radius:99px;background:var(--keep-bg);overflow:hidden}
+.meter i{display:block;height:100%;width:72%;background:#d79a17}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Desenho para aprovação · Fase 3 de 12</span>
+  <h1>Fase 3: Gestão de Ativos</h1>
+  <p class="lede">A Gestão de Ativos continua a da Preventiva. Ganha duas coisas: o histórico separado em Preventivas e Corretivas, e a "saúde do ativo".</p>
+  <div class="warn"><b>Etapa de junção.</b> Da <b>Preventiva</b>: a tela de ativos inteira (cadastro, importação, QR, página externa, histórico com páginas). Do <b>principal</b>: a saúde do ativo. Juntos: o histórico com as duas abas.</div>
+</header>
+
+<section>
+  <h2>1. Histórico em duas abas</h2>
+  <div class="twocol">
+    <div class="mockwin">
+      <div class="t"><span class="on">Preventivas</span><span>Corretivas</span></div>
+      <div class="r"><span>14/09/2026 · Preventiva Mensal · Aprovado</span><span class="src">João</span></div>
+      <div class="r"><span>12/08/2026 · Preventiva Mensal · Com ressalvas</span><span class="src">João</span></div>
+      <div class="r"><span class="src">‹ Anterior · Página 1 · Próxima ›</span></div>
+    </div>
+    <div class="box">
+      <p><b>Onde aparece:</b> no detalhe do ativo (Gestão de Ativos) e na página externa que abre pelo QR.</p>
+      <p><b>Preventivas:</b> exatamente o histórico de hoje, 12 por página.</p>
+      <p><b>Corretivas:</b> nasce com o aviso "As corretivas aparecem aqui quando o módulo de OS estiver pronto". Quando as OS existirem (Fase 5), cada OS concluída daquele ativo vira uma linha aqui, também com 12 por página.</p>
+      <p class="src">Nesta fase não mexe no banco: as corretivas vão ficar guardadas separadas das preventivas, então o histórico que já existe não precisa ser regravado.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>2. Saúde do ativo</h2>
+  <div class="twocol">
+    <div class="box">
+      <h3>Como aparece</h3>
+      <div class="meter"><i></i></div>
+      <p><b>72% · Atenção</b> — gasto em manutenção: R$ 4.200,00 de um ativo de R$ 15.000,00</p>
+      <p class="src">Exemplo. Verde acima de 89%, amarelo de 51% a 89%, vermelho até 50%.</p>
+      <p class="src">Conta: 100 − (gasto em manutenção ÷ valor do ativo × 100). Ajuda a decidir entre consertar e trocar.</p>
+    </div>
+    <div class="box">
+      <h3>Como funciona</h3>
+      <p>No detalhe do ativo, botão <b>"Ver saúde do ativo"</b>. Só ao clicar o sistema soma os gastos daquele ativo (o banco só é lido quando alguém pede).</p>
+      <p>Só aparece para quem tem <b>"Ver valores em R$"</b>. A página externa do QR <b>não</b> mostra saúde nem valores.</p>
+      <p>O <b>valor do ativo</b> fica guardado à parte, legível só por quem pode ver valores (hoje qualquer pessoa com o link do QR consegue ler os dados do ativo).</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Perguntas</h2>
+  <div class="box">
+    <ol class="steps">
+      <li><b>Valor do ativo: de onde vem?</b> (a) digitado na tela do ativo; (b) uma coluna da planilha de importação; (c) os dois. A planilha de vocês já tem o valor de compra?</li>
+      <li><b>O que conta como gasto?</b> O principal soma só materiais. Recomendo somar tudo que o sistema já calcula: homem-hora, materiais e pernoite. Depois entram as corretivas.</li>
+      <li><b>Quem vê a saúde:</b> só quem tem "Ver valores em R$". Concorda?</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2>O que precisa ser publicado</h2>
+  <div class="box">
+    <p>Uma regra nova no banco, para guardar o valor do ativo protegido. Talvez um índice, se a soma dos gastos precisar (eu confirmo ao programar e aviso antes).</p>
+  </div>
+</section>
+
+</div>
