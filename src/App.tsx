@@ -3,6 +3,8 @@ import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import HomeView from './components/HomeView';
 import SettingsView from './components/SettingsView';
+import EmitOsView from './components/os/EmitOsView';
+import OrdersHubView from './components/os/OrdersHubView';
 import AssetsView from './components/AssetsView';
 import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
@@ -395,9 +397,11 @@ export default function App() {
 
   // Unidades que o usuário enxerga dentro do sistema (null = todas), conforme o perfil de acesso
   const visibleUnits = useMemo(() => userVisibleUnits(userProfile, accessProfiles), [userProfile, accessProfiles]);
+  // OS: gerências que o usuário pode escolher (quem vê todas: todas as cadastradas)
 
   // Quem vê todas as gerências trabalha com uma por vez (escolhida no topo da tela)
   const [managementNames, setManagementNames] = useState<string[]>([]);
+  const osUnitOptions = visibleUnits === null ? managementNames : visibleUnits;
   const [adminUnit, setAdminUnit] = useState<string>(() => {
     try {
       return localStorage.getItem('hexon_admin_unit') || '';
@@ -488,13 +492,16 @@ export default function App() {
     if (!userProfile) return false;
     if (userProfile.perfil === 'Super Administrador') return true;
     if (tab === 'home') return true;
+    // Ordens de Serviço: OS (corretiva, layout, acompanhamento) e/ou execução das preventivas
+    if (tab === 'service-orders') return userHasActionPermission('os_view') || userHasActionPermission('view_service_orders');
+    // Emitir OS (GLPI): quem emite ou quem edita os modelos
+    if (tab === 'os-emit') return userHasActionPermission('os_create') || userHasActionPermission('os_templates');
     // Só Super Administrador
     if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses' || tab === 'settings') return false;
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
-    if (tab === 'service-orders') permId = 'view_service_orders';
-    else if (tab === 'pmoc-preventivas') permId = 'view_pmoc_planning';
+    if (tab === 'pmoc-preventivas') permId = 'view_pmoc_planning';
     else if (tab === 'assets') permId = 'view_assets';
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
@@ -755,6 +762,12 @@ export default function App() {
 
   const handleNavigateToOS = (osId?: string) => {
     setHighlightedOSId(osId || null);
+    // Preventiva: abre Ordens de Serviço já na parte das preventivas
+    try {
+      localStorage.setItem('hexon_orders_section', 'preventivas');
+    } catch {
+      /* ignora */
+    }
     setCurrentTab('service-orders');
   };
 
@@ -765,6 +778,8 @@ export default function App() {
         return 'Início';
       case 'service-orders':
         return 'Ordens de Serviço';
+      case 'os-emit':
+        return 'Emitir OS (GLPI)';
       case 'pmoc-preventivas':
         return 'PMOC — Preventivas';
       case 'assets':
@@ -1066,7 +1081,7 @@ export default function App() {
               userProfile={userProfile}
               orders={filteredOrders}
               pendingSolicitationsCount={pendingSolicitationOrders.length}
-              canSeeOrders={userHasTabPermission('service-orders')}
+              canSeeOrders={userHasActionPermission('view_service_orders')}
               canSeeSolicitations={userHasTabPermission('solicitations')}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
               onNavigate={setCurrentTab}
@@ -1074,18 +1089,38 @@ export default function App() {
           )}
 
           {currentTab === 'service-orders' && (
-            <ServiceOrdersView 
-              section="execucao"
-              orders={filteredOrders}
-              onReload={loadServiceOrders}
-              onViewedMonthChange={setOrdersMonth}
-              highlightOSId={highlightedOSId}
+            <OrdersHubView
               userProfile={userProfile}
-              visibleUnits={visibleUnits}
-              userHasActionPermission={userHasActionPermission}
-              activeUnit={visibleUnits === null ? adminUnit : undefined}
-              unitOptions={visibleUnits === null ? managementNames : undefined}
-              onActiveUnitChange={changeAdminUnit}
+              unitOptions={osUnitOptions}
+              canSeeOs={userHasActionPermission('os_view')}
+              canSeePreventives={userHasActionPermission('view_service_orders')}
+              canAssign={userHasActionPermission('os_assign')}
+              preventives={
+                <ServiceOrdersView 
+                  section="execucao"
+                  orders={filteredOrders}
+                  onReload={loadServiceOrders}
+                  onViewedMonthChange={setOrdersMonth}
+                  highlightOSId={highlightedOSId}
+                  userProfile={userProfile}
+                  visibleUnits={visibleUnits}
+                  userHasActionPermission={userHasActionPermission}
+                  activeUnit={visibleUnits === null ? adminUnit : undefined}
+                  unitOptions={visibleUnits === null ? managementNames : undefined}
+                  onActiveUnitChange={changeAdminUnit}
+                />
+              }
+            />
+          )}
+
+          {currentTab === 'os-emit' && (
+            <EmitOsView
+              userProfile={userProfile}
+              userProfileId={resolveUserProfile(userProfile, accessProfiles)?.id}
+              unitOptions={osUnitOptions}
+              canEmit={userHasActionPermission('os_create')}
+              canAssign={userHasActionPermission('os_assign')}
+              canEditTemplates={userHasActionPermission('os_templates')}
             />
           )}
 
