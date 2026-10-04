@@ -123,7 +123,10 @@ export default function PlanningBoard({
   // Prazo de planejamento da gerência (só vale para perfis limitados a unidades)
   const deadline = deadlines.find((d) => d.id === unit);
   const countdown = deadline && deadline.expiresAt && deadline.expiresAt !== 'none' ? getCountdownText(deadline.expiresAt) : null;
-  const locked = visibleUnits !== null && !!countdown?.isExpired;
+  // Prazo do planejamento vencido, ou perfil sem "Planejar preventivas": só consulta
+  const deadlineLocked = visibleUnits !== null && !!countdown?.isExpired;
+  const canPlan = !userHasActionPermission || userHasActionPermission('plan_orders');
+  const locked = deadlineLocked || !canPlan;
 
   const passFilter = (o: ServiceOrder) => statusFilter.length === 0 || statusFilter.includes(o.status);
   const novoInWindow = (o: ServiceOrder, s: string, e: string) =>
@@ -269,10 +272,16 @@ export default function PlanningBoard({
 
       {/* Prazo de planejamento */}
       {countdown && visibleUnits !== null && (
-        <div className={`px-3 py-2 rounded-lg border text-[11px] font-bold ${locked ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-          {locked
+        <div className={`px-3 py-2 rounded-lg border text-[11px] font-bold ${deadlineLocked ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+          {deadlineLocked
             ? `Prazo de planejamento da ${unit} expirado: só consulta. Peça ao Super Administrador para estender o prazo.`
             : `Prazo de planejamento da ${unit}: ${countdown.text}`}
+        </div>
+      )}
+
+      {!canPlan && (
+        <div className="px-3 py-2 rounded-lg border text-[11px] font-bold bg-slate-50 border-slate-200 text-slate-600">
+          Seu perfil só consulta o planejamento (sem a permissão "Planejar preventivas").
         </div>
       )}
 
@@ -355,8 +364,10 @@ export default function PlanningBoard({
                       <tr key={t.id} className="border-t border-slate-100">
                         <td className="p-1.5 font-bold text-slate-700 whitespace-nowrap">
                           {t.name}
-                          <button type="button" onClick={() => setTeamOf(t)} title="Equipe habitual do técnico"
-                            className="ml-2 h-6 px-2 rounded-md border border-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer">Equipe</button>
+                          {canPlan && (
+                            <button type="button" onClick={() => setTeamOf(t)} title="Equipe habitual do técnico"
+                              className="ml-2 h-6 px-2 rounded-md border border-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer">Equipe</button>
+                          )}
                         </td>
                         {week.map((d) => {
                           const n = unitOrders.filter((o) => passFilter(o) && scheduledIn(o, d, d) && isOrderOfTechnician(o, t)).length;

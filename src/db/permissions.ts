@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc } from './guard';
-import { SystemPermission } from '../types';
+import { PermissionArea, SystemPermission } from '../types';
 import {
   firebaseActive,
   dbInstance,
@@ -8,140 +8,250 @@ import {
   checkQuotaException
 } from './core';
 
+// CATÁLOGO DE PERMISSÕES (Hexon 2.0, Fase 2), organizado por área na tela de perfis.
+// Os ids antigos continuam os mesmos (as regras do banco usam view_materials, manage_materials, manage_templates,
+// view_costs, dispatch_orders e delete_templates). "soon" = módulo ainda em construção: aparece na tela, sem efeito.
 export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
-  view_dashboard: {
-    id: 'view_dashboard',
-    name: 'Visualizar Dashboard',
-    description: 'Acesso à aba principal com indicadores de desempenho e gráficos.',
-    category: 'Abas',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
-  },
   view_service_orders: {
     id: 'view_service_orders',
-    name: 'Visualizar Ordens de Serviço',
-    description: 'Acesso à listagem e detalhes das Ordens de Serviço (preventivas e corretivas).',
+    name: 'Ver execução das preventivas',
+    description: 'Ordens de Serviço › Preventivas: lista para abrir, executar e assinar.',
     category: 'Abas',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
-  view_assets: {
-    id: 'view_assets',
-    name: 'Visualizar Ativos',
-    description: 'Acesso ao inventário e ficha técnica de ativos e equipamentos.',
+  view_pmoc_planning: {
+    id: 'view_pmoc_planning',
+    name: 'Ver planejamento das preventivas',
+    description: 'PMOC › Preventivas: calendário de planejamento e consulta (só olhar).',
     category: 'Abas',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
-  },
-  view_templates: {
-    id: 'view_templates',
-    name: 'Visualizar Modelos e Protocolos',
-    description: 'Acesso às diretrizes e planos de preventivas cadastradas.',
-    category: 'Abas',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
-  view_solicitations: {
-    id: 'view_solicitations',
-    name: 'Visualizar Solicitações',
-    description: 'Visualizar chamados e demandas enviadas pelo cliente.',
-    category: 'Abas',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
-  },
-  view_materials: {
-    id: 'view_materials',
-    name: 'Visualizar Materiais',
-    description: 'Acesso à aba Materiais (lista de materiais das gerências do perfil).',
-    category: 'Abas',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
-  },
-  manage_materials: {
-    id: 'manage_materials',
-    name: 'Cadastrar e Importar Materiais',
-    description: 'Cadastrar, editar, alterar o valor e importar a planilha de materiais das gerências do perfil.',
+  plan_orders: {
+    id: 'plan_orders',
+    name: 'Planejar preventivas',
+    description: 'Alterar o planejamento: programar lotes, escolher técnico, remarcar, pernoite, equipe habitual e voltar atrasadas para Novo.',
     category: 'Ações',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
-  },
-  create_asset: {
-    id: 'create_asset',
-    name: 'Adicionar e Editar Ativos',
-    description: 'Cadastrar novos equipamentos ou atualizar as especificações de ativos existentes.',
-    category: 'Ações',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
-  },
-  delete_asset: {
-    id: 'delete_asset',
-    name: 'Excluir Ativos',
-    description: 'Remover definitivamente ativos do acervo e históricos.',
-    category: 'Ações',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
-  },
-  import_assets: {
-    id: 'import_assets',
-    name: 'Importar Planilha XLSX de Ativos',
-    description: 'Gerar importação em massa de novos ativos do sistema.',
-    category: 'Ações',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
-  },
-  create_order: {
-    id: 'create_order',
-    name: 'Abertura de Novas O.S.',
-    description: 'Registrar novas preventivas ou corretivas emergenciais de ativos.',
-    category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
   execute_order: {
     id: 'execute_order',
-    name: 'Executar Checklists de O.S.',
-    description: 'Preencher status das tarefas de manutenção em campo e registrar observações.',
+    name: 'Executar checklist das preventivas',
+    description: 'Iniciar a preventiva e preencher o checklist.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
   sign_order: {
     id: 'sign_order',
-    name: 'Assinar e Encerrar O.S.',
-    description: 'Colher assinatura do cliente e validar a entrega de preventivas e corretivas.',
+    name: 'Assinar e concluir preventivas',
+    description: 'Colher a assinatura e concluir a preventiva.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
   delete_order: {
     id: 'delete_order',
-    name: 'Excluir / Cancelar O.S.',
-    description: 'Excluir ordens e históricos de intervenção técnica.',
+    name: 'Excluir / cancelar preventivas',
+    description: 'Excluir preventivas e o histórico delas.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  view_templates: {
+    id: 'view_templates',
+    name: 'Ver Modelos e Protocolos',
+    description: 'PMOC › Modelos e Protocolos: tipos e ciclo, modelos e disparo (só olhar).',
+    category: 'Abas',
+    area: 'preventiva',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
   manage_templates: {
     id: 'manage_templates',
-    name: 'Configurar Modelos de Cronograma',
-    description: 'Criar e editar roteiros e frequências de preventivas.',
+    name: 'Criar e editar modelos de preventiva',
+    description: 'Criar e editar modelos, checklists e periodicidades.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
-  view_costs: {
-    id: 'view_costs',
-    name: 'Visualizar Valores (R$)',
-    description: 'Ver valores em reais: pernoite, homem-hora e materiais (telas e relatórios).',
+  delete_templates: {
+    id: 'delete_templates',
+    name: 'Excluir modelos de preventiva',
+    description: 'Excluir modelos de preventiva e de vistoria.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   dispatch_orders: {
     id: 'dispatch_orders',
-    name: 'Disparar OS',
-    description: 'Gerar as OS do mês (preventivas e vistorias) a partir dos modelos, nas gerências do perfil.',
+    name: 'Disparar preventivas do mês',
+    description: 'Gerar as preventivas e vistorias do mês a partir dos modelos, nas gerências do perfil.',
     category: 'Ações',
+    area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
-  delete_templates: {
-    id: 'delete_templates',
-    name: 'Excluir Modelos',
-    description: 'Excluir modelos de preventiva e de vistoria.',
+  os_view: {
+    id: 'os_view',
+    name: 'Ver OS',
+    description: 'Ordens de Serviço › Corretivas, Layout e Acompanhamento.',
+    category: 'Abas',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false },
+    soon: 'Fase 6'
+  },
+  os_create: {
+    id: 'os_create',
+    name: 'Emitir OS (GLPI)',
+    description: 'Abrir OS de corretiva, layout e acompanhamento.',
     category: 'Ações',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 4'
+  },
+  os_assign: {
+    id: 'os_assign',
+    name: 'Atribuir técnico / equipe nas OS',
+    description: 'Escolher quem executa a OS.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 4'
+  },
+  os_edit: {
+    id: 'os_edit',
+    name: 'Editar OS',
+    description: 'Alterar os dados de uma OS aberta.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 5'
+  },
+  os_cancel: {
+    id: 'os_cancel',
+    name: 'Cancelar OS',
+    description: 'Cancelar uma OS informando o motivo.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 5'
+  },
+  os_execute: {
+    id: 'os_execute',
+    name: 'Executar OS',
+    description: 'Preencher a execução da OS.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 5'
+  },
+  os_templates: {
+    id: 'os_templates',
+    name: 'Criar e editar modelos de OS',
+    description: 'Modelos usados em Emitir OS.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 4'
+  },
+  os_export: {
+    id: 'os_export',
+    name: 'Exportar OS (planilha / PDF)',
+    description: 'Baixar as OS em planilha ou PDF.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
+    soon: 'Fase 6'
+  },
+  view_solicitations: {
+    id: 'view_solicitations',
+    name: 'Ver solicitações',
+    description: 'Acesso à tela Solicitações.',
+    category: 'Abas',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
   manage_solicitations: {
     id: 'manage_solicitations',
-    name: 'Gerenciar Solicitações',
-    description: 'Decidir as solicitações de corretiva: "Abrir corretiva" (nº do GLPI) ou "Não abrir" (justificativa), e corrigir esses textos.',
+    name: 'Decidir solicitações de corretiva',
+    description: 'Decidir as solicitações vindas das preventivas: "Abrir corretiva" (nº do GLPI) ou "Não abrir" (justificativa), e corrigir esses textos.',
     category: 'Ações',
+    area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
+  },
+  view_assets: {
+    id: 'view_assets',
+    name: 'Ver ativos',
+    description: 'Acesso à Gestão de Ativos.',
+    category: 'Abas',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
+  },
+  create_asset: {
+    id: 'create_asset',
+    name: 'Cadastrar e editar ativos',
+    description: 'Cadastrar ativos e atualizar as especificações.',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
+  },
+  delete_asset: {
+    id: 'delete_asset',
+    name: 'Excluir ativos',
+    description: 'Remover ativos definitivamente.',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  import_assets: {
+    id: 'import_assets',
+    name: 'Importar planilha de ativos',
+    description: 'Importação em massa de ativos (XLSX).',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
+  },
+  view_materials: {
+    id: 'view_materials',
+    name: 'Ver materiais',
+    description: 'Acesso à Gestão de Materiais (gerências do perfil).',
+    category: 'Abas',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  manage_materials: {
+    id: 'manage_materials',
+    name: 'Cadastrar e importar materiais',
+    description: 'Cadastrar, editar, alterar o valor e importar a planilha de materiais das gerências do perfil.',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  view_costs: {
+    id: 'view_costs',
+    name: 'Ver valores em R$',
+    description: 'Ver valores em reais: homem-hora, pernoite e materiais (telas e relatórios).',
+    category: 'Ações',
+    area: 'valores',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   }
+};
+
+// Ordem das áreas na tela de perfis
+export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: string }[] = [
+  { id: 'preventiva', label: 'Preventiva / PMOC' },
+  { id: 'os', label: 'OS (corretiva, layout e acompanhamento)', hint: 'Módulos em construção: as permissões já podem ser marcadas e passam a valer quando cada módulo ficar pronto.' },
+  { id: 'solicitacoes', label: 'Solicitações' },
+  { id: 'cadastros', label: 'Cadastros' },
+  { id: 'valores', label: 'Valores' }
+];
+
+// Permissões novas que nasceram de uma antiga: perfis que ainda não as têm gravadas herdam o valor da antiga
+// (assim ninguém perde nem ganha acesso na troca)
+export const DERIVED_PERMISSIONS: Record<string, string> = {
+  view_pmoc_planning: 'view_service_orders',
+  plan_orders: 'view_service_orders'
 };
 
 let cachePermissions: { [key: string]: SystemPermission } | null = null;

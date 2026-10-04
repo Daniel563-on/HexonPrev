@@ -130,7 +130,11 @@ export default function ServiceOrdersView({
   // - Só a OS "Atrasada" (passou do período do encarregado) pode voltar para "Novo" e ser reagendada.
   // - Ela precisa estar dentro do prazo do Super Administrador (início e fim da OS).
   // - "Não Executada" (passou do prazo do Super Administrador) fica bloqueada: ninguém reverte.
+  // Alterar o planejamento (programar, técnico, remarcar, voltar para Novo): permissão "Planejar preventivas"
+  const canPlan = !userHasActionPermission || userHasActionPermission('plan_orders');
+
   const canRevertUnexecutedOrder = (os: ServiceOrder, targetMonthDate: Date = currentCalendarDate): boolean => {
+    if (!canPlan) return false;
     if (os.status !== 'Atrasada') return false;
     if (!isSectorVisible(os.sector, visibleUnits)) return false;
     // Prazo do Super Administrador ainda aberto
@@ -769,6 +773,7 @@ export default function ServiceOrdersView({
             onDeleteOrder={handleDeletePreventive}
             onRevertOrder={handleRevertOrder}
             canRevertUnexecutedOrder={canRevertUnexecutedOrder}
+            canPlan={canPlan}
             currentCalendarDate={currentCalendarDate}
             userProfile={userProfile}
             getOrderComarca={getOrderComarca}

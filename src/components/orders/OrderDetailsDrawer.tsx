@@ -738,7 +738,7 @@ export default function OrderDetailsDrawer({
                     <span className="font-extrabold text-slate-400 italic">Não agendado</span>
                   </div>
                 ) : null}
-                {(selectedOrder.status === 'Não Executada' || selectedOrder.status === 'Atrasada') && (() => {
+                {(selectedOrder.status === 'Não Executada' || selectedOrder.status === 'Atrasada') && (userProfile?.perfil === 'Profissional' || !userHasActionPermission || userHasActionPermission('plan_orders')) && (() => {
                   const canRevertThis = canRevertUnexecutedOrder(selectedOrder, currentCalendarDate);
                   return (
                     <div className={`mt-2.5 p-3 border rounded-xl font-bold text-[10.5px] space-y-2.5 ${

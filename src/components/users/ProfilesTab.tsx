@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
 import { AccessProfile, HexonUser, Management, ProfileKind } from '../../types';
-import { DEFAULT_PERMISSIONS, dbDeleteProfile, dbSaveProfile, resolveUserProfile } from '../../db/firebase';
+import { DEFAULT_PERMISSIONS, PERMISSION_AREAS, dbDeleteProfile, dbSaveProfile, resolveUserProfile, withDerivedPermissions } from '../../db/firebase';
 
 // PERFIS DE ACESSO (somente Super Administrador)
 // Nome livre, tipo de uso, unidades visíveis e permissões de cada perfil.
 
 const KIND_INFO: Record<ProfileKind, { label: string; hint: string }> = {
   total: { label: 'Acesso total', hint: 'Administra tudo, em todas as unidades.' },
-  planejamento: { label: 'Escritório (planejamento)', hint: 'Usa as telas de planejamento e acompanhamento.' },
+  planejamento: { label: 'Escritório', hint: 'Usa o sistema no computador, conforme as permissões abaixo.' },
   execucao: { label: 'Campo (técnico)', hint: 'Usa o aplicativo de execução em campo.' }
+};
+
+const OS_SIGN_LABEL: Record<NonNullable<AccessProfile['osSignAs']>, string> = {
+  none: 'Nenhum',
+  engenheiro: 'Engenheiro',
+  gerente: 'Gerente'
+};
+
+const OS_SCOPE_LABEL: Record<NonNullable<AccessProfile['osScope']>, string> = {
+  own: 'Só as minhas',
+  unit: 'Da minha gerência',
+  all: 'Todas as gerências do perfil'
 };
 
 const SCOPE_LABEL: Record<AccessProfile['unitScope'], string> = {
@@ -163,7 +175,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
               <div>
                 <p className={`text-[9px] font-black uppercase ${muted}`}>Permissões</p>
                 <p className={`font-bold ${strong}`}>
-                  {p.kind === 'total' ? 'Todas' : `${Object.values(p.permissions).filter(Boolean).length} de ${permissionList.length}`}
+                  {p.kind === 'total' ? 'Todas' : `${permissionList.filter((perm) => !!withDerivedPermissions(p).permissions[perm.id]).length} de ${permissionList.length}`}
                 </p>
               </div>
               <div>
@@ -176,7 +188,8 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                 type="button"
                 onClick={() => {
                   setError(null);
-                  setEditing({ ...p, permissions: { ...p.permissions }, units: [...p.units] });
+                  const full = withDerivedPermissions(p);
+                  setEditing({ ...full, permissions: { ...full.permissions }, units: [...p.units] });
                 }}
                 className="flex-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold cursor-pointer"
               >
@@ -276,27 +289,74 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                   )}
                 </div>
 
-                {/* Permissões */}
-                <div>
-                  <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>Permissões</span>
-                  <div className={`rounded-lg border divide-y ${darkMode ? 'border-slate-800 divide-slate-800' : 'border-slate-200 divide-slate-100'}`}>
-                    {permissionList.map((perm) => (
-                      <label key={perm.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={!!editing.permissions[perm.id]}
-                          onChange={(e) => setEditing({ ...editing, permissions: { ...editing.permissions, [perm.id]: e.target.checked } })}
-                        />
-                        <span>
-                          <span className={`block text-xs font-bold ${strong}`}>
-                            {perm.name} <span className={`text-[9px] font-black uppercase ${muted}`}>· {perm.category}</span>
-                          </span>
-                          <span className={`block text-[10px] ${muted}`}>{perm.description}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                {/* Permissões, por área */}
+                <div className="space-y-3">
+                  <span className={`block text-[10px] font-black uppercase tracking-wider ${muted}`}>Permissões</span>
+                  {PERMISSION_AREAS.map((area) => {
+                    const list = permissionList.filter((perm) => perm.area === area.id);
+                    if (list.length === 0) return null;
+                    return (
+                      <div key={area.id} className={`rounded-lg border ${darkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                        <div className={`px-3 py-2 border-b ${darkMode ? 'border-slate-800 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+                          <p className={`text-xs font-black ${strong}`}>{area.label}</p>
+                          {area.hint && <p className={`text-[10px] ${muted}`}>{area.hint}</p>}
+                        </div>
+                        <div className={`divide-y ${darkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                          {list.map((perm) => (
+                            <label key={perm.id} className="flex items-start gap-2.5 px-3 py-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={!!editing.permissions[perm.id]}
+                                onChange={(e) => setEditing({ ...editing, permissions: { ...editing.permissions, [perm.id]: e.target.checked } })}
+                              />
+                              <span className="min-w-0">
+                                <span className={`block text-xs font-bold ${strong}`}>
+                                  {perm.name}
+                                  {perm.soon && (
+                                    <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase">em construção · {perm.soon}</span>
+                                  )}
+                                </span>
+                                <span className={`block text-[10px] ${muted}`}>{perm.description}</span>
+                              </span>
+                            </label>
+                          ))}
+                          {area.id === 'os' && (
+                            <div className="px-3 py-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <label className="block">
+                                <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>
+                                  Assinar OS como <span className="text-amber-700 normal-case">(em construção · Fase 5)</span>
+                                </span>
+                                <select
+                                  value={editing.osSignAs || 'none'}
+                                  onChange={(e) => setEditing({ ...editing, osSignAs: e.target.value as AccessProfile['osSignAs'] })}
+                                  className={input}
+                                >
+                                  {(Object.keys(OS_SIGN_LABEL) as NonNullable<AccessProfile['osSignAs']>[]).map((k) => (
+                                    <option key={k} value={k}>{OS_SIGN_LABEL[k]}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="block">
+                                <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>
+                                  Alcance das OS <span className="text-amber-700 normal-case">(em construção · Fase 6)</span>
+                                </span>
+                                <select
+                                  value={editing.osScope || 'unit'}
+                                  onChange={(e) => setEditing({ ...editing, osScope: e.target.value as AccessProfile['osScope'] })}
+                                  className={input}
+                                >
+                                  {(Object.keys(OS_SCOPE_LABEL) as NonNullable<AccessProfile['osScope']>[]).map((k) => (
+                                    <option key={k} value={k}>{OS_SCOPE_LABEL[k]}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
