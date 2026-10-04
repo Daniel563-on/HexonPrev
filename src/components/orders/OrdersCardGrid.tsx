@@ -28,6 +28,7 @@ export interface OrdersCardGridProps {
   onDeleteOrder: (osId: string) => void;
   onRevertOrder: (os: ServiceOrder) => void;
   canRevertUnexecutedOrder: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
+  canPlan?: boolean; // perfil com "Planejar preventivas" (sem ela, nada de voltar para Novo)
   currentCalendarDate: Date;
   userProfile?: HexonUser | null;
   getOrderComarca: (os: ServiceOrder) => string;
@@ -53,6 +54,7 @@ export default function OrdersCardGrid({
   onDeleteOrder,
   onRevertOrder,
   canRevertUnexecutedOrder,
+  canPlan = true,
   currentCalendarDate,
   userProfile,
   getOrderComarca,
@@ -274,7 +276,7 @@ export default function OrdersCardGrid({
                   </span>
 
                   <div className="flex justify-end items-center gap-1.5">
-                    {(isDelayed || isNotExecuted) && userProfile?.perfil !== 'Profissional' && (() => {
+                    {(isDelayed || isNotExecuted) && canPlan && userProfile?.perfil !== 'Profissional' && (() => {
                       const canRevertThis = canRevertUnexecutedOrder(os, currentCalendarDate);
                       if (!canRevertThis) {
                         return (

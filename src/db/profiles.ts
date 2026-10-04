@@ -1,7 +1,7 @@
 import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from './guard';
 import { AccessProfile, HexonUser, ProfileKind, isSectorInGerencia } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
-import { DEFAULT_PERMISSIONS, dbGetPermissions } from './permissions';
+import { DEFAULT_PERMISSIONS, DERIVED_PERMISSIONS, dbGetPermissions } from './permissions';
 import { dbGetUsers, dbSaveUser } from './users';
 
 // PERFIS DE ACESSO (coleção "profiles")
@@ -29,6 +29,25 @@ export function resolveUserProfile(user: HexonUser | null | undefined, profiles:
   if (!user) return undefined;
   const byId = user.profileId ? profiles.find((p) => p.id === user.profileId) : undefined;
   return byId || profiles.find((p) => p.id === SYSTEM_PROFILE_IDS[kindOfLegacyPerfil(user.perfil)]);
+}
+
+// Valor de uma permissão no perfil. Permissão nova ainda não gravada no perfil herda a antiga de onde nasceu
+// (ex.: "Planejar preventivas" herda "Ver execução das preventivas"). undefined = o perfil não define.
+export function profilePermission(profile: AccessProfile, permissionId: string): boolean | undefined {
+  if (permissionId in profile.permissions) return !!profile.permissions[permissionId];
+  const from = DERIVED_PERMISSIONS[permissionId];
+  if (from && from in profile.permissions) return !!profile.permissions[from];
+  return undefined;
+}
+
+// Perfil com as permissões herdadas já preenchidas (para a tela de edição mostrar o que vale hoje)
+export function withDerivedPermissions(profile: AccessProfile): AccessProfile {
+  const permissions = { ...profile.permissions };
+  Object.keys(DERIVED_PERMISSIONS).forEach((id) => {
+    const v = profilePermission(profile, id);
+    if (!(id in permissions) && v !== undefined) permissions[id] = v;
+  });
+  return { ...profile, permissions };
 }
 
 let cacheProfiles: AccessProfile[] | null = null;

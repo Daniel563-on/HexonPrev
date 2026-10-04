@@ -41,6 +41,7 @@ import {
   dbGetPermissions,
   dbGetProfiles,
   resolveUserProfile,
+  profilePermission,
   userVisibleUnits,
   isSectorVisible,
   subscribeToUserProfile,
@@ -494,7 +495,8 @@ export default function App() {
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
-    if (tab === 'service-orders' || tab === 'pmoc-preventivas') permId = 'view_service_orders';
+    if (tab === 'service-orders') permId = 'view_service_orders';
+    else if (tab === 'pmoc-preventivas') permId = 'view_pmoc_planning';
     else if (tab === 'assets') permId = 'view_assets';
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
@@ -502,8 +504,9 @@ export default function App() {
 
     if (!permId) return true;
 
-    // Permissão definida no perfil do usuário
-    if (profile && permId in profile.permissions) return !!profile.permissions[permId];
+    // Permissão definida no perfil do usuário (as novas herdam a antiga de onde nasceram)
+    const fromProfile = profile ? profilePermission(profile, permId) : undefined;
+    if (fromProfile !== undefined) return fromProfile;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -522,9 +525,10 @@ export default function App() {
     if (!userProfile) return false;
     if (userProfile.perfil === 'Super Administrador') return true;
 
-    // Permissão definida no perfil do usuário
+    // Permissão definida no perfil do usuário (as novas herdam a antiga de onde nasceram)
     const profile = resolveUserProfile(userProfile, accessProfiles);
-    if (profile && actionId in profile.permissions) return !!profile.permissions[actionId];
+    const fromProfile = profile ? profilePermission(profile, actionId) : undefined;
+    if (fromProfile !== undefined) return fromProfile;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -533,9 +537,10 @@ export default function App() {
         return false; // strictly Super Admin
       }
       if (actionId === 'delete_templates' || actionId === 'dispatch_orders' || actionId === 'view_costs') return false; // padrão: só Super Administrador
-      if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'create_order' || actionId === 'manage_templates') {
+      if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'manage_templates' || actionId === 'plan_orders') {
         return userProfile.perfil === 'Administrador';
       }
+      if (actionId.startsWith('os_')) return false; // OS: só pelo perfil
       return true; // Tech field professional permissions
     }
 

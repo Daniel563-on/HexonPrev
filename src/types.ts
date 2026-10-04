@@ -504,6 +504,8 @@ export interface AccessProfile {
   unitScope: 'own' | 'selected' | 'all'; // unidades visíveis: a do usuário, as escolhidas ou todas
   units: string[]; // usadas quando unitScope = 'selected'
   permissions: Record<string, boolean>; // id da permissão -> liberada
+  osSignAs?: 'none' | 'engenheiro' | 'gerente'; // OS: assinar como (em construção)
+  osScope?: 'own' | 'unit' | 'all'; // OS: alcance — só as minhas, da minha gerência, todas as gerências do perfil (em construção)
   system: boolean; // perfis de fábrica: podem ser renomeados, mas não excluídos
   createdAt: string;
   updatedAt: string;
@@ -556,11 +558,17 @@ export interface AuditLog {
   timestamp: string;
 }
 
+// Áreas da tela de perfis (Hexon 2.0): "OS" = corretiva, layout e acompanhamento (vindo do principal);
+// "Preventiva / PMOC" = o sistema de preventivas
+export type PermissionArea = 'preventiva' | 'os' | 'solicitacoes' | 'cadastros' | 'valores';
+
 export interface SystemPermission {
   id: string;
   name: string;
   description: string;
   category: 'Abas' | 'Ações';
+  area?: PermissionArea;
+  soon?: string; // módulo ainda em construção (ex.: "Fase 4"): aparece na tela, mas ainda não tem efeito
   roles: {
     'Super Administrador': boolean;
     'Administrador': boolean;
