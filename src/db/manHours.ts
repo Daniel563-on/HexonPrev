@@ -63,7 +63,7 @@ export function orderTimeInfo(o: ServiceOrder): OrderTimeInfo | null {
 }
 
 // Valor vigente numa data ("AAAA-MM-DD"): o último lançamento que começou até essa data
-function valueAt(history: { value: number; from: string; setAt: string }[] | undefined, dateStr: string): number | null {
+export function valueAt(history: { value: number; from: string; setAt: string }[] | undefined, dateStr: string): number | null {
   let value: number | null = null;
   for (const h of [...(history || [])].sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt))) {
     if (h.from <= dateStr) value = h.value;
@@ -71,7 +71,7 @@ function valueAt(history: { value: number; from: string; setAt: string }[] | und
   return value;
 }
 
-const localDate = (iso: string) => {
+export const localDate = (iso: string) => {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;

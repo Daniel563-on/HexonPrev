@@ -8,16 +8,12 @@ import {
   Download,
   Printer,
   Info,
-  History,
-  AlertCircle,
-  Edit,
-  FileSearch
+  Edit
 } from 'lucide-react';
-import { Asset, MaintenanceLog, formatDateBR } from '../../types';
+import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { downloadAssetQrCode, printAssetTag } from '../../utils/qrUtils';
-import { useHistoryPages, HistoryPagerControls } from './HistoryPager';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import AssetHistorySection from './AssetHistorySection';
 
 export interface AssetDetailPanelProps {
   asset: Asset;
@@ -28,6 +24,9 @@ export interface AssetDetailPanelProps {
   onQuickScan: (asset: Asset) => void;
   onEditAsset?: (asset: Asset) => void;
   onViewOrder?: (orderId: string) => void; // abre a OS completa (checklist, observações, assinatura e PDF)
+  canViewCosts?: boolean; // "Ver valores em R$": valor de cada linha do histórico e total gasto com materiais
+  visibleUnits?: string[] | null; // unidades do perfil (null = todas)
+  localOrders?: ServiceOrder[]; // OS já carregadas no aparelho
 }
 
 export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
@@ -38,13 +37,11 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   onDeleteAsset,
   onQuickScan,
   onEditAsset,
-  onViewOrder
+  onViewOrder,
+  canViewCosts = false,
+  visibleUnits = null,
+  localOrders = []
 }) => {
-  // Histórico em páginas de 12 (busca a próxima só ao avançar)
-  const historyPages = useHistoryPages(propHistory !== undefined ? undefined : asset?.id);
-  const history = propHistory !== undefined ? propHistory : historyPages.items;
-  const loadingHistory = historyPages.loading;
-
   if (!asset) return null;
 
   return (
@@ -369,160 +366,15 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
         </div>
       </div>
 
-      {/* LOWER BLOCK: MAINTENANCE HISTORY */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
-          <h4 className="font-bold text-[#0b1c30] text-xs uppercase tracking-wider flex items-center gap-2">
-            <History className="w-4 h-4 text-[#3525cd]" />
-            Histórico Operacional de Manutenções
-          </h4>
-          <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-            {loadingHistory ? 'Carregando...' : `Página ${historyPages.pageNumber}`}
-          </span>
-        </div>
-
-        {history.length === 0 ? (
-          <div className="text-center py-10">
-            <p className="text-xs text-gray-400 font-bold italic">Nenhuma ordem de serviço findada ou preventiva realizada neste ativo.</p>
-            <p className="text-[10px] text-gray-400 mt-1">Sua primeira preventiva concluída alimentará automaticamente este histórico.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {history.map((log) => {
-              const hasEnrichedDetails = !!(log.preventiveType || log.resultStatus || log.verifiedItemsText || log.nonConformItemsText);
-              const listVerified = log.verifiedItemsText ? log.verifiedItemsText.split(';').map(s => s.trim()).filter(Boolean) : [];
-              const listFailed = log.nonConformItemsText ? log.nonConformItemsText.split(';').map(s => s.trim()).filter(Boolean) : [];
-              
-              return (
-                <div key={log.id} className="p-4 bg-white rounded-xl border border-gray-200 hover:border-indigo-200 relative text-xs shadow-xs space-y-3 transition-all">
-                  {/* Connection track indicator */}
-                  <div className="absolute left-0 top-4 bottom-4 w-1 bg-indigo-600 rounded-r"></div>
-
-                  {/* Top info row */}
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-gray-100 pb-2 pl-2">
-                    <div>
-                      <span className="font-extrabold text-[#0b1c30] text-sm block sm:inline">{log.osTitle}</span>
-                      <span className="font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] font-bold ml-0 sm:ml-2">
-                        #{formatOrderNumber(log.osId)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-gray-400 text-[10px] font-bold">{formatDateBR(log.date)}</span>
-                      {onViewOrder && log.osId && (
-                        <button
-                          type="button"
-                          onClick={() => onViewOrder(log.osId)}
-                          className="py-1 px-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[9px] font-black text-indigo-700 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
-                          title="Abrir a ordem de serviço completa: checklist, observações, assinatura e PDF"
-                        >
-                          <FileSearch className="w-3 h-3 text-indigo-600" />
-                          VER OS COMPLETA
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Diagnostics grid */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pl-2 text-slate-600">
-                    <div>
-                      <span className="text-[9px] text-gray-400 block font-bold uppercase">Técnico Executor</span>
-                      <span className="font-black text-slate-800 text-xs flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
-                        {log.technician}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[9px] text-gray-400 block font-bold uppercase">Tipo de Intervenção</span>
-                      <span className="font-black text-slate-800 text-xs">
-                        {log.preventiveType || 'Visita Corretiva'}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[9px] text-gray-400 block font-bold uppercase">Conformidade Procedimento</span>
-                      <span className="font-black text-emerald-600 text-xs">
-                        {log.checkedCount} de {log.checklistCount} concluintes
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[9px] text-gray-400 block font-bold uppercase">Resultado do Laudo</span>
-                      <span className={`inline-block text-[9px] px-2 py-0.5 font-black rounded-full ${
-                        log.resultStatus === 'Aprovado' ? 'bg-emerald-100 text-emerald-800' :
-                        log.resultStatus === 'Aprovado com Ressalvas' ? 'bg-amber-100 text-amber-800' :
-                        log.resultStatus === 'Não Conforme' ? 'bg-rose-100 text-rose-800' :
-                        'bg-slate-100 text-slate-600'
-                      }`}>
-                        {log.resultStatus || 'Concluído'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Custom fields and lists for items checked/failed */}
-                  {hasEnrichedDetails && (
-                    <div className="pl-2 space-y-3 pt-1 border-t border-slate-50 text-[11px]">
-                      
-                      {/* Verified items checklist */}
-                      {listVerified.length > 0 && (
-                        <div>
-                          <span className="font-black text-slate-700 block mb-1">✓ Itens Verificados e Conformados ({listVerified.length}):</span>
-                          <div className="flex flex-wrap gap-1">
-                            {listVerified.map((v, i) => (
-                              <span key={i} className="bg-slate-50 border border-slate-100 px-2 py-0.5 rounded text-[10px] text-slate-600">
-                                {v}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Non-conforming items list */}
-                      {listFailed.length > 0 && (
-                        <div className="bg-rose-50/50 p-2.5 rounded-lg border border-rose-100">
-                          <span className="font-black text-rose-700 flex items-center gap-1 mb-1">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            ✗ Itens Não Conformes Reportados ({listFailed.length}):
-                          </span>
-                          <ul className="list-disc list-inside space-y-0.5 text-[10px] text-rose-900 font-semibold">
-                            {listFailed.map((f, i) => (
-                              <li key={i}>{f}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                    </div>
-                  )}
-
-                  {/* Technician observations */}
-                  {(() => {
-                    const cleanNotes = (log.notes || '')
-                      .replace(/⚙️\s*Desdobramento[\s\S]*?(?=(📋|⚠|$))/gi, '')
-                      .replace(/⚙️[\s\S]*?(?=(📋|⚠|$))/gi, '')
-                      .trim();
-                    if (!cleanNotes) return null;
-                    return (
-                      <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-slate-500 italic pl-3 relative mt-2 text-xs leading-relaxed">
-                        <span className="font-bold not-italic text-slate-700 block text-[10px] uppercase mb-0.5">Observações do Técnico:</span>
-                        "{cleanNotes}"
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <HistoryPagerControls
-          pageNumber={historyPages.pageNumber}
-          hasNext={historyPages.hasNext}
-          hasPrev={historyPages.hasPrev}
-          loading={historyPages.loading}
-          onNext={historyPages.next}
-          onPrev={historyPages.prev}
-        />
-      </div>
+      {/* HISTÓRICO: abas Preventivas e Corretivas, setinha por linha, valores para quem pode ver */}
+      <AssetHistorySection
+        asset={asset}
+        history={propHistory}
+        canViewCosts={canViewCosts}
+        visibleUnits={visibleUnits}
+        localOrders={localOrders}
+        onViewOrder={onViewOrder}
+      />
     </div>
   );
 };

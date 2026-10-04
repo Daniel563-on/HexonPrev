@@ -452,6 +452,9 @@ export default function AssetsView({
           onQuickScan={(asset) => triggerQuickScan(asset)}
           onEditAsset={(asset) => handleOpenEditModal(asset)}
           onViewOrder={handleViewHistoryOrder}
+          canViewCosts={!!userHasActionPermission?.('view_costs')}
+          visibleUnits={visibleUnits}
+          localOrders={orders}
         />
       ) : (
         <>
