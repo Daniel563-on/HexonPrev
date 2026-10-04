@@ -14,6 +14,7 @@ import {
   CalendarRange,
   Settings,
   ArrowLeft,
+  FilePlus2,
   X
 } from 'lucide-react';
 import { HexonUser } from '../types';
@@ -60,6 +61,7 @@ export default function Sidebar({
 
   const mainItems: MenuItem[] = [
     { tab: 'home', label: 'Início', icon: Home },
+    ...(userHasTabPermission('os-emit') ? [{ tab: 'os-emit', label: 'Emitir OS (GLPI)', icon: FilePlus2 }] : []),
     ...(userHasTabPermission('service-orders') ? [{ tab: 'service-orders', label: 'Ordens de Serviço', icon: ClipboardCheck }] : []),
     ...(userHasTabPermission('solicitations') ? [{ tab: 'solicitations', label: 'Solicitações', icon: BellRing, badge: pendingSolicitationsCount }] : []),
     ...(userHasTabPermission('assets') ? [{ tab: 'assets', label: 'Gestão de Ativos', icon: Boxes }] : []),

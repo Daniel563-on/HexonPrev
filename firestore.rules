@@ -316,6 +316,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 13. OS (Hexon 2.0): corretiva, layout e acompanhamento
+    // Modelos de OS: a equipe lê; só quem tem "Criar e editar modelos de OS" altera
+    match /osTemplates/{templateId} {
+      allow read: if isStaff();
+      allow write: if isStaff() && hasPermission('os_templates');
+    }
+    // Contador do número da OS por ano: só sobe de 1 em 1 (o número nunca repete)
+    match /counters/{counterId} {
+      allow read: if isStaff() && hasPermission('os_create');
+      allow create, update: if isStaff() && hasPermission('os_create')
+        && counterId == 'workOrders_' + string(request.resource.data.year)
+        && request.resource.data.keys().hasOnly(['year', 'last'])
+        && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1);
+      allow delete: if false;
+    }
+    // OS: cada um vê as das gerências do perfil; emitir pede "Emitir OS"; atribuir pede "Atribuir técnico / equipe"
+    match /workOrders/{orderId} {
+      allow get, list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow create: if isStaff() && hasPermission('os_create')
+        && (seesAllUnits() || request.resource.data.unit in myUnits())
+        && orderId == request.resource.data.number
+        && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')));
+      allow update: if isStaff() && hasPermission('os_assign')
+        && (seesAllUnits() || resource.data.unit in myUnits())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'updatedAt', 'timeline'])
+        && (request.resource.data.status == resource.data.status || (resource.data.status == 'Nova' && request.resource.data.status == 'Em andamento'));
+      allow delete: if false;
+    }
+
     // 11. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
     match /{document=**} {
       allow read, write: if false;
