@@ -9,3 +9,5 @@ Resumo do essencial (detalhes no documento):
 - Regras do banco são publicadas à mão no Console (aba Segurança): mandar o texto completo no chat.
 - Todo arquivo novo em `src/db` deve importar o Firestore de `./guard` (disjuntor); operação que grava/lê muito de uma vez deve usar `runBulk`.
 - Banco Firestore Enterprise: custo por unidades de leitura/gravação e por entrada de índice; preferir índices esparsos e campos de controle (`src/db/orderControl.ts`).
+- **Vocabulário do usuário:** "OS" / "Ordens de Serviço" = OS do sistema principal (corretiva, layout, acompanhamento). "Preventiva" / "PMOC" = o sistema de preventivas. Não misturar.
+- Hexon 2.0 = junção do Hexon principal com a Preventiva: em toda fase que juntar os dois, avisar no desenho que é etapa de junção (o que vem de cada lado).
