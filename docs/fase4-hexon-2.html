@@ -161,30 +161,42 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
 </section>
 
 <section>
-  <h2>2. Tela "Emitir OS"</h2>
+  <h2>2. Tudo vem do modelo</h2>
+  <p class="lede">Não há campos fixos: a tela de emitir mostra exatamente as perguntas do modelo escolhido. Mudou o modelo, as próximas OS já saem com o modelo novo (as já emitidas continuam como foram abertas).</p>
   <div class="twocol">
     <div class="form">
-      <p class="src"><b>Campos fixos</b> (iguais em toda OS; o sistema usa para filtrar, atribuir e montar históricos)</p>
-      <div class="fld"><b>Modelo</b><span class="tag t-up">lista</span><span class="d">Ex.: "MPRJ OS". Define as perguntas extras.</span></div>
-      <div class="fld"><b>Tipo de intervenção</b><span class="tag t-up">lista</span><span class="d">Corretiva, Layout, Acompanhamento… (cadastro que você amplia depois)</span></div>
-      <div class="fld"><b>Nº do chamado GLPI</b><span class="tag t-up">número</span><span class="d">Digitado, como hoje.</span></div>
-      <div class="fld"><b>Data de abertura do chamado</b><span class="tag t-up">data</span><span class="d">Vem preenchida com hoje; pode mudar.</span></div>
-      <div class="fld"><b>Gerência responsável</b><span class="tag t-keep">gerências</span><span class="d">Quem vai atender. Só quem vê essa gerência enxerga a OS.</span></div>
-      <div class="fld"><b>Requerente</b><span class="tag t-up">texto</span><span class="d">Nome, telefone e e-mail de quem pediu.</span></div>
-      <div class="fld"><b>Local do requerente</b><span class="tag t-keep">endereços</span><span class="d">Escolhido na lista de Endereços: CRAAI e comarca vêm junto (substitui as listas de CRAAI e comarca do principal).</span></div>
-      <div class="fld"><b>Local de execução</b><span class="tag t-keep">endereços</span><span class="d">Onde o serviço será feito. Também da lista de Endereços.</span></div>
-      <div class="fld"><b>Ativo</b><span class="tag t-keep">opcional</span><span class="d">Mostra primeiro os ativos da mesma comarca do local de execução (os ativos não são ligados a um endereço, e sim a uma comarca), com busca por código, patrimônio ou QR. Se tiver ativo, a OS entra no histórico dele (aba Corretivas).</span></div>
-      <div class="fld"><b>Técnico / equipe</b><span class="tag t-ask">opcional</span><span class="d">Normalmente fica "Em aberto"; o Encarregado atribui depois. Quem emite pode atribuir em casos especiais.</span></div>
-      <div class="fld"><b>Prazo (SLA)</b><span class="tag t-ask">opcional</span><span class="d">Data limite.</span></div>
+      <p class="src"><b>Modelo "MPRJ OS"</b> (nome do modelo; pode haver outros)</p>
+      <div class="fld"><b>1. Intervenção</b><span class="tag t-up">lista</span><span class="d">Corretiva, Layout, Vistoria… · função: <b>Tipo de intervenção</b></span></div>
+      <div class="fld"><b>2. GLPI</b><span class="tag t-up">número</span><span class="d">função: <b>Nº do GLPI</b></span></div>
+      <div class="fld"><b>3. Data de abertura</b><span class="tag t-up">data</span></div>
+      <div class="fld"><b>4. Nome do requerente</b><span class="tag t-up">texto curto</span></div>
+      <div class="fld"><b>5. Endereço do requerente</b><span class="tag t-new">endereço</span><span class="d">Escolhido na lista de Endereços; CRAAI e comarca vêm junto (substitui CRAAI + comarca condicional) · função: <b>Local do requerente</b></span></div>
+      <div class="fld"><b>6. Telefone do requerente</b><span class="tag t-up">texto curto</span></div>
+      <div class="fld"><b>7. E-mail do requerente</b><span class="tag t-up">texto curto</span></div>
+      <div class="fld"><b>8. Endereço de execução</b><span class="tag t-new">endereço</span><span class="d">função: <b>Local de execução</b> (o histórico do endereço usa este)</span></div>
+      <div class="fld"><b>9. Ativo</b><span class="tag t-new">ativo</span><span class="d">Código colado de outro sistema. Se existir na Gestão de Ativos, a OS fica ligada ao histórico dele; se não, fica só o texto · função: <b>Ativo</b></span></div>
+      <div class="fld"><b>10. Descrição do serviço solicitado</b><span class="tag t-up">texto longo</span></div>
+      <div class="fld"><b>11. Categoria</b><span class="tag t-up">lista</span><span class="d">ACJ, Split, Bombas, Elevadores, Outros</span></div>
+      <div class="fld"><b>12. Gerência responsável</b><span class="tag t-new">gerência</span><span class="d">função: <b>Gerência</b> (define quem enxerga a OS)</span></div>
+      <p class="src">Ordem, nomes e opções você muda no modelo. Os números e textos acima são só o exemplo do MPRJ.</p>
     </div>
     <div class="form">
-      <p class="src"><b>Perguntas do modelo</b> (cada modelo tem as suas)</p>
-      <div class="fld"><b>Descrição do serviço solicitado</b><span class="tag t-up">texto longo</span></div>
-      <div class="fld"><b>Categoria</b><span class="tag t-up">lista</span><span class="d">ACJ, Split, Bombas, Elevadores, Outros</span></div>
-      <p class="src">O modelo "MPRJ OS" já nasce pronto assim. Intervenção, GLPI, data, requerente, CRAAI/comarca e endereço deixam de ser perguntas, porque viraram campos fixos acima.</p>
       <div class="box">
-        <h3>Ao emitir</h3>
-        <p>OS criada com o número novo, situação <b>Nova</b> (ou <b>Atribuída</b>, se já escolheu técnico) e aparece na lista.</p>
+        <h3>"Função no sistema"</h3>
+        <p>É o que liga a pergunta ao resto do Hexon, sem deixar de vir do modelo. Ao criar a pergunta você marca, se quiser, para que o sistema a usa:</p>
+        <ul class="tabs">
+          <li><span class="nm">Gerência</span><b class="tag t-ask">obrigatória</b><span class="ds">Todo modelo precisa ter: é ela que decide quem vê a OS.</span></li>
+          <li><span class="nm">Local de execução</span><b class="tag t-ask">obrigatória</b><span class="ds">Para o histórico de cada endereço.</span></li>
+          <li><span class="nm">Tipo de intervenção · Nº do GLPI · Local do requerente · Ativo · Prazo</span><b class="tag t-keep">opcionais</b><span class="ds">Usados na lista, na busca e nos históricos.</span></li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Tipos de pergunta</h3>
+        <p>Texto curto, texto longo, número, data, lista (uma opção), sim/não e os três novos: <b>endereço</b> (lista de Endereços), <b>ativo</b> (código colado) e <b>gerência</b> (lista de gerências).</p>
+      </div>
+      <div class="box">
+        <h3>Atribuição</h3>
+        <p>Técnico/equipe não é pergunta: é uma ação. A OS nasce <b>Em aberto</b>; o Encarregado atribui. Quem emite também pode atribuir em casos especiais (botão "Atribuir agora").</p>
       </div>
     </div>
   </div>
@@ -194,9 +206,8 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
   <h2>3. Novo modelo (dentro de Emitir OS)</h2>
   <div class="box">
     <ul class="tabs">
-      <li><span class="nm">Agora</span><b class="tag t-new">Fase 4</b><span class="ds">Nome do modelo; perguntas de texto curto, texto longo, número, data, lista (uma opção) e sim/não; obrigatória ou não; subir/descer; duplicar; excluir; e em qual etapa a pergunta aparece: <b>Abertura</b> ou <b>Execução</b>.</span></li>
+      <li><span class="nm">Agora</span><b class="tag t-new">Fase 4</b><span class="ds">Nome do modelo; perguntas dos tipos acima; obrigatória ou não; função no sistema; etapa (<b>Abertura</b> ou <b>Execução</b>); subir/descer; duplicar; excluir. O "MPRJ OS" já nasce pronto como no seu print.</span></li>
       <li><span class="nm">Depois</span><b class="tag t-ask">Fase 5</b><span class="ds">Perguntas condicionais ("se X, mostra Y"), bloco que se repete e assinaturas.</span></li>
-      <li><span class="nm">Tipos de intervenção</span><b class="tag t-new">Fase 4</b><span class="ds">Lista que você amplia: começa com Corretiva, Layout e Acompanhamento.</span></li>
     </ul>
   </div>
 </section>
@@ -217,12 +228,12 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
         <tbody>
           <tr><td>Emitir OS</td><td>"Emitir OS (GLPI)"</td><td>Administrativo</td></tr>
           <tr><td>Atribuir técnico/equipe</td><td>"Atribuir técnico / equipe nas OS"</td><td>Encarregado (e quem emite, se tiver as duas)</td></tr>
-          <tr><td>Criar/editar modelos e tipos</td><td>"Criar e editar modelos de OS"</td><td>Super Admin</td></tr>
+          <tr><td>Criar/editar modelos</td><td>"Criar e editar modelos de OS"</td><td>Super Admin</td></tr>
           <tr><td>Ver a lista</td><td>"Ver OS"</td><td>Administrativo, Encarregado</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Essas permissões saem de "em construção" nesta fase.</p>
+    <p class="note">Essas permissões saem de "em construção" nesta fase. Os "tipos de intervenção" deixam de ser um cadastro à parte: são as opções da pergunta Intervenção do modelo.</p>
   </div>
 </section>
 
@@ -239,13 +250,9 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
 </section>
 
 <section>
-  <h2>Perguntas que faltam</h2>
+  <h2>Confirmação</h2>
   <div class="box">
-    <ol class="steps">
-      <li>No print, "Intervenção" tem também <b>Preventiva</b> e <b>Vistoria</b>. No 2.0 a preventiva é o PMOC. A <b>Vistoria</b> continua como tipo de OS, ou também sai?</li>
-      <li>O <b>ativo</b> opcional, mostrando primeiro os ativos da comarca do local de execução, está certo?</li>
-      <li><b>Requerente</b>: digitar nome, telefone e e-mail a cada OS está bom por enquanto? (Depois dá para o sistema lembrar os requerentes já usados.)</li>
-    </ol>
+    <p>Vistoria continua (é opção da pergunta Intervenção). O Ativo é digitado/colado. Falta só você confirmar a ideia da <b>"função no sistema"</b> e que <b>Gerência</b> e <b>Local de execução</b> sejam obrigatórias em todo modelo.</p>
   </div>
 </section>
 
