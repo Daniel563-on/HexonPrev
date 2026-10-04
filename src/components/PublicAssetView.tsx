@@ -32,6 +32,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
   onGoToLogin
 }) => {
   const [asset, setAsset] = useState<Asset | null>(null);
+  const [historyTab, setHistoryTab] = useState<'preventivas' | 'corretivas'>('preventivas');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -159,7 +160,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             </div>
             <div>
               <h1 className="text-xs font-black text-slate-900 tracking-tight leading-none uppercase">
-                Hexon Manutenção Preventiva
+                Hexon
               </h1>
               <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">
                 {asset?.kind === 'address' ? 'Consulta Pública do Imóvel' : 'Consulta Pública de Equipamento'}
@@ -343,7 +344,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4 text-[#3525cd]" />
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                Histórico de Preventivas
+                Histórico
               </h3>
             </div>
             <span className="text-[10px] font-bold text-slate-450 uppercase">
@@ -351,7 +352,27 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             </span>
           </div>
 
-          {history.length === 0 ? (
+          {/* Abas: Preventivas e Corretivas (a página pública nunca mostra valores) */}
+          <div className="flex gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1 w-fit">
+            {(['preventivas', 'corretivas'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setHistoryTab(t)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide cursor-pointer ${
+                  historyTab === t ? 'bg-[#3525cd] text-white' : 'text-slate-500'
+                }`}
+              >
+                {t === 'preventivas' ? 'Preventivas' : 'Corretivas'}
+              </button>
+            ))}
+          </div>
+
+          {historyTab === 'corretivas' ? (
+            <div className="text-center py-8 text-slate-400">
+              <p className="text-xs font-bold text-slate-600">As corretivas aparecem aqui quando o módulo de OS estiver pronto.</p>
+            </div>
+          ) : history.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p className="text-xs font-bold text-slate-600">Nenhum registro anterior encontrado</p>
@@ -411,14 +432,14 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
               ))}
             </div>
           )}
-          <HistoryPagerControls
+          {historyTab === 'preventivas' && <HistoryPagerControls
             pageNumber={historyPages.pageNumber}
             hasNext={historyPages.hasNext}
             hasPrev={historyPages.hasPrev}
             loading={historyPages.loading}
             onNext={historyPages.next}
             onPrev={historyPages.prev}
-          />
+          />}
         </div>
 
         {/* Rodapé Informativo e Selo de Autenticidade Digital */}
@@ -428,7 +449,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             <span>Autenticação Digital: HEXON-{asset.code}-{asset.id.slice(0, 8).toUpperCase()}</span>
           </div>
           <p className="text-slate-450">
-            Informações geradas pelo sistema Hexon Manutenção Preventiva.
+            Informações geradas pelo sistema Hexon.
           </p>
           <p className="text-slate-400 text-[9.5px]">
             © {new Date().getFullYear()} • Ficha Pública Certificada LGPD • Todos os direitos reservados.
