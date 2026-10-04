@@ -1,0 +1,243 @@
+<title>Hexon 2.0 Fase 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: planta do sistema — menu desenhado à esquerda, ficha de cada página à direita; uma coluna no celular */
+:root{
+  --bg:#f3f5f7; --paper:#ffffff; --ink:#15202b; --muted:#5b6876; --line:#d9dfe5;
+  --navy:#16263a; --navy-ink:#dfe7f0; --navy-muted:#8fa2b6;
+  --accent:#1f6fb2;
+  --keep:#5b6876; --keep-bg:#e8ecf0;
+  --up:#1f6fb2; --up-bg:#e1eefa;
+  --new:#1d7a4f; --new-bg:#dff3e8;
+  --ask:#9a6100; --ask-bg:#fbefd6;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Public Sans","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(26px,4vw,36px);font-weight:800}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:10px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.tag{font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap;line-height:1.5}
+.t-keep{color:var(--keep);background:var(--keep-bg)}
+.t-up{color:var(--up);background:var(--up-bg)}
+.t-new{color:var(--new);background:var(--new-bg)}
+.t-ask{color:var(--ask);background:var(--ask-bg)}
+section{display:flex;flex-direction:column;gap:14px}
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.principles div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.principles b{font-family:var(--f-display);font-size:15px}
+.principles p{font-size:14px;color:var(--muted)}
+
+.plan{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:760px){.plan{grid-template-columns:1fr}}
+nav.mock{background:var(--navy);color:var(--navy-ink);border-radius:10px;padding:16px 12px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:760px){nav.mock{position:static}}
+.mock .brand{font-family:var(--f-display);font-weight:800;letter-spacing:.22em;font-size:15px;padding:0 8px 12px}
+.mock .grp{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--navy-muted);padding:12px 8px 4px}
+.mock a{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--navy-ink);text-decoration:none;font-size:13.5px;padding:6px 8px;border-radius:6px}
+.mock a:hover,.mock a:focus-visible{background:rgba(255,255,255,.08);outline:none}
+.mock a i{width:8px;height:8px;border-radius:50%;flex:none}
+.dot-keep{background:#9aa8b6}.dot-up{background:#6aaee8}.dot-new{background:#5fcf93}.dot-ask{background:#f0c46a}
+
+.pages{display:flex;flex-direction:column;gap:14px;min-width:0}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.page-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between}
+.page-head small{color:var(--muted);font-size:13px}
+.tabs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.tabs li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tabs li:last-child{border-bottom:0}
+.tabs .nm{font-weight:600}
+.tabs .ds{grid-column:1 / -1;color:var(--muted);font-size:13.5px;max-width:75ch}
+.note{font-size:13.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+.q{font-size:13.5px;background:var(--ask-bg);color:var(--ink);border-radius:6px;padding:8px 10px}
+.q b{color:var(--ask)}
+
+.twocol{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;min-width:640px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.c{text-align:center}
+.yes{color:var(--new);font-weight:700}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+ol.steps li{max-width:75ch}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+.mock .sub{padding-left:22px;font-size:12.5px;color:var(--navy-muted)}
+.mock .btn{margin:2px 8px 6px 22px;background:var(--accent);color:#fff;justify-content:center;font-weight:600;font-size:12.5px}
+.src{font-size:12px;color:var(--muted)}
+.screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.screen{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.screen .bar{background:var(--navy);color:var(--navy-ink);font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;padding:8px 12px;text-transform:uppercase}
+.screen .body{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mini div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.mini b{font-family:var(--f-display);font-size:20px;font-variant-numeric:tabular-nums}
+.mini span{font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.cmp{width:100%;min-width:560px}
+.choice{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.choice div{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--paper);display:flex;flex-direction:column;gap:6px;min-width:0}
+.rec{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+.perm{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line)}
+.perm label{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:4px 10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.perm label span.d{grid-column:2 / -1;color:var(--muted);font-size:12.5px}
+.perm input{margin-top:3px}
+.area{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.area h3{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.areas{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.warn{border:1px solid var(--ask);background:var(--ask-bg);border-radius:10px;padding:12px 14px;font-size:14px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Desenho para aprovação · Fase 2 de 12</span>
+  <h1>Fase 2: permissões, gerências e usuários</h1>
+  <p class="lede">A tela de perfis da Preventiva passa a valer para o sistema todo, organizada por área. Nada muda para os usuários de hoje: cada perfil continua podendo exatamente o que já pode.</p>
+  <div class="warn"><b>Etapa de junção.</b> Da <b>Preventiva</b>: cadastro de usuários, gerências, perfis com unidades e as permissões que já existem. Do <b>principal</b>: a ideia de permissões por módulo e por ação, e as permissões das OS (abrir, atribuir, assinar como engenheiro/gerente, alcance). Juntas: uma tela só, separando claramente <b>OS</b> de <b>Preventiva/PMOC</b>.</div>
+</header>
+
+<section>
+  <h2>Como fica o perfil (exemplo: Encarregado)</h2>
+  <div class="areas">
+    <div class="area">
+      <h3>Preventiva / PMOC <b class="tag t-keep">Preventiva</b></h3>
+      <div class="perm">
+        <label><input type="checkbox" checked disabled><span>Ver preventivas em Ordens de Serviço (execução)</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" checked disabled><span>Ver PMOC › Preventivas (Planejamento e Consulta)</span><b class="tag t-new">separada</b><span class="d">Hoje é a mesma permissão de cima; vira própria para dar acesso a uma tela sem a outra.</span></label>
+        <label><input type="checkbox" checked disabled><span>Planejar preventivas (calendário, técnico, pernoite)</span><b class="tag t-new">nova</b><span class="d">Hoje qualquer perfil de escritório que vê o planejamento consegue planejar.</span></label>
+        <label><input type="checkbox" checked disabled><span>Executar checklist</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" checked disabled><span>Assinar e concluir</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Excluir / cancelar preventiva</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" checked disabled><span>Ver Modelos e Protocolos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Criar e editar modelos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Excluir modelos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Disparar preventivas do mês</span><b class="tag t-keep">hoje</b></label>
+      </div>
+    </div>
+
+    <div class="area">
+      <h3>OS (corretiva, layout, acompanhamento) <b class="tag t-up">Principal</b></h3>
+      <p class="src">Aparecem na tela já nesta fase, marcadas "em construção", para você montar os perfis desde já. Passam a funcionar quando cada módulo ficar pronto (Fases 4 a 6).</p>
+      <div class="perm">
+        <label><input type="checkbox" checked disabled><span>Ver OS</span><b class="tag t-ask">Fase 6</b></label>
+        <label><input type="checkbox" disabled><span>Emitir OS (GLPI)</span><b class="tag t-ask">Fase 4</b></label>
+        <label><input type="checkbox" checked disabled><span>Atribuir técnico / equipe</span><b class="tag t-ask">Fase 4</b></label>
+        <label><input type="checkbox" disabled><span>Editar OS</span><b class="tag t-ask">Fase 5</b></label>
+        <label><input type="checkbox" disabled><span>Cancelar OS</span><b class="tag t-ask">Fase 5</b></label>
+        <label><input type="checkbox" disabled><span>Executar OS</span><b class="tag t-ask">Fase 5</b></label>
+        <label><input type="checkbox" disabled><span>Criar e editar modelos de OS</span><b class="tag t-ask">Fase 4</b></label>
+        <label><input type="checkbox" disabled><span>Exportar OS (planilha / PDF)</span><b class="tag t-ask">Fase 6</b></label>
+        <label><span></span><span><b>Assinar como:</b> nenhum · engenheiro · gerente</span><b class="tag t-ask">Fase 5</b></label>
+        <label><span></span><span><b>Alcance das OS:</b> só as minhas · da minha gerência · todas as gerências do perfil</span><b class="tag t-ask">Fase 6</b></label>
+      </div>
+    </div>
+
+    <div class="area">
+      <h3>Solicitações <b class="tag t-keep">Preventiva</b></h3>
+      <div class="perm">
+        <label><input type="checkbox" checked disabled><span>Ver solicitações</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" checked disabled><span>Decidir solicitações de corretiva</span><b class="tag t-keep">hoje</b></label>
+      </div>
+      <p class="src">Hora extra, pernoite e gerais (do principal) entram na Fase 8.</p>
+    </div>
+
+    <div class="area">
+      <h3>Cadastros <b class="tag t-keep">Preventiva</b></h3>
+      <div class="perm">
+        <label><input type="checkbox" checked disabled><span>Ver ativos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Cadastrar e editar ativos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Excluir ativos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Importar planilha de ativos</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Ver materiais</span><b class="tag t-keep">hoje</b></label>
+        <label><input type="checkbox" disabled><span>Cadastrar e importar materiais</span><b class="tag t-keep">hoje</b></label>
+      </div>
+    </div>
+
+    <div class="area">
+      <h3>Valores <b class="tag t-keep">Preventiva</b></h3>
+      <div class="perm">
+        <label><input type="checkbox" disabled><span>Ver valores em R$ (homem-hora, pernoite, materiais)</span><b class="tag t-keep">hoje</b><span class="d">Vale para preventivas e, depois, para as OS.</span></label>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Exemplos de perfis (você monta na tela)</h2>
+  <div class="box">
+    <div class="scroll">
+      <table class="cmp">
+        <thead><tr><th>Perfil</th><th>Tipo</th><th>Preventiva / PMOC</th><th>OS</th></tr></thead>
+        <tbody>
+          <tr><td><b>Administrativo</b></td><td>Escritório</td><td>Nada marcado: o PMOC e as preventivas somem do menu</td><td>Ver e emitir OS</td></tr>
+          <tr><td><b>Encarregado</b></td><td>Escritório</td><td>Ver, planejar, executar, assinar, ver modelos</td><td>Ver e atribuir técnico/equipe</td></tr>
+          <tr><td><b>Técnico</b></td><td>Campo</td><td>Executar e assinar (no celular)</td><td>Executar as dele (quando existir)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Os perfis não são criados automaticamente: você cria pelo botão "Novo perfil", como hoje.</p>
+  </div>
+</section>
+
+<section>
+  <h2>O que muda além da tela</h2>
+  <div class="box">
+    <ul class="tabs">
+      <li><span class="nm">Tipo do perfil</span><b class="tag t-up">Texto</b><span class="ds">"Escritório (planejamento)" vira só "Escritório", porque o Administrativo usa o computador e não planeja. "Campo (técnico)" continua sendo quem usa o celular.</span></li>
+      <li><span class="nm">Saem 2 permissões sem uso</span><b class="tag t-up">Limpeza</b><span class="ds">"Visualizar Dashboard" (o Dashboard saiu) e "Abertura de Novas O.S." (não é usada em nenhuma tela; a das OS do principal nasce nova na Fase 4).</span></li>
+      <li><span class="nm">Perfis que já existem</span><b class="tag t-keep">Sem mudança</b><span class="ds">As 2 permissões novas da Preventiva (PMOC separado e Planejar) começam marcadas para quem hoje já vê as preventivas. Ninguém perde nem ganha acesso.</span></li>
+      <li><span class="nm">Gerências e cadastro de usuários</span><b class="tag t-keep">Sem mudança</b><span class="ds">Continuam como estão e já valem para o sistema todo.</span></li>
+      <li><span class="nm">Banco</span><b class="tag t-keep">Sem mudança</b><span class="ds">Nada a publicar: regras e índices continuam os mesmos. As regras do banco já checam as permissões de materiais, modelos, disparo e valores; as novas são checadas nas telas.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>Perguntas</h2>
+  <div class="box">
+    <ol class="steps">
+      <li>As permissões das OS devem aparecer já nesta fase, marcadas "em construção" (para você montar os perfis desde já), ou só quando cada módulo ficar pronto?</li>
+      <li>"Planejar preventivas" separado de "Ver PMOC" serve para vocês? Exemplo: alguém que consulta o planejamento mas não pode mudar técnico nem datas.</li>
+      <li>Falta alguma permissão de Preventiva/PMOC que você já sabe que vai precisar?</li>
+    </ol>
+  </div>
+</section>
+
+</div>
