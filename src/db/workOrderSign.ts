@@ -7,6 +7,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   updateDoc,
   where,
   writeBatch
@@ -282,31 +283,74 @@ export async function dbAnswerOsValidation(token: string, approve: boolean, r: {
 // Traz a resposta do link para a OS (quem abre a OS faz isso: técnico, escritório ou assinante).
 // Aprovada = assinatura do cliente "via link". Contestada = volta para o técnico; o tempo entre a assinatura
 // do técnico e a contestação não conta no homem-hora (vira uma pausa).
-export async function dbSyncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | null> {
-  if (!o.validationToken || o.status !== 'Aguardando assinaturas' || o.nextSigner !== 'cliente') return null;
-  const v = await dbGetOsValidation(o.validationToken).catch(() => null);
+// Várias telas podem fazer isso ao mesmo tempo (lista do técnico, ficha, fila do engenheiro): no mesmo aparelho
+// as chamadas da mesma OS esperam a primeira; entre aparelhos, a gravação é feita numa transação que relê a OS
+// e só grava se ela ainda espera esse mesmo link (a resposta entra uma vez só na linha do tempo).
+const syncing = new Map<string, Promise<WorkOrder | null>>();
+
+export function dbSyncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | null> {
+  if (!o.validationToken || o.status !== 'Aguardando assinaturas' || o.nextSigner !== 'cliente') return Promise.resolve(null);
+  const key = `${o.id}|${o.validationToken}`;
+  const running = syncing.get(key);
+  if (running) return running;
+  const p = syncOsValidation(o, by).finally(() => setTimeout(() => syncing.delete(key), 5000));
+  syncing.set(key, p);
+  return p;
+}
+
+async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | null> {
+  if (!firebaseActive || !dbInstance) return null;
+  const token = o.validationToken!;
+  const v = await dbGetOsValidation(token).catch(() => null);
   if (!v || v.status === 'pendente' || !v.response) return null;
-  if (v.status === 'aprovada') {
-    return dbSignClient(o, { name: v.response.name, matricula: v.response.matricula, rating: v.response.rating, at: v.response.at, via: 'link' }, null, by);
-  }
-  // Contestada
-  const now = new Date().toISOString();
-  const pauses: WorkOrderPause[] = [
-    ...(o.pauses || []),
-    { start: o.techSignedAt || v.response.at, end: v.response.at, reason: 'Aguardando validação do cliente (contestada)', by: 'Sistema' }
-  ];
-  await updateDoc(doc(dbInstance!, 'workOrders', o.id), {
-    status: 'Contestada',
-    contestReason: v.response.reason || '',
-    contestedAt: v.response.at,
-    pauses,
-    signatures: {},
-    techSignedAt: deleteField(),
-    nextSigner: deleteField(),
-    validationToken: deleteField(),
-    signQueue: deleteField(),
-    updatedAt: now,
-    timeline: arrayUnion(ev(v.response.name || 'Cliente', 'Contestada pelo cliente (link)', v.response.reason))
+  const r = v.response;
+  const ref = doc(dbInstance, 'workOrders', o.id);
+  return runTransaction(dbInstance, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return null;
+    const cur = { ...(snap.data() as WorkOrder), id: snap.id };
+    // Outra tela já trouxe a resposta: não grava de novo
+    if (cur.status !== 'Aguardando assinaturas' || cur.nextSigner !== 'cliente' || cur.validationToken !== token) return null;
+    const now = new Date().toISOString();
+    if (v.status === 'aprovada') {
+      const meta: OsSignatureMeta = cleanUndefined({ name: r.name, matricula: r.matricula, rating: r.rating, at: r.at, via: 'link' as const });
+      const next = nextSignerAfter(cur, 'cliente');
+      const qk = queueKey(cur, next);
+      const updates: any = {
+        signatures: { ...(cur.signatures || {}), cliente: meta },
+        validationToken: deleteField(),
+        updatedAt: now,
+        timeline: arrayUnion(ev(by, 'Validada pelo cliente (link)', `${meta.name}${meta.rating ? ` · ${meta.rating} estrela(s)` : ''}`))
+      };
+      if (next) Object.assign(updates, { nextSigner: next, ...(qk ? { signQueue: qk } : { signQueue: deleteField() }) });
+      else {
+        Object.assign(updates, closeFields(cur, now));
+        if (cur.assetId) tx.set(doc(dbInstance!, 'histories', `os_${cur.id}`), historyDoc(cur, now));
+      }
+      tx.update(ref, updates);
+      return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída' } as WorkOrder;
+    }
+    // Contestada
+    const pauses: WorkOrderPause[] = [
+      ...(cur.pauses || []),
+      { start: cur.techSignedAt || r.at, end: r.at, reason: 'Aguardando validação do cliente (contestada)', by: 'Sistema' }
+    ];
+    tx.update(ref, {
+      status: 'Contestada',
+      contestReason: r.reason || '',
+      contestedAt: r.at,
+      pauses,
+      signatures: {},
+      techSignedAt: deleteField(),
+      nextSigner: deleteField(),
+      validationToken: deleteField(),
+      signQueue: deleteField(),
+      updatedAt: now,
+      timeline: arrayUnion(ev(r.name || 'Cliente', 'Contestada pelo cliente (link)', r.reason))
+    });
+    return { ...cur, status: 'Contestada', contestReason: r.reason, contestedAt: r.at, pauses, signatures: {}, techSignedAt: undefined, nextSigner: undefined, validationToken: undefined, signQueue: undefined } as WorkOrder;
+  }).catch((err: any) => {
+    checkQuotaException(err);
+    throw err;
   });
-  return { ...o, status: 'Contestada', contestReason: v.response.reason, contestedAt: v.response.at, pauses, signatures: {}, techSignedAt: undefined, nextSigner: undefined, validationToken: undefined };
 }
