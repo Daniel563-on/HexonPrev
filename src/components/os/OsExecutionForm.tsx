@@ -1,7 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, PauseCircle, PlayCircle, Save } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, Link2, Mail, PauseCircle, PenTool, PlayCircle, Save } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, WorkOrder, WorkOrderExec } from '../../types';
-import { dbGetAddresses, dbPauseWorkOrder, dbResumeWorkOrder, dbSaveWorkOrderExec, osAnswerText, osFieldVisible, stageItems } from '../../db/firebase';
+import {
+  OS_SIGN_LABEL,
+  dbConcludeWorkOrder,
+  dbCreateOsValidation,
+  dbGetAddresses,
+  dbPauseWorkOrder,
+  dbResumeWorkOrder,
+  dbSaveWorkOrderExec,
+  dbSignClient,
+  osAnswerText,
+  osFieldVisible,
+  osValidationLink,
+  stageItems
+} from '../../db/firebase';
+import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import OsFieldInput from './OsFieldInput';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsTeamPicker from './OsTeamPicker';
@@ -10,7 +24,8 @@ import ExecutionExtras from '../orders/execution/ExecutionExtras';
 
 // EXECUÇÃO DA OS PELO TÉCNICO (celular): perguntas de Execução do modelo, equipe, materiais, feriados,
 // hora extra e pernoite. Salvar grava no banco; o próximo técnico (se a OS for passada) continua daqui.
-// Pendente = pausa com motivo (o tempo parado não conta). Concluir e assinaturas: Fase 5B.
+// Pendente = pausa com motivo (o tempo parado não conta). Concluir = o técnico assina (o homem-hora para);
+// depois o cliente assina no celular ou recebe o link de validação. Contestada = volta para o técnico corrigir.
 
 interface Props {
   order: WorkOrder;
@@ -47,7 +62,9 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const [pausing, setPausing] = useState(false);
   const [reason, setReason] = useState('');
 
-  const editable = order.status === 'Em andamento';
+  const editable = order.status === 'Em andamento' || order.status === 'Contestada';
+  const [signing, setSigning] = useState<'tecnico' | 'cliente' | null>(null);
+  const [linkDays, setLinkDays] = useState(7);
   const fields = order.templateFields || [];
   const items = stageItems(fields, order.templateSystemFields || [], 'execucao');
   const needsAddresses = fields.some((f) => f.stage === 'execucao' && f.type === 'location');
@@ -69,15 +86,20 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     [items, fields, exec.answers]
   );
 
-  const save = async () => {
+  // Confere e monta o que vai para o banco (null = algo a corrigir; a mensagem já aparece)
+  const prepare = (): WorkOrderExec | null => {
+    const fail = (text: string) => {
+      setMsg({ ok: false, text });
+      return null;
+    };
     if (exec.overtime !== null) {
       const valid = exec.overtime.filter((d) => d.date && d.minutes > 0);
-      if (valid.length === 0) return setMsg({ ok: false, text: 'Hora extra: informe o dia e as horas, ou marque "Não".' });
-      if (valid.length !== exec.overtime.length) return setMsg({ ok: false, text: 'Hora extra: há dia sem data ou sem horas. Preencha ou tire o dia.' });
+      if (valid.length === 0) return fail('Hora extra: informe o dia e as horas, ou marque "Não".');
+      if (valid.length !== exec.overtime.length) return fail('Hora extra: há dia sem data ou sem horas. Preencha ou tire o dia.');
       const dates = valid.map((d) => d.date);
-      if (new Set(dates).size !== dates.length) return setMsg({ ok: false, text: 'Hora extra: o mesmo dia foi lançado duas vezes. Junte as horas num só.' });
+      if (new Set(dates).size !== dates.length) return fail('Hora extra: o mesmo dia foi lançado duas vezes. Junte as horas num só.');
     }
-    if (exec.overnightNights !== null && !(exec.overnightNights > 0)) return setMsg({ ok: false, text: 'Pernoite: informe a quantidade de diárias, ou marque "Não".' });
+    if (exec.overnightNights !== null && !(exec.overnightNights > 0)) return fail('Pernoite: informe a quantidade de diárias, ou marque "Não".');
     // Respostas de perguntas escondidas não são gravadas
     const answers: Record<string, any> = {};
     fields
@@ -87,7 +109,12 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         if (f.type === 'toggle') answers[f.id] = !!v;
         else if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)) answers[f.id] = v;
       });
-    const toSave: WorkOrderExec = { ...exec, answers, materials: exec.materials.filter((m) => m.qty > 0) };
+    return { ...exec, answers, materials: exec.materials.filter((m) => m.qty > 0) };
+  };
+
+  const save = async () => {
+    const toSave = prepare();
+    if (!toSave) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -130,6 +157,62 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     }
   };
 
+  // CONCLUIR: obrigatórias respondidas → o técnico assina
+  const conclude = () => {
+    const toSave = prepare();
+    if (!toSave) return;
+    const missing = fields.find(
+      (f) => f.stage === 'execucao' && f.required && f.type !== 'toggle' && osFieldVisible(f, fields, exec.answers) && (exec.answers[f.id] === undefined || exec.answers[f.id] === '' || (Array.isArray(exec.answers[f.id]) && exec.answers[f.id].length === 0))
+    );
+    if (missing) return setMsg({ ok: false, text: `Para concluir, responda: ${missing.label}` });
+    setMsg(null);
+    setSigning('tecnico');
+  };
+
+  const onSigned = async (strokes: Stroke[], who: { name: string; matricula?: string; cargo?: string; rating?: number }) => {
+    const role = signing!;
+    const at = new Date().toISOString();
+    const image = renderOsSignature(strokes, { role, ...who, at });
+    setSigning(null);
+    setBusy(true);
+    try {
+      if (role === 'tecnico') {
+        const toSave = prepare();
+        if (!toSave) return;
+        const updated = await dbConcludeWorkOrder(order, toSave, { name: who.name, matricula: who.matricula, cargo: who.cargo, at, via: 'celular' }, image, userProfile.name);
+        setDirty(false);
+        setMsg({ ok: true, text: updated.status === 'Concluída' ? 'OS concluída.' : 'Assinada! Agora a assinatura do cliente.' });
+        onChanged(updated);
+      } else {
+        const updated = await dbSignClient(order, { name: who.name, matricula: who.matricula, rating: who.rating, at, via: 'celular', by: userProfile.name }, image, userProfile.name);
+        setMsg({ ok: true, text: 'Assinatura do cliente registrada.' });
+        onChanged(updated);
+      }
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.code === 'permission-denied' ? 'O banco recusou a assinatura.' : `Não foi possível: ${err?.message || err}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const makeLink = async () => {
+    setBusy(true);
+    try {
+      const token = await dbCreateOsValidation(order, linkDays, userProfile.name);
+      onChanged({ ...order, validationToken: token });
+    } catch (err: any) {
+      setMsg({ ok: false, text: `Não foi possível gerar o link: ${err?.message || err}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const link = order.validationToken ? osValidationLink(order.validationToken) : '';
+  const mailto = link
+    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${order.number}`)}&body=${encodeURIComponent(
+        `Olá,\n\nPor favor, confira o atendimento da ${order.number}${order.glpi ? ` (GLPI ${order.glpi})` : ''} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
+      )}`
+    : '';
+
   const openPause = order.pauses?.length ? order.pauses[order.pauses.length - 1] : null;
   const section = 'p-4 rounded-2xl border border-slate-200 bg-white space-y-3';
 
@@ -156,6 +239,55 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
               <button type="button" onClick={resume} disabled={busy} className="h-9 px-4 rounded-lg bg-orange-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
                 <PlayCircle className="w-4 h-4" /> Retomar
               </button>
+            </div>
+          )}
+
+          {order.status === 'Contestada' && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1">
+              <p className="text-xs font-black text-rose-800">Contestada pelo cliente{order.contestReason ? `: ${order.contestReason}` : ''}</p>
+              <p className="text-[11px] text-rose-800">Verifique, corrija e conclua de novo (o homem-hora voltou a contar).</p>
+            </div>
+          )}
+
+          {order.status === 'Aguardando assinaturas' && (
+            <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50 space-y-3">
+              <p className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" /> Concluída e assinada por {order.signatures?.tecnico?.name || 'você'}
+              </p>
+              {order.nextSigner === 'cliente' ? (
+                <>
+                  <p className="text-[11px] text-emerald-900">Agora o cliente: assina aqui no celular ou recebe o link para validar.</p>
+                  <button type="button" onClick={() => setSigning('cliente')} disabled={busy} className="w-full h-11 rounded-xl bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    <PenTool className="w-4 h-4" /> Cliente assina agora no celular
+                  </button>
+                  {link ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-emerald-900 break-all">Link de validação: {link}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <a href={mailto} className="h-10 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-xs font-black flex items-center justify-center gap-1.5">
+                          <Mail className="w-4 h-4" /> Enviar por e-mail
+                        </a>
+                        <button type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => setMsg({ ok: true, text: 'Link copiado.' }))} className="h-10 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer">
+                          <Copy className="w-4 h-4" /> Copiar link
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <select value={linkDays} onChange={(e) => setLinkDays(Number(e.target.value))} className="h-10 px-2 text-xs border border-emerald-300 rounded-xl bg-white" aria-label="Validade do link">
+                        {[3, 7, 15, 30, 60].map((d) => (
+                          <option key={d} value={d}>Vale {d} dias</option>
+                        ))}
+                      </select>
+                      <button type="button" onClick={makeLink} disabled={busy} className="flex-1 h-10 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
+                        <Link2 className="w-4 h-4" /> Gerar link para o cliente
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-[11px] text-emerald-900">Aguardando a assinatura do {order.nextSigner ? OS_SIGN_LABEL[order.nextSigner].toLowerCase() : '—'} no sistema.</p>
+              )}
             </div>
           )}
 
@@ -220,6 +352,17 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         </div>
       </div>
 
+      {signing && (
+        <OsSignaturePad
+          role={signing}
+          client={signing === 'cliente'}
+          signer={{ name: userProfile.name, matricula: userProfile.matricula, cargo: userProfile.cargo || 'Técnico' }}
+          title={signing === 'cliente' ? `Assinatura do cliente — ${order.number}` : `Concluir ${order.number} — assinatura do técnico`}
+          onConfirm={onSigned}
+          onCancel={() => setSigning(null)}
+        />
+      )}
+
       {editable && (
         <div className="fixed bottom-0 left-0 right-0 z-[61] bg-white/95 backdrop-blur border-t border-slate-200">
           <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
@@ -231,15 +374,19 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
               </div>
             ) : (
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setPausing(true); setMsg(null); }} disabled={busy || dirty} title={dirty ? 'Salve antes de deixar pendente' : ''} className="h-11 px-4 rounded-xl border border-orange-300 text-orange-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-40">
-                  <PauseCircle className="w-4 h-4" /> Pendente
-                </button>
-                <button type="button" onClick={save} disabled={busy || !dirty} className="flex-1 h-11 rounded-xl bg-[#3525cd] text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
+                {order.status === 'Em andamento' && (
+                  <button type="button" onClick={() => { setPausing(true); setMsg(null); }} disabled={busy || dirty} title={dirty ? 'Salve antes de deixar pendente' : ''} className="h-11 px-3 rounded-xl border border-orange-300 text-orange-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-40">
+                    <PauseCircle className="w-4 h-4" /> Pendente
+                  </button>
+                )}
+                <button type="button" onClick={save} disabled={busy || !dirty} className="flex-1 h-11 rounded-xl border border-[#3525cd] text-[#3525cd] text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
                   <Save className="w-4 h-4" /> {busy ? 'Salvando...' : dirty ? 'Salvar' : 'Salvo'}
+                </button>
+                <button type="button" onClick={conclude} disabled={busy} className="flex-1 h-11 rounded-xl bg-[#3525cd] text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
+                  <CheckCircle2 className="w-4 h-4" /> Concluir
                 </button>
               </div>
             )}
-            <p className="text-[10px] text-slate-400 text-center">Concluir e assinaturas chegam na próxima etapa (5B).</p>
           </div>
         </div>
       )}

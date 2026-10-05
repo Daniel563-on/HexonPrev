@@ -89,7 +89,18 @@ const root = createRoot(document.getElementById('root')!);
 const params = new URLSearchParams(window.location.search);
 const publicAssetParam = params.get('public_asset') || params.get('asset_id') || params.get('patrimonio');
 
-if (publicAssetParam) {
+const validationToken = params.get('validar');
+
+if (validationToken) {
+  // Link de validação da OS pelo cliente (sem login): só a página pública
+  import('./components/PublicOsValidationView').then(({ default: PublicOsValidationView }) => {
+    root.render(
+      <StrictMode>
+        <PublicOsValidationView token={validationToken} />
+      </StrictMode>
+    );
+  });
+} else if (publicAssetParam) {
   import('./components/PublicAssetView').then(({ default: PublicAssetView }) => {
     root.render(
       <StrictMode>
