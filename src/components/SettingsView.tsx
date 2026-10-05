@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import SystemControlCard from './users/SystemControlCard';
 import AuditLogsTab from './users/AuditLogsTab';
+import OsTemplatesEditor from './os/OsTemplatesEditor';
 import { HexonUser } from '../types';
 
-// CONFIGURAÇÕES (só Super Administrador): coisas do sistema todo.
-// Sistema = forçar atualização e modo manutenção; Auditoria = ações registradas e acessos.
-type SettingsTab = 'system' | 'audit';
+// CONFIGURAÇÕES: coisas do sistema todo.
+// Sistema = forçar atualização e modo manutenção; Auditoria = ações registradas e acessos (só Super Administrador).
+// Modelos de OS = quem tem "Criar e editar modelos de OS" no perfil (o Super Administrador também).
+type SettingsTab = 'system' | 'audit' | 'os-templates';
 
-export default function SettingsView({ userProfile, darkMode }: { userProfile: HexonUser; darkMode: boolean }) {
-  const [tab, setTab] = useState<SettingsTab>('system');
+export default function SettingsView({ userProfile, darkMode, canEditOsTemplates }: { userProfile: HexonUser; darkMode: boolean; canEditOsTemplates: boolean }) {
+  const isSuper = userProfile.perfil === 'Super Administrador';
+  const [tab, setTab] = useState<SettingsTab>(isSuper ? 'system' : 'os-templates');
 
   const tabBtn = (key: SettingsTab, icon: string, label: string) => (
     <button
@@ -26,20 +29,24 @@ export default function SettingsView({ userProfile, darkMode }: { userProfile: H
   return (
     <div className="space-y-6 font-sans">
       <div className="border-b pb-4 border-slate-200 dark:border-slate-800">
-        <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded font-mono text-[10px] font-black uppercase tracking-wider">
-          Nível: Super Administrador
-        </span>
+        {isSuper && (
+          <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded font-mono text-[10px] font-black uppercase tracking-wider">
+            Nível: Super Administrador
+          </span>
+        )}
         <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'} mt-1`}>Configurações</h2>
         <p className="text-xs text-slate-500 mt-1">Ajustes que valem para o sistema todo.</p>
       </div>
 
       <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1">
-        {tabBtn('system', 'settings_suggest', 'Sistema')}
-        {tabBtn('audit', 'fact_check', 'Auditoria')}
+        {isSuper && tabBtn('system', 'settings_suggest', 'Sistema')}
+        {isSuper && tabBtn('audit', 'fact_check', 'Auditoria')}
+        {canEditOsTemplates && tabBtn('os-templates', 'description', 'Modelos de OS')}
       </div>
 
-      {tab === 'system' && <SystemControlCard darkMode={darkMode} userName={userProfile.name} />}
-      {tab === 'audit' && <AuditLogsTab darkMode={darkMode} />}
+      {tab === 'system' && isSuper && <SystemControlCard darkMode={darkMode} userName={userProfile.name} />}
+      {tab === 'audit' && isSuper && <AuditLogsTab darkMode={darkMode} />}
+      {tab === 'os-templates' && canEditOsTemplates && <OsTemplatesEditor userProfile={userProfile} />}
     </div>
   );
 }

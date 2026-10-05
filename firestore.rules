@@ -334,8 +334,11 @@ service cloud.firestore {
     // OS: cada um vê as das gerências do perfil; emitir pede "Emitir OS"; atribuir pede "Atribuir técnico / equipe"
     match /workOrders/{orderId} {
       allow get, list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      // Gerência da OS = a de quem abre; Super Administrador e gerência "Todas" escolhem (dentro do que enxergam)
       allow create: if isStaff() && hasPermission('os_create')
-        && (seesAllUnits() || request.resource.data.unit in myUnits())
+        && ((isSuperAdmin() || me().get('gerencia', '') == 'Todas')
+            ? (seesAllUnits() || request.resource.data.unit in myUnits())
+            : request.resource.data.unit == me().get('gerencia', ''))
         && orderId == request.resource.data.number
         && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
         && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')));

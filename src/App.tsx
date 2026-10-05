@@ -496,10 +496,12 @@ export default function App() {
     if (tab === 'home') return true;
     // Ordens de Serviço: OS (corretiva, layout, acompanhamento) e/ou execução das preventivas
     if (tab === 'service-orders') return userHasActionPermission('os_view') || userHasActionPermission('view_service_orders');
-    // Emitir OS (GLPI): quem emite ou quem edita os modelos
-    if (tab === 'os-emit') return userHasActionPermission('os_create') || userHasActionPermission('os_templates');
+    // Emitir OS (GLPI): quem emite
+    if (tab === 'os-emit') return userHasActionPermission('os_create');
+    // Configurações: o Super Administrador vê tudo; quem edita modelos de OS vê só "Modelos de OS"
+    if (tab === 'settings') return userHasActionPermission('os_templates');
     // Só Super Administrador
-    if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses' || tab === 'settings') return false;
+    if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses') return false;
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
@@ -1116,14 +1118,7 @@ export default function App() {
           )}
 
           {currentTab === 'os-emit' && (
-            <EmitOsView
-              userProfile={userProfile}
-              userProfileId={resolveUserProfile(userProfile, accessProfiles)?.id}
-              unitOptions={osUnitOptions}
-              canEmit={userHasActionPermission('os_create')}
-              canAssign={userHasActionPermission('os_assign')}
-              canEditTemplates={userHasActionPermission('os_templates')}
-            />
+            <EmitOsView userProfile={userProfile} unitOptions={osUnitOptions} canAssign={userHasActionPermission('os_assign')} />
           )}
 
           {/* PMOC › Preventivas (Planejamento e Consulta); fica separado para abrir do zero ao trocar de tela */}
@@ -1196,8 +1191,8 @@ export default function App() {
             />
           )}
 
-          {currentTab === 'settings' && userProfile?.perfil === 'Super Administrador' && (
-            <SettingsView userProfile={userProfile} darkMode={darkMode} />
+          {currentTab === 'settings' && userProfile && userHasTabPermission('settings') && (
+            <SettingsView userProfile={userProfile} darkMode={darkMode} canEditOsTemplates={userHasActionPermission('os_templates')} />
           )}
 
           {currentTab === 'qr-codes' && (

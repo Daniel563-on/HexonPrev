@@ -1,32 +1,44 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Copy, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
-import { AccessProfile, HexonUser, OsFieldType, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
+import { HexonUser, OsFieldType, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
 import {
   OS_LOCKED_SYSTEM,
   OS_SYSTEM_HINT,
   OS_SYSTEM_STAGE,
+  OS_CONDITION_TYPES,
   OsStageItem,
   dbDeleteOsTemplate,
   dbGetOsTemplates,
-  dbGetProfiles,
   dbSaveOsTemplate,
+  osConditionOptions,
   defaultSystemFields,
   stageItems
 } from '../../db/firebase';
 
-// MODELOS DE OS (dentro de Emitir OS): Criação, Execução, Campos do sistema, Permissões e Assinaturas.
+// MODELOS DE OS (em Configurações): Criação, Execução, Sistema e Fluxo/assinaturas.
+// Quem pode editar e quem pode emitir fica só no Perfil de acesso (Usuários).
 // Cada OS guarda uma cópia do modelo na emissão: mudar o modelo vale só para as próximas OS.
 
-type Tab = 'criacao' | 'execucao' | 'sistema' | 'permissoes' | 'assinaturas';
+type Tab = 'criacao' | 'execucao' | 'sistema' | 'assinaturas';
 
-const TYPE_LABEL: Record<OsFieldType, string> = {
+// Tipos oferecidos ao criar pergunta (o 'checkbox' antigo é lido como Sim/Não)
+const TYPE_LABEL: Record<Exclude<OsFieldType, 'checkbox'>, string> = {
   text: 'Texto curto',
   textarea: 'Texto longo',
   number: 'Número',
   date: 'Data',
-  select: 'Lista (uma opção)',
-  checkbox: 'Sim / Não'
+  phone: 'Telefone',
+  email: 'E-mail',
+  select: 'Lista suspensa (uma opção)',
+  multiselect: 'Caixas de marcar (várias opções)',
+  toggle: 'Liga / desliga',
+  yesno: 'Sim / Não',
+  signature: 'Assinatura no celular',
+  location: 'Local (CRAAI › Comarca › Endereço)'
 };
+const typeLabel = (f: OsTemplateField) =>
+  f.type === 'checkbox' ? TYPE_LABEL.yesno : f.type === 'location' ? (f.locationDepth === 'comarca' ? 'Local (CRAAI › Comarca)' : TYPE_LABEL.location) : TYPE_LABEL[f.type];
+const hasOptions = (t: OsFieldType) => t === 'select' || t === 'multiselect';
 
 const SIGN_LABEL: Record<OsSignatureRole, string> = {
   tecnico: 'Técnico',
@@ -47,8 +59,7 @@ const blankTemplate = (by: string): OsTemplate => {
     version: 1,
     fields: [],
     systemFields: defaultSystemFields(),
-    allowedProfileIds: [],
-    signatures: ['tecnico'],
+    signatures: ['tecnico', 'cliente', 'engenheiro', 'gerente'],
     createdAt: now,
     updatedAt: now,
     updatedBy: by
@@ -60,7 +71,6 @@ const btnSm = 'h-7 w-7 rounded-md border border-slate-200 flex items-center just
 
 export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonUser }) {
   const [templates, setTemplates] = useState<OsTemplate[]>([]);
-  const [profiles, setProfiles] = useState<AccessProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<OsTemplate | null>(null);
@@ -75,9 +85,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
     setLoading(true);
     setError(null);
     try {
-      const [list, profs] = await Promise.all([dbGetOsTemplates(true, userProfile.name), dbGetProfiles().catch(() => [])]);
-      setTemplates(list);
-      setProfiles(profs);
+      setTemplates(await dbGetOsTemplates(true, userProfile.name));
     } catch (err: any) {
       setError(`Não foi possível carregar os modelos: ${err?.message || err}`);
     } finally {
@@ -106,8 +114,10 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
     if (intervencao?.enabled && (intervencao.options || []).filter((o) => o.trim()).length === 0) {
       return setError('Informe pelo menos uma opção de Intervenção (aba Campos do sistema).');
     }
-    const badSelect = editing.fields.find((f) => f.type === 'select' && (f.options || []).filter((o) => o.trim()).length === 0);
+    const badSelect = editing.fields.find((f) => hasOptions(f.type) && (f.options || []).filter((o) => o.trim()).length === 0);
     if (badSelect) return setError(`A pergunta "${badSelect.label}" é uma lista e precisa de opções.`);
+    const badCond = editing.fields.find((f) => f.showIf && !editing.fields.some((p) => p.id === f.showIf!.fieldId && p.stage === f.stage));
+    if (badCond) return setError(`A pergunta "${badCond.label}" depende de uma pergunta que não existe mais nesta etapa. Ajuste a condição.`);
     setSaving(true);
     setError(null);
     try {
@@ -168,13 +178,24 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
   const saveField = () => {
     if (!editing || !fieldForm) return;
     if (!fieldForm.label.trim()) return setError('Informe o texto da pergunta.');
+    const options = hasOptions(fieldForm.type) ? (fieldForm.options || []).map((o) => o.trim()).filter(Boolean) : undefined;
+    if (options && options.length === 0) return setError('Informe as opções da lista.');
+    if (fieldForm.showIf && !fieldForm.showIf.value) return setError('Escolha a resposta da condição (ou tire a condição).');
     const clean: OsTemplateField = {
       ...fieldForm,
       label: fieldForm.label.trim(),
-      options: fieldForm.type === 'select' ? (fieldForm.options || []).map((o) => o.trim()).filter(Boolean) : undefined
+      options,
+      locationDepth: fieldForm.type === 'location' ? fieldForm.locationDepth || 'endereco' : undefined,
+      // Assinatura nunca vale como condição de outra; a própria condição some se a pergunta mudar de etapa
+      showIf: fieldForm.showIf || undefined
     };
     const exists = editing.fields.some((f) => f.id === clean.id);
-    setEditing({ ...editing, fields: exists ? editing.fields.map((f) => (f.id === clean.id ? clean : f)) : [...editing.fields, clean] });
+    // Mudou o tipo ou as opções: tira as condições de outras perguntas que não batem mais
+    const allowed = OS_CONDITION_TYPES.includes(clean.type) ? osConditionOptions(clean) : [];
+    const fields = (exists ? editing.fields.map((f) => (f.id === clean.id ? clean : f)) : [...editing.fields, clean]).map((f) =>
+      f.showIf?.fieldId === clean.id && (!allowed.includes(f.showIf.value) || f.stage !== clean.stage) ? { ...f, showIf: undefined } : f
+    );
+    setEditing({ ...editing, fields });
     setFieldForm(null);
     setError(null);
   };
@@ -308,7 +329,9 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 </p>
                 <p className="text-[10px] text-slate-500">
                   {it.kind === 'field'
-                    ? `${TYPE_LABEL[it.field.type]}${it.field.options?.length ? ` · ${it.field.options.join(', ')}` : ''}`
+                    ? `${typeLabel(it.field)}${it.field.options?.length ? ` · ${it.field.options.join(', ')}` : ''}${
+                        it.field.showIf ? ` · só quando "${editing.fields.find((f) => f.id === it.field.showIf!.fieldId)?.label || '?'}" = ${it.field.showIf.value}` : ''
+                      }`
                     : `${OS_SYSTEM_HINT[it.sys.key]}${it.sys.options?.length ? ` · ${it.sys.options.join(', ')}` : ''}`}
                 </p>
               </div>
@@ -323,7 +346,17 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
-                  <button type="button" className={btnSm} title="Excluir" onClick={() => setEditing({ ...editing, fields: editing.fields.filter((f) => f.id !== it.field.id) })}>
+                  <button
+                    type="button"
+                    className={btnSm}
+                    title="Excluir"
+                    onClick={() =>
+                      setEditing({
+                        ...editing,
+                        fields: editing.fields.filter((f) => f.id !== it.field.id).map((f) => (f.showIf?.fieldId === it.field.id ? { ...f, showIf: undefined } : f))
+                      })
+                    }
+                  >
                     <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                   </button>
                 </div>
@@ -355,8 +388,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
       <div className="flex flex-wrap gap-1 bg-white border border-slate-200 rounded-xl p-1">
         {tabBtn('criacao', 'Aba 1 — Criação')}
         {tabBtn('execucao', 'Aba 2 — Execução')}
-        {tabBtn('sistema', 'Campos do sistema')}
-        {tabBtn('permissoes', 'Permissões')}
+        {tabBtn('sistema', 'Sistema')}
         {tabBtn('assinaturas', 'Fluxo e assinaturas')}
       </div>
 
@@ -365,7 +397,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
 
       {tab === 'sistema' && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">Ligue, desligue, renomeie e torne obrigatórios. Gerência responsável e Endereço de execução ficam sempre ligados: o Hexon precisa deles.</p>
+          <p className="text-xs text-slate-500">Campos com que o sistema trabalha. Ligue, desligue, renomeie e torne obrigatórios. Gerência e Local da execução ficam sempre ligados: o Hexon precisa deles.</p>
           {(['criacao', 'execucao'] as OsStage[]).map((stage) => (
             <div key={stage} className="rounded-xl border border-slate-200 bg-white">
               <p className="px-4 py-2 border-b border-slate-100 text-[11px] font-black uppercase text-slate-500">
@@ -399,7 +431,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                         <input
                           type="checkbox"
                           checked={locked || s.required}
-                          disabled={locked || !s.enabled || stage === 'execucao'}
+                          disabled={locked || !s.enabled || stage === 'execucao' || s.key === 'tecnico'}
                           onChange={(e) => updateSys(s.key, { required: e.target.checked })}
                         />
                         Obrigatório
@@ -410,31 +442,6 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {tab === 'permissoes' && (
-        <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
-          <p className="text-xs text-slate-500">
-            Perfis que podem emitir OS com este modelo. Nenhum marcado = todos os perfis com a permissão "Emitir OS (GLPI)".
-          </p>
-          <div className="flex flex-wrap gap-3">
-            {profiles.filter((p) => p.kind !== 'execucao').map((p) => (
-              <label key={p.id} className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={editing.allowedProfileIds.includes(p.id)}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      allowedProfileIds: e.target.checked ? [...editing.allowedProfileIds, p.id] : editing.allowedProfileIds.filter((x) => x !== p.id)
-                    })
-                  }
-                />
-                {p.name}
-              </label>
-            ))}
-          </div>
         </div>
       )}
 
@@ -487,7 +494,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
       {/* Pergunta: criar / editar */}
       {fieldForm && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-3">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 space-y-3">
             <p className="text-sm font-black text-slate-900">{editing.fields.some((f) => f.id === fieldForm.id) ? 'Editar pergunta' : 'Nova pergunta'}</p>
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Pergunta *</span>
@@ -495,13 +502,20 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
             </label>
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Tipo de resposta</span>
-              <select className={input} value={fieldForm.type} onChange={(e) => setFieldForm({ ...fieldForm, type: e.target.value as OsFieldType })}>
-                {(Object.keys(TYPE_LABEL) as OsFieldType[]).map((t) => (
+              <select
+                className={input}
+                value={fieldForm.type === 'checkbox' ? 'yesno' : fieldForm.type}
+                onChange={(e) => {
+                  const type = e.target.value as OsFieldType;
+                  setFieldForm({ ...fieldForm, type, locationDepth: type === 'location' ? fieldForm.locationDepth || 'endereco' : undefined });
+                }}
+              >
+                {(Object.keys(TYPE_LABEL) as (keyof typeof TYPE_LABEL)[]).map((t) => (
                   <option key={t} value={t}>{TYPE_LABEL[t]}</option>
                 ))}
               </select>
             </label>
-            {fieldForm.type === 'select' && (
+            {hasOptions(fieldForm.type) && (
               <label className="block">
                 <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Opções (separadas por vírgula)</span>
                 <input
@@ -512,13 +526,75 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 />
               </label>
             )}
+            {fieldForm.type === 'location' && (
+              <label className="block">
+                <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Vai até</span>
+                <select className={input} value={fieldForm.locationDepth || 'endereco'} onChange={(e) => setFieldForm({ ...fieldForm, locationDepth: e.target.value as 'comarca' | 'endereco' })}>
+                  <option value="comarca">CRAAI › Comarca</option>
+                  <option value="endereco">CRAAI › Comarca › Endereço</option>
+                </select>
+                <span className="block text-[10px] text-slate-500 mt-1">As listas vêm do cadastro de Endereços: escolhido o CRAAI, aparecem só as comarcas dele; escolhida a comarca, só os endereços dela.</span>
+              </label>
+            )}
+            {(fieldForm.type === 'phone' || fieldForm.type === 'email') && (
+              <p className="text-[10px] text-slate-500">
+                {fieldForm.type === 'phone' ? 'Formato (00) 00000-0000; o sistema confere se tem DDD e número.' : 'O sistema confere se o e-mail está no formato nome@dominio.'}
+              </p>
+            )}
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Etapa</span>
-              <select className={input} value={fieldForm.stage} onChange={(e) => setFieldForm({ ...fieldForm, stage: e.target.value as OsStage, order: nextOrder(e.target.value as OsStage) })}>
+              <select
+                className={input}
+                value={fieldForm.stage}
+                onChange={(e) => setFieldForm({ ...fieldForm, stage: e.target.value as OsStage, order: nextOrder(e.target.value as OsStage), showIf: undefined })}
+              >
                 <option value="criacao">Criação (quem emite)</option>
                 <option value="execucao">Execução (técnico)</option>
               </select>
             </label>
+            {(() => {
+              // Perguntas de resposta fechada da mesma etapa (sem criar volta: A depende de B que depende de A)
+              const dependsOn = (f: OsTemplateField, target: string, depth = 0): boolean =>
+                !!f.showIf && depth < 10 && (f.showIf.fieldId === target || editing.fields.some((p) => p.id === f.showIf!.fieldId && dependsOn(p, target, depth + 1)));
+              const candidates = editing.fields.filter(
+                (f) => f.id !== fieldForm.id && f.stage === fieldForm.stage && OS_CONDITION_TYPES.includes(f.type) && !dependsOn(f, fieldForm.id)
+              );
+              const parent = candidates.find((f) => f.id === fieldForm.showIf?.fieldId);
+              return (
+                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Mostrar só quando… (opcional)</span>
+                  {candidates.length === 0 ? (
+                    <p className="text-[10px] text-slate-500">Para usar condição, crie antes nesta etapa uma pergunta de Lista, Caixas de marcar, Sim/Não ou Liga/desliga.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className={input}
+                        value={fieldForm.showIf?.fieldId || ''}
+                        onChange={(e) => setFieldForm({ ...fieldForm, showIf: e.target.value ? { fieldId: e.target.value, value: '' } : undefined })}
+                      >
+                        <option value="">Sempre aparece</option>
+                        {candidates.map((f) => (
+                          <option key={f.id} value={f.id}>{f.label}</option>
+                        ))}
+                      </select>
+                      {parent && (
+                        <select
+                          className={input}
+                          value={fieldForm.showIf?.value || ''}
+                          onChange={(e) => setFieldForm({ ...fieldForm, showIf: { fieldId: parent.id, value: e.target.value } })}
+                        >
+                          <option value="">for igual a...</option>
+                          {osConditionOptions(parent).map((o) => (
+                            <option key={o} value={o}>= {o}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                  {fieldForm.showIf && <p className="text-[10px] text-slate-500">Enquanto estiver escondida, a pergunta não é obrigatória.</p>}
+                </div>
+              );
+            })()}
             <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <input type="checkbox" checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />
               Resposta obrigatória
