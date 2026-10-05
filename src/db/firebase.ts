@@ -33,6 +33,7 @@ export * from './historyPages';
 export * from './assetSpend';
 export * from './workOrders';
 export * from './overtime';
+export * from './workOrderCost';
 // Disjuntor do banco (proteção contra loops): só o que as telas usam
 export { runBulk, onGuardTrip, guardTripped, GuardError } from './guard';
 export type { GuardTrip } from './guard';

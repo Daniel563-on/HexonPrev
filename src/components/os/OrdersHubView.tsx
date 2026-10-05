@@ -9,12 +9,14 @@ interface Props {
   canSeeOs: boolean;
   canSeePreventives: boolean;
   canAssign: boolean;
+  canCancel: boolean;
+  canViewCosts: boolean;
   preventives: React.ReactNode; // a tela de execução das preventivas (Realização)
 }
 
 type Section = 'os' | 'preventivas';
 
-export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, preventives }: Props) {
+export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, canCancel, canViewCosts, preventives }: Props) {
   const [section, setSection] = useState<Section>(() => {
     try {
       const saved = localStorage.getItem('hexon_orders_section') as Section | null;
@@ -54,10 +56,10 @@ export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canS
         <div className="space-y-4">
           <div className="border-b pb-3 border-slate-200">
             <h2 className="text-xl font-black tracking-tight text-slate-900">Ordens de Serviço</h2>
-            <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Lista simples: busca e filtros completos chegam na Fase 6.</p>
+            <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Clique na OS para abrir a ficha. Busca e filtros completos chegam na Fase 6.</p>
           </div>
           {unitOptions.length > 0 ? (
-            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} />
+            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canCancel={canCancel} canViewCosts={canViewCosts} />
           ) : (
             <p className="text-xs text-slate-500">Seu perfil não tem gerência para ver OS.</p>
           )}

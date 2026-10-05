@@ -15,11 +15,12 @@ interface Props {
   materials: UsedMaterial[];
   participants: OrderParticipant[];
   onChange: (next: { materialsUsed?: UsedMaterial[]; participants?: OrderParticipant[] }) => void;
+  hideParticipants?: boolean; // OS (Hexon 2.0): a equipe tem um bloco próprio
 }
 
 const fmtQty = (n: number) => (Number.isFinite(n) ? String(n).replace('.', ',') : '');
 
-export default function ExecutionExtras({ unit, editable, executor, materials, participants, onChange }: Props) {
+export default function ExecutionExtras({ unit, editable, executor, materials, participants, onChange, hideParticipants }: Props) {
   const [catalog, setCatalog] = useState<Material[]>([]);
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [matSearch, setMatSearch] = useState('');
@@ -123,6 +124,7 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
       </div>
 
       {/* PARTICIPANTES */}
+      {!hideParticipants && (
       <div className="space-y-2">
         <p className={label}>Participantes</p>
         <div className="flex flex-wrap gap-1.5">
@@ -160,6 +162,7 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

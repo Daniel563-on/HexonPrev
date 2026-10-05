@@ -805,6 +805,29 @@ export interface WorkOrderEvent {
   note?: string;
 }
 
+// Execução da OS (Fase 5): o que o técnico preenche em campo
+export interface WorkOrderPause {
+  start: string;   // ISO
+  end?: string;    // ISO (sem fim = ainda pendente)
+  reason: string;
+  by: string;
+}
+export interface WorkOrderOvertimeDay {
+  date: string;    // AAAA-MM-DD
+  minutes: number; // horas extras do dia, em minutos (valem para todos da OS)
+  holiday: boolean;
+}
+export interface WorkOrderExec {
+  answers: Record<string, any>;            // perguntas da etapa Execução do modelo
+  team: OrderParticipant[];                // colaboradores adicionados pelo técnico (o técnico atribuído entra sempre)
+  materials: UsedMaterial[];
+  holidays: string[];                      // dias marcados como feriado (AAAA-MM-DD): homem-hora = 0
+  overtime: WorkOrderOvertimeDay[] | null; // null = não houve hora extra
+  overnightNights: number | null;          // null = não houve pernoite
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface WorkOrder {
   id: string;            // = number, ex.: "OS-2026000001"
   number: string;
@@ -836,6 +859,12 @@ export interface WorkOrder {
   assignedTechnicianMatricula?: string;
   assignedTechnicianName?: string;
   assignedAt?: any;              // hora do servidor (o homem-hora conta a partir daqui)
+  techOpen?: string;             // matrícula do técnico enquanto a OS está com ele (índice esparso: "minhas OS")
+  exec?: WorkOrderExec;
+  pauses?: WorkOrderPause[];     // Pendente: o tempo parado não conta no homem-hora
+  cancelReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
   createdAt: string;
   createdByName: string;
   createdByMatricula: string;

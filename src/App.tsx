@@ -1097,6 +1097,8 @@ export default function App() {
               canSeeOs={userHasActionPermission('os_view')}
               canSeePreventives={userHasActionPermission('view_service_orders')}
               canAssign={userHasActionPermission('os_assign')}
+              canCancel={userHasActionPermission('os_cancel')}
+              canViewCosts={userHasActionPermission('view_costs')}
               preventives={
                 <ServiceOrdersView 
                   section="execucao"

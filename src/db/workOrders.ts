@@ -14,9 +14,10 @@ import {
   startAfter,
   updateDoc,
   where,
-  arrayUnion
+  arrayUnion,
+  deleteField
 } from './guard';
-import { OsLocationAnswer, OsStage, OsSystemField, OsSystemKey, OsTemplate, OsTemplateField, WorkOrder, WorkOrderEvent } from '../types';
+import { OsLocationAnswer, OsStage, OsSystemField, OsSystemKey, OsTemplate, OsTemplateField, WorkOrder, WorkOrderEvent, WorkOrderExec, WorkOrderPause } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
 // OS (Hexon 2.0): corretiva, layout e acompanhamento — modelos ("osTemplates"), OS ("workOrders")
@@ -306,7 +307,7 @@ export async function dbEmitWorkOrder(
         year,
         seq,
         status: assignNow ? 'Em andamento' : 'Nova',
-        ...(assignNow ? { assignedTechnicianMatricula: assignNow.matricula, assignedTechnicianName: assignNow.name } : {}),
+        ...(assignNow ? { assignedTechnicianMatricula: assignNow.matricula, assignedTechnicianName: assignNow.name, techOpen: assignNow.matricula } : {}),
         createdAt: now,
         updatedAt: now,
         timeline: events
@@ -367,8 +368,93 @@ export async function dbAssignWorkOrder(order: WorkOrder, tech: { matricula: str
     status: order.status === 'Nova' ? 'Em andamento' : order.status,
     assignedTechnicianMatricula: tech.matricula,
     assignedTechnicianName: tech.name,
+    techOpen: tech.matricula, // o técnico anterior deixa de ver a OS; o novo continua de onde parou
     ...(order.status === 'Nova' ? { assignedAt: serverTimestamp() } : {}),
     updatedAt: now,
     timeline: arrayUnion(cleanUndefined(event))
+  });
+}
+
+// ===== Execução (Fase 5) =====
+const event = (by: string, action: string, note?: string): WorkOrderEvent => cleanUndefined({ at: new Date().toISOString(), by, action, note });
+
+export async function dbGetWorkOrder(id: string): Promise<WorkOrder | null> {
+  if (!firebaseActive || !dbInstance) return null;
+  try {
+    const snap = await getDoc(doc(dbInstance, 'workOrders', id));
+    return snap.exists() ? ({ ...(snap.data() as WorkOrder), id: snap.id }) : null;
+  } catch (err: any) {
+    checkQuotaException(err);
+    throw err;
+  }
+}
+
+// OS que estão com o técnico agora (índice esparso workOrders.techOpen)
+export async function dbGetMyWorkOrders(matricula: string): Promise<WorkOrder[]> {
+  if (!matricula || !firebaseActive || !dbInstance) return [];
+  try {
+    const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('techOpen', '==', matricula)));
+    return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  } catch (err: any) {
+    checkQuotaException(err);
+    throw err;
+  }
+}
+
+// O técnico salva o que preencheu (respostas, equipe, materiais, feriados, hora extra, pernoite)
+export async function dbSaveWorkOrderExec(order: WorkOrder, exec: WorkOrderExec, by: string, first: boolean): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const now = new Date().toISOString();
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    exec: cleanUndefined({ ...exec, updatedAt: now, updatedBy: by }),
+    updatedAt: now,
+    ...(first ? { timeline: arrayUnion(event(by, 'Execução iniciada pelo técnico')) } : {})
+  });
+}
+
+// Pendente: pausa com motivo (o tempo parado não conta no homem-hora)
+export async function dbPauseWorkOrder(order: WorkOrder, reason: string, by: string): Promise<WorkOrderPause[]> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (order.status !== 'Em andamento') throw new Error('Só uma OS em andamento pode ficar pendente.');
+  const now = new Date().toISOString();
+  const pauses: WorkOrderPause[] = [...(order.pauses || []), { start: now, reason: reason.trim(), by }];
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    status: 'Pendente',
+    pauses,
+    updatedAt: now,
+    timeline: arrayUnion(event(by, 'Pendente', reason.trim()))
+  });
+  return pauses;
+}
+
+export async function dbResumeWorkOrder(order: WorkOrder, by: string): Promise<WorkOrderPause[]> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (order.status !== 'Pendente') throw new Error('Só uma OS pendente pode ser retomada.');
+  const now = new Date().toISOString();
+  const pauses = (order.pauses || []).map((p, i, all) => (i === all.length - 1 && !p.end ? { ...p, end: now } : p));
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    status: 'Em andamento',
+    pauses,
+    updatedAt: now,
+    timeline: arrayUnion(event(by, 'Retomada'))
+  });
+  return pauses;
+}
+
+// Cancelar: motivo obrigatório; some do celular do técnico
+export async function dbCancelWorkOrder(order: WorkOrder, reason: string, by: string): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (!['Nova', 'Em andamento', 'Pendente'].includes(order.status)) throw new Error('Esta OS não pode mais ser cancelada.');
+  const now = new Date().toISOString();
+  const pauses = (order.pauses || []).map((p, i, all) => (i === all.length - 1 && !p.end ? { ...p, end: now } : p));
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    status: 'Cancelada',
+    cancelReason: reason.trim(),
+    cancelledAt: now,
+    cancelledBy: by,
+    pauses,
+    techOpen: deleteField(),
+    updatedAt: now,
+    timeline: arrayUnion(event(by, 'Cancelada', reason.trim()))
   });
 }
