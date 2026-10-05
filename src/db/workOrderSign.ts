@@ -12,7 +12,7 @@ import {
   where,
   writeBatch
 } from './guard';
-import { OsSignatureMeta, OsSignatureRole, OsValidation, WorkOrder, WorkOrderEvent, WorkOrderExec, WorkOrderPause } from '../types';
+import { OsContest, OsSignatureMeta, OsSignatureRole, OsTemplateField, OsValidation, WorkOrder, WorkOrderEvent, WorkOrderExec, WorkOrderPause } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
 // ASSINATURAS DA OS (Fase 5B): Técnico → Cliente (celular ou link) → Engenheiro → Gerente, na ordem do modelo.
@@ -281,8 +281,9 @@ export async function dbAnswerOsValidation(token: string, approve: boolean, r: {
 }
 
 // Traz a resposta do link para a OS (quem abre a OS faz isso: técnico, escritório ou assinante).
-// Aprovada = assinatura do cliente "via link". Contestada = volta para o técnico; o tempo entre a assinatura
-// do técnico e a contestação não conta no homem-hora (vira uma pausa).
+// Aprovada = assinatura do cliente "via link". Contestada = a OS fica "Contestada" (a assinatura do técnico continua;
+// nada do que foi lançado muda); o tempo esperando o cliente não conta no homem-hora (vira uma pausa) e volta a
+// contar até alguém responder a contestação.
 // Várias telas podem fazer isso ao mesmo tempo (lista do técnico, ficha, fila do engenheiro): no mesmo aparelho
 // as chamadas da mesma OS esperam a primeira; entre aparelhos, a gravação é feita numa transação que relê a OS
 // e só grava se ela ainda espera esse mesmo link (a resposta entra uma vez só na linha do tempo).
@@ -330,27 +331,126 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
       tx.update(ref, updates);
       return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída' } as WorkOrder;
     }
-    // Contestada
+    // Contestada (a pausa vai do fim do trabalho — assinatura do técnico ou última resposta — até a contestação)
     const pauses: WorkOrderPause[] = [
       ...(cur.pauses || []),
-      { start: cur.techSignedAt || r.at, end: r.at, reason: 'Aguardando validação do cliente (contestada)', by: 'Sistema' }
+      { start: cur.workEndAt || cur.techSignedAt || r.at, end: r.at, reason: 'Aguardando validação do cliente (contestada)', by: 'Sistema' }
     ];
+    const contest: OsContest = cleanUndefined({ reason: r.reason || '', clientName: r.name || 'Cliente', clientMatricula: r.matricula || undefined, at: r.at });
+    const contests = [...(cur.contests || []), contest];
     tx.update(ref, {
       status: 'Contestada',
       contestReason: r.reason || '',
       contestedAt: r.at,
+      contests,
       pauses,
-      signatures: {},
-      techSignedAt: deleteField(),
       nextSigner: deleteField(),
       validationToken: deleteField(),
       signQueue: deleteField(),
       updatedAt: now,
       timeline: arrayUnion(ev(r.name || 'Cliente', 'Contestada pelo cliente (link)', r.reason))
     });
-    return { ...cur, status: 'Contestada', contestReason: r.reason, contestedAt: r.at, pauses, signatures: {}, techSignedAt: undefined, nextSigner: undefined, validationToken: undefined, signQueue: undefined } as WorkOrder;
+    return { ...cur, status: 'Contestada', contestReason: r.reason, contestedAt: r.at, contests, pauses, nextSigner: undefined, validationToken: undefined, signQueue: undefined } as WorkOrder;
   }).catch((err: any) => {
     checkQuotaException(err);
     throw err;
+  });
+}
+
+// ===== Resposta à contestação =====
+// Depois da assinatura do técnico nada do que foi lançado muda: a resposta só ACRESCENTA (perguntas ainda sem
+// resposta, pessoas na equipe, materiais, horas extras e diárias de pernoite).
+export interface OsExecAdditions {
+  answers: Record<string, any>;            // só perguntas que estavam sem resposta
+  team: WorkOrderExec['team'];             // pessoas novas
+  materials: WorkOrderExec['materials'];   // materiais (mesmo material = soma a quantidade)
+  overtime: WorkOrderExec['overtime'];     // dias de hora extra (mesmo dia = soma as horas)
+  overnightNights: number | null;          // diárias a mais
+}
+
+const emptyAnswer = (v: any) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
+const fmtMin = (m: number) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
+
+export function mergeExecAdditions(base: WorkOrderExec, add: OsExecAdditions, fields: OsTemplateField[]): { exec: WorkOrderExec; added: string } {
+  const parts: string[] = [];
+  const answers = { ...base.answers };
+  const answered: string[] = [];
+  Object.entries(add.answers || {}).forEach(([id, v]) => {
+    if (emptyAnswer(v) || !emptyAnswer(answers[id])) return;
+    answers[id] = v;
+    answered.push(fields.find((f) => f.id === id)?.label || id);
+  });
+  if (answered.length) parts.push(`respostas: ${answered.join(', ')}`);
+
+  const team = [...base.team];
+  const newPeople = (add.team || []).filter((p) => !team.some((x) => x.matricula === p.matricula));
+  team.push(...newPeople);
+  if (newPeople.length) parts.push(`equipe: ${newPeople.map((p) => p.name).join(', ')}`);
+
+  const materials = base.materials.map((m) => ({ ...m }));
+  const matText: string[] = [];
+  (add.materials || []).filter((m) => m.qty > 0).forEach((m) => {
+    const same = materials.find((x) => x.id === m.id);
+    if (same) same.qty = Math.round((same.qty + m.qty) * 1000) / 1000;
+    else materials.push({ ...m });
+    matText.push(`${m.description} +${String(m.qty).replace('.', ',')} ${m.measureUnit}`);
+  });
+  if (matText.length) parts.push(`materiais: ${matText.join(', ')}`);
+
+  let overtime = base.overtime ? base.overtime.map((d) => ({ ...d })) : null;
+  const otText: string[] = [];
+  (add.overtime || []).filter((d) => d.date && d.minutes > 0).forEach((d) => {
+    overtime = overtime || [];
+    const same = overtime.find((x) => x.date === d.date);
+    if (same) {
+      same.minutes += d.minutes;
+      same.holiday = same.holiday || d.holiday;
+    } else overtime.push({ ...d });
+    otText.push(`${d.date.split('-').reverse().join('/')} +${fmtMin(d.minutes)}`);
+  });
+  if (otText.length) parts.push(`hora extra: ${otText.join(', ')}`);
+
+  let overnightNights = base.overnightNights;
+  if (add.overnightNights && add.overnightNights > 0) {
+    overnightNights = (overnightNights || 0) + add.overnightNights;
+    parts.push(`pernoite: +${add.overnightNights} diária(s)`);
+  }
+  return { exec: { ...base, answers, team, materials, overtime, overnightNights }, added: parts.join(' · ') };
+}
+
+// Responder a contestação: o que foi resolvido (+ acréscimos) → a OS volta para a vez do cliente
+// (assinar no celular ou novo link). O homem-hora para de novo aqui ("workEndAt").
+export async function dbReplyContest(o: WorkOrder, resolution: string, add: OsExecAdditions, by: string): Promise<WorkOrder> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const text = resolution.trim();
+  if (!text) throw new Error('Informe o que foi resolvido.');
+  const ref = doc(dbInstance, 'workOrders', o.id);
+  return runTransaction(dbInstance, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('OS não encontrada.');
+    const cur = { ...(snap.data() as WorkOrder), id: snap.id };
+    if (cur.status !== 'Contestada') throw new Error('Esta OS não está mais contestada (alguém já respondeu).');
+    if (!cur.techSignedAt || !cur.exec) throw new Error('Esta OS foi contestada antes da mudança: o técnico corrige e conclui de novo.');
+    const now = new Date().toISOString();
+    const { exec, added } = mergeExecAdditions(cur.exec, add, cur.templateFields || []);
+    const contests = [...(cur.contests || [])];
+    const last = contests.length ? contests[contests.length - 1] : null;
+    const answer = cleanUndefined({ resolution: text, added: added || undefined, resolvedBy: by, resolvedAt: now });
+    if (last && !last.resolvedAt) contests[contests.length - 1] = { ...last, ...answer };
+    else contests.push({ reason: cur.contestReason || '', clientName: 'Cliente', at: cur.contestedAt || now, ...answer });
+    const next: OsSignatureRole = nextSignerAfter(cur, 'tecnico') || 'cliente';
+    const qk = queueKey(cur, next);
+    const updates: any = {
+      status: 'Aguardando assinaturas',
+      nextSigner: next,
+      contests,
+      workEndAt: now,
+      updatedAt: now,
+      timeline: arrayUnion(ev(by, 'Contestação respondida', `${text}${added ? ` · Acrescentado: ${added}` : ''}`))
+    };
+    if (qk) updates.signQueue = qk;
+    if (added) updates.exec = cleanUndefined({ ...exec, updatedAt: now, updatedBy: by });
+    tx.update(ref, updates);
+    return { ...cur, status: 'Aguardando assinaturas', nextSigner: next, signQueue: qk || undefined, contests, workEndAt: now, exec: added ? { ...exec, updatedAt: now, updatedBy: by } : cur.exec } as WorkOrder;
   });
 }

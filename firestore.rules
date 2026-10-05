@@ -377,27 +377,36 @@ service cloud.firestore {
           && 'assignedTechnicianMatricula' in osChanged()
           && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
           && osPerm(u, p, 'os_assign') && osSees(u, p))
-        // Técnico atribuído: salvar a execução, Pendente e Retomar (também corrigindo uma contestada);
-        // o escritório (quem atribui) só deixa pendente / retoma
-        || (resource.data.status in ['Em andamento', 'Pendente', 'Contestada']
+        // Técnico atribuído: salvar a execução, Pendente e Retomar; o escritório (quem atribui) só deixa pendente / retoma.
+        // Depois da assinatura do técnico a execução não muda (contestada sem assinatura guardada = formato antigo)
+        || ((resource.data.status in ['Em andamento', 'Pendente'] || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') == ''))
           && osChanged().hasOnly(['exec', 'status', 'pauses', 'updatedAt', 'timeline'])
           && ((osSameStatus() && resource.data.status in ['Em andamento', 'Contestada'])
               || osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento'))
           && (osTech(u) || (!('exec' in osChanged()) && !osSameStatus() && osPerm(u, p, 'os_assign') && osSees(u, p))))
         // Técnico atribuído: CONCLUIR (assinatura do técnico; o homem-hora para aqui)
-        || (resource.data.status in ['Em andamento', 'Contestada']
+        || ((resource.data.status == 'Em andamento' || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') == ''))
           && request.resource.data.status in ['Aguardando assinaturas', 'Concluída']
           && osChanged().hasOnly(['exec', 'status', 'signatures', 'nextSigner', 'techSignedAt', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
           && request.resource.data.signatures.keys().hasOnly(['tecnico'])
           && osTech(u))
         // Vez do CLIENTE: gerar o link, registrar a assinatura (celular ou link aprovado) ou a contestação do link
         || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
-          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'techSignedAt', 'contestReason', 'contestedAt'])
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests'])
           && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline']))
               || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
-              || (request.resource.data.status == 'Contestada'
+              || (request.resource.data.status == 'Contestada' && !('signatures' in osChanged())
                   && get(/databases/$(database)/documents/osValidations/$(resource.data.validationToken)).data.status == 'contestada'))
-          && (osTech(u) || ((osPerm(u, p, 'os_assign') || p.get('osSignAs', 'none') in ['engenheiro', 'gerente']) && osSees(u, p))))
+          && (osTech(u) || ((osPerm(u, p, 'os_assign') || osPerm(u, p, 'os_contest_reply') || p.get('osSignAs', 'none') in ['engenheiro', 'gerente']) && osSees(u, p))))
+        // RESPONDER CONTESTAÇÃO (o que foi resolvido + acréscimos): volta para a vez do cliente.
+        // Técnico da OS ou "Responder contestação de OS"; a equipe e os materiais só crescem
+        || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') != ''
+          && request.resource.data.status == 'Aguardando assinaturas' && request.resource.data.nextSigner == 'cliente'
+          && osChanged().hasOnly(['exec', 'status', 'nextSigner', 'signQueue', 'contests', 'workEndAt', 'updatedAt', 'timeline'])
+          && (!('exec' in osChanged())
+              || (request.resource.data.exec.team.size() >= resource.data.exec.team.size()
+                  && request.resource.data.exec.materials.size() >= resource.data.exec.materials.size()))
+          && (osTech(u) || (osPerm(u, p, 'os_contest_reply') && osSees(u, p))))
         // ENGENHEIRO / GERENTE: só quando é a vez dele, nas gerências que enxerga
         || (resource.data.status == 'Aguardando assinaturas'
           && resource.data.get('nextSigner', '') in ['engenheiro', 'gerente']

@@ -859,6 +859,18 @@ export interface WorkOrderExec {
   updatedBy: string;
 }
 
+// Contestação do cliente (link) e a resposta: depois da assinatura do técnico a OS não muda; só se acrescenta
+export interface OsContest {
+  reason: string;
+  clientName: string;
+  clientMatricula?: string;
+  at: string;                    // quando o cliente contestou
+  resolution?: string;           // o que foi resolvido
+  added?: string;                // resumo do que foi acrescentado na OS junto com a resposta
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
 export interface WorkOrder {
   id: string;            // = number, ex.: "OS-2026000001"
   number: string;
@@ -902,8 +914,10 @@ export interface WorkOrder {
   techSignedAt?: string;         // assinatura do técnico: o homem-hora para aqui
   signQueue?: string;            // "GERÊNCIA|engenheiro" ou "GERÊNCIA|gerente" enquanto espera (índice esparso: fila)
   validationToken?: string;      // link de validação do cliente em aberto
-  contestReason?: string;
+  contestReason?: string;        // última contestação (as anteriores ficam em "contests")
   contestedAt?: string;
+  contests?: OsContest[];        // cada contestação do cliente e a resposta dada
+  workEndAt?: string;            // fim do homem-hora depois de responder uma contestação (senão, techSignedAt)
   closedAt?: string;             // concluída
   createdAt: string;
   createdByName: string;

@@ -13,9 +13,11 @@ interface Props {
   team: OrderParticipant[]; // inclui o executor
   editable: boolean;
   onChange: (team: OrderParticipant[]) => void;
+  locked?: string[]; // matrículas que não podem sair (resposta à contestação: só acrescenta)
+  executorTag?: string;
 }
 
-export default function OsTeamPicker({ unit, executor, team, editable, onChange }: Props) {
+export default function OsTeamPicker({ unit, executor, team, editable, onChange, locked = [], executorTag = '(você)' }: Props) {
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [usual, setUsual] = useState<OrderParticipant[]>([]);
   const [q, setQ] = useState('');
@@ -58,9 +60,9 @@ export default function OsTeamPicker({ unit, executor, team, editable, onChange 
             {p.name}
             {p.cargo && <span className="font-normal text-slate-500">· {p.cargo}</span>}
             {p.matricula === executor.matricula ? (
-              <span className="font-normal">(você)</span>
+              <span className="font-normal">{executorTag}</span>
             ) : (
-              editable && (
+              editable && !locked.includes(p.matricula) && (
                 <button type="button" onClick={() => onChange(team.filter((x) => x.matricula !== p.matricula))} className="text-rose-500 cursor-pointer" title="Tirar da OS">
                   <X className="w-3 h-3" />
                 </button>

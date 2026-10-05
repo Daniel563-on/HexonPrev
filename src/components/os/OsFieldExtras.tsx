@@ -12,6 +12,7 @@ interface Props {
   overtime: WorkOrderOvertimeDay[] | null;
   overnightNights: number | null;
   onChange: (next: { overtime?: WorkOrderOvertimeDay[] | null; overnightNights?: number | null }) => void;
+  extra?: boolean; // resposta à contestação: lança só o que for A MAIS (soma ao que já está na OS)
 }
 
 const today = () => {
@@ -42,7 +43,7 @@ function YesNo({ value, onChange, disabled }: { value: boolean; onChange: (v: bo
   );
 }
 
-export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange }: Props) {
+export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange, extra }: Props) {
   const [rules, setRules] = useState<OvertimeRules[]>([]);
   useEffect(() => {
     if (overtime?.length) dbGetOvertimeRules().then(setRules).catch(() => setRules([]));
@@ -62,8 +63,8 @@ export default function OsFieldExtras({ editable, team, overtime, overnightNight
           <div className="flex items-start gap-2">
             <Timer className="w-4 h-4 text-rose-500 mt-0.5" />
             <div>
-              <p className="text-xs font-black text-slate-800">Houve hora extra?</p>
-              <p className="text-[10px] text-slate-500">Vale para todos os colaboradores lançados nesta OS.</p>
+              <p className="text-xs font-black text-slate-800">{extra ? 'Teve hora extra a mais?' : 'Houve hora extra?'}</p>
+              <p className="text-[10px] text-slate-500">{extra ? 'Soma às horas já lançadas (mesmo dia = soma as horas).' : 'Vale para todos os colaboradores lançados nesta OS.'}</p>
             </div>
           </div>
           <YesNo value={overtime !== null} disabled={!editable} onChange={(v) => onChange({ overtime: v ? (days.length ? days : [{ date: today(), minutes: 0, holiday: false }]) : null })} />
@@ -148,15 +149,15 @@ export default function OsFieldExtras({ editable, team, overtime, overnightNight
           <div className="flex items-start gap-2">
             <Hotel className="w-4 h-4 text-rose-500 mt-0.5" />
             <div>
-              <p className="text-xs font-black text-slate-800">Houve pernoite (diária de hotel)?</p>
-              <p className="text-[10px] text-slate-500">Diárias × valor do pernoite × colaboradores da OS.</p>
+              <p className="text-xs font-black text-slate-800">{extra ? 'Teve pernoite a mais?' : 'Houve pernoite (diária de hotel)?'}</p>
+              <p className="text-[10px] text-slate-500">{extra ? 'Diárias a mais (somam às já lançadas).' : 'Diárias × valor do pernoite × colaboradores da OS.'}</p>
             </div>
           </div>
           <YesNo value={overnightNights !== null} disabled={!editable} onChange={(v) => onChange({ overnightNights: v ? overnightNights || 1 : null })} />
         </div>
         {overnightNights !== null && (
           <label className="block">
-            <span className={label}>Quantidade de diárias</span>
+            <span className={label}>{extra ? 'Diárias a mais' : 'Quantidade de diárias'}</span>
             <input
               inputMode="numeric"
               className={`${field} block w-28`}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, Link2, Mail, PauseCircle, PenTool, PlayCircle, Save } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, Link2, Mail, MessageSquareReply, PauseCircle, PenTool, PlayCircle, Save } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, WorkOrder, WorkOrderExec } from '../../types';
 import {
   OS_SIGN_LABEL,
@@ -21,11 +21,13 @@ import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsTeamPicker from './OsTeamPicker';
 import OsFieldExtras from './OsFieldExtras';
 import ExecutionExtras from '../orders/execution/ExecutionExtras';
+import OsContestReplyModal from './OsContestReplyModal';
 
 // EXECUÇÃO DA OS PELO TÉCNICO (celular): perguntas de Execução do modelo, equipe, materiais, feriados,
 // hora extra e pernoite. Salvar grava no banco; o próximo técnico (se a OS for passada) continua daqui.
 // Pendente = pausa com motivo (o tempo parado não conta). Concluir = o técnico assina (o homem-hora para);
-// depois o cliente assina no celular ou recebe o link de validação. Contestada = volta para o técnico corrigir.
+// depois o cliente assina no celular ou recebe o link de validação. Depois da assinatura do técnico nada muda:
+// Contestada = "Responder contestação" (o que foi resolvido + acréscimos) e a OS volta para o cliente.
 
 interface Props {
   order: WorkOrder;
@@ -62,7 +64,14 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const [pausing, setPausing] = useState(false);
   const [reason, setReason] = useState('');
 
-  const editable = order.status === 'Em andamento' || order.status === 'Contestada';
+  // Contestada antes desta mudança (sem a assinatura do técnico guardada): ainda corrige e conclui de novo
+  const oldContest = order.status === 'Contestada' && !order.techSignedAt;
+  const editable = order.status === 'Em andamento' || oldContest;
+  const [replying, setReplying] = useState(false);
+  // Depois da resposta à contestação (acréscimos), mostra a execução atualizada
+  useEffect(() => {
+    if (!editable) setExec(initial());
+  }, [order.exec?.updatedAt]);
   const [signing, setSigning] = useState<'tecnico' | 'cliente' | null>(null);
   const [linkDays, setLinkDays] = useState(7);
   const fields = order.templateFields || [];
@@ -243,9 +252,18 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           )}
 
           {order.status === 'Contestada' && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1">
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
               <p className="text-xs font-black text-rose-800">Contestada pelo cliente{order.contestReason ? `: ${order.contestReason}` : ''}</p>
-              <p className="text-[11px] text-rose-800">Verifique, corrija e conclua de novo (o homem-hora voltou a contar).</p>
+              {oldContest ? (
+                <p className="text-[11px] text-rose-800">Verifique, corrija e conclua de novo (o homem-hora voltou a contar).</p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-rose-800">A OS assinada não muda. Resolva com o cliente e informe o que foi feito (dá para acrescentar o que faltou). O homem-hora voltou a contar.</p>
+                  <button type="button" onClick={() => setReplying(true)} className="w-full h-11 rounded-xl bg-rose-600 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer">
+                    <MessageSquareReply className="w-4 h-4" /> Responder contestação
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -351,6 +369,19 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           {exec.updatedBy && !dirty && <p className="text-[10px] text-slate-400">Último salvamento por {exec.updatedBy}{exec.updatedAt ? ` em ${new Date(exec.updatedAt).toLocaleString('pt-BR')}` : ''}.</p>}
         </div>
       </div>
+
+      {replying && (
+        <OsContestReplyModal
+          order={order}
+          userProfile={userProfile}
+          onClose={() => setReplying(false)}
+          onDone={(updated) => {
+            setReplying(false);
+            setMsg({ ok: true, text: 'Contestação respondida. Agora o cliente: assina no celular ou recebe um novo link.' });
+            onChanged(updated);
+          }}
+        />
+      )}
 
       {signing && (
         <OsSignaturePad

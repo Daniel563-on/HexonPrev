@@ -133,6 +133,14 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
+  os_contest_reply: {
+    id: 'os_contest_reply',
+    name: 'Responder contestação de OS',
+    description: 'Quando o cliente contesta pelo link: informar o que foi resolvido (e acrescentar o que faltou) para o cliente validar de novo. O técnico da OS sempre pode.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   os_execute: {
     id: 'os_execute',
     name: 'Executar OS',
