@@ -107,7 +107,9 @@ export default function TechnicianMobileView({
   );
   // Quantas OS (corretiva, layout, acompanhamento) estão com o técnico: 1 busca ao abrir o app
   useEffect(() => {
-    dbGetMyWorkOrders(userProfile.matricula).then((l) => setOsCount(l.length)).catch(() => {});
+    dbGetMyWorkOrders(userProfile.matricula)
+      .then((l) => setOsCount(l.filter((o) => !(o.status === 'Aguardando assinaturas' && o.nextSigner !== 'cliente') && o.status !== 'Concluída').length))
+      .catch(() => {});
   }, [userProfile.matricula, refreshKey]);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');

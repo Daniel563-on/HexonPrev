@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PenTool, RefreshCw, UserPlus, X } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
 import { WORK_ORDER_PAGE_SIZE, dbAssignWorkOrder, dbGetUsers, dbGetWorkOrdersPage } from '../../db/firebase';
 import WorkOrderSheet from './WorkOrderSheet';
+import OsSignQueue from './OsSignQueue';
 import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 
 // LISTA SIMPLES DAS OS (Fase 4): da gerência escolhida, mais recentes primeiro, 20 por página.
@@ -14,9 +15,11 @@ interface Props {
   canAssign: boolean;
   canCancel: boolean;
   canViewCosts: boolean;
+  mySignRole: 'engenheiro' | 'gerente' | 'all' | null;
 }
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canCancel, canViewCosts }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canCancel, canViewCosts, mySignRole }: Props) {
+  const [signView, setSignView] = useState(false); // "Precisam da minha assinatura"
   const [unit, setUnit] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('hexon_os_unit');
@@ -113,10 +116,27 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
             ))}
           </select>
         </div>
-        <button type="button" className={btn} onClick={() => loadFirst(unit)} disabled={loading}>
-          <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-        </button>
+        <div className="flex gap-2">
+          {mySignRole && (
+            <button
+              type="button"
+              className={`${btn} ${signView ? '!bg-indigo-600 !text-white !border-indigo-600' : ''}`}
+              onClick={() => setSignView(!signView)}
+            >
+              <PenTool className="w-3.5 h-3.5" /> Precisam da minha assinatura
+            </button>
+          )}
+          {!signView && (
+            <button type="button" className={btn} onClick={() => loadFirst(unit)} disabled={loading}>
+              <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+            </button>
+          )}
+        </div>
       </div>
+
+      {signView && mySignRole && <OsSignQueue userProfile={userProfile} units={unitOptions} mySignRole={mySignRole} onOpen={setSelected} />}
+      {!signView && (
+      <>
 
       {error && !assigning && <p className="text-xs font-bold text-rose-600">{error}</p>}
 
@@ -178,6 +198,9 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
         </button>
       </div>
 
+      </>
+      )}
+
       {/* Ficha da OS */}
       {selected && (
         <WorkOrderSheet
@@ -186,6 +209,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           canAssign={canAssign}
           canCancel={canCancel}
           canViewCosts={canViewCosts}
+          mySignRole={mySignRole}
           onClose={() => setSelected(null)}
           onChanged={() => loadFirst(unit)}
         />

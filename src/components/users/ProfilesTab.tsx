@@ -325,7 +325,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                             <div className="px-3 py-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                               <label className="block">
                                 <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>
-                                  Assinar OS como <span className="text-amber-700 normal-case">(em construção · Fase 5)</span>
+                                  Assinar OS como <span className="normal-case font-normal">(engenheiro assina antes do gerente)</span>
                                 </span>
                                 <select
                                   value={editing.osSignAs || 'none'}

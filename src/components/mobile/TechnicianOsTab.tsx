@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ClipboardCheck, MapPin } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
-import { dbGetMyWorkOrders } from '../../db/firebase';
+import { dbGetMyWorkOrders, dbSyncOsValidation } from '../../db/firebase';
 import OsExecutionForm from '../os/OsExecutionForm';
 import { STATUS_STYLE, dayBR, isOverdue } from '../os/OsAnswersView';
 
@@ -28,7 +28,11 @@ export default function TechnicianOsTab({
     setLoading(true);
     setError(null);
     dbGetMyWorkOrders(userProfile.matricula)
-      .then((l) => {
+      .then(async (all) => {
+        // Traz a resposta do link do cliente (aprovada → segue; contestada → volta para o técnico)
+        const synced = await Promise.all(all.map((o) => dbSyncOsValidation(o, userProfile.name).then((u) => u || o).catch(() => o)));
+        // Depois do cliente, a OS espera o engenheiro/gerente no sistema: sai da lista do técnico
+        const l = synced.filter((o) => !(o.status === 'Aguardando assinaturas' && o.nextSigner !== 'cliente') && o.status !== 'Concluída');
         setList(l);
         onCount?.(l.length);
       })

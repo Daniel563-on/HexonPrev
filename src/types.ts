@@ -796,7 +796,38 @@ export interface OsTemplate {
   updatedBy: string;
 }
 
-export type WorkOrderStatus = 'Nova' | 'Em andamento' | 'Pendente' | 'Aguardando assinaturas' | 'Concluída' | 'Cancelada';
+export type WorkOrderStatus = 'Nova' | 'Em andamento' | 'Pendente' | 'Aguardando assinaturas' | 'Contestada' | 'Concluída' | 'Cancelada';
+
+// Assinatura (Fase 5B): os dados do carimbo ficam na OS; a imagem fica em "workOrderSignatures/{OS}_{papel}"
+export interface OsSignatureMeta {
+  name: string;
+  matricula?: string;
+  cargo?: string;
+  rating?: number;            // cliente: estrelas 1–5
+  at: string;                 // data/hora da assinatura (ISO)
+  via: 'celular' | 'link' | 'sistema';
+  by?: string;                // quem registrou (ex.: técnico que colheu a assinatura do cliente)
+}
+
+// Validação do cliente por link (coleção "osValidations", id = código secreto do link)
+export interface OsValidation {
+  orderId: string;
+  number: string;
+  unit: string;
+  intervencao: string;
+  glpi: string;
+  local: string;
+  comarca: string;
+  executedAt: string;
+  team: string[];
+  summary: string;            // resumo do serviço executado
+  technician: string;
+  status: 'pendente' | 'aprovada' | 'contestada';
+  expiresAt: any;             // Timestamp (o banco recusa resposta depois disso)
+  createdAt: string;
+  createdBy: string;
+  response?: { name: string; matricula: string; rating?: number; reason?: string; at: string; agent?: string };
+}
 
 export interface WorkOrderEvent {
   at: string;   // ISO
@@ -865,6 +896,15 @@ export interface WorkOrder {
   cancelReason?: string;
   cancelledAt?: string;
   cancelledBy?: string;
+  // Assinaturas (Fase 5B)
+  signatures?: Partial<Record<OsSignatureRole, OsSignatureMeta>>;
+  nextSigner?: OsSignatureRole;  // de quem é a vez
+  techSignedAt?: string;         // assinatura do técnico: o homem-hora para aqui
+  signQueue?: string;            // "GERÊNCIA|engenheiro" ou "GERÊNCIA|gerente" enquanto espera (índice esparso: fila)
+  validationToken?: string;      // link de validação do cliente em aberto
+  contestReason?: string;
+  contestedAt?: string;
+  closedAt?: string;             // concluída
   createdAt: string;
   createdByName: string;
   createdByMatricula: string;

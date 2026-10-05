@@ -352,8 +352,71 @@ service cloud.firestore {
     function osSameStatus() {
       return request.resource.data.status == resource.data.status;
     }
+    // Versões "leves" (usuário e perfil já lidos) para a atualização da OS
+    function osProfileOf(u) {
+      return u.get('profileId', '') != '' && exists(/databases/$(database)/documents/profiles/$(u.get('profileId', '')))
+        ? get(/databases/$(database)/documents/profiles/$(u.get('profileId', ''))).data : {};
+    }
+    function osSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || resource.data.unit in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]);
+    }
+    function osPerm(u, p, id) {
+      return u.perfil == 'Super Administrador' || p.get('permissions', {}).get(id, false) == true;
+    }
+    function osTech(u) {
+      return resource.data.get('techOpen', '') == u.matricula && resource.data.assignedTechnicianMatricula == u.matricula;
+    }
+    function osUpdateOk(u, p) {
+      return
+        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
+        (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
+          && (osSameStatus() || osStatusFrom('Nova', 'Em andamento'))
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && 'assignedTechnicianMatricula' in osChanged()
+          && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
+          && osPerm(u, p, 'os_assign') && osSees(u, p))
+        // Técnico atribuído: salvar a execução, Pendente e Retomar (também corrigindo uma contestada);
+        // o escritório (quem atribui) só deixa pendente / retoma
+        || (resource.data.status in ['Em andamento', 'Pendente', 'Contestada']
+          && osChanged().hasOnly(['exec', 'status', 'pauses', 'updatedAt', 'timeline'])
+          && ((osSameStatus() && resource.data.status in ['Em andamento', 'Contestada'])
+              || osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento'))
+          && (osTech(u) || (!('exec' in osChanged()) && !osSameStatus() && osPerm(u, p, 'os_assign') && osSees(u, p))))
+        // Técnico atribuído: CONCLUIR (assinatura do técnico; o homem-hora para aqui)
+        || (resource.data.status in ['Em andamento', 'Contestada']
+          && request.resource.data.status in ['Aguardando assinaturas', 'Concluída']
+          && osChanged().hasOnly(['exec', 'status', 'signatures', 'nextSigner', 'techSignedAt', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && request.resource.data.signatures.keys().hasOnly(['tecnico'])
+          && osTech(u))
+        // Vez do CLIENTE: gerar o link, registrar a assinatura (celular ou link aprovado) ou a contestação do link
+        || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'techSignedAt', 'contestReason', 'contestedAt'])
+          && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline']))
+              || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
+              || (request.resource.data.status == 'Contestada'
+                  && get(/databases/$(database)/documents/osValidations/$(resource.data.validationToken)).data.status == 'contestada'))
+          && (osTech(u) || ((osPerm(u, p, 'os_assign') || p.get('osSignAs', 'none') in ['engenheiro', 'gerente']) && osSees(u, p))))
+        // ENGENHEIRO / GERENTE: só quando é a vez dele, nas gerências que enxerga
+        || (resource.data.status == 'Aguardando assinaturas'
+          && resource.data.get('nextSigner', '') in ['engenheiro', 'gerente']
+          && request.resource.data.status in ['Aguardando assinaturas', 'Concluída']
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && resource.data.nextSigner in request.resource.data.signatures
+          && (u.perfil == 'Super Administrador' || p.get('osSignAs', 'none') == resource.data.nextSigner)
+          && osSees(u, p))
+        // Cancelar (motivo obrigatório; some do celular do técnico)
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && request.resource.data.status == 'Cancelada'
+          && request.resource.data.get('cancelReason', '').size() > 0
+          && osChanged().hasOnly(['status', 'cancelReason', 'cancelledAt', 'cancelledBy', 'pauses', 'techOpen', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data)
+          && osPerm(u, p, 'os_cancel') && osSees(u, p));
+    }
     match /workOrders/{orderId} {
-      allow get, list: if isStaff() && (osUnitOk() || resource.data.get('techOpen', '') == me().matricula);
+      // Fila de assinatura ("GERÊNCIA|papel"): a gerência vem no próprio campo (a busca da fila não filtra por gerência)
+      allow get, list: if isStaff() && (osUnitOk() || resource.data.get('techOpen', '') == me().matricula
+        || (resource.data.get('signQueue', '') != '' && resource.data.get('signQueue', '').split('[|]')[0] in myUnits()));
       // Gerência da OS = a de quem abre; Super Administrador e gerência "Todas" escolhem (dentro do que enxergam)
       allow create: if isStaff() && hasPermission('os_create')
         && ((isSuperAdmin() || me().get('gerencia', '') == 'Todas')
@@ -363,29 +426,43 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
         && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')))
         && (request.resource.data.status == 'Nova' || request.resource.data.get('techOpen', '') == request.resource.data.assignedTechnicianMatricula);
-      allow update: if isStaff() && (
-        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
-        (hasPermission('os_assign') && osUnitOk()
-          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
-          && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
-          && resource.data.status in ['Nova', 'Em andamento', 'Pendente']
-          && (osSameStatus() || osStatusFrom('Nova', 'Em andamento')))
-        // Pendente / Retomar pelo escritório
-        || (hasPermission('os_assign') && osUnitOk()
-          && osChanged().hasOnly(['status', 'pauses', 'updatedAt', 'timeline'])
-          && (osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento')))
-        // Técnico atribuído: salvar a execução, Pendente e Retomar
-        || (resource.data.get('techOpen', '') == me().matricula && resource.data.assignedTechnicianMatricula == me().matricula
-          && osChanged().hasOnly(['exec', 'status', 'pauses', 'updatedAt', 'timeline'])
-          && ((osSameStatus() && resource.data.status == 'Em andamento')
-              || osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento')))
-        // Cancelar (motivo obrigatório; some do celular do técnico)
-        || (hasPermission('os_cancel') && osUnitOk()
-          && resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && request.resource.data.status == 'Cancelada'
-          && request.resource.data.get('cancelReason', '').size() > 0
-          && osChanged().hasOnly(['status', 'cancelReason', 'cancelledAt', 'cancelledBy', 'pauses', 'techOpen', 'updatedAt', 'timeline'])
-          && !('techOpen' in request.resource.data))
-      );
+      // O usuário e o perfil são lidos UMA vez e passados para os caminhos (o banco limita as contas por verificação).
+      // Cada caminho confere primeiro a situação da OS e os campos mudados e só depois o perfil.
+      allow update: if isStaff() && osUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // Imagens das assinaturas da OS (id = "OS_papel"); máx. 200 KB. O que vale (quem e quando) fica na OS, protegido acima.
+    match /workOrderSignatures/{sigId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff()
+        && sigId == request.resource.data.orderId + '_' + request.resource.data.role
+        && request.resource.data.role in ['tecnico', 'cliente', 'engenheiro', 'gerente']
+        && request.resource.data.image is string && request.resource.data.image.size() <= 204800
+        && (resource == null || request.resource.data.role in ['tecnico', 'cliente']);
+      allow delete: if false;
+    }
+
+    // Validação do cliente por link (id = código secreto). Leitura só de quem tem o código (sem login, sem listar).
+    // O cliente responde UMA vez (aprovada/contestada) e dentro do prazo do link.
+    match /osValidations/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isStaff() && request.resource.data.status == 'pendente'
+        && request.resource.data.keys().hasOnly(['orderId', 'number', 'unit', 'intervencao', 'glpi', 'local', 'comarca', 'executedAt', 'team', 'summary', 'technician', 'status', 'expiresAt', 'createdAt', 'createdBy'])
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt < request.time + duration.value(61, 'd');
+      allow update: if resource.data.status == 'pendente' && request.time < resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'response'])
+        && request.resource.data.status in ['aprovada', 'contestada']
+        && request.resource.data.response.keys().hasOnly(['name', 'matricula', 'rating', 'reason', 'at', 'agent'])
+        && request.resource.data.response.name is string && request.resource.data.response.name.size() > 0 && request.resource.data.response.name.size() <= 120
+        && request.resource.data.response.matricula is string && request.resource.data.response.matricula.size() > 0 && request.resource.data.response.matricula.size() <= 40
+        && request.resource.data.response.get('reason', '').size() <= 2000
+        && request.resource.data.response.get('agent', '').size() <= 200
+        && (request.resource.data.status == 'contestada'
+            ? request.resource.data.response.get('reason', '').size() >= 5
+            : (request.resource.data.response.rating is int && request.resource.data.response.rating >= 1 && request.resource.data.response.rating <= 5));
       allow delete: if false;
     }
 
