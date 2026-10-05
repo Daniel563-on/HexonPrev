@@ -415,8 +415,26 @@ export interface JobRole {
   rateFrom: string;      // vigência do valor atual ("" = nunca preenchido)
   history: JobRoleRate[];
   archived?: boolean;    // ninguém tem mais este cargo: some das listas (valor e histórico ficam guardados)
+  overtimeTariffs?: Record<string, number>; // hora extra: R$ por hora de cada percentual ("50" -> 49,03); sem valor = valor da hora × (1 + %)
   createdAt: string;
   updatedAt: string;
+}
+
+// HORA EXTRA: regras de cada cargo (coleção "overtimeRules", id = id do cargo). Sem valores em R$:
+// a equipe toda lê (o técnico vê o aviso de máximo); as tarifas em R$ ficam no cargo.
+export type OvertimeDayKey = 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom'; // dom = domingo ou feriado
+export interface OvertimeDayRule {
+  firstHours: number;      // primeiras horas do dia...
+  firstPct: number;        // ...a este adicional (%)
+  restPct: number;         // demais horas a este adicional (%)
+  maxHours: number | null; // máximo de horas extras no dia (null = sem máximo); o excesso não é pago
+}
+export interface OvertimeRules {
+  id: string;              // = id do cargo
+  roleName: string;
+  days: Record<OvertimeDayKey, OvertimeDayRule>;
+  updatedAt: string;
+  updatedBy: string;
 }
 
 // MATERIAL: cada gerência tem a sua lista. Sem controle de estoque: a OS só registra o que foi usado.

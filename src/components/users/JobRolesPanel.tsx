@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { JobRole, OvernightRateSetting } from '../../types';
+import { JobRole, OvernightRateSetting, OvertimeRules } from '../../types';
+import OvertimeRulesModal from './OvertimeRulesModal';
 import {
   cargoKey,
   dbGetOvernightRate,
+  dbGetOvertimeRules,
   dbRemoveJobRoleRateEntry,
   dbRemoveOvernightRateEntry,
   dbSetJobRoleRate,
@@ -145,7 +147,8 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
   );
 }
 
-// CARGOS: valor da hora de cada cargo (vale para todos do cargo), com histórico. Só o Super Administrador.
+// CARGOS E VALORES: valor da hora de cada cargo (vale para todos do cargo), com histórico, e as regras de hora extra.
+// Só o Super Administrador.
 
 interface Props {
   roles: JobRole[];
@@ -171,6 +174,18 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
   const [entryToDelete, setEntryToDelete] = useState<{ role: JobRole; entry: JobRole['history'][number] } | null>(null);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
+  const [overtime, setOvertime] = useState<OvertimeRules[]>([]);
+  const [overtimeOf, setOvertimeOf] = useState<JobRole | null>(null);
+  const loadOvertime = () => dbGetOvertimeRules(true).then(setOvertime).catch(() => setOvertime([]));
+  useEffect(() => {
+    loadOvertime();
+  }, []);
+  // Resumo da regra de um dia útil: "1 h a 50%, demais 100%, máx. 2 h"
+  const overtimeSummary = (r: OvertimeRules) => {
+    const d = r.days.seg;
+    const base = d.firstHours > 0 ? `${String(d.firstHours).replace('.', ',')} h a ${d.firstPct}%, demais ${d.restPct}%` : `${d.restPct}%`;
+    return `Seg: ${base}${d.maxHours !== null ? `, máx. ${String(d.maxHours).replace('.', ',')} h` : ''} · Sáb: ${r.days.sab.restPct}% · Dom/feriado: ${r.days.dom.restPct}%`;
+  };
 
   // Exclui um lançamento gravado com erro no histórico do cargo (esta tela é do Super Administrador)
   const confirmDeleteEntry = async () => {
@@ -252,9 +267,10 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
 
       <div className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 ${card}`}>
         <div className="text-xs">
-          <p className={`font-bold ${strong}`}>Cargos e valor da hora</p>
+          <p className={`font-bold ${strong}`}>Cargos, valor da hora e hora extra</p>
           <p className="text-slate-500">
             O valor vale para todas as pessoas do cargo. Ao mudar, informe a partir de quando vale; o valor anterior fica no histórico.
+            Em "Hora extra" ficam os adicionais e o máximo de cada dia da semana.
           </p>
         </div>
         <button
@@ -288,6 +304,14 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
               {brl(r.hourlyRate)} <span className="text-[11px] font-bold text-slate-500">/ hora</span>
             </p>
             <p className="text-[11px] text-slate-500">Vigência: {r.rateFrom ? `desde ${dateBR(r.rateFrom)}` : 'não informado'}</p>
+            {(() => {
+              const ot = overtime.find((o) => o.id === r.id);
+              return ot ? (
+                <p className="text-[11px] text-slate-500">Hora extra: {overtimeSummary(ot)}</p>
+              ) : (
+                <p className="text-[11px] font-bold text-amber-700">Hora extra: não configurada</p>
+              );
+            })()}
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
@@ -295,6 +319,13 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
                 className="flex-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold cursor-pointer"
               >
                 {r.rateFrom ? 'Alterar valor' : 'Informar valor'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOvertimeOf(r)}
+                className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold cursor-pointer"
+              >
+                Hora extra
               </button>
               {(r.history || []).length > 0 && (
                 <button
@@ -340,6 +371,21 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
           </div>
         ))}
       </div>
+
+      {overtimeOf && (
+        <OvertimeRulesModal
+          role={overtimeOf}
+          rules={overtime.find((o) => o.id === overtimeOf.id) || null}
+          currentUserName={currentUserName}
+          darkMode={darkMode}
+          onClose={() => setOvertimeOf(null)}
+          onSaved={() => {
+            setOvertimeOf(null);
+            loadOvertime();
+            onChanged();
+          }}
+        />
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
