@@ -1099,6 +1099,14 @@ export default function App() {
               canAssign={userHasActionPermission('os_assign')}
               canCancel={userHasActionPermission('os_cancel')}
               canViewCosts={userHasActionPermission('view_costs')}
+              mySignRole={
+                userProfile.perfil === 'Super Administrador'
+                  ? 'all'
+                  : (() => {
+                      const r = resolveUserProfile(userProfile, accessProfiles)?.osSignAs;
+                      return r === 'engenheiro' || r === 'gerente' ? r : null;
+                    })()
+              }
               preventives={
                 <ServiceOrdersView 
                   section="execucao"

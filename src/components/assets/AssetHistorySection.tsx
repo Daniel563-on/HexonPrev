@@ -5,10 +5,11 @@ import { AssetMaterialSpend, brl, dbGetAssetMaterialSpend, dbGetOrderCost, dbGet
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { useHistoryPages, HistoryPagerControls } from './HistoryPager';
 import OrderTimeCost from '../orders/execution/OrderTimeCost';
+import AssetCorrectiveHistory from './AssetCorrectiveHistory';
 
 // HISTÓRICO DO ATIVO (Hexon 2.0, Fase 3): abas Preventivas e Corretivas, 12 por página, mais recentes primeiro.
 // Cada linha abre com a setinha. Quem tem "Ver valores em R$" vê o valor de cada linha e o total gasto com materiais
-// (calculados na hora; nada é gravado). As corretivas aparecem quando o módulo de OS existir (Fase 5).
+// (calculados na hora; nada é gravado). Corretivas: OS concluídas com este ativo vinculado (Fase 5B).
 
 type Tab = 'preventivas' | 'corretivas';
 
@@ -139,9 +140,7 @@ export default function AssetHistorySection({ asset, history: propHistory, canVi
       )}
 
       {tab === 'corretivas' ? (
-        <div className="text-center py-10">
-          <p className="text-xs text-gray-400 font-bold italic">As corretivas aparecem aqui quando o módulo de OS estiver pronto.</p>
-        </div>
+        <AssetCorrectiveHistory assetId={asset.id} canViewCosts={canViewCosts} />
       ) : history.length === 0 ? (
         <div className="text-center py-10">
           <p className="text-xs text-gray-400 font-bold italic">

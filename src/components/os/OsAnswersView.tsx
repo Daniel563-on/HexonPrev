@@ -10,6 +10,7 @@ export const STATUS_STYLE: Record<string, string> = {
   'Em andamento': 'bg-amber-100 text-amber-800',
   Pendente: 'bg-orange-100 text-orange-800',
   'Aguardando assinaturas': 'bg-indigo-100 text-indigo-800',
+  Contestada: 'bg-rose-100 text-rose-800',
   'Concluída': 'bg-emerald-100 text-emerald-800',
   Cancelada: 'bg-rose-100 text-rose-700'
 };

@@ -20,6 +20,7 @@ import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
 import { dbGetSingleAssetPublic } from '../db/firebase';
 import { useHistoryPages, HistoryPagerControls } from './assets/HistoryPager';
+import AssetCorrectiveHistory from './assets/AssetCorrectiveHistory';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
 
 interface PublicAssetViewProps {
@@ -369,9 +370,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
           </div>
 
           {historyTab === 'corretivas' ? (
-            <div className="text-center py-8 text-slate-400">
-              <p className="text-xs font-bold text-slate-600">As corretivas aparecem aqui quando o módulo de OS estiver pronto.</p>
-            </div>
+            asset && !asset.kind ? <AssetCorrectiveHistory assetId={asset.id} canViewCosts={false} publicView /> : null
           ) : history.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />

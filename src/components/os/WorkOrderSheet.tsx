@@ -7,6 +7,7 @@ import {
   dbCancelWorkOrder,
   dbGetWorkOrder,
   dbGetWorkOrderCost,
+  dbSyncOsValidation,
   dbPauseWorkOrder,
   dbResumeWorkOrder,
   fmtMinutes,
@@ -14,6 +15,7 @@ import {
   osMembers
 } from '../../db/firebase';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
+import OsSignaturesPanel from './OsSignaturesPanel';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
 // hora extra, pernoite), custo e homem-hora (quem pode ver valores), pausas, linha do tempo.
@@ -25,6 +27,7 @@ interface Props {
   canAssign: boolean;
   canCancel: boolean;
   canViewCosts: boolean;
+  mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
   onClose: () => void;
   onChanged: () => void;
 }
@@ -32,7 +35,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canViewCosts, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -43,7 +46,15 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
 
   // Lê a versão mais nova da OS (a lista pode estar alguns minutos atrás)
   useEffect(() => {
-    dbGetWorkOrder(initial.id).then((fresh) => fresh && setO(fresh)).catch(() => {});
+    // Também traz a resposta do link do cliente (aprovada → segue; contestada → volta para o técnico)
+    dbGetWorkOrder(initial.id)
+      .then(async (fresh) => {
+        if (!fresh) return;
+        const synced = await dbSyncOsValidation(fresh, userProfile.name).catch(() => null);
+        setO(synced || fresh);
+        if (synced) onChanged();
+      })
+      .catch(() => {});
   }, [initial.id]);
 
   const calc = async (target = o) => {
@@ -131,6 +142,11 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             ))}
           </div>
 
+          {o.status === 'Contestada' && (
+            <p className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+              <b>Contestada pelo cliente</b> em {fmtDT(o.contestedAt)}: {o.contestReason || '—'}. A OS voltou para o técnico corrigir e concluir de novo.
+            </p>
+          )}
           {o.status === 'Cancelada' && (
             <p className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
               <b>Cancelada</b> por {o.cancelledBy} em {fmtDT(o.cancelledAt)}: {o.cancelReason}
@@ -210,6 +226,22 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                   {cost.missing > 0 && <p className="text-[11px] font-bold text-amber-700">{cost.missing} linha(s) sem valor (cargo sem valor da hora, sem regras de hora extra ou material sem preço).</p>}
                 </>
               )}
+            </div>
+          )}
+
+          {o.status !== 'Nova' && (
+            <div>
+              <p className={h3}>Assinaturas</p>
+              <OsSignaturesPanel
+                order={o}
+                userProfile={userProfile}
+                mySignRole={mySignRole}
+                canManageClient={canAssign}
+                onChanged={() => {
+                  dbGetWorkOrder(o.id).then((fresh) => fresh && setO(fresh));
+                  onChanged();
+                }}
+              />
             </div>
           )}
 
