@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Calculator, X } from 'lucide-react';
+import { AlertTriangle, Calculator, MessageSquareReply, X } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
 import {
   WorkOrderCost,
@@ -16,16 +16,19 @@ import {
 } from '../../db/firebase';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
+import OsContestReplyModal from './OsContestReplyModal';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
 // hora extra, pernoite), custo e homem-hora (quem pode ver valores), pausas, linha do tempo.
 // Botões: Pendente/Retomar (quem atribui), Cancelar OS (permissão "Cancelar OS"), Fechar.
+// Contestada: "Responder contestação" (permissão "Responder contestação de OS" ou o técnico da OS).
 
 interface Props {
   order: WorkOrder;
   userProfile: HexonUser;
   canAssign: boolean;
   canCancel: boolean;
+  canReplyContest: boolean;
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
   onClose: () => void;
@@ -35,7 +38,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -43,6 +46,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [replying, setReplying] = useState(false);
 
   // Lê a versão mais nova da OS (a lista pode estar alguns minutos atrás)
   useEffect(() => {
@@ -143,9 +147,37 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
           </div>
 
           {o.status === 'Contestada' && (
-            <p className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
-              <b>Contestada pelo cliente</b> em {fmtDT(o.contestedAt)}: {o.contestReason || '—'}. A OS voltou para o técnico corrigir e concluir de novo.
-            </p>
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-2">
+              <p>
+                <b>Contestada pelo cliente</b> em {fmtDT(o.contestedAt)}: {o.contestReason || '—'}.{' '}
+                {o.techSignedAt ? 'Aguardando a resposta (o que foi resolvido); depois volta para o cliente.' : 'A OS voltou para o técnico corrigir e concluir de novo.'}
+              </p>
+              {o.techSignedAt && (canReplyContest || o.techOpen === userProfile.matricula) && (
+                <button type="button" onClick={() => setReplying(true)} className="h-9 px-3 rounded-lg bg-rose-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0">
+                  <MessageSquareReply className="w-4 h-4" /> Responder contestação
+                </button>
+              )}
+            </div>
+          )}
+          {(o.contests || []).length > 0 && (
+            <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-2">
+              <p className={h3}>Contestações ({o.contests!.length})</p>
+              {o.contests!.map((c, i) => (
+                <div key={i} className="text-xs text-slate-700 border-t border-slate-100 first:border-t-0 pt-2 first:pt-0 space-y-0.5">
+                  <p>
+                    <b className="text-rose-700">{i + 1}ª contestação</b> · {fmtDT(c.at)} · {c.clientName}{c.clientMatricula ? ` (mat. ${c.clientMatricula})` : ''}: {c.reason || '—'}
+                  </p>
+                  {c.resolvedAt ? (
+                    <p>
+                      <b className="text-emerald-700">Resposta</b> · {fmtDT(c.resolvedAt)} · {c.resolvedBy}: {c.resolution}
+                      {c.added ? <span className="text-slate-500"> · Acrescentado: {c.added}</span> : null}
+                    </p>
+                  ) : (
+                    <p className="text-slate-400">Sem resposta ainda.</p>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
           {o.status === 'Cancelada' && (
             <p className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
@@ -236,13 +268,27 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                 order={o}
                 userProfile={userProfile}
                 mySignRole={mySignRole}
-                canManageClient={canAssign}
+                canManageClient={canAssign || canReplyContest}
                 onChanged={() => {
                   dbGetWorkOrder(o.id).then((fresh) => fresh && setO(fresh));
                   onChanged();
                 }}
               />
             </div>
+          )}
+
+          {replying && (
+            <OsContestReplyModal
+              order={o}
+              userProfile={userProfile}
+              onClose={() => setReplying(false)}
+              onDone={(updated) => {
+                setReplying(false);
+                setO(updated);
+                dbGetWorkOrder(o.id).then((fresh) => fresh && setO(fresh)); // linha do tempo atualizada
+                onChanged();
+              }}
+            />
           )}
 
           <div>
