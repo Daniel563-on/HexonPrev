@@ -10,6 +10,7 @@ import {
   dbPauseWorkOrder,
   dbResumeWorkOrder,
   fmtMinutes,
+  osHolidays,
   osMembers
 } from '../../db/firebase';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
@@ -159,7 +160,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
               </div>
               <div className="p-3 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 space-y-1">
                 <p className={h3}>Feriados, hora extra e pernoite</p>
-                <p>Feriados: {exec?.holidays.length ? exec.holidays.map(dayBR).join(', ') : 'nenhum'}</p>
+                <p>Feriados (homem-hora não conta): {osHolidays(o).length ? osHolidays(o).map(dayBR).join(', ') : 'nenhum'}</p>
                 <p>
                   Hora extra:{' '}
                   {exec?.overtime?.length
@@ -192,7 +193,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
               {cost && (
                 <>
                   <p className="text-[11px] text-slate-500">
-                    Tempo que contou: <b>{fmtMinutes(cost.minutes)}</b> (seg–sex, 08–12 e 13–18, sem pendências e feriados) → <b>{String(cost.billedHours).replace('.', ',')} h</b> cobradas por pessoa
+                    Tempo que contou: <b>{fmtMinutes(cost.minutes)}</b> (seg–sex, 08–12 e 13–18, sem pendências e sem dias de feriado) → <b>{String(cost.billedHours).replace('.', ',')} h</b> cobradas por pessoa
                     {cost.partial ? ' · parcial: conta até agora (fecha na assinatura do técnico)' : ''}.
                   </p>
                   {cost.labor.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Homem-hora</p>{cost.labor.map(line)}</div>}

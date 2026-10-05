@@ -26,9 +26,10 @@ import {
   Check,
   RotateCcw,
   Play,
-  AlertTriangle
+  AlertTriangle,
+  BellRing
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, formatDateBR } from '../../types';
+import { ServiceOrder, Asset, HexonUser, WorkOrder, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
@@ -42,6 +43,7 @@ import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
 import CameraQrScanner from '../CameraQrScanner';
 import TechnicianOsTab from './TechnicianOsTab';
+import OsExecutionForm from '../os/OsExecutionForm';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 
 export interface TechnicianMobileViewProps {
@@ -62,7 +64,7 @@ export interface TechnicianMobileViewProps {
   canRevertUnexecutedOrder?: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
 }
 
-type MobileTab = 'orders' | 'os' | 'scanner' | 'profile';
+type MobileTab = 'orders' | 'os' | 'solicitations' | 'scanner' | 'profile';
 type FilterStatus = 'pending' | 'in_progress' | 'completed' | 'solicitations';
 
 export default function TechnicianMobileView({
@@ -84,10 +86,29 @@ export default function TechnicianMobileView({
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
   const [osCount, setOsCount] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0); // botão Atualizar do cabeçalho (relê as OS do banco)
+  const [scannedWorkOrders, setScannedWorkOrders] = useState<WorkOrder[]>([]); // OS (corretiva) do ativo lido no QR
+  const [qrWorkOrder, setQrWorkOrder] = useState<WorkOrder | null>(null);
+  const navButton = (tab: MobileTab, label: string, icon: React.ReactNode, badge = 0) => (
+    <button
+      onClick={() => setActiveTab(tab)}
+      className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+        activeTab === tab ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105' : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
+      }`}
+    >
+      <div className="relative">
+        {icon}
+        {badge > 0 && (
+          <span className="absolute -top-1 -right-2 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">{badge}</span>
+        )}
+      </div>
+      <span className="text-[10px] tracking-tight">{label}</span>
+    </button>
+  );
   // Quantas OS (corretiva, layout, acompanhamento) estão com o técnico: 1 busca ao abrir o app
   useEffect(() => {
     dbGetMyWorkOrders(userProfile.matricula).then((l) => setOsCount(l.length)).catch(() => {});
-  }, [userProfile.matricula]);
+  }, [userProfile.matricula, refreshKey]);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
@@ -103,10 +124,11 @@ export default function TechnicianMobileView({
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<Record<string, Asset>>({});
 
-  // Atualizar: as OS já chegam em tempo real; aqui só recarrega os modelos (não relê as OS)
+  // Atualizar: preventivas já chegam em tempo real (recarrega os modelos); as OS (corretiva) são relidas do banco
   const handleRefreshTechnicianOrders = async () => {
     setIsRefreshingOrders(true);
     try {
+      setRefreshKey((k) => k + 1); // Minhas OS e o contador
       await onReloadOrders();
     } finally {
       setIsRefreshingOrders(false);
@@ -379,7 +401,13 @@ export default function TechnicianMobileView({
       return;
     }
 
-    // 2. Find active order for this asset
+    // 2a. OS (corretiva, layout, acompanhamento) com este ativo vinculado que estão com o técnico
+    const myWork = await dbGetMyWorkOrders(userProfile.matricula).catch(() => [] as WorkOrder[]);
+    const assetWork = myWork.filter((w) => w.assetId === asset!.id || (!!w.assetCode && w.assetCode.toLowerCase() === asset!.code.toLowerCase()));
+    setScannedWorkOrders(assetWork);
+    const workNote = assetWork.length ? ` ${assetWork.length} OS corretiva(s) com este ativo atribuída(s) a você.` : '';
+
+    // 2b. Preventiva ativa deste ativo
     const matchingOrder = myOrders.find(
       o => (o.assetId === asset.id || o.assetCode === asset.code) && o.status !== 'Concluída' && o.status !== 'Não Executada'
     ) || null;
@@ -407,14 +435,16 @@ export default function TechnicianMobileView({
         setScannedMatchingOrder(matchingOrder);
         setScannerNotification({
           type: 'success',
-          message: `Ativo "${asset.name}" (${asset.code}) identificado! Preventiva #${matchingOrder.id} disponível para execução imediata.`
+          message: `Ativo "${asset.name}" (${asset.code}) identificado! Preventiva #${matchingOrder.id} disponível para execução imediata.${workNote}`
         });
       }
     } else {
       setScannedMatchingOrder(null);
       setScannerNotification({
-        type: 'info',
-        message: `Ativo identificado: ${asset.name} (${asset.code}). Não há O.S. pendente atribuída a você no momento para este equipamento.`
+        type: assetWork.length ? 'success' : 'info',
+        message: assetWork.length
+          ? `Ativo identificado: ${asset.name} (${asset.code}).${workNote}`
+          : `Ativo identificado: ${asset.name} (${asset.code}). Não há preventiva nem OS atribuída a você no momento para este equipamento.`
       });
     }
   };
@@ -479,12 +509,12 @@ export default function TechnicianMobileView({
           </div>
         </div>
 
-        {/* Quick actions: Refresh and Dark mode toggle */}
+        {/* Atualizar (relê preventivas e OS); o modo escuro fica em Meu Perfil */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleRefreshTechnicianOrders}
             disabled={isRefreshingOrders}
-            title="Sincronizar Minhas Ordens com o Servidor"
+            title="Atualizar: buscar as informações mais novas do banco"
             className={`p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer ${
               isRefreshingOrders ? 'opacity-50 cursor-not-allowed' : ''
             }`}
@@ -492,17 +522,6 @@ export default function TechnicianMobileView({
             <RotateCcw className={`w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400 ${isRefreshingOrders ? 'animate-spin' : ''}`} />
           </button>
 
-          <button
-            onClick={onToggleDarkMode}
-            title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-center justify-center cursor-pointer"
-          >
-            {darkMode ? (
-              <Sun className="w-4.5 h-4.5 text-amber-400" />
-            ) : (
-              <Moon className="w-4.5 h-4.5 text-indigo-600" />
-            )}
-          </button>
         </div>
       </header>
 
@@ -1008,18 +1027,42 @@ export default function TechnicianMobileView({
                         Ficha Técnica Consultada com Sucesso
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Não há ordem de serviço preventiva pendente atribuída à sua matrícula para este equipamento no momento. Modo somente visualização da ficha técnica ativo.
+                        Não há preventiva nem OS pendente atribuída à sua matrícula para este equipamento no momento. Modo somente visualização da ficha técnica ativo.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* OS (corretiva) com este ativo, atribuídas ao técnico */}
+              {scannedWorkOrders.map((w) => (
+                <div key={w.id} className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs font-black uppercase tracking-wider">
+                    <Wrench className="w-4 h-4" />
+                    <span>OS atribuída a você ({w.status})</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">
+                      {w.number} • {w.intervencao || 'OS'}{w.glpi ? ` • GLPI ${w.glpi}` : ''}
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{w.execAddressText}</p>
+                  </div>
+                  <button
+                    onClick={() => setQrWorkOrder(w)}
+                    className="w-full min-h-[50px] py-3.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+                  >
+                    <Play className="w-4.5 h-4.5 fill-current" />
+                    <span>Abrir a OS</span>
+                  </button>
+                </div>
+              ))}
+
               {/* Scan another button */}
               <button
                 onClick={() => {
                   setScannedAsset(null);
                   setScannedMatchingOrder(null);
+                  setScannedWorkOrders([]);
                   setScannerNotification(null);
                 }}
                 className={`w-full min-h-[46px] p-3 rounded-2xl border font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
@@ -1248,56 +1291,30 @@ export default function TechnicianMobileView({
       )}
 
       {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
-      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} />}
+      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} />}
+
+      {/* ================= TAB: SOLICITAÇÕES (conteúdo em uma próxima fase) ================= */}
+      {activeTab === 'solicitations' && (
+        <main className="flex-1 px-4 pt-4">
+          <div className={`p-6 rounded-2xl border text-center space-y-2 ${darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
+            <BellRing className="w-8 h-8 mx-auto text-indigo-500" />
+            <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Solicitações</p>
+            <p className="text-xs text-slate-500">Em construção: as solicitações do técnico chegam numa próxima fase.</p>
+          </div>
+        </main>
+      )}
 
       {/* ================= BOTTOM NAVIGATION BAR ================= */}
+      {/* Ordem: Solicitações · Minhas OS · [QR em destaque] · Preventivas · Meu Perfil */}
       <nav className={`fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-40 border-t backdrop-blur-md transition-colors ${
         darkMode ? 'bg-[#0A101D]/95 border-slate-800' : 'bg-white/95 border-slate-200'
       }`}>
-        <div className="max-w-md mx-auto px-4 h-18 flex items-center justify-between relative">
-          
-          {/* 1. Minhas O.S. (Esquerda) */}
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'orders'
-                ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105'
-                : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
-            }`}
-          >
-            <div className="relative">
-              <ClipboardList className="w-5.5 h-5.5" />
-              {pendingCount > 0 && (
-                <span className="absolute -top-1 -right-2 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white animate-pulse">
-                  {pendingCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] tracking-tight">Preventivas</span>
-          </button>
+        <div className="max-w-md mx-auto px-2 h-18 grid grid-cols-5 items-center relative">
+          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />)}
+          {navButton('os', 'Minhas OS', <Wrench className="w-5.5 h-5.5" />, osCount)}
 
-          {/* 2. Minhas OS (corretiva, layout, acompanhamento) */}
-          <button
-            onClick={() => setActiveTab('os')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'os'
-                ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105'
-                : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
-            }`}
-          >
-            <div className="relative">
-              <Wrench className="w-5.5 h-5.5" />
-              {osCount > 0 && (
-                <span className="absolute -top-1 -right-2 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">
-                  {osCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] tracking-tight">Minhas OS</span>
-          </button>
-
-          {/* 2. Destaque Central: Ler QR Code (Botão Flutuante) */}
-          <div className="relative -top-5">
+          {/* Destaque central: Ler QR Code */}
+          <div className="relative -top-5 flex justify-center">
             <button
               onClick={() => setActiveTab('scanner')}
               className={`w-15 h-15 rounded-2xl flex flex-col items-center justify-center text-white shadow-xl shadow-indigo-600/30 transition-all duration-200 active:scale-95 cursor-pointer ${
@@ -1313,21 +1330,23 @@ export default function TechnicianMobileView({
             </span>
           </div>
 
-          {/* 3. Perfil e Ajustes (Direita) */}
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'profile'
-                ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105'
-                : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
-            }`}
-          >
-            <User className="w-5.5 h-5.5" />
-            <span className="text-[10px] tracking-tight">Meu Perfil</span>
-          </button>
-
+          {navButton('orders', 'Preventivas', <ClipboardList className="w-5.5 h-5.5" />, pendingCount)}
+          {navButton('profile', 'Meu Perfil', <User className="w-5.5 h-5.5" />)}
         </div>
       </nav>
+
+      {/* OS (corretiva) aberta pelo QR Code */}
+      {qrWorkOrder && (
+        <OsExecutionForm
+          order={qrWorkOrder}
+          userProfile={userProfile}
+          onClose={() => {
+            setQrWorkOrder(null);
+            setRefreshKey((k) => k + 1);
+          }}
+          onChanged={(u) => setQrWorkOrder(u)}
+        />
+      )}
 
       {/* ================= ORDER EXECUTION & CHECKLIST DRAWER ================= */}
       {selectedOrder && (

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ClipboardCheck, MapPin, RefreshCw } from 'lucide-react';
+import { ClipboardCheck, MapPin } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
 import { dbGetMyWorkOrders } from '../../db/firebase';
 import OsExecutionForm from '../os/OsExecutionForm';
@@ -8,7 +8,17 @@ import { STATUS_STYLE, dayBR, isOverdue } from '../os/OsAnswersView';
 // MINHAS OS (técnico): as OS de corretiva, layout e acompanhamento que estão com ele agora.
 // Se a OS for passada para outro técnico, some daqui (o novo continua de onde parou).
 
-export default function TechnicianOsTab({ userProfile, darkMode, onCount }: { userProfile: HexonUser; darkMode: boolean; onCount?: (n: number) => void }) {
+export default function TechnicianOsTab({
+  userProfile,
+  darkMode,
+  onCount,
+  refreshKey = 0
+}: {
+  userProfile: HexonUser;
+  darkMode: boolean;
+  onCount?: (n: number) => void;
+  refreshKey?: number; // botão Atualizar do cabeçalho
+}) {
   const [list, setList] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,19 +35,14 @@ export default function TechnicianOsTab({ userProfile, darkMode, onCount }: { us
       .catch((e) => setError(`Não foi possível carregar: ${e?.message || e}`))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [userProfile.matricula]);
+  useEffect(load, [userProfile.matricula, refreshKey]);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200';
   return (
     <main className="flex-1 px-4 pt-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className={`text-base font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Minhas OS</h2>
-          <p className="text-[11px] text-slate-500">Corretiva, layout e acompanhamento atribuídas a você.</p>
-        </div>
-        <button type="button" onClick={load} disabled={loading} className="h-9 px-3 rounded-xl border border-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-        </button>
+      <div>
+        <h2 className={`text-base font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Minhas OS</h2>
+        <p className="text-[11px] text-slate-500">Corretiva, layout e acompanhamento atribuídas a você.{loading ? ' Atualizando...' : ''}</p>
       </div>
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
       {!loading && list.length === 0 && !error && <p className="text-xs text-slate-500 py-6 text-center">Nenhuma OS com você agora.</p>}

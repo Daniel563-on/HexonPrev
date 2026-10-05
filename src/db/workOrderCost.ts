@@ -50,6 +50,10 @@ export function osWorkMinutes(startMs: number, endMs: number, pauses: WorkOrderP
   return Math.round(total / 60000);
 }
 
+// Feriados da OS: dias de hora extra marcados como feriado (o homem-hora não conta nesses dias)
+export const osHolidays = (o: WorkOrder): string[] =>
+  Array.from(new Set([...(o.exec?.holidays || []), ...(o.exec?.overtime || []).filter((d) => d.holiday && d.date).map((d) => d.date)]));
+
 // Menos de 1 h cobra 1 h; acima disso, proporcional
 export const osBilledHours = (minutes: number) => (minutes < 60 ? 1 : Math.round((minutes / 60) * 100) / 100);
 
@@ -113,7 +117,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), r]));
   const ruleById = new Map(rules.map((r) => [r.id, r]));
 
-  const minutes = startMs ? osWorkMinutes(startMs, endMs, o.pauses || [], exec?.holidays || []) : 0;
+  const minutes = startMs ? osWorkMinutes(startMs, endMs, o.pauses || [], osHolidays(o)) : 0;
   const billed = startMs ? osBilledHours(minutes) : 0;
 
   const labor: OrderCostLine[] = members.map((p) => {

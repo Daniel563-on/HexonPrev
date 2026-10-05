@@ -210,7 +210,6 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           <OsFieldExtras
             editable={editable}
             team={exec.team}
-            holidays={exec.holidays}
             overtime={exec.overtime}
             overnightNights={exec.overnightNights}
             onChange={(next) => patch(next)}
