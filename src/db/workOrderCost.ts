@@ -104,8 +104,10 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // Custo da OS para quem pode ver valores. endIso = assinatura do técnico (sem ela, conta até agora)
 export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise<WorkOrderCost> {
   const startMs = toMillis(o.assignedAt);
-  // Fim: assinatura do técnico (Aguardando assinaturas / Concluída); cancelada = hora do cancelamento; senão, agora
-  const fixedEnd = endIso || (o.techSignedAt && ['Aguardando assinaturas', 'Concluída'].includes(o.status) ? o.techSignedAt : o.status === 'Cancelada' ? o.cancelledAt : undefined);
+  // Fim: assinatura do técnico ou a resposta da última contestação (Aguardando assinaturas / Concluída);
+  // contestada = conta até agora (o tempo esperando o cliente vira pausa); cancelada = hora do cancelamento
+  const fixedEnd =
+    endIso || (o.techSignedAt && ['Aguardando assinaturas', 'Concluída'].includes(o.status) ? o.workEndAt || o.techSignedAt : o.status === 'Cancelada' ? o.cancelledAt : undefined);
   const endMs = fixedEnd ? toMillis(fixedEnd) || Date.now() : Date.now();
   const date = localDate(new Date(endMs).toISOString());
   const exec = o.exec;

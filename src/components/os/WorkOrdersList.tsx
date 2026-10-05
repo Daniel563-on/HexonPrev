@@ -14,11 +14,12 @@ interface Props {
   unitOptions: string[];   // gerências que o usuário pode ver
   canAssign: boolean;
   canCancel: boolean;
+  canReplyContest: boolean;
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null;
 }
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canCancel, canViewCosts, mySignRole }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canCancel, canReplyContest, canViewCosts, mySignRole }: Props) {
   const [signView, setSignView] = useState(false); // "Precisam da minha assinatura"
   const [unit, setUnit] = useState<string>(() => {
     try {
@@ -208,6 +209,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           userProfile={userProfile}
           canAssign={canAssign}
           canCancel={canCancel}
+          canReplyContest={canReplyContest}
           canViewCosts={canViewCosts}
           mySignRole={mySignRole}
           onClose={() => setSelected(null)}

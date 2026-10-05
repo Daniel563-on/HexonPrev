@@ -1098,6 +1098,7 @@ export default function App() {
               canSeePreventives={userHasActionPermission('view_service_orders')}
               canAssign={userHasActionPermission('os_assign')}
               canCancel={userHasActionPermission('os_cancel')}
+              canReplyContest={userHasActionPermission('os_contest_reply')}
               canViewCosts={userHasActionPermission('view_costs')}
               mySignRole={
                 userProfile.perfil === 'Super Administrador'
