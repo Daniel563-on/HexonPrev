@@ -338,9 +338,22 @@ service cloud.firestore {
         && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1);
       allow delete: if false;
     }
-    // OS: cada um vê as das gerências do perfil; emitir pede "Emitir OS"; atribuir pede "Atribuir técnico / equipe"
+    // OS: cada um vê as das gerências do perfil (e o técnico, as que estão com ele); emitir pede "Emitir OS";
+    // atribuir pede "Atribuir técnico / equipe"; cancelar pede "Cancelar OS"; o técnico atribuído preenche a execução.
+    function osUnitOk() {
+      return seesAllUnits() || resource.data.unit in myUnits();
+    }
+    function osChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function osStatusFrom(from, to) {
+      return resource.data.status == from && request.resource.data.status == to;
+    }
+    function osSameStatus() {
+      return request.resource.data.status == resource.data.status;
+    }
     match /workOrders/{orderId} {
-      allow get, list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      allow get, list: if isStaff() && (osUnitOk() || resource.data.get('techOpen', '') == me().matricula);
       // Gerência da OS = a de quem abre; Super Administrador e gerência "Todas" escolhem (dentro do que enxergam)
       allow create: if isStaff() && hasPermission('os_create')
         && ((isSuperAdmin() || me().get('gerencia', '') == 'Todas')
@@ -348,11 +361,31 @@ service cloud.firestore {
             : request.resource.data.unit == me().get('gerencia', ''))
         && orderId == request.resource.data.number
         && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
-        && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')));
-      allow update: if isStaff() && hasPermission('os_assign')
-        && (seesAllUnits() || resource.data.unit in myUnits())
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'updatedAt', 'timeline'])
-        && (request.resource.data.status == resource.data.status || (resource.data.status == 'Nova' && request.resource.data.status == 'Em andamento'));
+        && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')))
+        && (request.resource.data.status == 'Nova' || request.resource.data.get('techOpen', '') == request.resource.data.assignedTechnicianMatricula);
+      allow update: if isStaff() && (
+        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
+        (hasPermission('os_assign') && osUnitOk()
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
+          && resource.data.status in ['Nova', 'Em andamento', 'Pendente']
+          && (osSameStatus() || osStatusFrom('Nova', 'Em andamento')))
+        // Pendente / Retomar pelo escritório
+        || (hasPermission('os_assign') && osUnitOk()
+          && osChanged().hasOnly(['status', 'pauses', 'updatedAt', 'timeline'])
+          && (osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento')))
+        // Técnico atribuído: salvar a execução, Pendente e Retomar
+        || (resource.data.get('techOpen', '') == me().matricula && resource.data.assignedTechnicianMatricula == me().matricula
+          && osChanged().hasOnly(['exec', 'status', 'pauses', 'updatedAt', 'timeline'])
+          && ((osSameStatus() && resource.data.status == 'Em andamento')
+              || osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento')))
+        // Cancelar (motivo obrigatório; some do celular do técnico)
+        || (hasPermission('os_cancel') && osUnitOk()
+          && resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && request.resource.data.status == 'Cancelada'
+          && request.resource.data.get('cancelReason', '').size() > 0
+          && osChanged().hasOnly(['status', 'cancelReason', 'cancelledAt', 'cancelledBy', 'pauses', 'techOpen', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data))
+      );
       allow delete: if false;
     }
 

@@ -128,11 +128,10 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_cancel: {
     id: 'os_cancel',
     name: 'Cancelar OS',
-    description: 'Cancelar uma OS informando o motivo.',
+    description: 'Cancelar uma OS informando o motivo (some do celular do técnico).',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 5'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   os_execute: {
     id: 'os_execute',

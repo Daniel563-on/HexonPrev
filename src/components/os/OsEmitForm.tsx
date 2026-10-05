@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Lock, PenTool } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, Lock } from 'lucide-react';
 import { Address, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
 import {
   OS_EMAIL_OK,
@@ -13,7 +13,7 @@ import {
   osFieldVisible,
   stageItems
 } from '../../db/firebase';
-import SignatureCanvas from '../SignatureCanvas';
+import OsFieldInput, { LocationPicker, osInput } from './OsFieldInput';
 
 // EMITIR OS (GLPI): a tela mostra exatamente as perguntas da etapa Criação do modelo escolhido
 // (perguntas livres + campos do sistema ligados), com as condições ("só quando...") funcionando na hora.
@@ -27,7 +27,7 @@ interface Props {
   onEmitted?: (o: WorkOrder) => void;
 }
 
-const input = 'w-full h-9 px-3 text-xs border border-slate-200 rounded-lg bg-white';
+const input = osInput;
 const label = 'block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500';
 const todayStr = () => {
   const d = new Date();
@@ -35,79 +35,8 @@ const todayStr = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-// (21) 99999-9999
-const maskPhone = (v: string) => {
-  const d = v.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 2) return d ? `(${d}` : '';
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-};
-
 // Largura do campo (computador): inteira, metade, um terço — no celular sempre inteira
 const SPAN: Record<OsFieldWidth, string> = { full: 'md:col-span-6', half: 'md:col-span-3', third: 'md:col-span-2' };
-
-const uniq = (list: string[]) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-
-// Local: CRAAI › Comarca › Endereço, em cascata, a partir do cadastro de Endereços (só os ativos)
-function LocationPicker({
-  addresses,
-  depth,
-  value,
-  onChange
-}: {
-  addresses: Address[];
-  depth: 'comarca' | 'endereco';
-  value?: OsLocationAnswer;
-  onChange: (v: OsLocationAnswer | undefined) => void;
-}) {
-  const active = useMemo(() => addresses.filter((a) => a.active !== false), [addresses]);
-  const craais = useMemo(() => uniq(active.map((a) => a.craai)), [active]);
-  const craai = value?.craai || '';
-  const comarca = value?.comarca || '';
-  const comarcas = useMemo(() => uniq(active.filter((a) => a.craai === craai).map((a) => a.comarca)), [active, craai]);
-  const places = useMemo(() => active.filter((a) => a.craai === craai && a.comarca === comarca), [active, craai, comarca]);
-
-  // Comarca com um só endereço: já vem escolhido
-  useEffect(() => {
-    if (depth === 'endereco' && craai && comarca && places.length === 1 && value?.addressId !== places[0].id) {
-      onChange({ craai, comarca, addressId: places[0].id, address: places[0].address });
-    }
-  }, [depth, craai, comarca, places]);
-
-  return (
-    <div className={`grid grid-cols-1 ${depth === 'endereco' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-2`}>
-      <select className={input} value={craai} onChange={(e) => onChange(e.target.value ? { craai: e.target.value, comarca: '' } : undefined)}>
-        <option value="">CRAAI...</option>
-        {craais.map((c) => (
-          <option key={c} value={c}>{c}</option>
-        ))}
-      </select>
-      <select className={input} value={comarca} disabled={!craai} onChange={(e) => onChange({ craai, comarca: e.target.value })}>
-        <option value="">{craai ? 'Comarca...' : 'Escolha o CRAAI'}</option>
-        {comarcas.map((c) => (
-          <option key={c} value={c}>{c}</option>
-        ))}
-      </select>
-      {depth === 'endereco' && (
-        <select
-          className={input}
-          value={value?.addressId || ''}
-          disabled={!comarca}
-          onChange={(e) => {
-            const a = places.find((p) => p.id === e.target.value);
-            onChange(a ? { craai, comarca, addressId: a.id, address: a.address } : { craai, comarca });
-          }}
-        >
-          <option value="">{comarca ? (places.length ? 'Endereço...' : 'Nenhum endereço nesta comarca') : 'Escolha a comarca'}</option>
-          {places.map((p) => (
-            <option key={p.id} value={p.id}>{p.address} ({p.code})</option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
-}
 
 export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmitted }: Props) {
   const chooseUnit = userProfile.perfil === 'Super Administrador' || userProfile.gerencia === 'Todas';
@@ -121,7 +50,6 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<WorkOrder | null>(null);
-  const [signing, setSigning] = useState<OsTemplateField | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -268,89 +196,9 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
     }
   };
 
-  const choice = (selected: boolean) =>
-    `h-8 px-4 rounded-lg border text-xs font-bold cursor-pointer ${selected ? 'bg-[#3525cd] text-white border-[#3525cd]' : 'border-slate-200 text-slate-700 bg-white'}`;
-
-  const renderField = (f: OsTemplateField) => {
-    const v = answers[f.id];
-    switch (f.type) {
-      case 'textarea':
-        return <textarea className={`${input} h-24 py-2`} value={v || ''} onChange={(e) => setA(f.id, e.target.value)} />;
-      case 'number':
-        return <input type="number" className={input} value={v ?? ''} onChange={(e) => setA(f.id, e.target.value)} />;
-      case 'date':
-        return <input type="date" className={input} value={v || ''} onChange={(e) => setA(f.id, e.target.value)} />;
-      case 'phone':
-        return <input inputMode="tel" className={input} value={v || ''} onChange={(e) => setA(f.id, maskPhone(e.target.value))} placeholder="(00) 00000-0000" />;
-      case 'email':
-        return (
-          <div>
-            <input type="email" className={input} value={v || ''} onChange={(e) => setA(f.id, e.target.value.trim())} placeholder="nome@dominio.com" />
-            {v && !OS_EMAIL_OK(String(v)) && <p className="text-[10px] font-bold text-amber-700 mt-1">E-mail incompleto.</p>}
-          </div>
-        );
-      case 'select':
-        return (
-          <select className={input} value={v || ''} onChange={(e) => setA(f.id, e.target.value)}>
-            <option value="">Selecione...</option>
-            {(f.options || []).map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-        );
-      case 'multiselect': {
-        const list: string[] = Array.isArray(v) ? v : [];
-        return (
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {(f.options || []).map((o) => (
-              <label key={o} className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                <input type="checkbox" checked={list.includes(o)} onChange={(e) => setA(f.id, e.target.checked ? [...list, o] : list.filter((x) => x !== o))} />
-                {o}
-              </label>
-            ))}
-          </div>
-        );
-      }
-      case 'toggle':
-        return (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!!v}
-            onClick={() => setA(f.id, !v)}
-            className={`relative h-6 w-11 rounded-full transition-colors cursor-pointer ${v ? 'bg-[#3525cd]' : 'bg-slate-300'}`}
-          >
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${v ? 'left-[22px]' : 'left-0.5'}`} />
-          </button>
-        );
-      case 'yesno':
-      case 'checkbox':
-        return (
-          <div className="flex gap-2">
-            {['Sim', 'Não'].map((o) => (
-              <button key={o} type="button" onClick={() => setA(f.id, o)} className={choice(v === o)}>
-                {o}
-              </button>
-            ))}
-          </div>
-        );
-      case 'signature':
-        return v ? (
-          <div className="flex items-center gap-3">
-            <img src={v} alt="Assinatura" className="h-16 border border-slate-200 rounded-lg bg-white" />
-            <button type="button" onClick={() => setA(f.id, undefined)} className="text-[10px] font-bold text-indigo-700 underline cursor-pointer">refazer</button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setSigning(f)} className="h-9 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black flex items-center gap-1.5 cursor-pointer">
-            <PenTool className="w-3.5 h-3.5" /> Assinar
-          </button>
-        );
-      case 'location':
-        return <LocationPicker addresses={addresses} depth={f.locationDepth || 'endereco'} value={v} onChange={(l) => setA(f.id, l)} />;
-      default:
-        return <input className={input} value={v || ''} onChange={(e) => setA(f.id, e.target.value)} />;
-    }
-  };
+  const renderField = (f: OsTemplateField) => (
+    <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setA(f.id, v)} addresses={addresses} signerName={userProfile.name} />
+  );
 
   const renderSystem = (s: OsSystemField) => {
     const key = `sys:${s.key}`;
@@ -519,21 +367,6 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
       )}
       {!template && error && <p className="text-xs font-bold text-rose-600">{error}</p>}
 
-      {signing && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4">
-            <p className="text-sm font-black text-slate-900 mb-2">{signing.label}</p>
-            <SignatureCanvas
-              defaultName={userProfile.name}
-              onSave={(img) => {
-                setA(signing.id, img);
-                setSigning(null);
-              }}
-              onCancel={() => setSigning(null)}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

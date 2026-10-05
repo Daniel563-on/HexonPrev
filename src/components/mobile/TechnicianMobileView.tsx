@@ -33,7 +33,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
@@ -41,6 +41,7 @@ import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
 import OrderDetailsDrawer from '../orders/OrderDetailsDrawer';
 import CameraQrScanner from '../CameraQrScanner';
+import TechnicianOsTab from './TechnicianOsTab';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 
 export interface TechnicianMobileViewProps {
@@ -61,7 +62,7 @@ export interface TechnicianMobileViewProps {
   canRevertUnexecutedOrder?: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
 }
 
-type MobileTab = 'orders' | 'scanner' | 'profile';
+type MobileTab = 'orders' | 'os' | 'scanner' | 'profile';
 type FilterStatus = 'pending' | 'in_progress' | 'completed' | 'solicitations';
 
 export default function TechnicianMobileView({
@@ -82,6 +83,11 @@ export default function TechnicianMobileView({
   canRevertUnexecutedOrder = () => false
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
+  const [osCount, setOsCount] = useState(0);
+  // Quantas OS (corretiva, layout, acompanhamento) estão com o técnico: 1 busca ao abrir o app
+  useEffect(() => {
+    dbGetMyWorkOrders(userProfile.matricula).then((l) => setOsCount(l.length)).catch(() => {});
+  }, [userProfile.matricula]);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
@@ -1241,11 +1247,14 @@ export default function TechnicianMobileView({
         </main>
       )}
 
+      {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
+      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} />}
+
       {/* ================= BOTTOM NAVIGATION BAR ================= */}
       <nav className={`fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-40 border-t backdrop-blur-md transition-colors ${
         darkMode ? 'bg-[#0A101D]/95 border-slate-800' : 'bg-white/95 border-slate-200'
       }`}>
-        <div className="max-w-md mx-auto px-6 h-18 flex items-center justify-between relative">
+        <div className="max-w-md mx-auto px-4 h-18 flex items-center justify-between relative">
           
           {/* 1. Minhas O.S. (Esquerda) */}
           <button
@@ -1264,7 +1273,27 @@ export default function TechnicianMobileView({
                 </span>
               )}
             </div>
-            <span className="text-[10px] tracking-tight">Minhas O.S.</span>
+            <span className="text-[10px] tracking-tight">Preventivas</span>
+          </button>
+
+          {/* 2. Minhas OS (corretiva, layout, acompanhamento) */}
+          <button
+            onClick={() => setActiveTab('os')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'os'
+                ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105'
+                : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
+            }`}
+          >
+            <div className="relative">
+              <Wrench className="w-5.5 h-5.5" />
+              {osCount > 0 && (
+                <span className="absolute -top-1 -right-2 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">
+                  {osCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] tracking-tight">Minhas OS</span>
           </button>
 
           {/* 2. Destaque Central: Ler QR Code (Botão Flutuante) */}
