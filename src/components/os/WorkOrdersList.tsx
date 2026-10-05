@@ -217,6 +217,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
                   value = osAnswerText(it.field, value);
                 }
                 else if (it.sys.key === 'gerencia') value = selected.unit;
+                else if (it.sys.key === 'numeroOs') value = selected.number;
                 else if (it.sys.key === 'tecnico') value = selected.assignedTechnicianName || 'Em aberto';
                 else if (it.sys.key === 'enderecoExecucao') value = [selected.execAddressText, selected.comarca && `Comarca ${selected.comarca}`, selected.craai && `CRAAI ${selected.craai}`].filter(Boolean).join(' · ');
                 else if (it.sys.key === 'ativo') value = selected.assetName ? `${selected.assetCode} (vinculado: ${selected.assetName})` : selected.assetCode;

@@ -716,6 +716,9 @@ export type OsFieldType =
   | 'checkbox'; // 'checkbox' = Sim/Não da 1ª versão (lido como 'yesno')
 export type OsStage = 'criacao' | 'execucao';
 
+// Largura do campo na tela: inteira, metade ou um terço da linha
+export type OsFieldWidth = 'full' | 'half' | 'third';
+
 // Condição: a pergunta só aparece quando outra pergunta tem esta resposta
 export interface OsShowIf {
   fieldId: string;
@@ -731,6 +734,7 @@ export interface OsTemplateField {
   options?: string[];                     // lista suspensa e caixas de marcar
   locationDepth?: 'comarca' | 'endereco'; // Local: até a comarca ou até o endereço
   showIf?: OsShowIf;
+  width?: OsFieldWidth;                   // largura na tela (computador); celular = sempre inteira
   stage: OsStage;
   order: number;
 }
@@ -745,7 +749,7 @@ export interface OsLocationAnswer {
 
 // Campos do sistema: o Hexon sabe para que servem (gerência, atribuição, filtros, históricos)
 export type OsSystemKey =
-  | 'gerencia' | 'tecnico' | 'enderecoExecucao' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
+  | 'gerencia' | 'numeroOs' | 'tecnico' | 'enderecoExecucao' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
   | 'equipe' | 'responsavel' | 'pendencia' | 'materiais' | 'homemHora';
 
 export interface OsSystemField {
@@ -754,6 +758,7 @@ export interface OsSystemField {
   enabled: boolean;
   required: boolean;
   options?: string[]; // intervenção
+  width?: OsFieldWidth;
   order: number;      // ordem junto com as perguntas da mesma etapa
 }
 
