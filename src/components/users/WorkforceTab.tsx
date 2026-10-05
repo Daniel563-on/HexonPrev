@@ -151,7 +151,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
           <button type="button" className={tabBtn(view === 'pessoas')} onClick={() => setView('pessoas')}>Pessoas</button>
-          <button type="button" className={tabBtn(view === 'cargos')} onClick={() => setView('cargos')}>Cargos, valor da hora e pernoite</button>
+          <button type="button" className={tabBtn(view === 'cargos')} onClick={() => setView('cargos')}>Cargos e valores</button>
         </div>
         {view === 'pessoas' && (
           <button

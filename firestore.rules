@@ -208,6 +208,13 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 4i-2. REGRAS DE HORA EXTRA POR CARGO (id = id do cargo) — sem valores em R$: a equipe lê (aviso de máximo
+    // para o técnico); só o Super Administrador altera. As tarifas em R$ ficam no cargo (jobRoles).
+    match /overtimeRules/{roleId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
     // 4j. MATERIAIS — lista de cada gerência (sem estoque).
     // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência dele, para informar o uso na OS).
     // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências).
