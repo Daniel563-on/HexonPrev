@@ -140,7 +140,11 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const visible = (f: OsTemplateField) => (template ? osFieldVisible(f, template.fields, answers) : true);
   const items = template ? stageItems(template.fields, template.systemFields, 'criacao').filter((it) => it.kind === 'system' || visible(it.field)) : [];
   const unit: string = chooseUnit ? answers['sys:gerencia'] || '' : userProfile.gerencia || '';
-  const technicians = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && !!unit && u.gerencia === unit);
+  // Técnicos da gerência da OS e, em bloco separado, os que atendem todas as gerências (gerência "Todas")
+  const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo');
+  const unitTechs = unit ? activeTechs.filter((u) => u.gerencia === unit) : [];
+  const allUnitsTechs = unit ? activeTechs.filter((u) => u.gerencia === 'Todas') : [];
+  const technicians = [...unitTechs, ...allUnitsTechs];
   const assignOn = !!template?.systemFields.find((s) => s.key === 'tecnico' && s.enabled) && canAssign;
 
   const reset = () => {
@@ -352,9 +356,20 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           <div>
             <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)} disabled={!unit}>
               <option value="">Deixar em aberto (o Encarregado atribui)</option>
-              {technicians.map((t) => (
-                <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-              ))}
+              {unitTechs.length > 0 && (
+                <optgroup label={`Técnicos da ${unit}`}>
+                  {unitTechs.map((t) => (
+                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
+                  ))}
+                </optgroup>
+              )}
+              {allUnitsTechs.length > 0 && (
+                <optgroup label="Técnicos de todas as gerências">
+                  {allUnitsTechs.map((t) => (
+                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             {!unit && <p className="text-[10px] text-slate-500 mt-1">Escolha a gerência para ver os técnicos.</p>}
             {unit && technicians.length === 0 && <p className="text-[10px] text-slate-500 mt-1">Nenhum técnico ativo na gerência {unit}.</p>}
