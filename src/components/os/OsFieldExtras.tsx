@@ -1,18 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarDays, Hotel, Plus, Timer, Trash2 } from 'lucide-react';
+import { AlertTriangle, Hotel, Plus, Timer, Trash2 } from 'lucide-react';
 import { OrderParticipant, OvertimeRules, WorkOrderOvertimeDay } from '../../types';
 import { OVERTIME_DAYS, dbGetOvertimeRules, overtimeDayKey, overtimeWarnings } from '../../db/firebase';
 
-// ADICIONAIS DE CAMPO (técnico): feriados (homem-hora = 0 nesses dias), hora extra por dia e pernoite.
-// Hora extra e pernoite valem para todos os colaboradores lançados na OS. O técnico não vê valores (R$).
+// ADICIONAIS DE CAMPO (técnico): hora extra por dia e pernoite. Dia de hora extra marcado como feriado
+// também zera o homem-hora daquele dia. Valem para todos os colaboradores lançados na OS. O técnico não vê valores (R$).
 
 interface Props {
   editable: boolean;
   team: OrderParticipant[];
-  holidays: string[];
   overtime: WorkOrderOvertimeDay[] | null;
   overnightNights: number | null;
-  onChange: (next: { holidays?: string[]; overtime?: WorkOrderOvertimeDay[] | null; overnightNights?: number | null }) => void;
+  onChange: (next: { overtime?: WorkOrderOvertimeDay[] | null; overnightNights?: number | null }) => void;
 }
 
 const today = () => {
@@ -20,7 +19,6 @@ const today = () => {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
-const dateBR = (s: string) => (s ? s.split('-').reverse().join('/') : '');
 const fmtH = (min: number) => `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
 const label = 'text-[10px] font-black text-slate-400 uppercase tracking-widest';
 const field = 'h-9 px-3 text-xs border border-slate-200 rounded-lg bg-white font-semibold';
@@ -44,9 +42,8 @@ function YesNo({ value, onChange, disabled }: { value: boolean; onChange: (v: bo
   );
 }
 
-export default function OsFieldExtras({ editable, team, holidays, overtime, overnightNights, onChange }: Props) {
+export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange }: Props) {
   const [rules, setRules] = useState<OvertimeRules[]>([]);
-  const [newHoliday, setNewHoliday] = useState('');
   useEffect(() => {
     if (overtime?.length) dbGetOvertimeRules().then(setRules).catch(() => setRules([]));
   }, [!!overtime?.length]);
@@ -59,46 +56,6 @@ export default function OsFieldExtras({ editable, team, holidays, overtime, over
 
   return (
     <div className="space-y-3">
-      {/* FERIADOS */}
-      <div className={card}>
-        <div className="flex items-start gap-2">
-          <CalendarDays className="w-4 h-4 text-indigo-600 mt-0.5" />
-          <div>
-            <p className="text-xs font-black text-slate-800">Feriados durante a OS</p>
-            <p className="text-[10px] text-slate-500">Nos dias marcados como feriado o homem-hora não conta.</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {holidays.length === 0 && <span className="text-[11px] text-slate-400">Nenhum feriado marcado.</span>}
-          {holidays.map((h) => (
-            <span key={h} className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800 flex items-center gap-1">
-              {dateBR(h)}
-              {editable && (
-                <button type="button" onClick={() => onChange({ holidays: holidays.filter((x) => x !== h) })} className="cursor-pointer" title="Tirar">
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-        {editable && (
-          <div className="flex gap-2">
-            <input type="date" value={newHoliday} onChange={(e) => setNewHoliday(e.target.value)} className={field} aria-label="Data do feriado" />
-            <button
-              type="button"
-              disabled={!newHoliday || holidays.includes(newHoliday)}
-              onClick={() => {
-                onChange({ holidays: [...holidays, newHoliday].sort() });
-                setNewHoliday('');
-              }}
-              className="h-9 px-3 rounded-lg border border-indigo-300 text-indigo-700 text-[11px] font-black cursor-pointer disabled:opacity-40"
-            >
-              Marcar feriado
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* HORA EXTRA */}
       <div className={card}>
         <div className="flex items-start justify-between gap-3">

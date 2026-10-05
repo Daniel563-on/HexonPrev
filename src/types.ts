@@ -821,7 +821,7 @@ export interface WorkOrderExec {
   answers: Record<string, any>;            // perguntas da etapa Execução do modelo
   team: OrderParticipant[];                // colaboradores adicionados pelo técnico (o técnico atribuído entra sempre)
   materials: UsedMaterial[];
-  holidays: string[];                      // dias marcados como feriado (AAAA-MM-DD): homem-hora = 0
+  holidays: string[];                      // (não usado: o feriado é marcado no dia de hora extra) — fica vazio
   overtime: WorkOrderOvertimeDay[] | null; // null = não houve hora extra
   overnightNights: number | null;          // null = não houve pernoite
   updatedAt: string;
