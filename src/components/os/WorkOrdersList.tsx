@@ -87,7 +87,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
     setTech(o.assignedTechnicianMatricula || '');
     setError(null);
     const users = await dbGetUsers().catch(() => []);
-    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && u.gerencia === o.unit));
+    // Técnicos da gerência da OS e, em bloco separado, os de gerência "Todas"
+    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas')));
   };
 
   const assign = async () => {
@@ -216,6 +217,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
                   value = osAnswerText(it.field, value);
                 }
                 else if (it.sys.key === 'gerencia') value = selected.unit;
+                else if (it.sys.key === 'numeroOs') value = selected.number;
                 else if (it.sys.key === 'tecnico') value = selected.assignedTechnicianName || 'Em aberto';
                 else if (it.sys.key === 'enderecoExecucao') value = [selected.execAddressText, selected.comarca && `Comarca ${selected.comarca}`, selected.craai && `CRAAI ${selected.craai}`].filter(Boolean).join(' · ');
                 else if (it.sys.key === 'ativo') value = selected.assetName ? `${selected.assetCode} (vinculado: ${selected.assetName})` : selected.assetCode;
@@ -256,9 +258,18 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
             )}
             <select value={tech} onChange={(e) => setTech(e.target.value)} className="w-full h-9 px-3 text-xs border border-slate-200 rounded-lg bg-white">
               <option value="">Selecione o técnico...</option>
-              {techs.map((t) => (
-                <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-              ))}
+              {[
+                { label: `Técnicos da ${assigning.unit}`, list: techs.filter((t) => t.gerencia === assigning.unit) },
+                { label: 'Técnicos de todas as gerências', list: techs.filter((t) => t.gerencia === 'Todas') }
+              ]
+                .filter((g) => g.list.length > 0)
+                .map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.list.map((t) => (
+                      <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
+                    ))}
+                  </optgroup>
+                ))}
             </select>
             {techs.length === 0 && <p className="text-[11px] text-slate-500">Nenhum técnico ativo nesta gerência.</p>}
             {error && <p className="text-xs font-bold text-rose-600">{error}</p>}

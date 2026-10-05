@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Lock, PenTool } from 'lucide-react';
-import { Address, HexonUser, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
+import { Address, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
 import {
   OS_EMAIL_OK,
   OS_PHONE_OK,
@@ -9,6 +9,7 @@ import {
   dbGetOsTemplates,
   dbGetSingleAssetPublic,
   dbGetUsers,
+  dbPeekNextOsNumber,
   osFieldVisible,
   stageItems
 } from '../../db/firebase';
@@ -42,6 +43,9 @@ const maskPhone = (v: string) => {
   if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 };
+
+// Largura do campo (computador): inteira, metade, um terço — no celular sempre inteira
+const SPAN: Record<OsFieldWidth, string> = { full: 'md:col-span-6', half: 'md:col-span-3', third: 'md:col-span-2' };
 
 const uniq = (list: string[]) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
@@ -140,7 +144,11 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const visible = (f: OsTemplateField) => (template ? osFieldVisible(f, template.fields, answers) : true);
   const items = template ? stageItems(template.fields, template.systemFields, 'criacao').filter((it) => it.kind === 'system' || visible(it.field)) : [];
   const unit: string = chooseUnit ? answers['sys:gerencia'] || '' : userProfile.gerencia || '';
-  const technicians = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && !!unit && u.gerencia === unit);
+  // Técnicos da gerência da OS e, em bloco separado, os que atendem todas as gerências (gerência "Todas")
+  const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo');
+  const unitTechs = unit ? activeTechs.filter((u) => u.gerencia === unit) : [];
+  const allUnitsTechs = unit ? activeTechs.filter((u) => u.gerencia === 'Todas') : [];
+  const technicians = [...unitTechs, ...allUnitsTechs];
   const assignOn = !!template?.systemFields.find((s) => s.key === 'tecnico' && s.enabled) && canAssign;
 
   const reset = () => {
@@ -150,12 +158,23 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
 
   const setA = (key: string, value: any) => setAnswers((prev) => ({ ...prev, [key]: value }));
 
+  // Ativo: busca no cadastro da Gestão de Ativos pelo código ou patrimônio (1 a 3 leituras)
+  const [assetBusy, setAssetBusy] = useState(false);
   const checkAsset = async () => {
     const code = String(answers['sys:ativo'] || '').trim();
     if (!code) return setAsset(null);
+    setAssetBusy(true);
     const a = await dbGetSingleAssetPublic(code).catch(() => null);
-    setAsset(a && !a.kind ? { id: a.id, name: `${a.code} — ${a.name}` } : 'none');
+    setAssetBusy(false);
+    setAsset(a && !a.kind ? { id: a.id, name: `${a.code} — ${a.name}${a.location ? ` · ${a.location}` : ''}` } : 'none');
   };
+
+  // Nº da OS previsto (o definitivo é reservado ao emitir)
+  const [nextNumber, setNextNumber] = useState<string | null>(null);
+  const showNumber = !!template?.systemFields.find((s) => s.key === 'numeroOs' && s.enabled);
+  useEffect(() => {
+    if (showNumber && !done) dbPeekNextOsNumber().then(setNextNumber);
+  }, [showNumber, done]);
 
   const isEmpty = (v: any) =>
     v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
@@ -166,7 +185,11 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
     // Obrigatórios e formatos (só das perguntas visíveis)
     for (const it of items) {
       if (it.kind === 'system') {
-        if (it.sys.key === 'gerencia' || it.sys.key === 'tecnico') continue;
+        if (it.sys.key === 'gerencia' || it.sys.key === 'tecnico' || it.sys.key === 'numeroOs') continue;
+        if (it.sys.key === 'ativo') {
+          if (it.sys.required && !(asset && asset !== 'none')) return setError(`${it.sys.label}: busque e vincule um ativo cadastrado na Gestão de Ativos.`);
+          continue;
+        }
         const required = it.sys.required || it.sys.key === 'enderecoExecucao';
         const v = answers[`sys:${it.sys.key}`];
         if (it.sys.key === 'enderecoExecucao') {
@@ -352,9 +375,20 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           <div>
             <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)} disabled={!unit}>
               <option value="">Deixar em aberto (o Encarregado atribui)</option>
-              {technicians.map((t) => (
-                <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-              ))}
+              {unitTechs.length > 0 && (
+                <optgroup label={`Técnicos da ${unit}`}>
+                  {unitTechs.map((t) => (
+                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
+                  ))}
+                </optgroup>
+              )}
+              {allUnitsTechs.length > 0 && (
+                <optgroup label="Técnicos de todas as gerências">
+                  {allUnitsTechs.map((t) => (
+                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             {!unit && <p className="text-[10px] text-slate-500 mt-1">Escolha a gerência para ver os técnicos.</p>}
             {unit && technicians.length === 0 && <p className="text-[10px] text-slate-500 mt-1">Nenhum técnico ativo na gerência {unit}.</p>}
@@ -374,12 +408,42 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
         );
       case 'glpi':
         return <input inputMode="numeric" className={input} value={v || ''} onChange={(e) => setA(key, e.target.value.replace(/\D/g, ''))} placeholder="Nº do chamado" />;
+      case 'numeroOs':
+        return (
+          <div className="h-9 px-3 flex items-center justify-between gap-2 text-xs border border-slate-200 rounded-lg bg-slate-50">
+            <span className="font-mono font-black text-indigo-700">{nextNumber || '—'}</span>
+            <span className="text-[9px] font-bold uppercase text-slate-400">previsto</span>
+          </div>
+        );
       case 'ativo':
+        if (asset && asset !== 'none') {
+          return (
+            <div className="min-h-9 px-3 py-1.5 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50">
+              <span className="text-[11px] font-bold text-emerald-800 truncate" title={asset.name}>{asset.name}</span>
+              <button type="button" onClick={() => { setA(key, ''); setAsset(null); }} className="text-[10px] font-bold text-indigo-700 underline cursor-pointer shrink-0">trocar</button>
+            </div>
+          );
+        }
         return (
           <div className="space-y-1">
-            <input className={input} value={v || ''} onChange={(e) => { setA(key, e.target.value); setAsset(null); }} onBlur={checkAsset} placeholder="Cole o código do ativo" />
-            {asset === 'none' && <p className="text-[10px] font-bold text-amber-700">Código não encontrado na Gestão de Ativos: fica guardado só o texto.</p>}
-            {asset && asset !== 'none' && <p className="text-[10px] font-bold text-emerald-700">Vinculado a {asset.name}</p>}
+            <div className="flex gap-1.5">
+              <input
+                className={input}
+                value={v || ''}
+                onChange={(e) => { setA(key, e.target.value); setAsset(null); }}
+                onBlur={checkAsset}
+                onKeyDown={(e) => e.key === 'Enter' && checkAsset()}
+                placeholder="Código ou patrimônio do ativo"
+              />
+              <button type="button" onClick={checkAsset} disabled={assetBusy || !String(v || '').trim()} className="h-9 px-3 rounded-lg border border-indigo-300 text-indigo-700 text-[11px] font-black cursor-pointer disabled:opacity-40">
+                {assetBusy ? '...' : 'Buscar'}
+              </button>
+            </div>
+            {asset === 'none' && (
+              <p className="text-[10px] font-bold text-amber-700">
+                {s.required ? 'Não encontrado na Gestão de Ativos. Cadastre o ativo antes de emitir.' : 'Não encontrado na Gestão de Ativos: a OS sai sem ativo vinculado (fica só o código digitado).'}
+              </p>
+            )}
           </div>
         );
       case 'prazo':
@@ -409,7 +473,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       {templates.length === 0 ? (
         <p className="text-xs text-slate-500">Nenhum modelo de OS cadastrado. Peça a quem cuida dos modelos (Configurações › Modelos de OS).</p>
       ) : (
@@ -426,6 +490,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
 
       {template && (
         <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-x-3 gap-y-4">
           {items.map((it) => {
             if (it.kind === 'system' && it.sys.key === 'tecnico' && !assignOn) return null;
             const required =
@@ -433,7 +498,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
                 ? it.field.required && it.field.type !== 'toggle'
                 : it.sys.key !== 'tecnico' && (it.sys.required || it.sys.key === 'gerencia' || it.sys.key === 'enderecoExecucao');
             return (
-              <div key={it.kind === 'field' ? it.field.id : it.sys.key}>
+              <div key={it.kind === 'field' ? it.field.id : it.sys.key} className={`min-w-0 ${SPAN[(it.kind === 'field' ? it.field.width : it.sys.width) || 'full']}`}>
                 <span className={label}>
                   {it.kind === 'field' ? it.field.label : it.sys.label}
                   {required ? ' *' : ''}
@@ -442,6 +507,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
               </div>
             );
           })}
+          </div>
 
           {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
           <div className="flex justify-end">

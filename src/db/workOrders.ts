@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -25,6 +26,7 @@ import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from 
 // ===== Campos do sistema =====
 export const OS_SYSTEM_STAGE: Record<OsSystemKey, OsStage> = {
   gerencia: 'criacao',
+  numeroOs: 'criacao',
   tecnico: 'criacao',
   enderecoExecucao: 'criacao',
   intervencao: 'criacao',
@@ -43,11 +45,12 @@ export const OS_LOCKED_SYSTEM: OsSystemKey[] = ['gerencia', 'enderecoExecucao'];
 
 export const OS_SYSTEM_HINT: Record<OsSystemKey, string> = {
   gerencia: 'Gerência de quem abre (fixa). Só quem é dessa gerência enxerga a OS. Super Administrador e gerência "Todas" escolhem.',
+  numeroOs: 'Número da OS, automático (OS-AAAA + 6 dígitos). Mostra o próximo número previsto; o definitivo é reservado ao emitir.',
   tecnico: 'Atribuição: lista só os técnicos da gerência da OS. Aparece para quem pode atribuir; ao atribuir, a OS fica "Em andamento".',
   enderecoExecucao: 'Local da execução: CRAAI › Comarca › Endereço (cadastro de Endereços). Monta o histórico de cada endereço.',
   intervencao: 'Lista com as opções abaixo (aparece na lista de OS).',
   glpi: 'Número do chamado no GLPI.',
-  ativo: 'Código colado de outro sistema. Se existir na Gestão de Ativos, a OS entra no histórico do ativo.',
+  ativo: 'Ativo da Gestão de Ativos (busca pelo código ou patrimônio). Vinculado, a OS entra no histórico do ativo. Obrigatório = só emite com ativo cadastrado.',
   prazo: 'Data limite.',
   equipe: 'Pessoas do efetivo que participam (homem-hora).',
   responsavel: 'Responsável pela OS.',
@@ -67,13 +70,14 @@ export function defaultSystemFields(): OsSystemField[] {
   });
   return [
     // Criação (a ordem se mistura com as perguntas livres da mesma etapa)
-    f('intervencao', 'Intervenção', 1, { required: true, options: ['Corretiva', 'Layout', 'Acompanhamento', 'Vistoria'] }),
-    f('glpi', 'GLPI', 2, { required: true }),
-    f('enderecoExecucao', 'Local da execução', 8, { required: true }),
-    f('ativo', 'Ativo', 9),
-    f('gerencia', 'Gerência responsável', 12, { required: true }),
-    f('prazo', 'Prazo limite (SLA)', 13),
-    f('tecnico', 'Atribuição (técnico)', 14),
+    f('gerencia', 'Gerência responsável', 1, { required: true, width: 'third' }),
+    f('intervencao', 'Intervenção', 2, { required: true, width: 'third', options: ['Corretiva', 'Layout', 'Acompanhamento', 'Vistoria'] }),
+    f('numeroOs', 'Nº da OS', 3, { width: 'third' }),
+    f('glpi', 'GLPI', 4, { required: true, width: 'third' }),
+    f('prazo', 'Prazo limite (SLA)', 6, { width: 'third' }),
+    f('enderecoExecucao', 'Local da execução', 11, { required: true }),
+    f('ativo', 'Ativo', 14, { width: 'half' }),
+    f('tecnico', 'Atribuição (técnico)', 15),
     // Execução (usados na Fase 5)
     f('equipe', 'Equipe', 1, { required: true }),
     f('responsavel', 'Responsável', 2),
@@ -101,13 +105,13 @@ export function mprjTemplate(by: string): OsTemplate {
     description: '',
     version: 1,
     fields: [
-      q('f_data_abertura', 'Data de abertura', 'date', 3, 'criacao'),
-      q('f_nome_requerente', 'Nome do requerente', 'text', 4, 'criacao'),
-      q('f_local_requerente', 'Local do requerente', 'location', 5, 'criacao', true, { locationDepth: 'comarca' }),
-      q('f_tel_requerente', 'Telefone do requerente', 'phone', 6, 'criacao'),
-      q('f_email_requerente', 'E-mail do requerente', 'email', 7, 'criacao'),
-      q('f_descricao', 'Descrição do serviço solicitado', 'textarea', 10, 'criacao'),
-      q('f_categoria', 'Categoria', 'select', 11, 'criacao', true, { options: ['ACJ', 'Split', 'Bombas', 'Elevadores', 'Outros'] }),
+      q('f_data_abertura', 'Data de abertura', 'date', 5, 'criacao', true, { width: 'third' }),
+      q('f_nome_requerente', 'Nome do requerente', 'text', 7, 'criacao'),
+      q('f_local_requerente', 'Local do requerente', 'location', 8, 'criacao', true, { locationDepth: 'comarca' }),
+      q('f_tel_requerente', 'Telefone do requerente', 'phone', 9, 'criacao', true, { width: 'half' }),
+      q('f_email_requerente', 'E-mail do requerente', 'email', 10, 'criacao', true, { width: 'half' }),
+      q('f_descricao', 'Descrição do serviço solicitado', 'textarea', 12, 'criacao'),
+      q('f_categoria', 'Categoria', 'select', 13, 'criacao', true, { options: ['ACJ', 'Split', 'Bombas', 'Elevadores', 'Outros'], width: 'half' }),
       q('f_servico_executado', 'Descrição do serviço executado', 'textarea', 10, 'execucao')
     ],
     systemFields: defaultSystemFields(),
@@ -135,7 +139,38 @@ export function normalizeOsTemplate(t: OsTemplate): OsTemplate {
     return d.key === 'enderecoExecucao' && cur.label === 'Endereço de execução' ? { ...cur, label: d.label } : cur;
   });
   const { allowedProfileIds, ...rest } = t;
-  return { ...rest, fields, systemFields };
+  const out = { ...rest, fields, systemFields };
+  // MPRJ salvo antes das larguras existirem: recebe a arrumação padrão (ordem e largura) uma vez
+  if (t.id === 'mprj_os' && ![...fields, ...known].some((x) => x.width)) return applyMprjLayout(out);
+  return out;
+}
+
+function applyMprjLayout(t: OsTemplate): OsTemplate {
+  const ref = mprjTemplate(t.updatedBy);
+  return {
+    ...t,
+    fields: t.fields.map((f) => {
+      const r = ref.fields.find((x) => x.id === f.id);
+      return r ? { ...f, order: r.order, width: r.width } : f;
+    }),
+    systemFields: t.systemFields.map((s) => {
+      const r = ref.systemFields.find((x) => x.key === s.key);
+      return r && OS_SYSTEM_STAGE[s.key] === 'criacao' ? { ...s, order: r.order, width: r.width } : s;
+    })
+  };
+}
+
+// Próximo número previsto (só para mostrar no formulário; o definitivo é reservado ao emitir)
+export async function dbPeekNextOsNumber(): Promise<string | null> {
+  if (!firebaseActive || !dbInstance) return null;
+  const year = new Date().getFullYear();
+  try {
+    const snap = await getDoc(doc(dbInstance, 'counters', `workOrders_${year}`));
+    return formatOsNumber(year, (snap.exists() ? Number(snap.data().last) || 0 : 0) + 1);
+  } catch (err: any) {
+    checkQuotaException(err);
+    return null;
+  }
 }
 
 // Itens de uma etapa (perguntas livres + campos do sistema ligados), na ordem

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Copy, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
-import { HexonUser, OsFieldType, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
+import { HexonUser, OsFieldType, OsFieldWidth, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
 import {
   OS_LOCKED_SYSTEM,
   OS_SYSTEM_HINT,
@@ -36,6 +36,21 @@ const TYPE_LABEL: Record<Exclude<OsFieldType, 'checkbox'>, string> = {
   signature: 'Assinatura no celular',
   location: 'Local (CRAAI › Comarca › Endereço)'
 };
+// Largura na tela de Emitir OS (no celular fica sempre inteira)
+const WIDTH_LABEL: Record<OsFieldWidth, string> = { full: 'Inteira', half: 'Metade', third: '1/3' };
+const widthSelect = (value: OsFieldWidth | undefined, onChange: (w: OsFieldWidth) => void) => (
+  <select
+    value={value || 'full'}
+    onChange={(e) => onChange(e.target.value as OsFieldWidth)}
+    title="Largura do campo na tela (no celular fica sempre inteira)"
+    className="h-7 px-1.5 text-[10px] font-bold border border-slate-200 rounded-md bg-white cursor-pointer"
+  >
+    {(Object.keys(WIDTH_LABEL) as OsFieldWidth[]).map((w) => (
+      <option key={w} value={w}>{WIDTH_LABEL[w]}</option>
+    ))}
+  </select>
+);
+
 const typeLabel = (f: OsTemplateField) =>
   f.type === 'checkbox' ? TYPE_LABEL.yesno : f.type === 'location' ? (f.locationDepth === 'comarca' ? 'Local (CRAAI › Comarca)' : TYPE_LABEL.location) : TYPE_LABEL[f.type];
 const hasOptions = (t: OsFieldType) => t === 'select' || t === 'multiselect';
@@ -313,6 +328,12 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
           {items.length === 0 && <p className="p-4 text-xs text-slate-400">Nenhuma pergunta nesta etapa.</p>}
           {items.map((it, i) => (
             <div key={it.kind === 'field' ? it.field.id : it.sys.key} className="p-3 flex items-center gap-3">
+              {stage === 'criacao' &&
+                widthSelect(it.kind === 'field' ? it.field.width : it.sys.width, (w) =>
+                  it.kind === 'field'
+                    ? setEditing({ ...editing, fields: editing.fields.map((f) => (f.id === it.field.id ? { ...f, width: w } : f)) })
+                    : updateSys(it.sys.key, { width: w })
+                )}
               <div className="flex flex-col gap-1">
                 <button type="button" className={btnSm} disabled={i === 0} onClick={() => move(stage, i, -1)}><ArrowUp className="w-3.5 h-3.5" /></button>
                 <button type="button" className={btnSm} disabled={i === items.length - 1} onClick={() => move(stage, i, 1)}><ArrowDown className="w-3.5 h-3.5" /></button>
@@ -431,7 +452,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                         <input
                           type="checkbox"
                           checked={locked || s.required}
-                          disabled={locked || !s.enabled || stage === 'execucao' || s.key === 'tecnico'}
+                          disabled={locked || !s.enabled || stage === 'execucao' || s.key === 'tecnico' || s.key === 'numeroOs'}
                           onChange={(e) => updateSys(s.key, { required: e.target.checked })}
                         />
                         Obrigatório
@@ -595,6 +616,12 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 </div>
               );
             })()}
+            {fieldForm.stage === 'criacao' && (
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                Largura na tela: {widthSelect(fieldForm.width, (w) => setFieldForm({ ...fieldForm, width: w }))}
+                <span className="text-[10px] font-normal text-slate-500">(no celular fica sempre inteira)</span>
+              </label>
+            )}
             <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <input type="checkbox" checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />
               Resposta obrigatória
