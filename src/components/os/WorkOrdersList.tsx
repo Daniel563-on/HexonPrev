@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
-import { WORK_ORDER_PAGE_SIZE, dbAssignWorkOrder, dbGetUsers, dbGetWorkOrdersPage, stageItems } from '../../db/firebase';
+import { WORK_ORDER_PAGE_SIZE, dbAssignWorkOrder, dbGetUsers, dbGetWorkOrdersPage, osAnswerText, osFieldVisible, stageItems } from '../../db/firebase';
 
 // LISTA SIMPLES DAS OS (Fase 4): da gerência escolhida, mais recentes primeiro, 20 por página.
 // Busca e filtros completos ficam para a Fase 6.
@@ -87,7 +87,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
     setTech(o.assignedTechnicianMatricula || '');
     setError(null);
     const users = await dbGetUsers().catch(() => []);
-    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas')));
+    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && u.gerencia === o.unit));
   };
 
   const assign = async () => {
@@ -199,14 +199,25 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign }: 
               </button>
             </div>
             <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-              {stageItems(selected.templateFields, selected.templateSystemFields, 'criacao').map((it) => {
+              {stageItems(selected.templateFields, selected.templateSystemFields, 'criacao')
+                .filter((it) => it.kind === 'system' || osFieldVisible(it.field, selected.templateFields, selected.answers))
+                .map((it) => {
                 let value: any;
                 if (it.kind === 'field') {
                   value = selected.answers[it.field.id];
-                  if (it.field.type === 'date' && value) value = dayBR(String(value));
+                  if (it.field.type === 'signature' && value) {
+                    return (
+                      <div key={it.field.id} className="p-2.5 grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-3 text-xs">
+                        <span className="font-bold text-slate-500">{it.field.label}</span>
+                        <img src={value} alt="Assinatura" className="h-16 border border-slate-200 rounded-lg bg-white" />
+                      </div>
+                    );
+                  }
+                  value = osAnswerText(it.field, value);
                 }
-                else if (it.sys.key === 'enderecoExecucao') value = `${selected.execAddressText} — ${selected.comarca || ''}`;
-                else if (it.sys.key === 'enderecoRequerente') value = selected.reqAddressText;
+                else if (it.sys.key === 'gerencia') value = selected.unit;
+                else if (it.sys.key === 'tecnico') value = selected.assignedTechnicianName || 'Em aberto';
+                else if (it.sys.key === 'enderecoExecucao') value = [selected.execAddressText, selected.comarca && `Comarca ${selected.comarca}`, selected.craai && `CRAAI ${selected.craai}`].filter(Boolean).join(' · ');
                 else if (it.sys.key === 'ativo') value = selected.assetName ? `${selected.assetCode} (vinculado: ${selected.assetName})` : selected.assetCode;
                 else if (it.sys.key === 'prazo') value = selected.deadline ? dayBR(selected.deadline) : '';
                 else value = selected.answers[`sys:${it.sys.key}`];

@@ -103,7 +103,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_create: {
     id: 'os_create',
     name: 'Emitir OS (GLPI)',
-    description: 'Abrir OS de corretiva, layout e acompanhamento.',
+    description: 'Abrir OS de corretiva, layout e acompanhamento, com qualquer modelo, só na gerência da pessoa (Super Administrador e gerência "Todas" escolhem).',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -146,7 +146,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_templates: {
     id: 'os_templates',
     name: 'Criar e editar modelos de OS',
-    description: 'Modelos usados em Emitir OS.',
+    description: 'Configurações › Modelos de OS (perguntas de criação e execução, campos do sistema, assinaturas).',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }

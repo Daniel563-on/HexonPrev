@@ -73,10 +73,11 @@ export default function Sidebar({
       ? [
           { tab: 'user-control', label: 'Usuários', icon: ShieldCheck },
           { tab: 'qr-codes', label: 'QR-Codes', icon: QrCode },
-          { tab: 'addresses', label: 'Endereços', icon: MapPin },
-          { tab: 'settings', label: 'Configurações', icon: Settings }
+          { tab: 'addresses', label: 'Endereços', icon: MapPin }
         ]
-      : [])
+      : []),
+    // Configurações: Super Administrador (tudo) ou quem edita modelos de OS (só Modelos de OS)
+    ...(userHasTabPermission('settings') ? [{ tab: 'settings', label: 'Configurações', icon: Settings }] : [])
   ];
 
   const pmocItems: MenuItem[] = [

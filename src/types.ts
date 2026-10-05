@@ -710,8 +710,17 @@ export interface SavedQrTemplate {
 // ===================== OS (Hexon 2.0): corretiva, layout, acompanhamento =====================
 // "OS" = Ordens de Serviço do sistema principal. Ficam na coleção "workOrders" (as preventivas seguem em "serviceOrders").
 
-export type OsFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox';
+export type OsFieldType =
+  | 'text' | 'textarea' | 'number' | 'date' | 'phone' | 'email'
+  | 'select' | 'multiselect' | 'toggle' | 'yesno' | 'signature' | 'location'
+  | 'checkbox'; // 'checkbox' = Sim/Não da 1ª versão (lido como 'yesno')
 export type OsStage = 'criacao' | 'execucao';
+
+// Condição: a pergunta só aparece quando outra pergunta tem esta resposta
+export interface OsShowIf {
+  fieldId: string;
+  value: string;
+}
 
 // Pergunta livre do modelo
 export interface OsTemplateField {
@@ -719,15 +728,25 @@ export interface OsTemplateField {
   label: string;
   type: OsFieldType;
   required: boolean;
-  options?: string[]; // lista (uma opção)
+  options?: string[];                     // lista suspensa e caixas de marcar
+  locationDepth?: 'comarca' | 'endereco'; // Local: até a comarca ou até o endereço
+  showIf?: OsShowIf;
   stage: OsStage;
   order: number;
 }
 
-// Campos do sistema: o Hexon sabe para que servem (filtros, atribuição, históricos)
+// Resposta de uma pergunta "Local" (CRAAI › Comarca › Endereço, do cadastro de Endereços)
+export interface OsLocationAnswer {
+  craai: string;
+  comarca: string;
+  addressId?: string;
+  address?: string;
+}
+
+// Campos do sistema: o Hexon sabe para que servem (gerência, atribuição, filtros, históricos)
 export type OsSystemKey =
-  | 'gerencia' | 'enderecoExecucao' | 'enderecoRequerente' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
-  | 'tecnico' | 'equipe' | 'responsavel' | 'pendencia' | 'materiais' | 'homemHora';
+  | 'gerencia' | 'tecnico' | 'enderecoExecucao' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
+  | 'equipe' | 'responsavel' | 'pendencia' | 'materiais' | 'homemHora';
 
 export interface OsSystemField {
   key: OsSystemKey;
@@ -747,7 +766,7 @@ export interface OsTemplate {
   version: number;
   fields: OsTemplateField[];
   systemFields: OsSystemField[];
-  allowedProfileIds: string[]; // perfis que podem emitir com o modelo (vazio = todos com "Emitir OS")
+  allowedProfileIds?: string[]; // 1ª versão (não é mais usado: quem tem "Emitir OS" usa qualquer modelo)
   signatures: OsSignatureRole[]; // assinaturas exigidas, na ordem (usadas na execução — Fase 5)
   createdAt: string;
   updatedAt: string;
