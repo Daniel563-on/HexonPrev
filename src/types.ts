@@ -763,6 +763,7 @@ export interface OsLocationAnswer {
   comarca: string;
   addressId?: string;
   address?: string;
+  manual?: boolean; // endereço digitado (não está no cadastro de Endereços; não gera histórico do endereço)
 }
 
 // Campos do sistema: o Hexon sabe para que servem (gerência, atribuição, filtros, históricos)
@@ -915,6 +916,7 @@ export interface WorkOrder {
   unit: string;                  // gerência responsável
   execAddressId: string;
   execAddressText: string;
+  execAddressManual?: boolean;   // endereço da execução digitado (não cadastrado): sem vínculo nem histórico do endereço
   craai?: string;
   comarca?: string;
   reqAddressId?: string;

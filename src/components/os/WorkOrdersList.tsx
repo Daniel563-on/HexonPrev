@@ -165,6 +165,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 <td className="p-2.5 font-mono">{o.glpi || '—'}</td>
                 <td className="p-2.5">
                   <span className="font-bold text-slate-800">{o.execAddressText}</span>
+                  {o.execAddressManual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black" title="Endereço digitado na emissão: não está no cadastro de Endereços e não gera histórico do endereço">NÃO CADASTRADO</span>}
                   <span className="block text-[10px] text-slate-500">{o.comarca}{o.craai ? ` · CRAAI ${o.craai}` : ''}</span>
                 </td>
                 <td className="p-2.5">{o.assignedTechnicianName || <span className="text-slate-400">Em aberto</span>}</td>

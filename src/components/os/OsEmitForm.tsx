@@ -121,7 +121,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
         const required = it.sys.required || it.sys.key === 'enderecoExecucao';
         const v = answers[`sys:${it.sys.key}`];
         if (it.sys.key === 'enderecoExecucao') {
-          if (!v?.addressId) return setError(`Preencha: ${it.sys.label} (CRAAI, comarca e endereço)`);
+          if (v?.manual ? !String(v.address || '').trim() : !v?.addressId) return setError(`Preencha: ${it.sys.label} (CRAAI, comarca e endereço)`);
         } else if (required && isEmpty(v)) return setError(`Preencha: ${it.sys.label}`);
         continue;
       }
@@ -170,8 +170,9 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           templateSignatures: template.signatures,
           answers: kept,
           unit,
-          execAddressId: exec.addressId || '',
-          execAddressText: exec.address || '',
+          execAddressId: exec.manual ? '' : exec.addressId || '',
+          execAddressText: String(exec.address || '').trim(),
+          execAddressManual: exec.manual ? true : undefined,
           craai: exec.craai,
           comarca: exec.comarca,
           intervencao: answers['sys:intervencao'] || undefined,
@@ -244,7 +245,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           </div>
         );
       case 'enderecoExecucao':
-        return <LocationPicker addresses={addresses} depth="endereco" value={v} onChange={(l) => setA(key, l)} />;
+        return <LocationPicker addresses={addresses} depth="endereco" value={v} onChange={(l) => setA(key, l)} allowManual />;
       case 'intervencao':
         return (
           <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)}>
