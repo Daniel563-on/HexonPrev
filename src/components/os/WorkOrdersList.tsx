@@ -565,7 +565,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
 }
 
 // BACKUP DAS OS CONCLUÍDAS EM ZIP: período pela data da conclusão; um PDF por OS, em pastas por mês (AAAA-MM).
-// Antes de gerar, conta as OS e mostra as leituras; até 500 OS por ZIP.
+// Antes de gerar, conta as OS; até 500 OS por ZIP.
 function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }) {
   const [from, setFrom] = useState(monthStartStr());
   const [to, setTo] = useState(todayStr());
@@ -648,7 +648,7 @@ function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }
           <p className="text-xs font-bold text-rose-600">São {count} OS: o limite é {ZIP_MAX} por ZIP. Diminua o período.</p>
         ) : (
           <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
-            <p className="text-xs font-bold text-amber-900">Vão ser gerados {count} PDF(s) (≈ até {count * 5} leituras no banco: a OS e as assinaturas).</p>
+            <p className="text-xs font-bold text-amber-900">Vão ser gerados {count} PDF(s).</p>
             <button type="button" onClick={generate} disabled={busy} className="w-full h-9 rounded-lg bg-[#3525cd] text-white text-xs font-black cursor-pointer disabled:opacity-50">
               {busy ? (progress ? `Gerando ${progress.done} de ${progress.total}...` : 'Lendo as OS...') : 'Gerar ZIP'}
             </button>
