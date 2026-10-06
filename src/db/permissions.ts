@@ -169,11 +169,10 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_export: {
     id: 'os_export',
     name: 'Exportar OS (planilha / PDF)',
-    description: 'Baixar as OS em planilha ou PDF.',
+    description: 'Na ficha da OS: baixar o PDF (mapeado do modelo ou o padrão) e a ficha em planilha. Exportar várias OS de uma vez chega na Fase 6.',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 6'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   view_solicitations: {
     id: 'view_solicitations',

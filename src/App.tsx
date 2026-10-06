@@ -1101,6 +1101,7 @@ export default function App() {
               canCancel={userHasActionPermission('os_cancel')}
               canReplyContest={userHasActionPermission('os_contest_reply')}
               canClientLink={userHasActionPermission('os_client_link')}
+              canExport={userHasActionPermission('os_export')}
               canViewCosts={userHasActionPermission('view_costs')}
               mySignRole={
                 userProfile.perfil === 'Super Administrador'

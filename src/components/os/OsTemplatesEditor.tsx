@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import OsPdfMapper from './OsPdfMapper';
 import { ArrowDown, ArrowUp, Copy, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { HexonUser, OsFieldType, OsFieldWidth, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
 import {
@@ -19,7 +20,7 @@ import {
 // Quem pode editar e quem pode emitir fica só no Perfil de acesso (Usuários).
 // Cada OS guarda uma cópia do modelo na emissão: mudar o modelo vale só para as próximas OS.
 
-type Tab = 'criacao' | 'execucao' | 'sistema' | 'assinaturas';
+type Tab = 'criacao' | 'execucao' | 'sistema' | 'assinaturas' | 'pdf';
 
 // Tipos oferecidos ao criar pergunta (o 'checkbox' antigo é lido como Sim/Não)
 const TYPE_LABEL: Record<Exclude<OsFieldType, 'checkbox'>, string> = {
@@ -95,6 +96,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
   const [message, setMessage] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<OsTemplate | null>(null);
   const [fieldForm, setFieldForm] = useState<OsTemplateField | null>(null);
+  const [mapping, setMapping] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -411,7 +413,25 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
         {tabBtn('execucao', 'Aba 2 — Execução')}
         {tabBtn('sistema', 'Sistema')}
         {tabBtn('assinaturas', 'Fluxo e assinaturas')}
+        {tabBtn('pdf', 'PDF mapeado')}
       </div>
+
+      {tab === 'pdf' && (
+        <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+          <p className="text-xs text-slate-500">
+            Suba o PDF oficial da OS (frente e verso, até 740 KB) e marque onde sai cada informação: perguntas, dados da OS, equipe, materiais e as assinaturas.
+            Na ficha da OS, o botão PDF usa este arquivo; sem ele, sai o PDF padrão do sistema. O PDF nunca leva valores em R$.
+          </p>
+          {isNew ? (
+            <p className="text-xs font-bold text-amber-700">Salve o modelo primeiro; depois configure o PDF.</p>
+          ) : (
+            <button type="button" onClick={() => setMapping(true)} className="h-9 px-4 rounded-lg bg-[#3525cd] text-white text-xs font-black cursor-pointer">
+              Configurar PDF mapeado
+            </button>
+          )}
+        </div>
+      )}
+      {mapping && editing && <OsPdfMapper template={editing} userName={userProfile.name} onClose={() => setMapping(false)} />}
 
       {tab === 'criacao' && renderStage('criacao')}
       {tab === 'execucao' && renderStage('execucao')}
