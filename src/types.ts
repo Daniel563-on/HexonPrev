@@ -384,6 +384,20 @@ export interface HexonUser {
   currentSessionId?: string; // ID de sessão único do dispositivo ativo
   authUid?: string; // UID do Firebase Authentication vinculado
   profileId?: string; // perfil de acesso (cadastro de Perfis); "perfil" acima guarda o tipo básico derivado dele
+  companies?: string[]; // empresas contratadas do usuário (ids); técnico = exatamente 1 (etapa especial E1)
+}
+
+// EMPRESA CONTRATADA (etapa especial E1): dentro de cada gerência, várias empresas; cada uma com seu planejador,
+// técnicos, materiais e ativos. "MPRJ" = trabalho da própria gerência. Só o Super Administrador cadastra.
+export interface Company {
+  id: string;
+  name: string;
+  units: string[];        // gerências em que atua
+  costTracking: boolean;  // contabiliza homem-hora, hora extra e pernoite
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
 }
 
 // EFETIVO: pessoas importadas por planilha, só para compor o efetivo (NÃO têm login).
@@ -524,6 +538,7 @@ export interface AccessProfile {
   permissions: Record<string, boolean>; // id da permissão -> liberada
   osSignAs?: 'none' | 'engenheiro' | 'gerente'; // OS: assinar como (em construção)
   osScope?: 'own' | 'unit' | 'all'; // OS: alcance — só as minhas, da minha gerência, todas as gerências do perfil (em construção)
+  companyScope?: 'own' | 'all'; // empresas que vê: só as do usuário, ou todas das gerências que vê (sem = todas)
   system: boolean; // perfis de fábrica: podem ser renomeados, mas não excluídos
   createdAt: string;
   updatedAt: string;

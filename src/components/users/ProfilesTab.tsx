@@ -92,6 +92,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
         description: editing.description.trim(),
         // Acesso total vê todas as unidades e tem todas as permissões
         unitScope: editing.kind === 'total' ? 'all' : editing.unitScope,
+        companyScope: editing.kind === 'total' ? 'all' : editing.companyScope || 'all',
         units: editing.kind === 'total' || editing.unitScope !== 'selected' ? [] : editing.units,
         permissions:
           editing.kind === 'total'
@@ -169,7 +170,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
               <div>
                 <p className={`text-[9px] font-black uppercase ${muted}`}>Unidades</p>
                 <p className={`font-bold ${strong}`}>
-                  {p.kind === 'total' ? 'Todas' : p.unitScope === 'selected' ? p.units.join(', ') : SCOPE_LABEL[p.unitScope]}
+                  {p.kind === 'total' ? 'Todas' : p.unitScope === 'selected' ? p.units.join(', ') : SCOPE_LABEL[p.unitScope]}{p.kind !== 'total' && p.companyScope === 'own' ? ' · só as empresas do usuário' : ''}
                 </p>
               </div>
               <div>
@@ -287,6 +288,29 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                       ))}
                     </div>
                   )}
+                </div>
+
+                {/* Empresas que vê (etapa especial E1) */}
+                <div>
+                  <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>Empresas que vê</span>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ['all', 'Todas as empresas das gerências que vê'],
+                      ['own', 'Só as empresas do usuário']
+                    ] as const).map(([sc, text]) => (
+                      <button
+                        key={sc}
+                        type="button"
+                        onClick={() => setEditing({ ...editing, companyScope: sc })}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
+                          (editing.companyScope || 'all') === sc ? 'border-blue-500 bg-blue-50 text-blue-800' : darkMode ? 'border-slate-800 text-slate-300' : 'border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                  <p className={`text-[10px] mt-1 ${muted}`}>Planejador e técnico: "Só as empresas do usuário" (as marcadas no cadastro do usuário). Engenheiro, gerente e quem abre chamado: "Todas".</p>
                 </div>
 
                 {/* Permissões, por área */}
