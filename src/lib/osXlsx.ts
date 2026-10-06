@@ -33,7 +33,7 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null): void {
   kv('Técnico', o.assignedTechnicianName ? `${o.assignedTechnicianName} (${o.assignedTechnicianMatricula})` : 'Em aberto');
   kv('Assinada pelo técnico em', dateTime(o.techSignedAt));
   kv('Concluída em', dateTime(o.closedAt));
-  kv('Local da execução', o.execAddressText);
+  kv('Local da execução', `${o.execAddressText}${o.execAddressManual ? ' (endereço digitado, não cadastrado)' : ''}`);
   kv('Comarca', o.comarca);
   kv('CRAAI', o.craai);
   kv('Local do requerente', o.reqAddressText);

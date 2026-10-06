@@ -26,12 +26,14 @@ export function LocationPicker({
   addresses,
   depth,
   value,
-  onChange
+  onChange,
+  allowManual = false
 }: {
   addresses: Address[];
   depth: 'comarca' | 'endereco';
   value?: OsLocationAnswer;
   onChange: (v: OsLocationAnswer | undefined) => void;
+  allowManual?: boolean; // endereço da execução: "Endereço não cadastrado (digitar)"
 }) {
   const active = useMemo(() => addresses.filter((a) => a.active !== false), [addresses]);
   const craais = useMemo(() => uniq(active.map((a) => a.craai)), [active]);
@@ -42,7 +44,7 @@ export function LocationPicker({
 
   // Comarca com um só endereço: já vem escolhido
   useEffect(() => {
-    if (depth === 'endereco' && craai && comarca && places.length === 1 && value?.addressId !== places[0].id) {
+    if (depth === 'endereco' && craai && comarca && places.length === 1 && !value?.manual && value?.addressId !== places[0].id) {
       onChange({ craai, comarca, addressId: places[0].id, address: places[0].address });
     }
   }, [depth, craai, comarca, places]);
@@ -61,22 +63,39 @@ export function LocationPicker({
           <option key={c} value={c}>{c}</option>
         ))}
       </select>
-      {depth === 'endereco' && (
-        <select
-          className={input}
-          value={value?.addressId || ''}
-          disabled={!comarca}
-          onChange={(e) => {
-            const a = places.find((p) => p.id === e.target.value);
-            onChange(a ? { craai, comarca, addressId: a.id, address: a.address } : { craai, comarca });
-          }}
-        >
-          <option value="">{comarca ? (places.length ? 'Endereço...' : 'Nenhum endereço nesta comarca') : 'Escolha a comarca'}</option>
-          {places.map((p) => (
-            <option key={p.id} value={p.id}>{p.address} ({p.code})</option>
-          ))}
-        </select>
-      )}
+      {depth === 'endereco' &&
+        (value?.manual ? (
+          <div>
+            <input
+              className={input}
+              value={value.address || ''}
+              onChange={(e) => onChange({ craai, comarca, manual: true, address: e.target.value })}
+              placeholder="Digite o endereço (não cadastrado)"
+              aria-label="Endereço digitado"
+              autoFocus
+            />
+            <button type="button" onClick={() => onChange({ craai, comarca })} className="mt-1 text-[10px] font-bold text-indigo-700 underline cursor-pointer">
+              Voltar para a lista de endereços
+            </button>
+          </div>
+        ) : (
+          <select
+            className={input}
+            value={value?.addressId || ''}
+            disabled={!comarca}
+            onChange={(e) => {
+              if (e.target.value === '__manual__') return onChange({ craai, comarca, manual: true, address: '' });
+              const a = places.find((p) => p.id === e.target.value);
+              onChange(a ? { craai, comarca, addressId: a.id, address: a.address } : { craai, comarca });
+            }}
+          >
+            <option value="">{comarca ? (places.length ? 'Endereço...' : allowManual ? 'Nenhum endereço cadastrado: digite' : 'Nenhum endereço nesta comarca') : 'Escolha a comarca'}</option>
+            {places.map((p) => (
+              <option key={p.id} value={p.id}>{p.address} ({p.code})</option>
+            ))}
+            {allowManual && comarca && <option value="__manual__">Endereço não cadastrado (digitar)</option>}
+          </select>
+        ))}
     </div>
   );
 }

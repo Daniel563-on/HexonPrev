@@ -51,7 +51,7 @@ export default function OsAnswersView({ order, stage }: { order: WorkOrder; stag
         else if (it.sys.key === 'numeroOs') value = order.number;
         else if (it.sys.key === 'tecnico') value = order.assignedTechnicianName || 'Em aberto';
         else if (it.sys.key === 'enderecoExecucao')
-          value = [order.execAddressText, order.comarca && `Comarca ${order.comarca}`, order.craai && `CRAAI ${order.craai}`].filter(Boolean).join(' · ');
+          value = [order.execAddressText, order.comarca && `Comarca ${order.comarca}`, order.craai && `CRAAI ${order.craai}`].filter(Boolean).join(' · ') + (order.execAddressManual ? ' (endereço digitado, não cadastrado)' : '');
         else if (it.sys.key === 'ativo') value = order.assetName ? `${order.assetCode} (vinculado: ${order.assetName})` : order.assetCode;
         else if (it.sys.key === 'prazo') value = order.deadline ? dayBR(order.deadline) : '';
         else value = order.answers?.[`sys:${it.sys.key}`];
