@@ -386,6 +386,13 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 | workOrders | unit ↑ + createdAt ↓ | — |
 | workOrders | techOpen | ✓ |
 | workOrders | signQueue | ✓ |
+| workOrders | unit ↑ + status ↑ + createdAt ↓ (Fase 6, filtro por situação) | — |
+| workOrders | unit ↑ + assignedTechnicianMatricula ↑ + createdAt ↓ (Fase 6, filtro por técnico) | ✓ |
+| workOrders | unit ↑ + status ↑ + deadline ↑ (Fase 6, atrasadas) | ✓ |
+| workOrders | unit ↑ + status ↑ + closedAt ↓ (Fase 6, concluídas / ZIP) | ✓ |
+| workOrders | unit ↑ + glpi ↑ (Fase 6, busca por GLPI) | ✓ |
+
+Todos os índices: **escopo = Coleção** e **índice único desmarcado** (único proibiria duas OS com os mesmos valores).
 
 Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `unit+assignedTechnicianMatricula+status`, `unit+assignedTechnicianMatricula+solicitationStatus`, `solicitationStatus+updatedAt`, `addressId+endDate`. A considerar no futuro: apagar `histories: assetId` se nada mais usar.
 
