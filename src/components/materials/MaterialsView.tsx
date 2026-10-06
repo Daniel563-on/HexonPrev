@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HexonUser, Material } from '../../types';
+import { Company, HexonUser, Material } from '../../types';
 import {
+  companiesOfUnit,
+  dbGetCompanies,
   dbGetManagements,
+  isCompanyVisible,
   dbDeleteMaterial,
   dbGetMaterials,
   dbSaveMaterial,
@@ -12,11 +15,12 @@ import {
 } from '../../db/firebase';
 import MaterialImportModal from './MaterialImportModal';
 
-// MATERIAIS: lista de cada gerência. Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
+// MATERIAIS: lista de cada gerência + empresa (etapa especial E2). Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
 
 interface Props {
   userProfile: HexonUser;
   visibleUnits: string[] | null; // gerências do perfil (null = todas)
+  visibleCompanies: string[] | null; // empresas que vê (null = todas as das gerências que vê)
   canManage: boolean;            // permissão "Cadastrar e Importar Materiais"
 }
 
@@ -24,12 +28,14 @@ const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', curren
 const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 const PAGE = 200;
 
-export default function MaterialsView({ userProfile, visibleUnits, canManage }: Props) {
+export default function MaterialsView({ userProfile, visibleUnits, visibleCompanies, canManage }: Props) {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [units, setUnits] = useState<string[]>(visibleUnits || []);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [unit, setUnit] = useState('Todas');
+  const [company, setCompany] = useState('Todas');
   const [availability, setAvailability] = useState<'Todos' | 'Disponível' | 'Sem valor'>('Todos');
   const [shown, setShown] = useState(PAGE);
   const [showImport, setShowImport] = useState(false);
@@ -59,11 +65,12 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
 
   const load = async (force = true) => {
     setLoading(true);
-    setMaterials(await dbGetMaterials(visibleUnits, force));
+    setMaterials((await dbGetMaterials(visibleUnits, force)).filter((m) => isCompanyVisible(m.company, visibleCompanies)));
     setLoading(false);
   };
   useEffect(() => {
     load(false);
+    dbGetCompanies().then(setCompanies).catch(() => {});
     if (visibleUnits === null) {
       dbGetManagements()
         .then((list) => setUnits(list.map((m) => m.name).filter((n) => n && n !== 'Todas')))
@@ -71,24 +78,32 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
     }
   }, []);
 
+  // Empresas que aparecem no filtro e nos cadastros: as que o usuário vê, nas gerências que vê
+  const myCompanies = useMemo(
+    () => companies.filter((c) => isCompanyVisible(c.id, visibleCompanies) && (visibleUnits === null || c.units.some((u) => visibleUnits.includes(u)))),
+    [companies, visibleCompanies, visibleUnits]
+  );
+  const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id || '—';
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return materials.filter((m) => {
       if (unit !== 'Todas' && m.unit !== unit) return false;
+      if (company !== 'Todas' && m.company !== company) return false;
       if (availability === 'Disponível' && !(m.cost > 0)) return false;
       if (availability === 'Sem valor' && m.cost > 0) return false;
       if (q && ![m.code, m.description, m.measureUnit].some((v) => (v || '').toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [materials, search, unit, availability]);
+  }, [materials, search, unit, company, availability]);
 
-  const inUnit = unit === 'Todas' ? materials : materials.filter((m) => m.unit === unit);
+  const inUnit = materials.filter((m) => (unit === 'Todas' || m.unit === unit) && (company === 'Todas' || m.company === company));
   const available = inUnit.filter((m) => m.cost > 0).length;
 
   const openNew = () => {
     setIsNew(true);
     setEditing({
-      id: '', unit: units.length === 1 ? units[0] : unit !== 'Todas' ? unit : '', code: '', description: '', measureUnit: 'UN',
+      id: '', unit: units.length === 1 ? units[0] : unit !== 'Todas' ? unit : '', company: company !== 'Todas' ? company : '', code: '', description: '', measureUnit: 'UN',
       cost: 0, costFrom: '', history: [], createdAt: '', updatedAt: ''
     });
   };
@@ -101,7 +116,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
         <div>
           <h2 className="text-lg font-black text-slate-800">Materiais</h2>
           <p className="text-xs text-slate-500">
-            Cada gerência tem a sua lista. O técnico só usa materiais da gerência dele e com valor; material com R$ 0,00 fica aqui para o histórico.
+            Cada gerência + empresa tem a sua lista, com os seus preços. O técnico só usa materiais da gerência e da empresa dele, com valor; material com R$ 0,00 fica aqui para o histórico.
           </p>
         </div>
         {canManage && (
@@ -118,13 +133,17 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
         <p className="text-xs font-bold text-slate-700">
-          {inUnit.length} material(is){unit !== 'Todas' ? ` em ${unit}` : ''} • {available} disponível(is) para o técnico • {inUnit.length - available} com R$ 0,00
+          {inUnit.length} material(is){unit !== 'Todas' ? ` em ${unit}` : ''}{company !== 'Todas' ? ` • ${companyName(company)}` : ''} • {available} disponível(is) para o técnico • {inUnit.length - available} com R$ 0,00
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <input value={search} onChange={(e) => { setSearch(e.target.value); setShown(PAGE); }} placeholder="Buscar código, descrição..." className={field} />
           <select value={unit} onChange={(e) => { setUnit(e.target.value); setShown(PAGE); }} className={field}>
             <option value="Todas">Todas as gerências</option>
             {units.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <select value={company} onChange={(e) => { setCompany(e.target.value); setShown(PAGE); }} className={field} aria-label="Filtrar por empresa">
+            <option value="Todas">Todas as empresas</option>
+            {(unit === 'Todas' ? myCompanies : companiesOfUnit(myCompanies, unit)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={availability} onChange={(e) => { setAvailability(e.target.value as typeof availability); setShown(PAGE); }} className={field}>
             <option value="Todos">Com e sem valor</option>
@@ -143,6 +162,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
               <th className="p-3">Unid.</th>
               <th className="p-3">Valor</th>
               <th className="p-3">Gerência</th>
+              <th className="p-3">Empresa</th>
               <th className="p-3 text-right">Ações</th>
             </tr>
           </thead>
@@ -157,6 +177,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
                   {m.costFrom && <span className="block text-[10px] text-slate-400">desde {dateBR(m.costFrom)}</span>}
                 </td>
                 <td className="p-3">{m.unit}</td>
+                <td className="p-3">{companyName(m.company)}</td>
                 <td className="p-3 text-right whitespace-nowrap">
                   {canManage && (
                     <>
@@ -186,10 +207,10 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
               </tr>
             ))}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={6} className="p-6 text-center text-slate-400 italic">Nenhum material encontrado.</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-slate-400 italic">Nenhum material encontrado.</td></tr>
             )}
             {loading && (
-              <tr><td colSpan={6} className="p-6 text-center text-slate-400">Carregando...</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-slate-400">Carregando...</td></tr>
             )}
           </tbody>
         </table>
@@ -205,6 +226,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
       {showImport && (
         <MaterialImportModal
           units={units}
+          companies={myCompanies}
           existing={materials}
           currentUserName={userProfile.name}
           onClose={() => setShowImport(false)}
@@ -217,6 +239,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
           material={editing}
           isNew={isNew}
           units={units}
+          companies={myCompanies}
           materials={materials}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
@@ -237,7 +260,7 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
           <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
             <h3 className="text-base font-black text-slate-800">Excluir material</h3>
             <p className="text-xs text-slate-600">
-              Excluir <strong>{toDelete.code} - {toDelete.description}</strong> ({toDelete.unit})? Use para corrigir um cadastro errado.
+              Excluir <strong>{toDelete.code} - {toDelete.description}</strong> ({toDelete.unit} • {companyName(toDelete.company)})? Use para corrigir um cadastro errado.
               As OS que já usaram este material mantêm o registro delas.
             </p>
             {deleteError && <p className="text-xs font-bold text-rose-600">{deleteError}</p>}
@@ -274,9 +297,9 @@ export default function MaterialsView({ userProfile, visibleUnits, canManage }: 
   );
 }
 
-// Cadastro manual: código, descrição, unidade de medida e gerência (o valor é informado em "Valor")
-function MaterialFormModal({ material, isNew, units, materials, onClose, onSaved }: {
-  material: Material; isNew: boolean; units: string[]; materials: Material[]; onClose: () => void; onSaved: () => void;
+// Cadastro manual: código, descrição, unidade de medida, gerência e empresa (o valor é informado em "Valor")
+function MaterialFormModal({ material, isNew, units, companies, materials, onClose, onSaved }: {
+  material: Material; isNew: boolean; units: string[]; companies: Company[]; materials: Material[]; onClose: () => void; onSaved: () => void;
 }) {
   const [form, setForm] = useState(material);
   const [error, setError] = useState<string | null>(null);
@@ -285,10 +308,11 @@ function MaterialFormModal({ material, isNew, units, materials, onClose, onSaved
 
   const save = async () => {
     if (!form.unit) return setError('Escolha a gerência.');
+    if (!form.company) return setError('Escolha a empresa.');
     if (!form.code.trim() || !form.description.trim()) return setError('Informe o código e a descrição.');
-    const id = isNew ? materialIdOf(form.unit, form.code) : form.id;
-    const clash = materials.find((m) => m.id !== form.id && m.unit === form.unit && materialCodeKey(m.code) === materialCodeKey(form.code));
-    if (clash || (isNew && materials.some((m) => m.id === id))) return setError('Já existe um material com esse código nesta gerência.');
+    const id = isNew ? materialIdOf(form.unit, form.company, form.code) : form.id;
+    const clash = materials.find((m) => m.id !== form.id && m.unit === form.unit && m.company === form.company && materialCodeKey(m.code) === materialCodeKey(form.code));
+    if (clash || (isNew && materials.some((m) => m.id === id))) return setError('Já existe um material com esse código nesta gerência e empresa.');
     setSaving(true);
     setError(null);
     try {
@@ -314,9 +338,18 @@ function MaterialFormModal({ material, isNew, units, materials, onClose, onSaved
         <h3 className="text-base font-black text-slate-800">{isNew ? 'Novo material' : 'Editar material'}</h3>
         <label className="block">
           <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Gerência *</span>
-          <select value={form.unit} disabled={!isNew} onChange={(e) => setForm({ ...form, unit: e.target.value })} className={field}>
+          <select value={form.unit} disabled={!isNew} onChange={(e) => setForm({ ...form, unit: e.target.value, company: '' })} className={field}>
             <option value="">Selecione...</option>
             {units.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Empresa *</span>
+          <select value={form.company} disabled={!isNew || !form.unit} onChange={(e) => setForm({ ...form, company: e.target.value })} className={field} aria-label="Empresa do material">
+            <option value="">{form.unit ? 'Selecione...' : 'Escolha a gerência primeiro'}</option>
+            {companiesOfUnit(companies, form.unit)
+              .filter((c) => c.active || c.id === form.company)
+              .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
         <div className="grid grid-cols-3 gap-3">

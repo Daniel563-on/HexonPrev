@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Material } from '../../types';
-import { dbApplyMaterialImport, MaterialImportPlan, MaterialImportRow, planMaterialImport } from '../../db/firebase';
+import { Company, Material } from '../../types';
+import { companiesOfUnit, dbApplyMaterialImport, MaterialImportPlan, MaterialImportRow, planMaterialImport } from '../../db/firebase';
 
-// IMPORTAÇÃO DE MATERIAIS POR GERÊNCIA: escolha a gerência, o arquivo e diga qual coluna é o quê.
-// Quem sair da planilha fica na lista (histórico) com valor R$ 0,00 (o técnico não pode usar).
+// IMPORTAÇÃO DE MATERIAIS POR GERÊNCIA + EMPRESA: escolha a gerência, a empresa, o arquivo e diga qual coluna é o quê.
+// Quem sair da planilha fica na lista (histórico) com valor R$ 0,00 (o técnico não pode usar). Só mexe na lista daquela empresa.
 
 interface Props {
   units: string[];
+  companies: Company[];
   existing: Material[];
   currentUserName: string;
   onClose: () => void;
@@ -34,8 +35,11 @@ function parseCost(v: unknown): number | null {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 }
 
-export default function MaterialImportModal({ units, existing, currentUserName, onClose, onDone }: Props) {
+export default function MaterialImportModal({ units, companies, existing, currentUserName, onClose, onDone }: Props) {
   const [unit, setUnit] = useState(units.length === 1 ? units[0] : '');
+  const [company, setCompany] = useState('');
+  const unitCompanies = companiesOfUnit(companies, unit).filter((c) => c.active);
+  const companyName = companies.find((c) => c.id === company)?.name || company;
   const [data, setData] = useState<any[][] | null>(null);
   const [fileName, setFileName] = useState('');
   const [mapping, setMapping] = useState<Record<Field, number>>({ code: -1, description: -1, measureUnit: -1, cost: -1 });
@@ -70,6 +74,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
   const analyze = () => {
     if (!data) return;
     if (!unit) return setError('Escolha a gerência desta planilha.');
+    if (!company) return setError('Escolha a empresa desta planilha.');
     const missing = FIELDS.filter((f) => f.required && mapping[f.key] < 0).map((f) => f.label);
     if (missing.length > 0) return setError(`Indique a coluna de: ${missing.join(', ')}.`);
     setError(null);
@@ -84,7 +89,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
         line: i + 2
       }))
       .filter((r) => String(r.code).trim() || String(r.description).trim());
-    setPlan(planMaterialImport(unit, rows, existing, currentUserName));
+    setPlan(planMaterialImport(unit, company, rows, existing, currentUserName));
   };
 
   const apply = async () => {
@@ -102,7 +107,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
     }
   };
 
-  const activeBefore = existing.filter((m) => m.unit === unit && m.cost > 0).length;
+  const activeBefore = existing.filter((m) => m.unit === unit && m.company === company && m.cost > 0).length;
   const bigZero = !!plan && activeBefore > 0 && plan.toZero.length / activeBefore >= 0.2;
   const field = 'w-full h-9 text-xs px-3 border border-slate-200 rounded-lg outline-none font-semibold bg-white';
   const line = (r: MaterialImportRow) => `linha ${r.line}: ${r.code} - ${r.description}`;
@@ -113,7 +118,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
         <div>
           <h3 className="text-base font-black">Importar materiais</h3>
           <p className="text-xs text-slate-500 mt-1">
-            A importação é por gerência. Código novo entra; código existente é atualizado; quem sair da planilha fica na lista com valor
+            A importação é por gerência + empresa (cada empresa tem a sua lista e os seus preços). Código novo entra; código existente é atualizado; quem sair da planilha fica na lista com valor
             R$ 0,00 (o técnico não pode usar). Sem coluna de valor, os valores atuais são mantidos.
           </p>
         </div>
@@ -122,12 +127,20 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Gerência *</span>
-              <select value={unit} onChange={(e) => { setUnit(e.target.value); setPlan(null); }} className={field}>
+              <select value={unit} onChange={(e) => { setUnit(e.target.value); setCompany(''); setPlan(null); }} className={field}>
                 <option value="">Selecione...</option>
                 {units.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
             </label>
             <label className="block">
+              <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Empresa *</span>
+              <select value={company} disabled={!unit} onChange={(e) => { setCompany(e.target.value); setPlan(null); }} className={field} aria-label="Empresa da planilha">
+                <option value="">{unit ? 'Selecione...' : 'Escolha a gerência primeiro'}</option>
+                {unitCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {unit && unitCompanies.length === 0 && <span className="text-[11px] font-bold text-amber-700">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</span>}
+            </label>
+            <label className="block sm:col-span-2">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Arquivo (.xlsx, .xls, .csv) *</span>
               <input
                 type="file"
@@ -172,7 +185,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
 
         {plan && !done && (
           <div className="space-y-3 text-xs">
-            <p className="font-black uppercase tracking-wider text-[11px]">Confira antes de gravar — {plan.unit}</p>
+            <p className="font-black uppercase tracking-wider text-[11px]">Confira antes de gravar — {plan.unit} • {companyName}</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 ['Novos', plan.toCreate.length, 'text-emerald-600'],
@@ -193,7 +206,7 @@ export default function MaterialImportModal({ units, existing, currentUserName, 
             )}
             {bigZero && (
               <p className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold">
-                Atenção: {plan.toZero.length} de {activeBefore} materiais com valor vão para R$ 0,00. Confira se a planilha e a gerência estão certas.
+                Atenção: {plan.toZero.length} de {activeBefore} materiais com valor vão para R$ 0,00. Confira se a planilha, a gerência e a empresa estão certas.
               </p>
             )}
             {plan.skippedDuplicate.length > 0 && (

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AccessProfile, HexonUser, JobRole, Management, WorkforcePerson } from '../../types';
+import { AccessProfile, Company, HexonUser, JobRole, Management, WorkforcePerson } from '../../types';
 import {
   cargoKey,
+  dbGetCompanies,
   dbDeleteWorkforcePerson,
   dbGetJobRoles,
   dbGetWorkforce,
@@ -28,6 +29,7 @@ interface Row {
   name: string;
   cargo: string;
   unit: string;
+  companies: string[];
   status: 'Ativo' | 'Inativo';
   hasLogin: boolean;
   profileName?: string;
@@ -41,6 +43,8 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [unit, setUnit] = useState('Todas');
+  const [company, setCompany] = useState('Todas');
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [cargo, setCargo] = useState('Todos');
   const [origin, setOrigin] = useState<'Todos' | 'login' | 'importado'>('Todos');
   const [status, setStatus] = useState<'Ativo' | 'Inativo' | 'Todos'>('Ativo');
@@ -54,7 +58,9 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
   };
   useEffect(() => {
     load(false);
+    dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
+  const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id;
 
   const unitNames = managements.map((m) => m.name).filter((n) => n && n !== 'Todas');
 
@@ -67,6 +73,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
         name: u.name,
         cargo: u.cargo || '',
         unit: u.gerencia,
+        companies: u.companies || [],
         status: u.status,
         hasLogin: true,
         profileName: resolveUserProfile(u, profiles)?.name || u.perfil
@@ -77,6 +84,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
         name: p.name,
         cargo: p.cargo,
         unit: p.unit,
+        companies: p.company ? [p.company] : [],
         status: p.status,
         hasLogin: false,
         person: p
@@ -107,6 +115,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
       const q = search.trim().toLowerCase();
       if (q && ![r.name, r.matricula, r.cargo].some((v) => (v || '').toLowerCase().includes(q))) return false;
       if (unit !== 'Todas' && r.unit !== unit) return false;
+      if (company !== 'Todas' && !r.companies.includes(company)) return false;
       if (cargo !== 'Todos' && cargoKey(r.cargo) !== cargo) return false;
       if (origin === 'login' && !r.hasLogin) return false;
       if (origin === 'importado' && r.hasLogin) return false;
@@ -191,11 +200,15 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
           </div>
 
           {/* Filtros */}
-          <div className={`border rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 ${card}`}>
+          <div className={`border rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 ${card}`}>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nome, matrícula, cargo..." className={`${field} lg:col-span-1`} />
             <select value={unit} onChange={(e) => setUnit(e.target.value)} className={field}>
               <option value="Todas">Todas as gerências</option>
               {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={company} onChange={(e) => setCompany(e.target.value)} className={field} aria-label="Filtrar por empresa">
+              <option value="Todas">Todas as empresas</option>
+              {(unit === 'Todas' ? companies : companies.filter((c) => c.units.includes(unit))).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <select value={cargo} onChange={(e) => setCargo(e.target.value)} className={field}>
               <option value="Todos">Todos os cargos</option>
@@ -223,6 +236,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                   <th className="p-3">Nome / Matrícula</th>
                   <th className="p-3">Cargo</th>
                   <th className="p-3">Gerência</th>
+                  <th className="p-3">Empresa</th>
                   <th className="p-3">Origem</th>
                   <th className="p-3">Situação</th>
                   <th className="p-3 text-right">Ações</th>
@@ -237,6 +251,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                     </td>
                     <td className="p-3 font-semibold">{r.cargo || '—'}</td>
                     <td className="p-3">{r.unit}</td>
+                    <td className="p-3">{r.companies.length ? r.companies.map(companyName).join(', ') : <span className="text-slate-400">—</span>}</td>
                     <td className="p-3">
                       {r.hasLogin ? (
                         <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black" title="Usuário do sistema">
@@ -269,7 +284,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
+                    <td colSpan={7} className="p-6 text-center text-slate-400 italic">Nenhuma pessoa encontrada.</td>
                   </tr>
                 )}
               </tbody>
@@ -280,6 +295,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
 
       {showImport && (
         <WorkforceImportModal
+          companies={companies}
           existing={people}
           users={users}
           unitNames={unitNames}

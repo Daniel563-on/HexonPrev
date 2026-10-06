@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { OrderParticipant } from '../../../types';
-import { dbGetUnitPeople, dbGetUsualTeam, dbSaveUsualTeam } from '../../../db/firebase';
+import { dbGetTeamPeople, dbGetUsualTeam, dbSaveUsualTeam } from '../../../db/firebase';
 
 // EQUIPE HABITUAL DO TÉCNICO (Etapa 6.2): o próprio técnico ou o planejador incluem/tiram pessoas a qualquer momento.
 // Ao iniciar uma OS, os participantes já vêm preenchidos com essa equipe (dá para mudar na OS).
+// Só pessoas da mesma empresa do técnico (etapa especial E2).
 
 interface Props {
   matricula: string;     // técnico dono da equipe
@@ -24,7 +25,7 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([dbGetUsualTeam(matricula), dbGetUnitPeople(unit)]).then(([team, list]) => {
+    Promise.all([dbGetUsualTeam(matricula), dbGetTeamPeople(unit, matricula)]).then(([team, list]) => {
       setMembers(team?.members || []);
       setPeople(list);
       setLoading(false);

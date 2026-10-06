@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { HexonUser, WorkforcePerson } from '../../types';
+import { Company, HexonUser, WorkforcePerson } from '../../types';
 import {
   dbApplyWorkforceImport,
   planWorkforceImport,
@@ -8,10 +8,11 @@ import {
   WorkforceImportRow
 } from '../../db/firebase';
 
-// IMPORTAÇÃO DO EFETIVO: planilha com as colunas Matrícula, Nome, Cargo, Gerência.
+// IMPORTAÇÃO DO EFETIVO: planilha com as colunas Matrícula, Nome, Cargo, Gerência; a empresa é escolhida antes (uma por planilha).
 // Quem entra por aqui NÃO tem login (só compõe o efetivo). Confira antes de gravar.
 
 interface Props {
+  companies: Company[];
   existing: WorkforcePerson[];
   users: HexonUser[];
   unitNames: string[];
@@ -27,7 +28,9 @@ const headerKey = (h: unknown) =>
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 
-export default function WorkforceImportModal({ existing, users, unitNames, darkMode, onClose, onDone }: Props) {
+export default function WorkforceImportModal({ companies, existing, users, unitNames, darkMode, onClose, onDone }: Props) {
+  const [companyId, setCompanyId] = useState('');
+  const company = companies.find((c) => c.id === companyId);
   const [plan, setPlan] = useState<WorkforceImportPlan | null>(null);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,10 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
     setError(null);
     setPlan(null);
     setFileName(file.name);
+    if (!company) {
+      setError('Escolha a empresa desta planilha antes do arquivo.');
+      return;
+    }
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -60,7 +67,7 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
           line: i + 2
         }))
         .filter((r) => r.matricula.trim() || r.name.trim());
-      setPlan(planWorkforceImport(rows, existing, users, unitNames));
+      setPlan(planWorkforceImport(rows, existing, users, unitNames, company));
     } catch (err: any) {
       setError(err?.message || String(err));
     }
@@ -81,7 +88,7 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
     }
   };
 
-  const activeBefore = existing.filter((p) => p.status === 'Ativo').length;
+  const activeBefore = existing.filter((p) => p.status === 'Ativo' && p.company === companyId).length;
   const bigInactivation = !!plan && activeBefore > 0 && plan.toInactivate.length / activeBefore >= 0.2;
   const box = darkMode ? 'bg-[#0b1220] border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800';
   const line = (row: WorkforceImportRow) => `linha ${row.line}: ${row.matricula} - ${row.name}`;
@@ -93,11 +100,26 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
           <h3 className="text-base font-black">Importar efetivo por planilha</h3>
           <p className="text-xs text-slate-500 mt-1">
             Colunas na primeira linha: <strong>Matrícula, Nome, Cargo, Gerência</strong>. Quem entra por aqui não tem login (só compõe o efetivo).
-            Quem sumir da planilha fica inativo; mudanças de nome, cargo e gerência são atualizadas.
+            Uma empresa por planilha: quem é dessa empresa e sumir da planilha fica inativo; mudanças de nome, cargo, gerência e empresa são atualizadas.
           </p>
         </div>
 
         {!done && (
+          <label className="block">
+            <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Empresa *</span>
+            <select
+              value={companyId}
+              onChange={(e) => { setCompanyId(e.target.value); setPlan(null); setFileName(''); }}
+              className={`w-full h-9 text-xs px-3 border rounded-lg outline-none font-semibold ${darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'}`}
+              aria-label="Empresa da planilha"
+            >
+              <option value="">Selecione...</option>
+              {companies.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name} ({c.units.join(', ')})</option>)}
+            </select>
+          </label>
+        )}
+
+        {!done && companyId && (
           <label className="block">
             <input
               type="file"
@@ -113,7 +135,7 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
 
         {plan && !done && (
           <div className="space-y-3 text-xs">
-            <p className="font-black uppercase tracking-wider text-[11px]">Confira antes de gravar</p>
+            <p className="font-black uppercase tracking-wider text-[11px]">Confira antes de gravar — {company?.name}</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 ['Novos', plan.toCreate.length, 'text-emerald-600'],
@@ -130,7 +152,7 @@ export default function WorkforceImportModal({ existing, users, unitNames, darkM
 
             {bigInactivation && (
               <p className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold">
-                Atenção: {plan.toInactivate.length} de {activeBefore} pessoas ativas vão ficar inativas. Confira se a planilha está completa.
+                Atenção: {plan.toInactivate.length} de {activeBefore} pessoas ativas da empresa vão ficar inativas. Confira se a planilha e a empresa estão certas.
               </p>
             )}
 

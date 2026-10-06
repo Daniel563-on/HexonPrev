@@ -215,13 +215,15 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 4j. MATERIAIS — lista de cada gerência (sem estoque).
-    // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência dele, para informar o uso na OS).
-    // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências).
+    // 4j. MATERIAIS — lista de cada gerência + empresa (sem estoque; etapa especial E2).
+    // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência E a empresa dele).
+    // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências); todo material tem empresa.
     match /materials/{materialId} {
       allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
-        && (hasPermission('view_materials') || hasPermission('view_costs') || me().perfil == 'Profissional');
+        && (hasPermission('view_materials') || hasPermission('view_costs')
+            || (me().perfil == 'Profissional' && resource.data.get('company', '') in me().get('companies', [])));
       allow create, update: if isStaff() && hasPermission('manage_materials')
+        && request.resource.data.company is string && request.resource.data.company.size() > 0
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
       // Excluir (correção de erro de cadastro): só o Super Administrador

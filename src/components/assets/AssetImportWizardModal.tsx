@@ -10,8 +10,8 @@ import {
   CheckSquare 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Asset, Management } from '../../types';
-import { dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets, dbCancelOpenOrdersForAssets } from '../../db/firebase';
+import { Asset, Company, Management } from '../../types';
+import { companiesOfUnit, dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets, dbCancelOpenOrdersForAssets } from '../../db/firebase';
 
 export interface PeriodicityRule {
   keyword: string;
@@ -23,6 +23,7 @@ export interface AssetImportWizardModalProps {
   onClose: () => void;
   assets: Asset[];
   managements: Management[];
+  companies: Company[];   // empresas contratadas (a planilha é de uma gerência + empresa)
   periodicityRules: PeriodicityRule[];
   onUpdatePeriodicityRules: (rules: PeriodicityRule[]) => void;
   onImportSuccess: (firstImportedAsset?: Asset) => void;
@@ -35,6 +36,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
   onClose,
   assets,
   managements,
+  companies,
   periodicityRules,
   onUpdatePeriodicityRules,
   onImportSuccess,
@@ -55,6 +57,11 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
   }, [managements]);
 
   const [importTargetSector, setImportTargetSector] = useState<string>(defaultSector);
+  // Empresa da planilha (etapa especial E2): a baixa automática só olha os ativos desta gerência + empresa
+  const [importCompany, setImportCompany] = useState<string>('');
+  const sectorCompanies = companiesOfUnit(companies, importTargetSector).filter((c) => c.active);
+  const importCompanyName = companies.find((c) => c.id === importCompany)?.name || '';
+  const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : 'sem empresa');
   
   const [importStats, setImportStats] = useState<{
     totalProcessed: number;
@@ -73,7 +80,8 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
   });
 
   // Resumo antes de gravar (passo 4): o que será gravado e quais ativos da gerência serão baixados
-  const [pendingImport, setPendingImport] = useState<{ toSave: Asset[]; toRetire: Asset[]; sectorTotal: number } | null>(null);
+  // moved = ativos que vêm de outra empresa (contrato novo): passam para a empresa da planilha, o histórico continua
+  const [pendingImport, setPendingImport] = useState<{ toSave: Asset[]; toRetire: Asset[]; sectorTotal: number; moved: { asset: Asset; from: string }[] } | null>(null);
 
   const [newRuleKeyword, setNewRuleKeyword] = useState<string>('');
   const [newRulePeriodicities, setNewRulePeriodicities] = useState<('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[]>(['Mensal']);
@@ -88,6 +96,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
       setImportProgress(0);
       setTotalToImport(0);
       setImportTargetSector(defaultSector);
+      setImportCompany('');
     }
   }, [isOpen, defaultSector]);
 
@@ -170,6 +179,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
       alert('Por favor, selecione as colunas de Patrimônio (Código) e Material (Nome) do Ativo para prosseguir.');
       return;
     }
+    if (!importCompany) return; // botão fica desabilitado sem a empresa
 
     setIsProcessingImport(true);
     setImportProgress(0);
@@ -294,6 +304,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
       let newCount = 0;
       let updatedCount = 0;
       let unchangedCount = 0;
+      const moved: { asset: Asset; from: string }[] = [];
 
       for (let i = 0; i < importRows.length; i++) {
         setImportProgress(i + 1);
@@ -343,6 +354,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
 
           const nameChanged = (existing.name || '').trim() !== rawName;
           const sectorChanged = (existing.sector || '').trim() !== importTargetSector.trim();
+          const companyChanged = (existing.company || '') !== importCompany;
           const locationChanged = (existing.location || '').trim() !== rawLocation;
           const statusChanged = existing.status !== rawStatus;
 
@@ -364,6 +376,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
           const hasAnyChange =
             nameChanged ||
             sectorChanged ||
+            companyChanged ||
             locationChanged ||
             statusChanged ||
             specManufacturerChanged ||
@@ -403,10 +416,15 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
             'VALOR LÍQUIDO': rawValorLiquido
           };
 
+          if (companyChanged && !parsedAssets.some((p) => p.code === existing.code)) moved.push({ asset: existing, from: existing.company || '' });
           const updatedAsset: Asset = {
             ...existing,
             name: rawName,
             sector: importTargetSector,
+            company: importCompany,
+            companyHistory: companyChanged
+              ? [...(existing.companyHistory || []), { from: existing.company || '', to: importCompany, at: nowString, via: 'importação' as const }]
+              : existing.companyHistory,
             location: rawLocation,
             status: rawStatus,
             specs: assetSpecs,
@@ -445,6 +463,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
             code: rawCodeUpper,
             name: rawName,
             sector: importTargetSector,
+            company: importCompany,
             location: rawLocation,
             status: rawStatus,
             specs: assetSpecs,
@@ -457,12 +476,12 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         }
       }
 
-      // Ativos da gerência importada que NÃO vieram na planilha: serão baixados (após confirmação)
+      // Ativos da gerência + empresa importada que NÃO vieram na planilha: serão baixados (após confirmação)
       const sheetCodes = new Set(
         importRows.map((row) => String(row[columnMappings['code']] || '').trim().toUpperCase()).filter(Boolean)
       );
       const sameSector = (a: Asset) => (a.sector || '').trim().toLowerCase() === importTargetSector.trim().toLowerCase();
-      const sectorAssets = savedAssets.filter(sameSector);
+      const sectorAssets = savedAssets.filter((a) => sameSector(a) && (a.company || '') === importCompany);
       const toRetire = sectorAssets.filter(
         (a) => a.status !== 'Baixado' && !sheetCodes.has((a.code || '').trim().toUpperCase())
       );
@@ -486,7 +505,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
       }
 
       // Nada é gravado ainda: mostra o resumo para o usuário confirmar
-      setPendingImport({ toSave: parsedAssets, toRetire, sectorTotal: sectorAssets.length });
+      setPendingImport({ toSave: parsedAssets, toRetire, sectorTotal: sectorAssets.length, moved });
       setImportStep(4);
     } catch (err) {
       console.error('Import error:', err);
@@ -513,7 +532,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
         );
         cancelledOrders = await dbCancelOpenOrdersForAssets(
           pendingImport.toRetire.map((a) => a.id),
-          'Ativo baixado: não constava na planilha de importação da gerência',
+          `Ativo baixado: não constava na planilha de importação da gerência (${importCompanyName})`,
           importTargetSector
         );
       }
@@ -670,7 +689,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                       </label>
                       <select 
                         value={importTargetSector} 
-                        onChange={(e) => setImportTargetSector(e.target.value)}
+                        onChange={(e) => { setImportTargetSector(e.target.value); setImportCompany(''); }}
                         className="w-full py-1.5 px-2.5 bg-white border border-indigo-200 rounded text-xs focus:ring-1 focus:ring-[#3525cd] focus:outline-none font-bold text-[#0b1c30]"
                       >
                         {managements.length > 0 ? (
@@ -686,6 +705,27 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                       <p className="text-[9px] text-[#42526e] leading-normal font-medium">
                         Todos os equipamentos da planilha serão catalogados no setor acima e gravados persistentemente no banco de dados do sistema.
                       </p>
+                      <label className="block text-[10px] font-black text-[#0b1c30] uppercase tracking-wider pt-2">
+                        EMPRESA <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={importCompany}
+                        onChange={(e) => setImportCompany(e.target.value)}
+                        aria-label="Empresa da planilha"
+                        className="w-full py-1.5 px-2.5 bg-white border border-indigo-200 rounded text-xs focus:ring-1 focus:ring-[#3525cd] focus:outline-none font-bold text-[#0b1c30]"
+                      >
+                        <option value="">Selecione a empresa...</option>
+                        {sectorCompanies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      {sectorCompanies.length === 0 ? (
+                        <p className="text-[9px] text-amber-700 font-bold">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>
+                      ) : (
+                        <p className="text-[9px] text-[#42526e] leading-normal font-medium">
+                          A planilha é desta empresa: os ativos dela que não vierem na planilha serão baixados. Ativo que hoje é de outra empresa passa para esta (o histórico continua com ele).
+                        </p>
+                      )}
                     </div>
                     
                     <div className="space-y-3 text-xs">
@@ -1060,7 +1100,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                 <div>
                   <h3 className="font-black text-sm text-[#0b1c30]">Confira antes de gravar</h3>
                   <p className="text-xs text-gray-500">
-                    Gerência: <strong>{importTargetSector}</strong>. Nada foi gravado ainda.
+                    Gerência: <strong>{importTargetSector}</strong> • Empresa: <strong>{importCompanyName}</strong>. Nada foi gravado ainda.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
@@ -1084,7 +1124,27 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
 
                 {retirePct >= 20 && (
                   <div className="p-3 rounded-xl border-2 border-rose-300 bg-rose-50 text-xs font-bold text-rose-800">
-                    ⚠️ Atenção: {retirePct}% dos ativos da gerência {importTargetSector} serão baixados. Confira se a planilha está completa e se a gerência escolhida está correta.
+                    ⚠️ Atenção: {retirePct}% dos ativos da {importCompanyName} na gerência {importTargetSector} serão baixados. Confira se a planilha está completa e se a gerência e a empresa escolhidas estão corretas.
+                  </div>
+                )}
+
+                {pendingImport.moved.length > 0 && (
+                  <div className="border border-amber-200 rounded-xl overflow-hidden">
+                    <p className="px-3 py-2 bg-amber-50 text-[11px] font-bold text-amber-800">
+                      Ativos que vão mudar de empresa ({pendingImport.moved.length}): passam para <strong>{importCompanyName}</strong>; o histórico continua com cada ativo.
+                    </p>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 text-[11px]">
+                      {pendingImport.moved.slice(0, 200).map(({ asset, from }) => (
+                        <div key={asset.id} className="px-3 py-1.5 flex gap-3">
+                          <span className="font-mono font-bold text-indigo-700 w-24 shrink-0">{asset.code}</span>
+                          <span className="text-slate-700 truncate flex-1">{asset.name}</span>
+                          <span className="text-slate-500 shrink-0">de {companyName(from)}</span>
+                        </div>
+                      ))}
+                      {pendingImport.moved.length > 200 && (
+                        <p className="px-3 py-1.5 text-slate-400 italic">... e mais {pendingImport.moved.length - 200} ativo(s).</p>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1195,7 +1255,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                 <button 
                   type="button"
                   onClick={handleConfirmXLSXImport}
-                  disabled={isProcessingImport || !columnMappings['code'] || !columnMappings['name']}
+                  disabled={isProcessingImport || !columnMappings['code'] || !columnMappings['name'] || !importCompany}
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-sm border border-emerald-600"
                 >
                   {isProcessingImport ? (
