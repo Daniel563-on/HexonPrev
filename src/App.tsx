@@ -1008,6 +1008,7 @@ export default function App() {
         setHighContrast={setHighContrast}
         onLogout={handleLogoutState}
         onUpdateUserProfile={(updated) => setUserProfile(updated)}
+        canClientLink={userHasActionPermission('os_client_link')}
       />
     );
   }
@@ -1101,6 +1102,7 @@ export default function App() {
               canAssign={userHasActionPermission('os_assign')}
               canCancel={userHasActionPermission('os_cancel')}
               canReplyContest={userHasActionPermission('os_contest_reply')}
+              canClientLink={userHasActionPermission('os_client_link')}
               canViewCosts={userHasActionPermission('view_costs')}
               mySignRole={
                 userProfile.perfil === 'Super Administrador'

@@ -390,10 +390,12 @@ service cloud.firestore {
           && osChanged().hasOnly(['exec', 'status', 'signatures', 'nextSigner', 'techSignedAt', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
           && request.resource.data.signatures.keys().hasOnly(['tecnico'])
           && osTech(u))
-        // Vez do CLIENTE: gerar o link, registrar a assinatura (celular ou link aprovado) ou a contestação do link
+        // Vez do CLIENTE: gerar o link (só "Enviar link de validação ao cliente"), registrar a assinatura
+        // (celular ou link aprovado) ou a contestação do link
         || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
           && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests'])
-          && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline']))
+          && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline'])
+               && osPerm(u, p, 'os_client_link') && osSees(u, p))
               || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
               || (request.resource.data.status == 'Contestada' && !('signatures' in osChanged())
                   && get(/databases/$(database)/documents/osValidations/$(resource.data.validationToken)).data.status == 'contestada'))
@@ -453,11 +455,12 @@ service cloud.firestore {
     }
 
     // Validação do cliente por link (id = código secreto). Leitura só de quem tem o código (sem login, sem listar).
+    // Criar o link: só quem tem "Enviar link de validação ao cliente".
     // O cliente responde UMA vez (aprovada/contestada) e dentro do prazo do link.
     match /osValidations/{token} {
       allow get: if true;
       allow list: if false;
-      allow create: if isStaff() && request.resource.data.status == 'pendente'
+      allow create: if isStaff() && hasPermission('os_client_link') && request.resource.data.status == 'pendente'
         && request.resource.data.keys().hasOnly(['orderId', 'number', 'unit', 'intervencao', 'glpi', 'local', 'comarca', 'executedAt', 'team', 'summary', 'technician', 'status', 'expiresAt', 'createdAt', 'createdBy'])
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt < request.time + duration.value(61, 'd');

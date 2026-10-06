@@ -62,6 +62,7 @@ export interface TechnicianMobileViewProps {
   onLogout: () => void;
   onUpdateUserProfile: (updated: HexonUser) => void;
   canRevertUnexecutedOrder?: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
+  canClientLink?: boolean; // "Enviar link de validação ao cliente" (OS)
 }
 
 type MobileTab = 'orders' | 'os' | 'solicitations' | 'scanner' | 'profile';
@@ -82,7 +83,8 @@ export default function TechnicianMobileView({
   setHighContrast,
   onLogout,
   onUpdateUserProfile,
-  canRevertUnexecutedOrder = () => false
+  canRevertUnexecutedOrder = () => false,
+  canClientLink = false
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
   const [osCount, setOsCount] = useState(0);
@@ -1293,7 +1295,7 @@ export default function TechnicianMobileView({
       )}
 
       {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
-      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} />}
+      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} />}
 
       {/* ================= TAB: SOLICITAÇÕES (conteúdo em uma próxima fase) ================= */}
       {activeTab === 'solicitations' && (
@@ -1342,6 +1344,7 @@ export default function TechnicianMobileView({
         <OsExecutionForm
           order={qrWorkOrder}
           userProfile={userProfile}
+          canClientLink={canClientLink}
           onClose={() => {
             setQrWorkOrder(null);
             setRefreshKey((k) => k + 1);

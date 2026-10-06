@@ -29,6 +29,7 @@ interface Props {
   canAssign: boolean;
   canCancel: boolean;
   canReplyContest: boolean;
+  canClientLink: boolean; // "Enviar link de validação ao cliente"
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
   onClose: () => void;
@@ -38,7 +39,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canClientLink, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -268,7 +269,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                 order={o}
                 userProfile={userProfile}
                 mySignRole={mySignRole}
-                canManageClient={canAssign || canReplyContest}
+                canManageClient={canClientLink}
                 onChanged={() => {
                   dbGetWorkOrder(o.id).then((fresh) => fresh && setO(fresh));
                   onChanged();
