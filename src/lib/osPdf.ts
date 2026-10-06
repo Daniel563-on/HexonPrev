@@ -234,7 +234,9 @@ export async function generateOsMappedPdf(pdfBase64: string, pins: OsPdfPin[], d
       const iw = img.width * scale;
       const ih = img.height * scale;
       const ix = pin.align === 'left' ? bx : pin.align === 'right' ? bx + bw - iw : bx + (bw - iw) / 2;
-      page.drawImage(img, { x: ix, y: top - bh + (bh - ih) / 2, width: iw, height: ih });
+      // Imagem: sem escolha vertical fica ao meio (como antes)
+      const iy = pin.valign === 'top' ? top - ih : pin.valign === 'bottom' ? top - bh : top - bh + (bh - ih) / 2;
+      page.drawImage(img, { x: ix, y: iy, width: iw, height: ih });
       continue;
     }
     if (!v.text) continue;
@@ -248,8 +250,11 @@ export async function generateOsMappedPdf(pdfBase64: string, pins: OsPdfPin[], d
       lines = wrap(text, font, size, bw);
     }
     const lh = size * 1.15;
+    // Vertical: em cima (padrão), ao meio ou embaixo da caixa
+    const blockH = Math.min(lines.length * lh, bh);
+    const offset = pin.valign === 'middle' ? (bh - blockH) / 2 : pin.valign === 'bottom' ? bh - blockH : 0;
     lines.forEach((ln, i) => {
-      const y = top - size - i * lh + size * 0.15;
+      const y = top - offset - size - i * lh + size * 0.15;
       if (y < top - bh - size * 0.5) return;
       const tw = font.widthOfTextAtSize(ln, size);
       const x = pin.align === 'center' ? bx + (bw - tw) / 2 : pin.align === 'right' ? bx + bw - tw : bx;

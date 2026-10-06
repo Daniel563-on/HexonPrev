@@ -810,6 +810,7 @@ export interface OsPdfPin {
   fontSize: number;  // pt
   bold?: boolean;
   align?: 'left' | 'center' | 'right';
+  valign?: 'top' | 'middle' | 'bottom'; // vertical (sem = em cima)
 }
 export interface OsPdfLayout {
   templateId: string;
