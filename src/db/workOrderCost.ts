@@ -2,7 +2,8 @@ import { JobRole, Material, OrderParticipant, OvertimeRules, WorkOrder, WorkOrde
 import { brl, fmtMinutes, localDate, toMillis, valueAt } from './manHours';
 import type { OrderCostLine } from './manHours';
 import { cargoKey, dbGetJobRoles } from './workforce';
-import { dbGetMaterials } from './materials';
+import { doc, getDoc, updateDoc } from './guard';
+import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { dbGetOvernightRate } from './planning';
 import { dbGetOvertimeRules, overtimeDayKey, overtimeHourValue, splitOvertime, OVERTIME_DAYS } from './overtime';
 
@@ -101,6 +102,79 @@ export interface WorkOrderCost {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Preço dos materiais: lê só os materiais usados na OS (1 leitura por material, guardada na sessão),
+// em vez da lista inteira da gerência
+const matCache = new Map<string, Material | null>();
+async function materialsById(ids: string[]): Promise<Material[]> {
+  const missing = Array.from(new Set(ids)).filter((id) => !matCache.has(id));
+  if (missing.length && firebaseActive && dbInstance) {
+    await Promise.all(
+      missing.map(async (id) => {
+        try {
+          const snap = await getDoc(doc(dbInstance!, 'materials', id));
+          matCache.set(id, snap.exists() ? ({ ...(snap.data() as Material), id: snap.id }) : null);
+        } catch (err: any) {
+          checkQuotaException(err);
+          matCache.set(id, null);
+        }
+      })
+    );
+  }
+  return ids.map((id) => matCache.get(id)).filter((m): m is Material => !!m);
+}
+// Valor do pernoite: 1 leitura por sessão
+let overnightCache: Promise<Awaited<ReturnType<typeof dbGetOvernightRate>>> | null = null;
+const overnightRateCached = () => (overnightCache ||= dbGetOvernightRate());
+
+// CUSTO GRAVADO NA OS CONCLUÍDA (Fase 6): resumo para a lista, sem precisar recalcular.
+// É gravado na primeira vez que alguém com "Visualizar Valores" abre a OS concluída (os valores usam a data do fim).
+export interface WorkOrderCostSnapshot {
+  total: number;
+  labor: number;
+  overtime: number;
+  overnight: number;
+  materials: number;
+  minutes: number;
+  billedHours: number;
+  missing: number;
+  at: string;
+}
+export function osCostSnapshot(c: WorkOrderCost): WorkOrderCostSnapshot {
+  const sum = (l: OrderCostLine[]) => round2(l.reduce((s, x) => s + (x.value || 0), 0));
+  return {
+    total: c.total,
+    labor: sum(c.labor),
+    overtime: sum(c.overtime),
+    overnight: c.overnight?.value || 0,
+    materials: sum(c.materials),
+    minutes: c.minutes,
+    billedHours: c.billedHours,
+    missing: c.missing,
+    at: new Date().toISOString()
+  };
+}
+export async function dbSaveCostSnapshot(o: WorkOrder, c: WorkOrderCost): Promise<WorkOrderCostSnapshot | null> {
+  if (!firebaseActive || !dbInstance || o.status !== 'Concluída' || o.costSnapshot) return o.costSnapshot || null;
+  const snap = osCostSnapshot(c);
+  try {
+    await updateDoc(doc(dbInstance, 'workOrders', o.id), { costSnapshot: snap });
+  } catch (err: any) {
+    checkQuotaException(err); // sem gravar, a lista calcula de novo da próxima vez
+  }
+  return snap;
+}
+// Resumo para a lista: o gravado (concluída) ou calculado agora (parcial)
+export async function dbGetWorkOrderCostSummary(o: WorkOrder): Promise<{ snap: WorkOrderCostSnapshot; partial: boolean }> {
+  if (o.costSnapshot) return { snap: o.costSnapshot, partial: false };
+  const c = await dbGetWorkOrderCost(o);
+  if (o.status === 'Concluída') {
+    const snap = await dbSaveCostSnapshot(o, c);
+    o.costSnapshot = snap || undefined;
+    return { snap: snap || osCostSnapshot(c), partial: false };
+  }
+  return { snap: osCostSnapshot(c), partial: c.partial };
+}
+
 // Custo da OS para quem pode ver valores. endIso = assinatura do técnico (sem ela, conta até agora)
 export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise<WorkOrderCost> {
   const startMs = toMillis(o.assignedAt);
@@ -115,8 +189,8 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   const [roles, rules, mats, overnightRate] = await Promise.all([
     dbGetJobRoles(),
     exec?.overtime?.length ? dbGetOvertimeRules() : Promise.resolve([] as OvertimeRules[]),
-    (exec?.materials || []).length ? dbGetMaterials([o.unit]) : Promise.resolve([] as Material[]),
-    exec?.overnightNights ? dbGetOvernightRate() : Promise.resolve(null)
+    (exec?.materials || []).length ? materialsById(exec!.materials.map((m) => m.id)) : Promise.resolve([] as Material[]),
+    exec?.overnightNights ? overnightRateCached() : Promise.resolve(null)
   ]);
   const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), r]));
   const ruleById = new Map(rules.map((r) => [r.id, r]));

@@ -60,7 +60,7 @@ export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canS
         <div className="space-y-4">
           <div className="border-b pb-3 border-slate-200">
             <h2 className="text-xl font-black tracking-tight text-slate-900">Ordens de Serviço</h2>
-            <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Clique na OS para abrir a ficha. Busca e filtros completos chegam na Fase 6.</p>
+            <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Clique num contador para filtrar e na OS para abrir a ficha.</p>
           </div>
           {unitOptions.length > 0 ? (
             <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canCancel={canCancel} canReplyContest={canReplyContest} canClientLink={canClientLink} canExport={canExport} canViewCosts={canViewCosts} mySignRole={mySignRole} />

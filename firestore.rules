@@ -434,6 +434,10 @@ service cloud.firestore {
           && resource.data.nextSigner in request.resource.data.signatures
           && (u.perfil == 'Super Administrador' || p.get('osSignAs', 'none') == resource.data.nextSigner)
           && osSees(u, p))
+        // OS CONCLUÍDA: grava uma vez o resumo do custo (lista sem recalcular) — só quem vê valores
+        || (resource.data.status == 'Concluída' && !('costSnapshot' in resource.data)
+          && osChanged().hasOnly(['costSnapshot'])
+          && osPerm(u, p, 'view_costs') && osSees(u, p))
         // Cancelar (motivo obrigatório; some do celular do técnico)
         || (resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && request.resource.data.status == 'Cancelada'
           && request.resource.data.get('cancelReason', '').size() > 0

@@ -108,3 +108,50 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null): void {
   XLSX.utils.book_append_sheet(wb, ws, o.number.slice(0, 31));
   XLSX.writeFile(wb, `Ficha_${o.number}.xlsx`);
 }
+
+// PLANILHA DA LISTA (Fase 6): uma linha por OS, na ordem da lista filtrada.
+// Valores (R$) só quando "costs" vem preenchido (quem tem "Visualizar Valores").
+export function exportOsListXlsx(
+  orders: WorkOrder[],
+  fileName: string,
+  costs: Map<string, { snap: { total: number; labor: number; overtime: number; overnight: number; materials: number; billedHours: number }; partial: boolean }> | null
+): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const head = ['Nº da OS', 'GLPI', 'Intervenção', 'Situação', 'Atrasada', 'Gerência', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
+  if (costs) head.push('Horas cobradas', 'Homem-hora (R$)', 'Hora extra (R$)', 'Pernoite (R$)', 'Materiais (R$)', 'Total (R$)', 'Valor');
+  const rows: (string | number)[][] = [head];
+  orders.forEach((o) => {
+    const late = !!o.deadline && !['Concluída', 'Cancelada'].includes(o.status) && o.deadline < today;
+    const r: (string | number)[] = [
+      o.number,
+      o.glpi || '',
+      o.intervencao || '',
+      o.status,
+      late ? 'Sim' : 'Não',
+      o.unit,
+      o.execAddressText || '',
+      o.execAddressManual ? 'Sim' : 'Não',
+      o.comarca || '',
+      o.craai || '',
+      o.assignedTechnicianName || '',
+      o.assignedTechnicianMatricula || '',
+      dateTime(o.createdAt),
+      o.createdByName || '',
+      day(o.deadline),
+      dateTime(o.closedAt),
+      [o.assetCode, o.assetName].filter(Boolean).join(' — '),
+      o.templateName
+    ];
+    if (costs) {
+      const c = costs.get(o.id);
+      if (c) r.push(c.snap.billedHours, c.snap.labor, c.snap.overtime, c.snap.overnight, c.snap.materials, c.snap.total, c.partial ? 'Parcial (até agora)' : 'Fechado');
+      else r.push('', '', '', '', '', '', 'Sem cálculo');
+    }
+    rows.push(r);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = head.map((h) => ({ wch: Math.max(12, Math.min(40, h.length + 4)) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'OS');
+  XLSX.writeFile(wb, fileName);
+}

@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from './pdfHelper';
-import { OsPdfPin, OsSignatureRole, OsTemplateField, WorkOrder } from '../types';
-import { OS_SIGN_LABEL, osAnswerText, osFieldVisible, osMembers } from '../db/firebase';
+import { OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplateField, WorkOrder } from '../types';
+import { OS_SIGN_LABEL, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, osAnswerText, osFieldVisible, osMembers } from '../db/firebase';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
 // o PDF mapeado (PDF oficial do modelo + caixas) e o PDF padrão (quando o modelo não tem PDF).
@@ -401,6 +401,40 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
     p.drawText(safe(`${o.number} · gerado em ${new Date().toLocaleString('pt-BR')} · página ${i + 1} de ${pages.length}`, regular), { x: M, y: 20, size: 7, font: regular, color: soft })
   );
   return pdf.save();
+}
+
+// PDF de uma OS (mapeado do modelo, se tiver; senão o padrão), com as imagens das assinaturas feitas.
+// "layouts" guarda o modelo de PDF já lido (exportação de várias OS lê cada modelo uma vez só).
+export async function buildOsPdfBytes(o: WorkOrder, layouts?: Map<string, { layout: OsPdfLayout; file: string } | null>): Promise<Uint8Array> {
+  const signatures: Partial<Record<OsSignatureRole, string>> = {};
+  await Promise.all(
+    (Object.keys(o.signatures || {}) as OsSignatureRole[])
+      .filter((r) => o.signatures?.[r]?.via !== 'link')
+      .map(async (r) => {
+        const img = await dbGetOsSignatureImage(o.id, r);
+        if (img) signatures[r] = img;
+      })
+  );
+  let entry = layouts?.get(o.templateId);
+  if (entry === undefined) {
+    const layout = o.templateId ? await dbGetOsPdfLayout(o.templateId) : null;
+    const file = layout ? await dbGetOsPdfFile(layout) : null;
+    entry = layout && file ? { layout, file } : null;
+    layouts?.set(o.templateId, entry);
+  }
+  const data = { order: o, signatures };
+  return entry ? generateOsMappedPdf(entry.file, entry.layout.pins, data) : generateOsStandardPdf(data);
+}
+
+export function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 20000);
 }
 
 export function downloadBytes(bytes: Uint8Array, fileName: string, mime = 'application/pdf'): void {

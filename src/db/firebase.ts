@@ -36,6 +36,7 @@ export * from './overtime';
 export * from './workOrderCost';
 export * from './workOrderSign';
 export * from './osPdf';
+export * from './workOrderList';
 // Disjuntor do banco (proteção contra loops): só o que as telas usam
 export { runBulk, onGuardTrip, guardTripped, GuardError } from './guard';
 export type { GuardTrip } from './guard';

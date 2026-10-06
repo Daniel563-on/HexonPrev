@@ -947,6 +947,10 @@ export interface WorkOrder {
   contestedAt?: string;
   contests?: OsContest[];        // cada contestação do cliente e a resposta dada
   workEndAt?: string;            // fim do homem-hora depois de responder uma contestação (senão, techSignedAt)
+  costSnapshot?: {               // custo gravado na OS concluída (lista sem recalcular; Fase 6)
+    total: number; labor: number; overtime: number; overnight: number; materials: number;
+    minutes: number; billedHours: number; missing: number; at: string;
+  };
   closedAt?: string;             // concluída
   createdAt: string;
   createdByName: string;

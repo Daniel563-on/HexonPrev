@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, X } from 'lucide-react';
-import { HexonUser, OsSignatureRole, WorkOrder } from '../../types';
+import { HexonUser, WorkOrder } from '../../types';
 import {
   WorkOrderCost,
   brl,
   dbCancelWorkOrder,
   dbGetWorkOrder,
   dbGetWorkOrderCost,
-  dbGetOsPdfFile,
-  dbGetOsPdfLayout,
-  dbGetOsSignatureImage,
+  dbSaveCostSnapshot,
   dbSyncOsValidation,
   dbPauseWorkOrder,
   dbResumeWorkOrder,
@@ -20,7 +18,7 @@ import {
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
 import OsContestReplyModal from './OsContestReplyModal';
-import { downloadBytes, generateOsMappedPdf, generateOsStandardPdf } from '../../lib/osPdf';
+import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
@@ -61,17 +59,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
     setExporting('pdf');
     setMsg(null);
     try {
-      const signatures: Partial<Record<OsSignatureRole, string>> = {};
-      await Promise.all(
-        (Object.keys(o.signatures || {}) as OsSignatureRole[]).map(async (r) => {
-          const img = await dbGetOsSignatureImage(o.id, r);
-          if (img) signatures[r] = img;
-        })
-      );
-      const layout = o.templateId ? await dbGetOsPdfLayout(o.templateId) : null;
-      const file = layout ? await dbGetOsPdfFile(layout) : null;
-      const data = { order: o, signatures };
-      const bytes = layout && file ? await generateOsMappedPdf(file, layout.pins, data) : await generateOsStandardPdf(data);
+      const bytes = await buildOsPdfBytes(o);
       downloadBytes(bytes, `${o.number}.pdf`);
     } catch (err: any) {
       setMsg(`Não foi possível gerar o PDF: ${err?.message || err}`);
@@ -108,7 +96,10 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
   const calc = async (target = o) => {
     setCostBusy(true);
     try {
-      setCost(await dbGetWorkOrderCost(target));
+      const c = await dbGetWorkOrderCost(target);
+      setCost(c);
+      // OS concluída: grava o resumo do custo na OS (a lista mostra sem recalcular)
+      if (target.status === 'Concluída' && !target.costSnapshot) dbSaveCostSnapshot(target, c).catch(() => {});
     } catch (err: any) {
       setMsg(`Não foi possível calcular: ${err?.message || err}`);
     } finally {
