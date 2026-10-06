@@ -34,7 +34,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
@@ -87,6 +87,14 @@ export default function TechnicianMobileView({
   canClientLink = false
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
+  // Empresa do técnico (etapa especial E1): nome para o Meu Perfil
+  const [companyLabel, setCompanyLabel] = useState('');
+  useEffect(() => {
+    if (!(userProfile.companies || []).length) return setCompanyLabel('');
+    dbGetCompanies()
+      .then((list) => setCompanyLabel(companyNames(userProfile.companies, list)))
+      .catch(() => setCompanyLabel(''));
+  }, [(userProfile.companies || []).join('|')]);
   const [osCount, setOsCount] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0); // botão Atualizar do cabeçalho (relê as OS do banco)
   const [scannedWorkOrders, setScannedWorkOrders] = useState<WorkOrder[]>([]); // OS (corretiva) do ativo lido no QR
@@ -1119,6 +1127,11 @@ export default function TechnicianMobileView({
                   {userProfile.gerencia && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 truncate">
                       {userProfile.gerencia}
+                    </span>
+                  )}
+                  {companyLabel && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 truncate" title="Empresa">
+                      {companyLabel}
                     </span>
                   )}
                 </div>

@@ -294,6 +294,16 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 8b. EMPRESAS CONTRATADAS (etapa especial E1) — a equipe lê; só o Super Administrador cadastra e altera (não se exclui)
+    match /companies/{companyId} {
+      allow read: if isStaff();
+      allow create, update: if isSuperAdmin()
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.units is list && request.resource.data.units.size() > 0
+        && request.resource.data.costTracking is bool && request.resource.data.active is bool;
+      allow delete: if false;
+    }
+
     // 9. GERÊNCIAS E UNIDADES
     match /managements/{managementId} {
       allow read: if isStaff();
