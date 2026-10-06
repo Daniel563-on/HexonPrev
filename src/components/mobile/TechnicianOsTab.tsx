@@ -12,12 +12,14 @@ export default function TechnicianOsTab({
   userProfile,
   darkMode,
   onCount,
-  refreshKey = 0
+  refreshKey = 0,
+  canClientLink = false
 }: {
   userProfile: HexonUser;
   darkMode: boolean;
   onCount?: (n: number) => void;
   refreshKey?: number; // botão Atualizar do cabeçalho
+  canClientLink?: boolean;
 }) {
   const [list, setList] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +71,7 @@ export default function TechnicianOsTab({
         <OsExecutionForm
           order={open}
           userProfile={userProfile}
+          canClientLink={canClientLink}
           onClose={() => {
             setOpen(null);
             load();

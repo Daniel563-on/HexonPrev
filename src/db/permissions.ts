@@ -133,6 +133,14 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
+  os_client_link: {
+    id: 'os_client_link',
+    name: 'Enviar link de validação ao cliente',
+    description: 'Gerar, copiar e enviar por e-mail o link para o cliente validar ou contestar a OS (quem não tem não vê o link). Assinar no celular do técnico não depende desta permissão.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   os_contest_reply: {
     id: 'os_contest_reply',
     name: 'Responder contestação de OS',

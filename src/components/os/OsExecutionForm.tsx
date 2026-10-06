@@ -34,11 +34,12 @@ interface Props {
   userProfile: HexonUser;
   onClose: () => void;
   onChanged: (o: WorkOrder) => void;
+  canClientLink?: boolean; // "Enviar link de validação ao cliente": sem ela, o técnico não vê o link
 }
 
 const label = 'block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500';
 
-export default function OsExecutionForm({ order, userProfile, onClose, onChanged }: Props) {
+export default function OsExecutionForm({ order, userProfile, onClose, onChanged, canClientLink = false }: Props) {
   const me: OrderParticipant = { matricula: userProfile.matricula, name: userProfile.name, cargo: userProfile.cargo || '' };
   const initial = (): WorkOrderExec => {
     const e = order.exec;
@@ -274,11 +275,13 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
               </p>
               {order.nextSigner === 'cliente' ? (
                 <>
-                  <p className="text-[11px] text-emerald-900">Agora o cliente: assina aqui no celular ou recebe o link para validar.</p>
+                  <p className="text-[11px] text-emerald-900">
+                    Agora o cliente: assina aqui no celular{canClientLink ? ' ou recebe o link para validar.' : '. O link para o cliente validar é enviado pelo escritório.'}
+                  </p>
                   <button type="button" onClick={() => setSigning('cliente')} disabled={busy} className="w-full h-11 rounded-xl bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
                     <PenTool className="w-4 h-4" /> Cliente assina agora no celular
                   </button>
-                  {link ? (
+                  {!canClientLink ? null : link ? (
                     <div className="space-y-2">
                       <p className="text-[11px] text-emerald-900 break-all">Link de validação: {link}</p>
                       <div className="grid grid-cols-2 gap-2">
