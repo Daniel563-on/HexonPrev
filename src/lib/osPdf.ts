@@ -32,9 +32,6 @@ const SYS: [string, string][] = [
   ['conclusao', 'Data de conclusão'],
   ['tecnico', 'Técnico'],
   ['tecnicoMatricula', 'Matrícula do técnico'],
-  ['endereco', 'Endereço da execução'],
-  ['craai', 'CRAAI'],
-  ['comarca', 'Comarca'],
   ['localRequerente', 'Local do requerente'],
   ['ativo', 'Ativo'],
   ['equipe', 'Equipe (nomes)'],
@@ -47,6 +44,18 @@ const SYS: [string, string][] = [
 
 export function osPdfFieldOptions(fields: OsTemplateField[]): OsPdfFieldOption[] {
   const out: OsPdfFieldOption[] = [];
+  // Locais: cada parte do "Local" (CRAAI › Comarca › Endereço) separada, para mapear em caixas diferentes
+  const LOC = 'Locais (CRAAI, comarca e endereço)';
+  out.push({ value: 'sys:craai', label: 'Execução — CRAAI', group: LOC });
+  out.push({ value: 'sys:comarca', label: 'Execução — Comarca', group: LOC });
+  out.push({ value: 'sys:endereco', label: 'Execução — Endereço', group: LOC });
+  fields
+    .filter((f) => f.type === 'location')
+    .forEach((f) => {
+      out.push({ value: `q:${f.id}:craai`, label: `${f.label} — CRAAI`, group: LOC });
+      out.push({ value: `q:${f.id}:comarca`, label: `${f.label} — Comarca`, group: LOC });
+      if (f.locationDepth !== 'comarca') out.push({ value: `q:${f.id}:endereco`, label: `${f.label} — Endereço`, group: LOC });
+    });
   SYS.forEach(([k, l]) => out.push({ value: `sys:${k}`, label: l, group: 'Dados da OS' }));
   fields.filter((f) => f.stage === 'criacao').forEach((f) => out.push({ value: `q:${f.id}`, label: f.label, group: 'Perguntas da criação' }));
   fields.filter((f) => f.stage === 'execucao').forEach((f) => out.push({ value: `q:${f.id}`, label: f.label, group: 'Perguntas da execução' }));
@@ -76,13 +85,15 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
   const o = d.order;
   const exec = o.exec;
   if (field === 'fixed') return { text: pin?.fixedText || '' };
-  const [kind, key] = field.split(':');
+  const [kind, key, part] = field.split(':');
   if (kind === 'q') {
     const f = (o.templateFields || []).find((x) => x.id === key);
     if (!f) return { text: '' };
     const answers = f.stage === 'criacao' ? o.answers || {} : exec?.answers || {};
     if (!osFieldVisible(f, o.templateFields || [], answers)) return { text: '' };
     const v = answers[f.id];
+    // Parte de um Local (CRAAI, comarca ou endereço)
+    if (part && f.type === 'location') return { text: String((part === 'endereco' ? v?.address : v?.[part]) || '') };
     if (f.type === 'signature') return typeof v === 'string' && v.startsWith('data:image') ? { image: v } : { text: '' };
     return { text: osAnswerText(f, v) };
   }
