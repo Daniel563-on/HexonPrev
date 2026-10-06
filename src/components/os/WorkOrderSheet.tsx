@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Calculator, MessageSquareReply, X } from 'lucide-react';
-import { HexonUser, WorkOrder } from '../../types';
+import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, X } from 'lucide-react';
+import { HexonUser, OsSignatureRole, WorkOrder } from '../../types';
 import {
   WorkOrderCost,
   brl,
   dbCancelWorkOrder,
   dbGetWorkOrder,
   dbGetWorkOrderCost,
+  dbGetOsPdfFile,
+  dbGetOsPdfLayout,
+  dbGetOsSignatureImage,
   dbSyncOsValidation,
   dbPauseWorkOrder,
   dbResumeWorkOrder,
@@ -17,6 +20,8 @@ import {
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
 import OsContestReplyModal from './OsContestReplyModal';
+import { downloadBytes, generateOsMappedPdf, generateOsStandardPdf } from '../../lib/osPdf';
+import { exportOsXlsx } from '../../lib/osXlsx';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
 // hora extra, pernoite), custo e homem-hora (quem pode ver valores), pausas, linha do tempo.
@@ -30,6 +35,7 @@ interface Props {
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean; // "Enviar link de validação ao cliente"
+  canExport: boolean; // "Exportar OS (planilha / PDF)"
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
   onClose: () => void;
@@ -39,7 +45,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canClientLink, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -48,6 +54,43 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [replying, setReplying] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
+
+  // PDF: o mapeado do modelo (se tiver) ou o padrão; com as imagens das assinaturas feitas. Sem valores em R$.
+  const downloadPdf = async () => {
+    setExporting('pdf');
+    setMsg(null);
+    try {
+      const signatures: Partial<Record<OsSignatureRole, string>> = {};
+      await Promise.all(
+        (Object.keys(o.signatures || {}) as OsSignatureRole[]).map(async (r) => {
+          const img = await dbGetOsSignatureImage(o.id, r);
+          if (img) signatures[r] = img;
+        })
+      );
+      const layout = o.templateId ? await dbGetOsPdfLayout(o.templateId) : null;
+      const file = layout ? await dbGetOsPdfFile(layout) : null;
+      const data = { order: o, signatures };
+      const bytes = layout && file ? await generateOsMappedPdf(file, layout.pins, data) : await generateOsStandardPdf(data);
+      downloadBytes(bytes, `${o.number}.pdf`);
+    } catch (err: any) {
+      setMsg(`Não foi possível gerar o PDF: ${err?.message || err}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+  // Planilha: valores em R$ só para quem vê valores
+  const downloadXlsx = async () => {
+    setExporting('xlsx');
+    setMsg(null);
+    try {
+      exportOsXlsx(o, canViewCosts && o.assignedAt ? cost || (await dbGetWorkOrderCost(o)) : null);
+    } catch (err: any) {
+      setMsg(`Não foi possível gerar a planilha: ${err?.message || err}`);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   // Lê a versão mais nova da OS (a lista pode estar alguns minutos atrás)
   useEffect(() => {
@@ -322,6 +365,16 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
               )}
               {canAssign && o.status === 'Pendente' && (
                 <button type="button" onClick={() => run(() => dbResumeWorkOrder(o, userProfile.name))} disabled={busy} className="h-9 px-4 rounded-lg border border-orange-300 text-orange-700 text-xs font-black cursor-pointer disabled:opacity-50">Retomar</button>
+              )}
+              {canExport && (
+                <>
+                  <button type="button" onClick={downloadPdf} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    <FileDown className="w-4 h-4" /> {exporting === 'pdf' ? 'Gerando...' : 'PDF'}
+                  </button>
+                  <button type="button" onClick={downloadXlsx} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    <FileSpreadsheet className="w-4 h-4" /> {exporting === 'xlsx' ? 'Gerando...' : 'Ficha (XLSX)'}
+                  </button>
+                </>
               )}
               {canCancel && open && (
                 <button type="button" onClick={() => setAction('cancel')} className="h-9 px-4 rounded-lg border border-rose-300 text-rose-700 text-xs font-black cursor-pointer">Cancelar OS</button>

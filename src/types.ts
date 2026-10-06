@@ -796,6 +796,32 @@ export interface OsTemplate {
   updatedBy: string;
 }
 
+// PDF MAPEADO DA OS (Fase 5C): um PDF oficial por modelo, com caixas posicionadas (em % da página).
+// "osPdfLayouts/{modelo}" = caixas (leve); "osPdfFiles/{modelo}" = o PDF (pesado, lido só ao gerar/configurar).
+export interface OsPdfPin {
+  id: string;
+  page: number;      // 1 = frente, 2 = verso...
+  x: number;         // % da largura (canto esquerdo)
+  y: number;         // % da altura (topo)
+  w: number;         // % da largura
+  h: number;         // % da altura
+  field: string;     // ver osPdfFieldOptions (ex.: "sys:numero", "q:<pergunta>", "sig:tecnico", "fixed")
+  fixedText?: string;
+  fontSize: number;  // pt
+  bold?: boolean;
+  align?: 'left' | 'center' | 'right';
+}
+export interface OsPdfLayout {
+  templateId: string;
+  pdfName: string;
+  pdfSize: number;   // bytes do PDF original
+  pageCount: number;
+  version: number;   // sobe a cada troca do PDF (cópia no aparelho)
+  pins: OsPdfPin[];
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export type WorkOrderStatus = 'Nova' | 'Em andamento' | 'Pendente' | 'Aguardando assinaturas' | 'Contestada' | 'Concluída' | 'Cancelada';
 
 // Assinatura (Fase 5B): os dados do carimbo ficam na OS; a imagem fica em "workOrderSignatures/{OS}_{papel}"

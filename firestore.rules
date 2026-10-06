@@ -329,6 +329,23 @@ service cloud.firestore {
       allow read: if isStaff();
       allow write: if isStaff() && hasPermission('os_templates');
     }
+    // PDF mapeado do modelo (Fase 5C): caixas ("osPdfLayouts") e o PDF oficial em base64 ("osPdfFiles", até ~1 MB).
+    // A equipe lê (gerar o PDF da OS); só quem edita modelos de OS altera.
+    match /osPdfLayouts/{templateId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('os_templates')
+        && request.resource.data.templateId == templateId
+        && request.resource.data.pins is list && request.resource.data.pins.size() <= 400;
+      allow delete: if isStaff() && hasPermission('os_templates');
+    }
+    match /osPdfFiles/{templateId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('os_templates')
+        && request.resource.data.templateId == templateId
+        && request.resource.data.keys().hasOnly(['templateId', 'pdfBase64', 'version'])
+        && request.resource.data.pdfBase64 is string && request.resource.data.pdfBase64.size() <= 1020000;
+      allow delete: if isStaff() && hasPermission('os_templates');
+    }
     // Contador do número da OS por ano: só sobe de 1 em 1 (o número nunca repete)
     match /counters/{counterId} {
       allow read: if isStaff() && hasPermission('os_create');
