@@ -38,8 +38,10 @@ import { AddressDetailPanel } from './assets/AddressDetailPanel';
 import { AssetConsultationTable } from './assets/AssetConsultationTable';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
-import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address } from '../types';
+import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address, Company } from '../types';
 import { 
+  dbGetCompanies,
+  isCompanyVisible,
   dbGetAddresses,
   addressToAssetItem,
   isSectorVisible,
@@ -63,6 +65,7 @@ interface AssetsViewProps {
   clearScannedAsset: () => void;
   userProfile?: HexonUser | null;
   visibleUnits?: string[] | null; // unidades do perfil (null = todas)
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as das gerências que vê)
   orders?: ServiceOrder[];
   userHasActionPermission?: (actionId: string) => boolean;
 }
@@ -73,6 +76,7 @@ export default function AssetsView({
   clearScannedAsset,
   userProfile,
   visibleUnits = null,
+  visibleCompanies = null,
   orders = [],
   userHasActionPermission
 }: AssetsViewProps) {
@@ -93,6 +97,8 @@ export default function AssetsView({
   const [searchText, setSearchText] = useState('');
   const [filterTipoBem, setFilterTipoBem] = useState<'Operando' | 'Em Manutenção' | 'Parado' | 'Baixado' | 'Todos'>('Todos');
   const [filterGerencia, setFilterGerencia] = useState('Todas');
+  const [filterEmpresa, setFilterEmpresa] = useState('Todas');
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [filterCraai, setFilterCraai] = useState('Todas');
   const [filterUnidade, setFilterUnidade] = useState('Todas');
   const [filterTipoEquipamento, setFilterTipoEquipamento] = useState('Todos');
@@ -156,6 +162,7 @@ export default function AssetsView({
       setAddressCraais(list.map((a) => ({ craai: a.craai, comarca: a.comarca })));
       setAddressList(list);
     });
+    dbGetCompanies().then(setCompanies).catch(() => {});
     return unsubscribe;
   }, []);
 
@@ -171,11 +178,16 @@ export default function AssetsView({
 
   // Endereços (vistorias da DOM) entram na lista como "Imóvel": montados do cadastro de Endereços, sem cópia
   const addressItems = React.useMemo<Asset[]>(() => addressList.map(addressToAssetItem), [addressList]);
-  // Dentro do sistema cada um vê só os itens das unidades do seu perfil (o QR público continua aberto)
+  // Dentro do sistema cada um vê só os itens das unidades do seu perfil (o QR público continua aberto).
+  // Empresa (etapa especial E2): perfil "só as empresas do usuário" vê só os ativos delas (separação pela tela).
   const allItems = React.useMemo(
-    () => [...assets, ...addressItems].filter((a) => isSectorVisible(a.sector || '', visibleUnits)),
-    [assets, addressItems, visibleUnits]
+    () =>
+      [...assets, ...addressItems].filter(
+        (a) => isSectorVisible(a.sector || '', visibleUnits) && (a.kind === 'address' || isCompanyVisible(a.company, visibleCompanies))
+      ),
+    [assets, addressItems, visibleUnits, visibleCompanies]
   );
+  const companyName = (id: string) => (id ? companies.find((c) => c.id === id)?.name || id : 'Sem empresa');
 
   const commonEquipmentTypes = React.useMemo(
     () => ['Todos', ...Array.from(new Set<string>(allItems.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
@@ -193,18 +205,19 @@ export default function AssetsView({
     ].some((value) => String(value || '').toLowerCase().includes(q));
 
   // Resultado + contagem inteligente: cada opção mostra quantos ativos teria, respeitando os OUTROS filtros
-  type FacetKey = 'status' | 'gerencia' | 'craai' | 'comarca' | 'tipo';
+  type FacetKey = 'status' | 'gerencia' | 'empresa' | 'craai' | 'comarca' | 'tipo';
   const { consultationResults, facetCounts } = React.useMemo(() => {
-    const FACETS: FacetKey[] = ['status', 'gerencia', 'craai', 'comarca', 'tipo'];
+    const FACETS: FacetKey[] = ['status', 'gerencia', 'empresa', 'craai', 'comarca', 'tipo'];
     const q = searchText.trim().toLowerCase();
     const counts = Object.fromEntries(FACETS.map((f) => [f, new Map<string, number>()])) as Record<FacetKey, Map<string, number>>;
-    const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, craai: 0, comarca: 0, tipo: 0 };
+    const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, empresa: 0, craai: 0, comarca: 0, tipo: 0 };
     const list: Asset[] = [];
     for (const a of allItems) {
       if (!matchesSearch(a, q)) continue;
       const v: Record<FacetKey, string> = {
         status: a.status,
         gerencia: a.sector,
+        empresa: a.company || '',
         craai: String(a.specs?.CRAAI || ''),
         comarca: String(a.specs?.COMARCA || ''),
         tipo: String(a.specs?.TIPO || '').trim()
@@ -212,6 +225,7 @@ export default function AssetsView({
       const ok: Record<FacetKey, boolean> = {
         status: filterTipoBem === 'Todos' || v.status === filterTipoBem,
         gerencia: filterGerencia === 'Todas' || v.gerencia === filterGerencia,
+        empresa: filterEmpresa === 'Todas' || v.empresa === filterEmpresa,
         craai: filterCraai === 'Todas' || v.craai === filterCraai,
         comarca: filterUnidade === 'Todas' || v.comarca === filterUnidade,
         tipo: filterTipoEquipamento === 'Todos' || v.tipo === filterTipoEquipamento
@@ -226,7 +240,7 @@ export default function AssetsView({
     }
     list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
     return { consultationResults: list, facetCounts: { counts, totals } };
-  }, [allItems, searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento]);
+  }, [allItems, searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento]);
 
   // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
   const countOf = (f: FacetKey, value: string) => facetCounts.counts[f].get(value) || 0;
@@ -234,8 +248,15 @@ export default function AssetsView({
   const visibleOptions = (f: FacetKey, values: string[], selected: string) =>
     values.filter((v) => v === selected || countOf(f, v) > 0);
 
-  const filtersKey = [searchText, filterTipoBem, filterGerencia, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
-  const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
+  // Opções do filtro Empresa: as que aparecem nos itens (mais a escolhida), pelo nome
+  const companyOptions = React.useMemo(() => {
+    const ids = new Set<string>(allItems.map((a) => a.company || ''));
+    if (filterEmpresa !== 'Todas') ids.add(filterEmpresa);
+    return Array.from(ids).sort((x, y) => companyName(x).localeCompare(companyName(y)));
+  }, [allItems, filterEmpresa, companies]);
+
+  const filtersKey = [searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
+  const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
 
   const selectClass = 'w-full text-xs font-bold py-2 px-2.5 bg-white border border-gray-300 rounded-lg text-slate-800 focus:outline-[#3525cd] focus:ring-1 focus:ring-[#3525cd] cursor-pointer';
   const labelClass = 'block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1';
@@ -244,6 +265,7 @@ export default function AssetsView({
     setSearchText('');
     setFilterTipoBem('Todos');
     setFilterGerencia('Todas');
+    setFilterEmpresa('Todas');
     setFilterCraai('Todas');
     setFilterUnidade('Todas');
     setFilterTipoEquipamento('Todos');
@@ -453,6 +475,7 @@ export default function AssetsView({
           onEditAsset={(asset) => handleOpenEditModal(asset)}
           onViewOrder={handleViewHistoryOrder}
           canViewCosts={!!userHasActionPermission?.('view_costs')}
+          companies={companies}
           visibleUnits={visibleUnits}
           localOrders={orders}
         />
@@ -482,13 +505,22 @@ export default function AssetsView({
               )}
             </div>
             {/* Filtros de lista: largura total, nome acima de cada um */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
               <label className="block min-w-0">
                 <span className={labelClass}>Gerência</span>
                 <select value={filterGerencia} onChange={(e) => setFilterGerencia(e.target.value)} className={selectClass}>
                   <option value="Todas">{optionLabel('Todas', facetCounts.totals.gerencia)}</option>
                   {visibleOptions('gerencia', Array.from(new Set([...managements.map((m) => m.name), 'DOM'])), filterGerencia).map((name) => (
                     <option key={name} value={name}>{optionLabel(name, countOf('gerencia', name))}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block min-w-0">
+                <span className={labelClass}>Empresa</span>
+                <select value={filterEmpresa} onChange={(e) => setFilterEmpresa(e.target.value)} className={selectClass} aria-label="Filtrar por empresa">
+                  <option value="Todas">{optionLabel('Todas', facetCounts.totals.empresa)}</option>
+                  {visibleOptions('empresa', companyOptions, filterEmpresa).map((id) => (
+                    <option key={id || '_'} value={id}>{optionLabel(companyName(id), countOf('empresa', id))}</option>
                   ))}
                 </select>
               </label>
@@ -586,6 +618,7 @@ export default function AssetsView({
         onClose={() => setEditingAsset(null)}
         asset={editingAsset}
         managements={managements}
+        companies={companies}
         onSaveSuccess={(updatedAsset) => {
           setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a));
           if (selectedAsset?.id === updatedAsset.id) {
@@ -638,6 +671,7 @@ export default function AssetsView({
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         managements={managements}
+        companies={companies}
         periodicityRules={periodicityRules}
         customDynamicFields={customDynamicFields}
         onCreateSuccess={async (newAsset) => {
@@ -652,6 +686,7 @@ export default function AssetsView({
         onClose={() => setShowImportModal(false)}
         assets={assets}
         managements={managements}
+        companies={companies}
         periodicityRules={periodicityRules}
         onUpdatePeriodicityRules={setPeriodicityRules}
         onReloadAssets={loadAssetsData}

@@ -65,7 +65,7 @@ export async function dbRemoveImportedPersonForUser(user: HexonUser): Promise<Wo
   return found;
 }
 
-// ===== IMPORTAÇÃO DA PLANILHA (Matrícula, Nome, Cargo, Gerência) =====
+// ===== IMPORTAÇÃO DA PLANILHA (Matrícula, Nome, Cargo, Gerência), uma empresa por planilha =====
 export interface WorkforceImportRow {
   matricula: string;
   name: string;
@@ -84,12 +84,15 @@ export interface WorkforceImportPlan {
   unchanged: number;
 }
 
-// Monta o que a importação vai fazer (nada é gravado aqui)
+// Monta o que a importação vai fazer (nada é gravado aqui).
+// Uma empresa por planilha (etapa especial E2): a gerência de cada linha tem que ser uma das gerências da empresa,
+// e só as pessoas dessa empresa que sumirem da planilha ficam inativas.
 export function planWorkforceImport(
   rows: WorkforceImportRow[],
   existing: WorkforcePerson[],
   users: HexonUser[],
-  unitNames: string[]
+  unitNames: string[],
+  company: { id: string; units: string[] }
 ): WorkforceImportPlan {
   const plan: WorkforceImportPlan = {
     toCreate: [], toUpdate: [], toInactivate: [], skippedLogin: [], skippedDuplicate: [], skippedInvalid: [], unchanged: 0
@@ -98,6 +101,7 @@ export function planWorkforceImport(
   const userMatriculas = new Set(users.map((u) => normalizeMatricula(u.matricula)));
   const existingById = new Map(existing.map((p) => [p.id, p]));
   const unitByKey = new Map(unitNames.map((n) => [n.trim().toUpperCase(), n]));
+  const companyUnits = new Set(company.units.map((u) => u.trim().toUpperCase()));
   const seen = new Set<string>();
 
   for (const row of rows) {
@@ -120,13 +124,17 @@ export function planWorkforceImport(
       plan.skippedInvalid.push({ row, reason: `gerência "${row.unit || '(vazia)'}" não cadastrada` });
       continue;
     }
+    if (!companyUnits.has(unit.toUpperCase())) {
+      plan.skippedInvalid.push({ row, reason: `a empresa não atua na gerência ${unit}` });
+      continue;
+    }
     const id = workforceIdOf(matricula);
     const before = existingById.get(id);
-    const data = { matricula, name: row.name.trim(), cargo: row.cargo.trim(), unit };
+    const data = { matricula, name: row.name.trim(), cargo: row.cargo.trim(), unit, company: company.id };
     if (!before) {
       plan.toCreate.push({ id, ...data, status: 'Ativo', source: 'importado', createdAt: now, updatedAt: now });
     } else if (
-      before.name !== data.name || before.cargo !== data.cargo || before.unit !== data.unit || before.status !== 'Ativo'
+      before.name !== data.name || before.cargo !== data.cargo || before.unit !== data.unit || before.company !== data.company || before.status !== 'Ativo'
     ) {
       plan.toUpdate.push({ before, after: { ...before, ...data, status: 'Ativo', updatedAt: now, inactivatedAt: undefined } });
     } else {
@@ -134,9 +142,9 @@ export function planWorkforceImport(
     }
   }
 
-  // Quem sumiu da planilha fica inativo
+  // Quem é da empresa e sumiu da planilha fica inativo
   const inSheet = new Set(Array.from(seen).map((m) => workforceIdOf(m)));
-  plan.toInactivate = existing.filter((p) => p.status === 'Ativo' && !inSheet.has(p.id));
+  plan.toInactivate = existing.filter((p) => p.status === 'Ativo' && p.company === company.id && !inSheet.has(p.id));
   return plan;
 }
 

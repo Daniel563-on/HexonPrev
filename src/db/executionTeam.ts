@@ -8,10 +8,14 @@ import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from 
 export const timelineEvent = (event: string, by?: string, detail?: string): OrderTimelineEvent =>
   cleanUndefined({ at: new Date().toISOString(), event, by, detail });
 
-// Pessoas ativas da gerência: usuários com login + efetivo importado (sem repetir matrícula).
+// Pessoas ativas da gerência: usuários com login + efetivo importado (sem repetir matrícula), com as empresas de cada um.
 // Guardado na memória durante a sessão (lista muda pouco).
-const peopleCache = new Map<string, Promise<OrderParticipant[]>>();
-export function dbGetUnitPeople(unit: string): Promise<OrderParticipant[]> {
+interface UnitPerson {
+  p: OrderParticipant;
+  companies: string[];
+}
+const peopleCache = new Map<string, Promise<UnitPerson[]>>();
+function unitPeople(unit: string): Promise<UnitPerson[]> {
   if (!unit || !firebaseActive || !dbInstance) return Promise.resolve([]);
   let p = peopleCache.get(unit);
   if (!p) {
@@ -21,16 +25,18 @@ export function dbGetUnitPeople(unit: string): Promise<OrderParticipant[]> {
         getDocs(query(collection(db, 'users'), where('gerencia', '==', unit))),
         getDocs(query(collection(db, 'workforce'), where('unit', '==', unit)))
       ]);
-      const byMat = new Map<string, OrderParticipant>();
+      const byMat = new Map<string, UnitPerson>();
       wfSnap.forEach((d) => {
         const w = d.data() as any;
-        if (w.status === 'Ativo' && w.matricula) byMat.set(String(w.matricula), { matricula: String(w.matricula), name: w.name, cargo: w.cargo || '' });
+        if (w.status === 'Ativo' && w.matricula)
+          byMat.set(String(w.matricula), { p: { matricula: String(w.matricula), name: w.name, cargo: w.cargo || '' }, companies: w.company ? [w.company] : [] });
       });
       usersSnap.forEach((d) => {
         const u = d.data() as any;
-        if (u.status === 'Ativo' && u.matricula) byMat.set(String(u.matricula), { matricula: String(u.matricula), name: u.name, cargo: u.cargo || '' });
+        if (u.status === 'Ativo' && u.matricula)
+          byMat.set(String(u.matricula), { p: { matricula: String(u.matricula), name: u.name, cargo: u.cargo || '' }, companies: Array.isArray(u.companies) ? u.companies : [] });
       });
-      return Array.from(byMat.values()).sort((a, b) => a.name.localeCompare(b.name));
+      return Array.from(byMat.values()).sort((a, b) => a.p.name.localeCompare(b.p.name));
     })().catch((err) => {
       console.warn('Não foi possível ler as pessoas da gerência:', err);
       checkQuotaException(err);
@@ -40,6 +46,24 @@ export function dbGetUnitPeople(unit: string): Promise<OrderParticipant[]> {
     peopleCache.set(unit, p);
   }
   return p;
+}
+
+export async function dbGetUnitPeople(unit: string): Promise<OrderParticipant[]> {
+  return (await unitPeople(unit)).map((x) => x.p);
+}
+
+// Empresas de uma pessoa da gerência (técnico = 1 empresa)
+export async function dbGetPersonCompanies(unit: string, matricula: string): Promise<string[]> {
+  return (await unitPeople(unit)).find((x) => x.p.matricula === matricula)?.companies || [];
+}
+
+// EQUIPE SÓ DA MESMA EMPRESA (etapa especial E2): pessoas da gerência que são da empresa de quem executa.
+// Quem executa sem empresa cadastrada: todas as pessoas da gerência (como antes).
+export async function dbGetTeamPeople(unit: string, executorMatricula: string | undefined): Promise<OrderParticipant[]> {
+  const list = await unitPeople(unit);
+  const mine = (executorMatricula && list.find((x) => x.p.matricula === executorMatricula)?.companies) || [];
+  if (mine.length === 0) return list.map((x) => x.p);
+  return list.filter((x) => x.companies.some((c) => mine.includes(c))).map((x) => x.p);
 }
 
 // Equipe habitual do técnico (1 leitura)

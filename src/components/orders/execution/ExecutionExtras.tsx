@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Material, OrderParticipant, UsedMaterial } from '../../../types';
-import { dbGetMaterials, dbGetUnitPeople } from '../../../db/firebase';
+import { dbGetMaterials, dbGetPersonCompanies, dbGetTeamPeople } from '../../../db/firebase';
 
 // MATERIAIS USADOS E PARTICIPANTES (Etapa 6.2)
-// - Materiais: só os da gerência com valor cadastrado (R$ 0,00 não pode ser usado); o técnico não vê valor.
+// - Materiais: só os da gerência e da empresa de quem executa, com valor cadastrado (R$ 0,00 não pode ser usado); o técnico não vê valor.
 //   Uma linha por material (repetido: ajusta a quantidade na mesma linha); quantidade com casas decimais.
-// - Participantes: pessoas ativas da mesma gerência; quem executa entra sempre.
+// - Participantes: pessoas ativas da mesma gerência e da mesma empresa de quem executa; quem executa entra sempre.
 // Tudo fica no rascunho do aparelho e vai para o banco junto com a conclusão.
 
 interface Props {
@@ -30,9 +30,12 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
 
   useEffect(() => {
     if (!editable || !unit) return;
-    dbGetMaterials([unit]).then((list) => setCatalog(list.filter((m) => m.unit === unit && m.cost > 0)));
-    dbGetUnitPeople(unit).then(setPeople);
-  }, [editable, unit]);
+    const mat = executor?.matricula;
+    dbGetPersonCompanies(unit, mat || '').then((cs) =>
+      dbGetMaterials([unit], false, cs[0]).then((list) => setCatalog(list.filter((m) => m.unit === unit && m.cost > 0 && (!cs[0] || m.company === cs[0]))))
+    );
+    dbGetTeamPeople(unit, mat).then(setPeople);
+  }, [editable, unit, executor?.matricula]);
 
   // Texto da quantidade (mantém "2," enquanto digita)
   useEffect(() => {

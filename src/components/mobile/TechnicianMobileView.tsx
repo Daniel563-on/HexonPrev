@@ -237,14 +237,15 @@ export default function TechnicianMobileView({
     } catch {
       /* sem armazenamento: busca de novo */
     }
-    Promise.all([dbGetMaterials([unit]), dbGetUnitPeople(unit), dbGetUsualTeam(mat)]).then(() => {
+    // Materiais: só a lista da gerência + empresa do técnico (etapa especial E2)
+    Promise.all([dbGetMaterials([unit], false, userProfile.companies?.[0]), dbGetUnitPeople(unit), dbGetUsualTeam(mat)]).then(() => {
       try {
         localStorage.setItem(key, today);
       } catch {
         /* ignora */
       }
     });
-  }, [userProfile.gerencia, userProfile.matricula]);
+  }, [userProfile.gerencia, userProfile.matricula, userProfile.companies?.[0]]);
 
   // OS atribuídas a este técnico. Concluídas saem da lista; a iniciada aparece "Em Execução".
   const myOrders = useMemo(() => {

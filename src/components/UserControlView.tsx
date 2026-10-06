@@ -1163,7 +1163,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             <div className="mt-6 flex gap-3 justify-center">
               <button
                 onClick={() => setGenericConfirm({ ...genericConfirm, show: false })}
-                className="flex-1 px-4 py-2.5 border border-gray-350 dark:border-slate-800 rounded-xl text-xs font-bold text-gray-650 dark:text-slate-350 hover:bg-gray-50 dark:hover:bg-slate-855 transition-all cursor-pointer"
+                className="flex-1 px-4 py-2.5 border border-gray-350 dark:border-slate-800 rounded-xl text-xs font-bold text-gray-650 dark:text-slate-350 hover:bg-gray-50 dark:hover:bg-slate-850 transition-all cursor-pointer"
               >
                 Cancelar
               </button>

@@ -1,8 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, PlusCircle } from 'lucide-react';
-import { Asset, Management } from '../../types';
-import { dbSaveAsset, randomIdToken } from '../../db/firebase';
+import { Asset, Company, Management } from '../../types';
+import { companiesOfUnit, dbSaveAsset, randomIdToken } from '../../db/firebase';
 import { PeriodicityRule } from './AssetImportWizardModal';
+
+// Empresa do ativo (etapa especial E2): empresas ativas que atuam na gerência escolhida
+function AssetCompanySelect({ companies, sector, value, onChange }: { companies: Company[]; sector: string; value: string; onChange: (v: string) => void }) {
+  const list = companiesOfUnit(companies, sector).filter((c) => c.active || c.id === value);
+  return (
+    <div>
+      <label className="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">Empresa*</label>
+      <select
+        required
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Empresa do ativo"
+        className="w-full text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-lg focus:outline-none font-bold text-slate-800"
+      >
+        <option value="">Selecione a empresa...</option>
+        {list.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+      {list.length === 0 && <p className="text-[10px] text-amber-700 font-bold mt-1">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>}
+    </div>
+  );
+}
 
 // ==========================================
 // 1. MODAL DE EDIÇÃO DE ATIVO (AssetEditModal)
@@ -13,6 +36,7 @@ export interface AssetEditModalProps {
   onClose: () => void;
   asset: Asset | null;
   managements: Management[];
+  companies: Company[];
   onSaveSuccess: (updatedAsset: Asset) => void;
 }
 
@@ -21,8 +45,10 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
   onClose,
   asset,
   managements,
+  companies,
   onSaveSuccess
 }) => {
+  const [editingCompany, setEditingCompany] = useState('');
   const [editingCode, setEditingCode] = useState('');
   const [editingName, setEditingName] = useState('');
   const [editingSector, setEditingSector] = useState('');
@@ -44,6 +70,7 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
       const activeManagements = managements.filter(m => m.name !== 'Todas');
       const defaultSec = activeManagements.length > 0 ? activeManagements[0].name : 'Civil';
       setEditingSector(asset.sector || defaultSec);
+      setEditingCompany(asset.company || '');
       setEditingLocation(asset.location || '');
       setEditingManufacturer(asset.specs?.manufacturer || asset.specs?.MARCA || '');
       setEditingModel(asset.specs?.model || asset.specs?.MODELO || '');
@@ -88,6 +115,12 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
         code: editingCode.trim().toUpperCase(),
         name: editingName.trim(),
         sector: editingSector,
+        company: editingCompany,
+        // Troca de empresa fica registrada no ativo (o histórico de manutenção continua com ele)
+        companyHistory:
+          editingCompany !== (asset.company || '')
+            ? [...(asset.companyHistory || []), { from: asset.company || '', to: editingCompany, at: nowString, via: 'manual' as const }]
+            : asset.companyHistory,
         location: editingLocation.trim(),
         status: (editingDynamicFormValues['STATUS'] as any) || 'Operando',
         specs: updatedSpecs,
@@ -154,7 +187,7 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
                 </label>
                 <select
                   value={editingSector}
-                  onChange={(e) => setEditingSector(e.target.value)}
+                  onChange={(e) => { setEditingSector(e.target.value); setEditingCompany(''); }}
                   className="w-full text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-lg focus:outline-none font-bold text-slate-800"
                 >
                   {managements.length > 0 ? (
@@ -169,6 +202,8 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
                 </select>
               </div>
             </div>
+
+            <AssetCompanySelect companies={companies} sector={editingSector} value={editingCompany} onChange={setEditingCompany} />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -382,6 +417,7 @@ export interface AssetCreateModalProps {
   isOpen: boolean;
   onClose: () => void;
   managements: Management[];
+  companies: Company[];
   periodicityRules: PeriodicityRule[];
   customDynamicFields: string[];
   onCreateSuccess: (newAsset: Asset) => void;
@@ -391,10 +427,12 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
   isOpen,
   onClose,
   managements,
+  companies,
   periodicityRules,
   customDynamicFields,
   onCreateSuccess
 }) => {
+  const [company, setCompany] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   
@@ -420,6 +458,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
       setCode('');
       setName('');
       setSector(defaultSector);
+      setCompany('');
       setLocation('');
       setManufacturer('');
       setModel('');
@@ -477,6 +516,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
         code: code.trim().toUpperCase(),
         name: name.trim(),
         sector,
+        company,
         location: location.trim(),
         status: statusVal as any,
         specs: manualSpecs,
@@ -542,7 +582,7 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
                 </label>
                 <select
                   value={sector}
-                  onChange={(e) => setSector(e.target.value)}
+                  onChange={(e) => { setSector(e.target.value); setCompany(''); }}
                   className="w-full text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-lg focus:outline-none font-bold text-slate-800"
                 >
                   {managements.length > 0 ? (
@@ -557,6 +597,8 @@ export const AssetCreateModal: React.FC<AssetCreateModalProps> = ({
                 </select>
               </div>
             </div>
+
+            <AssetCompanySelect companies={companies} sector={sector} value={company} onChange={setCompany} />
 
             <div className="grid grid-cols-2 gap-3">
               <div>

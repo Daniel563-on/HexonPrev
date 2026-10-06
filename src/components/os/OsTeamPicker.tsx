@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, UserPlus, X } from 'lucide-react';
 import { OrderParticipant } from '../../types';
-import { dbGetUnitPeople, dbGetUsualTeam } from '../../db/firebase';
+import { dbGetTeamPeople, dbGetUsualTeam } from '../../db/firebase';
 
 // EQUIPE DA OS (técnico em campo): o técnico atribuído entra sempre; a equipe que o Encarregado deixou pronta
-// aparece como atalho (um toque adiciona) e qualquer pessoa ativa da gerência pode ser buscada por nome ou matrícula.
+// aparece como atalho (um toque adiciona) e qualquer pessoa ativa da gerência e da mesma empresa do técnico pode ser buscada.
 // Contam no homem-hora, na hora extra e no pernoite só as pessoas adicionadas aqui.
 
 interface Props {
@@ -24,12 +24,13 @@ export default function OsTeamPicker({ unit, executor, team, editable, onChange,
 
   useEffect(() => {
     if (!editable) return;
-    dbGetUnitPeople(unit).then(setPeople);
+    dbGetTeamPeople(unit, executor.matricula).then(setPeople);
     dbGetUsualTeam(executor.matricula).then((t) => setUsual((t?.members || []).filter((m) => m.matricula !== executor.matricula)));
   }, [editable, unit, executor.matricula]);
 
   const taken = useMemo(() => new Set(team.map((p) => p.matricula)), [team]);
-  const quick = usual.filter((p) => !taken.has(p.matricula));
+  // Atalhos da equipe habitual: só quem ainda é da mesma empresa
+  const quick = usual.filter((p) => !taken.has(p.matricula) && people.some((x) => x.matricula === p.matricula));
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return [];

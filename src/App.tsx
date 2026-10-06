@@ -45,6 +45,7 @@ import {
   resolveUserProfile,
   profilePermission,
   userVisibleUnits,
+  userVisibleCompanies,
   isSectorVisible,
   subscribeToUserProfile,
   dbSaveUser,
@@ -397,6 +398,8 @@ export default function App() {
 
   // Unidades que o usuário enxerga dentro do sistema (null = todas), conforme o perfil de acesso
   const visibleUnits = useMemo(() => userVisibleUnits(userProfile, accessProfiles), [userProfile, accessProfiles]);
+  // Empresas que o usuário enxerga (null = todas as das gerências que vê; etapa especial E2)
+  const visibleCompanies = useMemo(() => userVisibleCompanies(userProfile, accessProfiles), [userProfile, accessProfiles]);
   // OS: gerências que o usuário pode escolher (quem vê todas: todas as cadastradas)
 
   // Quem vê todas as gerências trabalha com uma por vez (escolhida no topo da tela)
@@ -432,6 +435,8 @@ export default function App() {
   // Todas as abertas + as fechadas do mês visto, das gerências acima.
   const visibleUnitsKey = visibleUnits === null ? '*' : visibleUnits.join('|');
   const dataUnitsKey = dataUnits.join('|');
+  // O cadastro abre na hora (guardado no aparelho), mas o login do Firebase volta um instante depois:
+  // por isso a escuta também recomeça quando o login fica pronto (senão a 1ª tela ficava sem OS)
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
     return subscribeUnitOrders(dataUnits, ordersMonth, setOrders);
@@ -1157,6 +1162,7 @@ export default function App() {
               clearScannedAsset={clearScannedAsset}
               userProfile={userProfile}
               visibleUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
               orders={orders}
               userHasActionPermission={userHasActionPermission}
             />
@@ -1199,6 +1205,7 @@ export default function App() {
             <MaterialsView
               userProfile={userProfile}
               visibleUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
               canManage={userHasActionPermission('manage_materials')}
             />
           )}

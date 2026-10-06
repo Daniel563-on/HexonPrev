@@ -52,6 +52,15 @@ export interface Asset {
   retiredAt?: string; // data da baixa (não veio na planilha da gerência)
   kind?: 'address'; // 'address' = endereço (imóvel) mostrado na lista de ativos; não é gravado como ativo
   addressId?: string;
+  company?: string; // empresa contratada (id) responsável pelo ativo (etapa especial E2)
+  companyHistory?: AssetCompanyChange[]; // trocas de empresa (contrato novo): o histórico do ativo continua com ele
+}
+
+export interface AssetCompanyChange {
+  from: string; // empresa anterior ("" = sem empresa)
+  to: string;
+  at: string;
+  via: 'importação' | 'manual'; // sem nome de quem fez: a ficha do ativo é aberta pelo QR público
 }
 
 export interface ServiceOrder {
@@ -408,6 +417,7 @@ export interface WorkforcePerson {
   name: string;
   cargo: string;
   unit: string;          // gerência (GMMR, GMEE, GMC, DOM...)
+  company?: string;      // empresa contratada (id), escolhida na importação (etapa especial E2)
   status: 'Ativo' | 'Inativo';
   source: 'importado';
   createdAt: string;
@@ -451,7 +461,7 @@ export interface OvertimeRules {
   updatedBy: string;
 }
 
-// MATERIAL: cada gerência tem a sua lista. Sem controle de estoque: a OS só registra o que foi usado.
+// MATERIAL: cada gerência + empresa tem a sua lista. Sem controle de estoque: a OS só registra o que foi usado.
 // Valor R$ 0,00 = indisponível para o técnico (ex.: saiu da planilha); fica na lista para o histórico.
 export interface MaterialCost {
   value: number;         // R$ por unidade de medida
@@ -461,8 +471,9 @@ export interface MaterialCost {
   reason?: string;       // ex.: "saiu da planilha"
 }
 export interface Material {
-  id: string;            // "mat_" + gerência + código
+  id: string;            // "mat_" + gerência + empresa + código
   unit: string;          // gerência dona da lista (GMMR, GMEE, GMC, DOM...)
+  company: string;       // empresa contratada (id): cada gerência + empresa tem a sua lista e os seus preços (E2)
   code: string;
   description: string;
   measureUnit: string;   // UN, M, KG, L, CX...
@@ -826,7 +837,7 @@ export interface OsPdfPin {
   fontSize: number;  // pt
   bold?: boolean;
   align?: 'left' | 'center' | 'right';
-  valign?: 'top' | 'middle' | 'bottom';
+  valign?: 'top' | 'middle' | 'bottom'; // vertical (sem = em cima)
 }
 export interface OsPdfLayout {
   templateId: string;

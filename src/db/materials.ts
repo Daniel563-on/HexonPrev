@@ -4,12 +4,12 @@ import { Material } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { localTodayStr } from './serviceOrders';
 
-// MATERIAIS (coleção "materials"): cada gerência tem a sua lista. Sem controle de estoque.
+// MATERIAIS (coleção "materials"): cada gerência + empresa tem a sua lista (etapa especial E2). Sem controle de estoque.
 // Valor R$ 0,00 = o técnico não pode usar (ex.: saiu da planilha); o material fica para o histórico.
 
 export const materialCodeKey = (c: unknown) => String(c ?? '').trim().toUpperCase();
-export const materialIdOf = (unit: string, code: string) =>
-  `mat_${unit.trim().toUpperCase()}_${materialCodeKey(code)}`.replace(/[^A-Z0-9_-]/g, '_');
+export const materialIdOf = (unit: string, company: string, code: string) =>
+  'mat_' + `${unit.trim().toUpperCase()}_${company.trim().toUpperCase()}_${materialCodeKey(code)}`.replace(/[^A-Z0-9_-]/g, '_');
 
 let cacheMaterials: { key: string; list: Material[] } | null = null;
 
@@ -17,14 +17,16 @@ export function clearMaterialsCache(): void {
   cacheMaterials = null;
 }
 
-// Uma busca por gerência (as regras do banco só liberam as gerências do perfil); null = todas
-export async function dbGetMaterials(units: string[] | null, force = false): Promise<Material[]> {
-  const key = units === null ? '*' : units.join('|');
+// Uma busca por gerência (as regras do banco só liberam as gerências do perfil); null = todas.
+// "company": só a lista daquela empresa (o técnico só pode ler a da empresa dele; índice gerência + empresa).
+export async function dbGetMaterials(units: string[] | null, force = false, company?: string): Promise<Material[]> {
+  const key = `${units === null ? '*' : units.join('|')}#${company || ''}`;
   if (cacheMaterials && cacheMaterials.key === key && !force) return [...cacheMaterials.list];
   if (!firebaseActive || !dbInstance) return [];
   try {
     const ref = collection(dbInstance, 'materials');
-    const snaps = units === null ? [await getDocs(ref)] : await Promise.all(units.map((u) => getDocs(query(ref, where('unit', '==', u)))));
+    const byUnit = (u: string) => getDocs(company ? query(ref, where('unit', '==', u), where('company', '==', company)) : query(ref, where('unit', '==', u)));
+    const snaps = units === null ? [await getDocs(ref)] : await Promise.all(units.map(byUnit));
     const list = snaps
       .flatMap((snap) => snap.docs.map((d) => ({ ...(d.data() as Material), id: d.id })))
       .sort((a, b) => a.unit.localeCompare(b.unit) || a.description.localeCompare(b.description));
@@ -69,7 +71,7 @@ export async function dbSetMaterialCost(material: Material, value: number, from:
   cacheMaterials = null;
 }
 
-// ===== IMPORTAÇÃO POR GERÊNCIA =====
+// ===== IMPORTAÇÃO POR GERÊNCIA + EMPRESA =====
 export interface MaterialImportRow {
   code: string;
   description: string;
@@ -80,6 +82,7 @@ export interface MaterialImportRow {
 
 export interface MaterialImportPlan {
   unit: string;
+  company: string;
   toCreate: Material[];
   toUpdate: { before: Material; after: Material }[];
   toZero: Material[];                               // saíram da planilha: valor vai a R$ 0,00
@@ -88,11 +91,11 @@ export interface MaterialImportPlan {
   unchanged: number;
 }
 
-export function planMaterialImport(unit: string, rows: MaterialImportRow[], existing: Material[], setBy: string): MaterialImportPlan {
-  const plan: MaterialImportPlan = { unit, toCreate: [], toUpdate: [], toZero: [], skippedDuplicate: [], skippedInvalid: [], unchanged: 0 };
+export function planMaterialImport(unit: string, company: string, rows: MaterialImportRow[], existing: Material[], setBy: string): MaterialImportPlan {
+  const plan: MaterialImportPlan = { unit, company, toCreate: [], toUpdate: [], toZero: [], skippedDuplicate: [], skippedInvalid: [], unchanged: 0 };
   const now = new Date().toISOString();
   const today = localTodayStr();
-  const mine = existing.filter((m) => m.unit === unit);
+  const mine = existing.filter((m) => m.unit === unit && m.company === company);
   const byId = new Map(mine.map((m) => [m.id, m]));
   const seen = new Set<string>();
 
@@ -107,7 +110,7 @@ export function planMaterialImport(unit: string, rows: MaterialImportRow[], exis
       plan.skippedInvalid.push({ row, reason: 'valor inválido' });
       continue;
     }
-    const id = materialIdOf(unit, code);
+    const id = materialIdOf(unit, company, code);
     if (seen.has(id)) {
       plan.skippedDuplicate.push(row);
       continue;
@@ -118,7 +121,7 @@ export function planMaterialImport(unit: string, rows: MaterialImportRow[], exis
     if (!before) {
       const cost = row.cost ?? 0;
       plan.toCreate.push({
-        id, unit, code, description, measureUnit, cost,
+        id, unit, company, code, description, measureUnit, cost,
         costFrom: cost > 0 ? today : '',
         history: cost > 0 ? [{ value: cost, from: today, setAt: now, setBy, reason: 'importação' }] : [],
         createdAt: now, updatedAt: now

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { OrderParticipant } from '../../../types';
-import { dbGetUnitPeople, dbGetUsualTeam, dbSaveUsualTeam } from '../../../db/firebase';
+import { dbGetTeamPeople, dbGetUsualTeam, dbSaveUsualTeam } from '../../../db/firebase';
 
 // EQUIPE HABITUAL DO TÉCNICO (Etapa 6.2): o próprio técnico ou o planejador incluem/tiram pessoas a qualquer momento.
 // Ao iniciar uma OS, os participantes já vêm preenchidos com essa equipe (dá para mudar na OS).
+// Só pessoas da mesma empresa do técnico (etapa especial E2).
 
 interface Props {
   matricula: string;     // técnico dono da equipe
@@ -24,7 +25,7 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([dbGetUsualTeam(matricula), dbGetUnitPeople(unit)]).then(([team, list]) => {
+    Promise.all([dbGetUsualTeam(matricula), dbGetTeamPeople(unit, matricula)]).then(([team, list]) => {
       setMembers(team?.members || []);
       setPeople(list);
       setLoading(false);
@@ -99,7 +100,7 @@ export default function UsualTeamEditor({ matricula, techName, unit, editorName,
             )}
             {people.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Nenhuma pessoa ativa cadastrada na {unit} (usuários ou efetivo).</p>}
           </div>
-          {msg && <p className={`text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
+          {msg &&<p className={`text-[11px] font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
           <div className="flex justify-end gap-2">
             {onClose && <button type="button" onClick={onClose} disabled={saving} className="h-9 px-4 rounded-lg border border-slate-300 text-xs font-bold text-slate-600 cursor-pointer">Fechar</button>}
             <button type="button" onClick={save} disabled={saving} className="h-9 px-4 rounded-lg bg-[#3525cd] text-white text-xs font-bold cursor-pointer disabled:opacity-50">

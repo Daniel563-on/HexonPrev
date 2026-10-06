@@ -154,6 +154,18 @@ export function userVisibleUnits(user: HexonUser | null | undefined, profiles: A
   return user.gerencia ? [user.gerencia] : []; // mesma regra do banco: sem gerência, nenhuma unidade
 }
 
+// EMPRESAS QUE O USUÁRIO ENXERGA (etapa especial E2): null = todas as das gerências que vê;
+// lista = só as empresas do usuário (perfil com "Empresas que vê" = só as do usuário)
+export function userVisibleCompanies(user: HexonUser | null | undefined, profiles: AccessProfile[]): string[] | null {
+  if (!user) return [];
+  if (user.perfil === 'Super Administrador') return null;
+  const profile = resolveUserProfile(user, profiles);
+  if (!profile || profile.kind === 'total' || (profile.companyScope || 'all') === 'all') return null;
+  return [...(user.companies || [])];
+}
+export const isCompanyVisible = (company: string | undefined, companies: string[] | null): boolean =>
+  companies === null || (!!company && companies.includes(company));
+
 // O setor (de uma OS ou ativo) pertence a alguma das unidades visíveis?
 export function isSectorVisible(sector: string, units: string[] | null): boolean {
   if (units === null) return true;

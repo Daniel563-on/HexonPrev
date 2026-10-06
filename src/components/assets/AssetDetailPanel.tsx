@@ -10,7 +10,7 @@ import {
   Info,
   Edit
 } from 'lucide-react';
-import { Asset, MaintenanceLog, ServiceOrder, formatDateBR } from '../../types';
+import { Asset, Company, MaintenanceLog, ServiceOrder, formatDateBR } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { downloadAssetQrCode, printAssetTag } from '../../utils/qrUtils';
 import AssetHistorySection from './AssetHistorySection';
@@ -25,6 +25,7 @@ export interface AssetDetailPanelProps {
   onEditAsset?: (asset: Asset) => void;
   onViewOrder?: (orderId: string) => void; // abre a OS completa (checklist, observações, assinatura e PDF)
   canViewCosts?: boolean; // "Ver valores em R$": valor de cada linha do histórico e total gasto com materiais
+  companies?: Company[]; // empresas contratadas (nome da empresa do ativo e das trocas)
   visibleUnits?: string[] | null; // unidades do perfil (null = todas)
   localOrders?: ServiceOrder[]; // OS já carregadas no aparelho
 }
@@ -39,10 +40,12 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
   onEditAsset,
   onViewOrder,
   canViewCosts = false,
+  companies = [],
   visibleUnits = null,
   localOrders = []
 }) => {
   if (!asset) return null;
+  const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : 'sem empresa');
 
   return (
     <div className="space-y-6">
@@ -87,6 +90,9 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-100">
                     {asset.sector}
+                  </span>
+                  <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-100" title="Empresa responsável">
+                    {companyName(asset.company)}
                   </span>
                   <span className="text-xs font-mono font-bold text-gray-400 uppercase tracking-widest">
                     REF ATIVO: {asset.code}
@@ -365,6 +371,21 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
           </div>
         </div>
       </div>
+
+      {/* TROCAS DE EMPRESA (contrato novo): o histórico de manutenção continua com o ativo */}
+      {(asset.companyHistory || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-2">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Trocas de empresa</span>
+          <ul className="text-xs text-slate-700 space-y-1">
+            {[...(asset.companyHistory || [])].reverse().map((h, i) => (
+              <li key={i}>
+                {formatDateBR(h.at.slice(0, 10))}: de <strong>{companyName(h.from)}</strong> para <strong>{companyName(h.to)}</strong>
+                {' '}({h.via})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* HISTÓRICO: abas Preventivas e Corretivas, setinha por linha, valores para quem pode ver */}
       <AssetHistorySection
