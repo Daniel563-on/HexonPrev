@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronLeft, ChevronRight, Copy, FileDown, FileUp, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, Bold, ChevronLeft, ChevronRight, Copy, FileDown, FileUp, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplate } from '../../types';
 import { OS_PDF_MAX_BYTES, dbDeleteOsPdfLayout, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, dbGetWorkOrder, dbSaveOsPdfLayout } from '../../db/firebase';
 import { pdfjsLib } from '../../lib/pdfHelper';
@@ -176,7 +176,7 @@ export default function OsPdfMapper({ template, userName, onClose }: Props) {
       const w = Math.abs(drag.x - drag.x0);
       const h = Math.abs(drag.y - drag.y0);
       if (w > 1 && h > 0.6) {
-        const pin: OsPdfPin = { id: newId(), page, x: r2(x), y: r2(y), w: r2(w), h: r2(h), field: 'sys:numero', fontSize: 10, align: 'left' };
+        const pin: OsPdfPin = { id: newId(), page, x: r2(x), y: r2(y), w: r2(w), h: r2(h), field: 'sys:numero', fontSize: 10, align: 'left', valign: 'middle' };
         setPins((prev) => [...prev, pin]);
         setSel(pin.id);
         setDirty(true);
@@ -340,7 +340,7 @@ export default function OsPdfMapper({ template, userName, onClose }: Props) {
                       <div
                         key={p.id}
                         onPointerDown={(e) => onPinDown(e, p)}
-                        className={`absolute border ${isSel ? 'border-[#3525cd] bg-indigo-500/15 z-10' : 'border-indigo-400/80 bg-indigo-200/25'} cursor-move overflow-hidden`}
+                        className={`absolute border ${isSel ? 'border-[#3525cd] bg-indigo-500/15 z-10' : 'border-indigo-400/80 bg-indigo-200/25'} cursor-move overflow-hidden flex flex-col ${(p.valign || (p.field.startsWith('sig:') ? 'middle' : 'top')) === 'middle' ? 'justify-center' : p.valign === 'bottom' ? 'justify-end' : 'justify-start'}`}
                         style={{ left: `${p.x}%`, top: `${p.y}%`, width: `${p.w}%`, height: `${p.h}%` }}
                         title={osPdfFieldLabel(p.field, template.fields)}
                       >
@@ -409,6 +409,12 @@ export default function OsPdfMapper({ template, userName, onClose }: Props) {
                   {(['left', 'center', 'right'] as const).map((a) => (
                     <button key={a} type="button" onClick={() => patchPin(selected.id, { align: a })} className={btnOn((selected.align || 'left') === a)} title={a === 'left' ? 'Esquerda' : a === 'center' ? 'Centro' : 'Direita'}>
                       {a === 'left' ? <AlignLeft className="w-3.5 h-3.5" /> : a === 'center' ? <AlignCenter className="w-3.5 h-3.5" /> : <AlignRight className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                  <span className="w-2" />
+                  {(['top', 'middle', 'bottom'] as const).map((a) => (
+                    <button key={a} type="button" onClick={() => patchPin(selected.id, { valign: a })} className={btnOn((selected.valign || (selected.field.startsWith('sig:') ? 'middle' : 'top')) === a)} title={a === 'top' ? 'Em cima' : a === 'middle' ? 'Ao meio' : 'Embaixo'}>
+                      {a === 'top' ? <AlignVerticalJustifyStart className="w-3.5 h-3.5" /> : a === 'middle' ? <AlignVerticalJustifyCenter className="w-3.5 h-3.5" /> : <AlignVerticalJustifyEnd className="w-3.5 h-3.5" />}
                     </button>
                   ))}
                 </div>
