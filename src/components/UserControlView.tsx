@@ -20,9 +20,12 @@ import {
   legacyPerfilOf,
   SYSTEM_PROFILE_IDS,
   dbGetJobRoles,
-  dbRemoveImportedPersonForUser
+  dbRemoveImportedPersonForUser,
+  dbGetCompanies,
+  companiesOfUnit,
+  companyNames
 } from '../db/firebase';
-import { AccessProfile, HexonUser, JobRole, Management, SystemPermission } from '../types';
+import { AccessProfile, Company, HexonUser, JobRole, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
 import UnitBackfillCard from './users/UnitBackfillCard';
 import { dbBumpDataVersion } from '../db/appControl';
@@ -43,6 +46,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [profiles, setProfiles] = useState<AccessProfile[]>([]);
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]); // empresas contratadas (etapa especial E1)
   const activeJobRoles = jobRoles.filter((r) => !r.archived); // cargos que existem hoje no sistema
   const [customCargo, setCustomCargo] = useState(false); // digitando um cargo novo no cadastro do usuário
   const [saveNotice, setSaveNotice] = useState<string | null>(null); // aviso após salvar (a janela de alerta é bloqueada no preview)
@@ -63,7 +67,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     perfil: 'Profissional' as HexonUser['perfil'],
     profileId: SYSTEM_PROFILE_IDS.execucao as string,
     status: 'Ativo' as HexonUser['status'],
-    senha: '123456'
+    senha: '123456',
+    companies: [] as string[]
   });
 
   // Mgmt Modal state
@@ -96,6 +101,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         setManagements(mList);
         setProfiles(await dbGetProfiles(force, true));
         if (activeSubTab === 'users') setJobRoles(await dbGetJobRoles(force));
+        if (activeSubTab === 'users') setCompanies(await dbGetCompanies(force).catch(() => []));
       } else if (activeSubTab === 'managements') {
         const mList = await dbGetManagements();
         setManagements(mList);
@@ -133,7 +139,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       perfil: 'Profissional',
       profileId: SYSTEM_PROFILE_IDS.execucao,
       status: 'Ativo',
-      senha: '123456'
+      senha: '123456',
+      companies: []
     });
     setCustomCargo(false);
     setIsUserModalOpen(true);
@@ -152,7 +159,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       profileId: resolveUserProfile(user, profiles)?.id || SYSTEM_PROFILE_IDS.execucao,
       status: user.status,
       // If password is encrypted hash, keep empty in form unless admin enters a new one
-      senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || '')
+      senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || ''),
+      companies: [...(user.companies || [])]
     });
     setCustomCargo(false);
     setIsUserModalOpen(true);
@@ -182,6 +190,14 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       return;
     }
 
+    // Empresa(s): só as que atuam na gerência do usuário; técnico = exatamente 1
+    const formCompanies = userForm.companies.filter((id) => companiesOfUnit(companies, userForm.gerencia).some((c) => c.id === id));
+    const formKind = profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao';
+    if (companies.length > 0 && legacyPerfilOf(formKind) === 'Profissional' && formCompanies.length !== 1) {
+      setUserModalError('Técnico precisa de exatamente 1 empresa (campo Empresa).');
+      return;
+    }
+
     setIsSavingUser(true);
     try {
       const targetId = editingUser ? editingUser.id : `u_${Date.now()}`;
@@ -197,7 +213,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         perfil: legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao'),
         profileId: userForm.profileId,
         status: userForm.status,
-        senha: finalSenha
+        senha: finalSenha,
+        companies: formCompanies
       };
 
       await dbSaveUser(newUser);
@@ -599,6 +616,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                       <th className="py-3 px-4">Nome / Cargo</th>
                       <th className="py-3 px-4">Matrícula / E-mail</th>
                       <th className="py-3 px-4">Gerência</th>
+                      <th className="py-3 px-4">Empresa</th>
                       <th className="py-3 px-4">Nível de Acesso</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Ações</th>
@@ -607,7 +625,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-850 text-xs font-medium">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-500 italic">
+                        <td colSpan={7} className="py-8 text-center text-slate-500 italic">
                           Nenhum colaborador localizado com os termos informados.
                         </td>
                       </tr>
@@ -651,6 +669,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                             }`}>
                               {u.gerencia}
                             </span>
+                          </td>
+
+                          {/* Empresa */}
+                          <td className="py-3 px-4 text-[10.5px] font-bold text-slate-600">
+                            {(u.companies || []).length ? companyNames(u.companies, companies) : <span className="text-slate-400 font-normal">—</span>}
                           </td>
 
                           {/* Perfil */}
@@ -988,6 +1011,33 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   </select>
                 </div>
 
+                {/* Empresa(s) */}
+                <div>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Empresa(s)</label>
+                  {companiesOfUnit(companies, userForm.gerencia).filter((c) => c.active || userForm.companies.includes(c.id)).length === 0 ? (
+                    <p className="text-[10.5px] text-slate-500">{companies.length === 0 ? 'Nenhuma empresa cadastrada (Configurações › Empresas).' : 'Nenhuma empresa atua nesta gerência.'}</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1.5" aria-label="Empresas do usuário">
+                      {companiesOfUnit(companies, userForm.gerencia)
+                        .filter((c) => c.active || userForm.companies.includes(c.id))
+                        .map((c) => (
+                          <label key={c.id} className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={userForm.companies.includes(c.id)}
+                              onChange={(e) =>
+                                setUserForm({ ...userForm, companies: e.target.checked ? [...userForm.companies, c.id] : userForm.companies.filter((x) => x !== c.id) })
+                              }
+                            />
+                            {c.name}
+                            {!c.active && <span className="text-[9px] text-rose-600">(inativa)</span>}
+                          </label>
+                        ))}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-500 mt-1">Técnico: exatamente 1. Planejador: uma ou várias. Engenheiro, gerente e quem abre chamado: nenhuma (o perfil define se vê todas).</p>
+                </div>
+
                 {/* Perfil */}
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Perfil de Acesso (RBAC) *</label>
@@ -1113,7 +1163,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             <div className="mt-6 flex gap-3 justify-center">
               <button
                 onClick={() => setGenericConfirm({ ...genericConfirm, show: false })}
-                className="flex-1 px-4 py-2.5 border border-gray-350 dark:border-slate-800 rounded-xl text-xs font-bold text-gray-650 dark:text-slate-350 hover:bg-gray-50 dark:hover:bg-slate-850 transition-all cursor-pointer"
+                className="flex-1 px-4 py-2.5 border border-gray-350 dark:border-slate-800 rounded-xl text-xs font-bold text-gray-650 dark:text-slate-350 hover:bg-gray-50 dark:hover:bg-slate-855 transition-all cursor-pointer"
               >
                 Cancelar
               </button>
