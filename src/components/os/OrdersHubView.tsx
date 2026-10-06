@@ -52,7 +52,7 @@ export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canS
     <div className="space-y-4">
       {canSeeOs && canSeePreventives && (
         <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 w-fit">
-          {btn('os', 'Corretivas, Layout e Acompanhamento')}
+          {btn('os', 'Chamados GLPI')}
           {btn('preventivas', 'Preventivas')}
         </div>
       )}
