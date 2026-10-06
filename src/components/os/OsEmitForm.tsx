@@ -306,7 +306,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
 
   if (done) {
     return (
-      <div className="max-w-xl p-5 rounded-2xl border border-emerald-200 bg-emerald-50 space-y-3">
+      <div className="max-w-xl mx-auto p-5 rounded-2xl border border-emerald-200 bg-emerald-50 space-y-3">
         <p className="flex items-center gap-2 text-sm font-black text-emerald-900">
           <CheckCircle2 className="w-5 h-5" /> OS emitida: {done.number}
         </p>
@@ -322,7 +322,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   }
 
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="max-w-6xl mx-auto space-y-4">
       {templates.length === 0 ? (
         <p className="text-xs text-slate-500">Nenhum modelo de OS cadastrado. Peça a quem cuida dos modelos (Configurações › Modelos de OS).</p>
       ) : (
