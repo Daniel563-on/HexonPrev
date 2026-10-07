@@ -131,6 +131,19 @@ html.dark .text-red-700 { color: #fda4af !important; }
 html.dark .text-amber-700,
 html.dark .text-amber-800 { color: #fcd34d !important; }
 
+/* Cartões cinza-escuros (slate-900/800) no modo escuro: azul-marinho da marca */
+html.dark .bg-slate-900,
+html.dark .dark\:bg-slate-900 { background-color: #0e1a3a !important; }
+html.dark .bg-slate-900\/90,
+html.dark .dark\:bg-slate-900\/90 { background-color: rgba(14, 26, 58, 0.9) !important; }
+html.dark .bg-slate-900\/60,
+html.dark .dark\:bg-slate-900\/60,
+html.dark .bg-slate-900\/70 { background-color: rgba(14, 26, 58, 0.65) !important; }
+html.dark .bg-slate-900\/40,
+html.dark .dark\:bg-slate-900\/40 { background-color: rgba(14, 26, 58, 0.45) !important; }
+html.dark .border-slate-800,
+html.dark .dark\:border-slate-800 { border-color: #1c2a4d !important; }
+
 html.dark select option {
   background-color: #0e1a3a !important;
   color: #f1f5f9 !important;
@@ -202,7 +215,7 @@ html.high-contrast h3 *,
 html.high-contrast h4,
 html.high-contrast h4 *,
 html.high-contrast h5,
-html.high-contrast h5 *,
+html.high-contrast h6,
 html.high-contrast strong,
 html.high-contrast strong *,
 html.high-contrast a,

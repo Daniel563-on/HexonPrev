@@ -104,7 +104,7 @@ export default function TechnicianMobileView({
     <button
       onClick={() => setActiveTab(tab)}
       className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
-        activeTab === tab ? 'text-indigo-600 dark:text-indigo-400 font-extrabold scale-105' : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
+        activeTab === tab ? 'text-violet-600 dark:text-cyan-300 font-extrabold scale-105' : 'text-slate-500 dark:text-slate-400 font-medium hover:text-slate-700'
       }`}
     >
       <div className="relative">
@@ -499,18 +499,20 @@ export default function TechnicianMobileView({
 
   return (
     <div className={`min-h-screen flex flex-col font-sans select-none pb-24 max-w-2xl mx-auto w-full relative sm:border-x shadow-2xl transition-colors ${
-      darkMode ? 'bg-[#0A101D] text-slate-100 sm:border-slate-800' : 'bg-slate-50 text-slate-900 sm:border-slate-200'
+      darkMode ? 'bg-[#08122b] text-slate-100 sm:border-slate-800' : 'bg-slate-50 text-slate-900 sm:border-slate-200'
     }`}>
       
       {/* ================= TOP MOBILE APP BAR ================= */}
       <header className={`sticky top-0 z-30 px-4 py-3 border-b flex items-center justify-between backdrop-blur-md transition-colors ${
-        darkMode ? 'bg-[#0A101D]/90 border-slate-800' : 'bg-white/90 border-slate-200'
+        darkMode ? 'bg-[#0e1a3a]/90 border-slate-800' : 'bg-white/90 border-slate-200'
       }`}>
+        {/* Linha neon da marca (identidade visual 2.0) */}
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
         <div className="flex items-center gap-2.5">
           <BrandLogo
             className="w-11 h-11 shrink-0"
             fallback={
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 font-black text-sm">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shadow-cyan-500/30 font-black text-sm">
                 H
               </div>
             }
@@ -518,7 +520,7 @@ export default function TechnicianMobileView({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="text-xl font-extrabold tracking-[0.15em] font-brand leading-none">HEXON</h1>
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-500 uppercase tracking-wider">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gradient-to-r from-violet-600 to-blue-500 text-white uppercase tracking-wider">
                 Técnico
               </span>
             </div>
@@ -1031,7 +1033,7 @@ export default function TechnicianMobileView({
                       setSelectedOrder(scannedMatchingOrder);
                       setIsOrderDrawerOpen(true);
                     }}
-                    className="w-full min-h-[50px] py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-98 transition-all cursor-pointer"
+                    className="w-full min-h-[50px] py-3.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 to-blue-500 hover:brightness-110 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-98 transition-all cursor-pointer"
                   >
                     <Play className="w-4.5 h-4.5 fill-current" />
                     <span>Iniciar Execução da Preventiva</span>
@@ -1331,8 +1333,10 @@ export default function TechnicianMobileView({
       {/* ================= BOTTOM NAVIGATION BAR ================= */}
       {/* Ordem: Solicitações · Minhas OS · [QR em destaque] · Preventivas · Meu Perfil */}
       <nav className={`fixed bottom-0 left-0 right-0 max-w-2xl mx-auto z-40 border-t backdrop-blur-md transition-colors ${
-        darkMode ? 'bg-[#0A101D]/95 border-slate-800' : 'bg-white/95 border-slate-200'
+        darkMode ? 'bg-[#0e1a3a]/95 border-slate-800' : 'bg-white/95 border-slate-200'
       }`}>
+        {/* Linha neon da marca (identidade visual 2.0) */}
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
         <div className="max-w-md mx-auto px-2 h-18 grid grid-cols-5 items-center relative">
           {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />)}
           {navButton('os', 'Minhas OS', <Wrench className="w-5.5 h-5.5" />, osCount)}
@@ -1341,15 +1345,15 @@ export default function TechnicianMobileView({
           <div className="relative -top-5 flex justify-center">
             <button
               onClick={() => setActiveTab('scanner')}
-              className={`w-15 h-15 rounded-2xl flex flex-col items-center justify-center text-white shadow-xl shadow-indigo-600/30 transition-all duration-200 active:scale-95 cursor-pointer ${
+              className={`w-15 h-15 rounded-2xl flex flex-col items-center justify-center text-white border border-cyan-300/50 shadow-[0_0_22px_rgba(34,211,238,0.45)] transition-all duration-200 active:scale-95 cursor-pointer ${
                 activeTab === 'scanner'
-                  ? 'bg-gradient-to-tr from-indigo-700 to-indigo-500 ring-4 ring-indigo-500/20'
-                  : 'bg-gradient-to-tr from-indigo-600 to-blue-600 hover:brightness-110'
+                  ? 'bg-gradient-to-tr from-violet-700 via-blue-600 to-cyan-500 ring-4 ring-cyan-400/25'
+                  : 'bg-gradient-to-tr from-violet-600 via-blue-500 to-cyan-400 hover:brightness-110'
               }`}
             >
               <QrCode className="w-7 h-7" />
             </button>
-            <span className="absolute -bottom-4.5 left-1/2 -translate-x-1/2 text-[9px] font-extrabold tracking-tight text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+            <span className="absolute -bottom-4.5 left-1/2 -translate-x-1/2 text-[9px] font-extrabold tracking-tight text-violet-600 dark:text-cyan-300 whitespace-nowrap">
               Escanear QR
             </span>
           </div>
