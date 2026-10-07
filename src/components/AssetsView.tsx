@@ -619,6 +619,7 @@ export default function AssetsView({
         asset={editingAsset}
         managements={managements}
         companies={companies}
+        userName={userProfile?.name || ''}
         onSaveSuccess={(updatedAsset) => {
           setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a));
           if (selectedAsset?.id === updatedAsset.id) {
@@ -687,6 +688,7 @@ export default function AssetsView({
         assets={assets}
         managements={managements}
         companies={companies}
+        userName={userProfile?.name || ''}
         periodicityRules={periodicityRules}
         onUpdatePeriodicityRules={setPeriodicityRules}
         onReloadAssets={loadAssetsData}

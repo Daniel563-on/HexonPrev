@@ -1,15 +1,33 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapPin, Plus, Upload, Search, Edit, Power } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Address } from '../types';
-import { dbGetAddresses, dbSaveAddress, dbImportAddresses, addressCodeFromItem } from '../db/firebase';
+import { Address, Company } from '../types';
+import { companiesOfUnit, dbGetAddresses, dbGetCompanies, dbMoveNewOrdersToCompany, dbSaveAddress, dbImportAddresses, addressCodeFromItem } from '../db/firebase';
 
 // CONTROLE DE ENDEREÇOS (somente Super Administrador)
 // Cada endereço ativo recebe sua ronda semanal (vistoria sem ativo da DOM).
 // Endereço inativo não recebe rondas; o histórico dele continua guardado.
-const emptyForm = { item: '', craai: '', comarca: '', address: '' };
+// Empresa (etapa especial E3): quem executa as vistorias do endereço. Ao trocar, as vistorias "Novo" passam para a nova.
+const emptyForm = { item: '', craai: '', comarca: '', address: '', company: '' };
 
-export default function AddressesView() {
+export default function AddressesView({ userName = '' }: { userName?: string }) {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyFilter, setCompanyFilter] = useState('Todas');
+  const [importCompany, setImportCompany] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Empresas que atuam na DOM (as vistorias são da DOM)
+  const domCompanies = useMemo(() => companiesOfUnit(companies, 'DOM'), [companies]);
+  const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '');
+  const moveSurveys = async (moves: { id: string; company: string }[]) => {
+    if (moves.length === 0) return 0;
+    try {
+      return await dbMoveNewOrdersToCompany('DOM', 'addressId', moves, (id) => companyName(id) || id, userName);
+    } catch (e) {
+      console.warn('Não foi possível passar as vistorias "Novo" para a empresa nova:', e);
+      return 0;
+    }
+  };
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -28,6 +46,7 @@ export default function AddressesView() {
 
   useEffect(() => {
     load();
+    dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -35,10 +54,11 @@ export default function AddressesView() {
     return addresses.filter((a) => {
       if (statusFilter === 'Ativos' && !a.active) return false;
       if (statusFilter === 'Inativos' && a.active) return false;
+      if (companyFilter !== 'Todas' && (a.company || '') !== companyFilter) return false;
       if (!q) return true;
       return [a.code, a.craai, a.comarca, a.address].some((v) => (v || '').toLowerCase().includes(q));
     });
-  }, [addresses, search, statusFilter]);
+  }, [addresses, search, statusFilter, companyFilter]);
 
   const activeCount = addresses.filter((a) => a.active).length;
 
@@ -51,7 +71,7 @@ export default function AddressesView() {
 
   const openEdit = (a: Address) => {
     setEditing(a);
-    setForm({ item: a.code.replace(/\D/g, ''), craai: a.craai, comarca: a.comarca, address: a.address });
+    setForm({ item: a.code.replace(/\D/g, ''), craai: a.craai, comarca: a.comarca, address: a.address, company: a.company || '' });
     setShowForm(true);
   };
 
@@ -59,6 +79,10 @@ export default function AddressesView() {
     const code = editing ? editing.code : addressCodeFromItem(form.item);
     if (!code || !form.craai.trim() || !form.comarca.trim() || !form.address.trim()) {
       alert('Preencha item, CRAAI, comarca e endereço.');
+      return;
+    }
+    if (!form.company) {
+      setMsg({ ok: false, text: 'Escolha a empresa responsável pelo endereço.' });
       return;
     }
     if (!editing && addresses.some((a) => a.code === code)) {
@@ -74,12 +98,18 @@ export default function AddressesView() {
         craai: form.craai.trim(),
         comarca: form.comarca.trim(),
         address: form.address.trim(),
+        company: form.company,
         active: editing ? editing.active : true,
         createdAt: editing?.createdAt || now,
         updatedAt: now,
         inactivatedAt: editing?.inactivatedAt ?? null
       });
       setShowForm(false);
+      setMsg(null);
+      if (editing && (editing.company || '') !== form.company) {
+        const n = await moveSurveys([{ id: code, company: form.company }]);
+        if (n > 0) setMsg({ ok: true, text: `${n} vistoria(s) "Novo" deste endereço passaram para ${companyName(form.company)}.` });
+      }
       await load();
     } catch (err: any) {
       alert(`Não foi possível salvar: ${err?.message || err}`);
@@ -123,8 +153,14 @@ export default function AddressesView() {
         alert('Nenhuma linha válida encontrada. A planilha precisa das colunas ITEM, CRAAI, COMARCA e ENDEREÇO.');
         return;
       }
-      const saved = await dbImportAddresses(rows);
-      alert(`✅ ${saved} endereços importados/atualizados.`);
+      const { saved, moved } = await dbImportAddresses(rows, importCompany);
+      const n = await moveSurveys(moved.map((id) => ({ id, company: importCompany })));
+      setMsg({
+        ok: true,
+        text: `${saved} endereço(s) importado(s)/atualizado(s) com a empresa ${companyName(importCompany)}.` +
+          (moved.length ? ` ${moved.length} mudaram de empresa; ${n} vistoria(s) "Novo" passaram para a nova.` : '')
+      });
+      setShowImport(false);
       await load();
     } catch (err: any) {
       alert(`Não foi possível importar a planilha: ${err?.message || err}`);
@@ -146,10 +182,10 @@ export default function AddressesView() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} aria-label="Arquivo de endereços" />
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => { setShowImport(true); setImportCompany(''); setMsg(null); }}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase rounded-xl flex items-center gap-1.5 cursor-pointer"
           >
             <Upload className="w-4 h-4" /> Importar Planilha
@@ -164,12 +200,45 @@ export default function AddressesView() {
         </div>
       </section>
 
+      {msg && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
+
+      {showImport && (
+        <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-xs space-y-3">
+          <h3 className="text-xs font-black uppercase text-slate-700">Importar planilha de endereços</h3>
+          <p className="text-[11px] text-slate-500">
+            Colunas: ITEM, CRAAI, COMARCA e ENDEREÇO. Escolha antes a empresa: todos os endereços da planilha ficam com ela
+            (endereço que era de outra empresa passa para esta, e as vistorias "Novo" dele também).
+          </p>
+          <div className="flex flex-col md:flex-row gap-3 md:items-end">
+            <div className="md:w-72">
+              <label className={labelClass}>Empresa responsável *</label>
+              <select value={importCompany} onChange={(e) => setImportCompany(e.target.value)} className={inputClass} aria-label="Empresa da planilha">
+                <option value="">Selecione...</option>
+                {domCompanies.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <button
+              type="button"
+              disabled={!importCompany}
+              onClick={() => fileRef.current?.click()}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase rounded-xl cursor-pointer disabled:opacity-50"
+            >
+              Escolher arquivo
+            </button>
+            <button type="button" onClick={() => setShowImport(false)} className="px-4 py-2 border border-slate-200 text-xs font-bold text-slate-600 rounded-xl cursor-pointer">
+              Cancelar
+            </button>
+          </div>
+          {domCompanies.length === 0 && <p className="text-[11px] font-bold text-amber-700">Nenhuma empresa atua na DOM (Configurações › Empresas).</p>}
+        </div>
+      )}
+
       {showForm && (
         <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-xs space-y-3">
           <h3 className="text-xs font-black uppercase text-slate-700">
             {editing ? `Editar ${editing.code}` : 'Novo endereço'}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
               <label className={labelClass}>Item (código)</label>
               <input
@@ -191,6 +260,13 @@ export default function AddressesView() {
             <div>
               <label className={labelClass}>Endereço</label>
               <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Empresa *</label>
+              <select value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className={inputClass} aria-label="Empresa do endereço">
+                <option value="">Selecione...</option>
+                {domCompanies.filter((c) => c.active || c.id === form.company).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -230,6 +306,11 @@ export default function AddressesView() {
             <option value="Inativos">Inativos</option>
             <option value="Todos">Todos</option>
           </select>
+          <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className={`${inputClass} md:w-56`} aria-label="Filtrar por empresa">
+            <option value="Todas">Todas as empresas</option>
+            {domCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="">Sem empresa</option>
+          </select>
         </div>
 
         {loading ? (
@@ -245,6 +326,7 @@ export default function AddressesView() {
                   <th className="py-2 pr-3">CRAAI</th>
                   <th className="py-2 pr-3">Comarca</th>
                   <th className="py-2 pr-3">Endereço</th>
+                  <th className="py-2 pr-3">Empresa</th>
                   <th className="py-2 pr-3">Situação</th>
                   <th className="py-2"></th>
                 </tr>
@@ -256,6 +338,7 @@ export default function AddressesView() {
                     <td className="py-2 pr-3 font-bold text-slate-700">{a.craai}</td>
                     <td className="py-2 pr-3 font-bold text-slate-700">{a.comarca}</td>
                     <td className="py-2 pr-3 text-slate-600">{a.address}</td>
+                    <td className="py-2 pr-3 font-bold text-slate-700">{companyName(a.company) || <span className="text-amber-600">Sem empresa</span>}</td>
                     <td className="py-2 pr-3">
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${a.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
                         {a.active ? 'Ativo' : 'Inativo'}

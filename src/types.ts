@@ -123,6 +123,7 @@ export interface ServiceOrder {
   materialsUsed?: UsedMaterial[];
   participants?: OrderParticipant[];
   timeline?: OrderTimelineEvent[];  // linha do tempo da OS (disparada, programada, iniciada, concluída...)
+  company?: string;                 // empresa contratada (id): vem do ativo ou do endereço no disparo (etapa especial E3)
   cycleMonth?: number;           // mês do ciclo da gerência (1, 2, 3...) no disparo
   isTest?: boolean;              // disparada antes do início do ciclo oficial (teste)
 }
@@ -135,6 +136,7 @@ export interface Address {
   comarca: string;
   address: string;  // endereço por extenso
   active: boolean;  // inativo: não recebe rondas; o histórico continua guardado
+  company?: string; // empresa contratada (id) responsável pelas vistorias deste endereço (etapa especial E3)
   createdAt: string;
   updatedAt: string;
   inactivatedAt?: string | null;

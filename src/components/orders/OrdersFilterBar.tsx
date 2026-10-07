@@ -17,6 +17,10 @@ export interface OrdersFilterBarProps {
   statusCounts: Record<string, number>; // quantidade de OS em cada status (com os outros filtros aplicados)
   totalCount: number;
   onOpenScanSimulator: () => void;
+  // Empresa (etapa especial E3): aparece quando há empresas para escolher
+  selectedCompany?: string;
+  setSelectedCompany?: (val: string) => void;
+  companyOptions?: { id: string; name: string }[];
 }
 
 // Status na ordem do andamento da OS, com a cor de cada um
@@ -49,8 +53,12 @@ export default function OrdersFilterBar({
   setSelectedStatus,
   statusCounts,
   totalCount,
-  onOpenScanSimulator
+  onOpenScanSimulator,
+  selectedCompany = 'Todas',
+  setSelectedCompany,
+  companyOptions = []
 }: OrdersFilterBarProps) {
+  const showCompany = !!setSelectedCompany && companyOptions.length > 0;
   const getTodayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -60,6 +68,7 @@ export default function OrdersFilterBar({
   const hasActiveFilters =
     smartSearch ||
     selectedComarca !== 'Todas' ||
+    selectedCompany !== 'Todas' ||
     selectedPatrimonio !== 'Todos' ||
     selectedStatus !== 'Todos' ||
     selectedExecutionDate !== '';
@@ -67,6 +76,7 @@ export default function OrdersFilterBar({
   const handleClearFilters = () => {
     setSmartSearch('');
     setSelectedComarca('Todas');
+    setSelectedCompany?.('Todas');
     setSelectedPatrimonio('Todos');
     setSelectedStatus('Todos');
     setSelectedExecutionDate('');
@@ -134,8 +144,21 @@ export default function OrdersFilterBar({
         </div>
       </div>
 
-      {/* Comarca, patrimônio e dia */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Empresa, comarca, patrimônio e dia */}
+      <div className={`grid grid-cols-1 gap-4 ${showCompany ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+        {showCompany && (
+          <div>
+            <label className={labelClass}>Empresa</label>
+            <select value={selectedCompany} onChange={(e) => setSelectedCompany!(e.target.value)} className={fieldClass} aria-label="Filtrar por empresa">
+              <option value="Todas">Todas as empresas</option>
+              {companyOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className={labelClass}>Comarca</label>
           <select value={selectedComarca} onChange={(e) => setSelectedComarca(e.target.value)} className={fieldClass}>

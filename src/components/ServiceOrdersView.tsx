@@ -10,8 +10,8 @@ import {
   ChevronRight,
   FileSearch
 } from 'lucide-react';
-import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, getSectorGerencia } from '../types';
-import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, subscribePlanningDeadlines, dbSavePlanningDeadline, dbRevertOrderToNew, PlanningDeadline, isSectorVisible } from '../db/firebase';
+import { ServiceOrder, Asset, ChecklistItem, formatDateBR, HexonUser, getSectorGerencia, Company } from '../types';
+import { localMonthKey, localTodayStr, dbSaveServiceOrder, dbGetAssets, dbGetTemplates, dbDeleteServiceOrder, dbGetUsers, subscribePlanningDeadlines, dbSavePlanningDeadline, dbRevertOrderToNew, PlanningDeadline, isSectorVisible, dbGetCompanies, isCompanyVisible } from '../db/firebase';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import OrdersFilterBar from './orders/OrdersFilterBar';
 import OrdersCardGrid from './orders/OrdersCardGrid';
@@ -28,6 +28,7 @@ interface ServiceOrdersViewProps {
   highlightOSId?: string | null;
   userProfile?: HexonUser | null;
   visibleUnits?: string[] | null; // unidades do perfil (null = todas)
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as das gerências que vê)
   userHasActionPermission?: (actionId: string) => boolean;
   activeUnit?: string; // quem vê todas as gerências: a gerência escolhida (uma por vez)
   unitOptions?: string[];
@@ -44,6 +45,7 @@ export default function ServiceOrdersView({
   highlightOSId,
   userProfile,
   visibleUnits = null,
+  visibleCompanies = null,
   userHasActionPermission,
   activeUnit,
   unitOptions,
@@ -162,6 +164,12 @@ export default function ServiceOrdersView({
   const [selectedExecutionDate, setSelectedExecutionDate] = useState<string>('');
   const [showPreventiveScanSimulator, setShowPreventiveScanSimulator] = useState(false);
   const [selectedComarca, setSelectedComarca] = useState('Todas');
+  // Empresa (etapa especial E3)
+  const [selectedCompany, setSelectedCompany] = useState('Todas');
+  const [companies, setCompanies] = useState<Company[]>([]);
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
   const [selectedPatrimonio, setSelectedPatrimonio] = useState('Todos');
   const [selectedStatus, setSelectedStatus] = useState('Todos');
 
@@ -194,7 +202,7 @@ export default function ServiceOrdersView({
   // Reset pagination to page 1 whenever search, filters, or orders list changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [smartSearch, selectedComarca, selectedPatrimonio, selectedStatus, selectedExecutionDate, orders]);
+  }, [smartSearch, selectedComarca, selectedPatrimonio, selectedStatus, selectedExecutionDate, orders, selectedCompany]);
 
   // Load registered assets and templates
   useEffect(() => {
@@ -367,6 +375,10 @@ export default function ServiceOrdersView({
       matchesSmart = matchId || matchPatrimonio || matchComarca || matchTitle || matchDesc || matchTech;
     }
 
+    // Empresa: só as que o perfil vê; e a escolhida no filtro
+    if (!isCompanyVisible(os.company, visibleCompanies)) return false;
+    if (selectedCompany !== 'Todas' && os.company !== selectedCompany) return false;
+
     // 2. Comarca dropdown filter
     const matchesComarca = selectedComarca === 'Todas' || osComarca.toLowerCase().trim() === selectedComarca.toLowerCase().trim();
 
@@ -377,7 +389,12 @@ export default function ServiceOrdersView({
     const matchesExecutionDate = !selectedExecutionDate || os.scheduledDate === selectedExecutionDate;
 
     return matchesSmart && matchesComarca && matchesPatrimonio && matchesExecutionDate;
-  }), [orders, assetsById, currentMonthKey, smartSearch, selectedComarca, selectedPatrimonio, selectedExecutionDate]);
+  }), [orders, assetsById, currentMonthKey, smartSearch, selectedComarca, selectedPatrimonio, selectedExecutionDate, selectedCompany, visibleCompanies]);
+  // Empresas do filtro: as que aparecem nas OS (e que o perfil vê)
+  const companyOptions = useMemo(() => {
+    const ids = new Set(orders.map((o) => o.company || '').filter((c) => c && isCompanyVisible(c, visibleCompanies)));
+    return Array.from(ids).map((id) => ({ id, name: companies.find((c) => c.id === id)?.name || id })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [orders, companies, visibleCompanies]);
 
   // Quantidade de cada status (respeitando os outros filtros) e o filtro de status
   const statusCounts = ordersBeforeStatus.reduce<Record<string, number>>((acc, os) => {
@@ -701,6 +718,7 @@ export default function ServiceOrdersView({
           users={users}
           userProfile={userProfile}
           visibleUnits={visibleUnits}
+          visibleCompanies={visibleCompanies}
           userHasActionPermission={userHasActionPermission}
           canRevertUnexecutedOrder={canRevertUnexecutedOrder}
           deadlines={deadlines}
@@ -756,6 +774,9 @@ export default function ServiceOrdersView({
             statusCounts={statusCounts}
             totalCount={ordersBeforeStatus.length}
             onOpenScanSimulator={() => setShowPreventiveScanSimulator(true)}
+            selectedCompany={selectedCompany}
+            setSelectedCompany={setSelectedCompany}
+            companyOptions={companyOptions}
           />
 
           {/* SECTION: OS List Cards (EXTRACTED IN STAGE 3) */}
@@ -778,6 +799,7 @@ export default function ServiceOrdersView({
             userProfile={userProfile}
             getOrderComarca={getOrderComarca}
             getOrderCRAAI={getOrderCRAAI}
+            getOrderCompany={(os) => (os.company ? companies.find((c) => c.id === os.company)?.name || os.company : '')}
             currentPage={currentPage}
             totalPages={totalPages}
             startIndex={startIndex}

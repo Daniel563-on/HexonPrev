@@ -1125,6 +1125,7 @@ export default function App() {
                   highlightOSId={highlightedOSId}
                   userProfile={userProfile}
                   visibleUnits={visibleUnits}
+                  visibleCompanies={visibleCompanies}
                   userHasActionPermission={userHasActionPermission}
                   activeUnit={visibleUnits === null ? adminUnit : undefined}
                   unitOptions={visibleUnits === null ? managementNames : undefined}
@@ -1148,6 +1149,7 @@ export default function App() {
               highlightOSId={highlightedOSId}
               userProfile={userProfile}
               visibleUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
               userHasActionPermission={userHasActionPermission}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
               unitOptions={visibleUnits === null ? managementNames : undefined}
@@ -1183,6 +1185,7 @@ export default function App() {
             <SolicitationsView 
               pendingOrders={pendingSolicitationOrders}
               scopeUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
               onNavigateToOS={handleNavigateToOS}
               onReload={loadServiceOrders}
               userProfile={userProfile}
@@ -1191,7 +1194,7 @@ export default function App() {
           )}
 
           {currentTab === 'addresses' && userProfile?.perfil === 'Super Administrador' && (
-            <AddressesView />
+            <AddressesView userName={userProfile?.name || ''} />
           )}
 
           {currentTab === 'user-control' && (

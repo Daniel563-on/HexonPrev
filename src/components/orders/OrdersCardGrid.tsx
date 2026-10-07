@@ -33,6 +33,7 @@ export interface OrdersCardGridProps {
   userProfile?: HexonUser | null;
   getOrderComarca: (os: ServiceOrder) => string;
   getOrderCRAAI: (os: ServiceOrder) => string;
+  getOrderCompany?: (os: ServiceOrder) => string; // nome da empresa da OS (etapa especial E3)
   currentPage: number;
   totalPages: number;
   startIndex: number;
@@ -59,6 +60,7 @@ export default function OrdersCardGrid({
   userProfile,
   getOrderComarca,
   getOrderCRAAI,
+  getOrderCompany,
   currentPage,
   totalPages,
   startIndex,
@@ -254,6 +256,11 @@ export default function OrdersCardGrid({
                       </span>
                     </div>
                   </div>
+                  {getOrderCompany && getOrderCompany(os) && (
+                    <p className="mt-1.5 text-[9px] font-black uppercase tracking-wide text-blue-700 truncate" title="Empresa">
+                      Empresa: {getOrderCompany(os)}
+                    </p>
+                  )}
                 </div>
 
                 {/* Actions & Status Row */}

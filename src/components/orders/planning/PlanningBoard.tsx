@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../../../types';
+import { Company, HexonUser, OvernightRateSetting, PlanningLot, ServiceOrder } from '../../../types';
 import {
+  companiesOfUnit, dbGetCompanies, isCompanyVisible,
   dbDetachOrderFromLot, dbGetManagements, dbGetOvernightRate, dbGetPlanningLots, dbSaveServiceOrder,
   isSectorVisible, runBulk, localTodayStr, PlanningDeadline, timelineEvent
 } from '../../../db/firebase';
@@ -22,6 +23,7 @@ interface Props {
   users: HexonUser[];
   userProfile?: HexonUser | null;
   visibleUnits: string[] | null;
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as das gerências que vê)
   userHasActionPermission?: (actionId: string) => boolean;
   canRevertUnexecutedOrder: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
   deadlines: PlanningDeadline[];
@@ -38,7 +40,7 @@ interface Props {
 const comarcaOf = (o: ServiceOrder) => o.comarca || o.surveyLocation || 'Sem comarca';
 
 export default function PlanningBoard({
-  orders, users, userProfile, visibleUnits, userHasActionPermission, canRevertUnexecutedOrder, deadlines, getCountdownText,
+  orders, users, userProfile, visibleUnits, visibleCompanies = null, userHasActionPermission, canRevertUnexecutedOrder, deadlines, getCountdownText,
   onReload, onViewOrder, currentCalendarDate, setCurrentCalendarDate, activeUnit, unitOptions, onActiveUnitChange
 }: Props) {
   const todayStr = localTodayStr();
@@ -51,6 +53,12 @@ export default function PlanningBoard({
   const [unitNames, setUnitNames] = useState<string[]>(visibleUnits || []);
   const [unit, setUnit] = useState<string>(visibleUnits?.[0] || '');
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  // Empresa (etapa especial E3): o quadro mostra as OS e os técnicos da empresa escolhida
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [company, setCompany] = useState<string>(visibleCompanies && visibleCompanies.length === 1 ? visibleCompanies[0] : 'Todas');
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
   const [view, setView] = useState<'calendario' | 'tecnico'>('calendario');
   const [panel, setPanel] = useState<'programar' | 'programadas'>('programar');
   const [sel, setSel] = useState<[string, string] | null>(null);
@@ -113,12 +121,28 @@ export default function PlanningBoard({
   }, []);
 
   const inUnit = (o: ServiceOrder) => (o.unit ? o.unit === unit : isSectorVisible(o.sector, [unit]));
-  const unitOrders = useMemo(() => orders.filter(inUnit), [orders, unit]);
-  const technicians = useMemo(
-    () => users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === unit || u.gerencia === 'Todas'))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    [users, unit]
+  const boardCompanies = useMemo(
+    () => companiesOfUnit(companies, unit).filter((c) => isCompanyVisible(c.id, visibleCompanies)),
+    [companies, unit, visibleCompanies]
   );
+  useEffect(() => {
+    if (company !== 'Todas' && companies.length > 0 && !boardCompanies.some((c) => c.id === company))
+      setCompany(visibleCompanies === null || boardCompanies.length !== 1 ? 'Todas' : boardCompanies[0].id);
+  }, [boardCompanies]);
+  const inCompany = (c: string | undefined) => (company === 'Todas' ? isCompanyVisible(c, visibleCompanies) : c === company);
+  const unitOrders = useMemo(() => orders.filter((o) => inUnit(o) && inCompany(o.company)), [orders, unit, company, visibleCompanies]);
+  const technicians = useMemo(
+    () => users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === unit || u.gerencia === 'Todas')
+        && (company === 'Todas' ? visibleCompanies === null || (u.companies || []).some((c) => visibleCompanies.includes(c)) : (u.companies || []).includes(company)))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [users, unit, company, visibleCompanies]
+  );
+  // Técnicos que podem receber estas OS: só os da empresa delas (todas da mesma empresa)
+  const techsFor = (list: ServiceOrder[]) => {
+    const cs = Array.from(new Set(list.map((o) => o.company || '')));
+    if (cs.length > 1) return [];
+    return cs[0] ? technicians.filter((t) => (t.companies || []).includes(cs[0])) : technicians;
+  };
 
   // Prazo de planejamento da gerência (só vale para perfis limitados a unidades)
   const deadline = deadlines.find((d) => d.id === unit);
@@ -198,6 +222,7 @@ export default function PlanningBoard({
   const toggle = (ids: string[], on: boolean) =>
     setChecked((prev) => (on ? Array.from(new Set([...prev, ...ids])) : prev.filter((id) => !ids.includes(id))));
   const checkedOrders = toProgram.filter((o) => checked.includes(o.id));
+  const checkedMixed = new Set(checkedOrders.map((o) => o.company || '')).size > 1;
 
   // ===== Programadas =====
   const scheduledOrders = useMemo(
@@ -256,6 +281,14 @@ export default function PlanningBoard({
           <button type="button" onClick={() => setCurrentCalendarDate(new Date())} className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 cursor-pointer">Hoje</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {(boardCompanies.length > 1 || visibleCompanies === null) && boardCompanies.length > 0 ? (
+            <select value={company} onChange={(e) => { setCompany(e.target.value); setChecked([]); }} aria-label="Empresa do quadro" className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white">
+              {(visibleCompanies === null || boardCompanies.length > 1) && <option value="Todas">Todas as empresas</option>}
+              {boardCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : boardCompanies.length === 1 ? (
+            <span className="h-8 px-3 flex items-center text-xs font-black border border-slate-200 rounded-lg bg-white">{boardCompanies[0].name}</span>
+          ) : null}
           {unitNames.length > 1 ? (
             <select value={unit} onChange={(e) => (activeUnit && onActiveUnitChange ? onActiveUnitChange(e.target.value) : setUnit(e.target.value))} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white">
               {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -439,7 +472,10 @@ export default function PlanningBoard({
                   })}
                 </div>
                 <div className="sticky bottom-0 pt-2 bg-white">
-                  <button type="button" disabled={locked || isPastSel || checkedOrders.length === 0} onClick={() => setShowSchedule(true)}
+                  {checkedMixed && (
+                    <p className="text-[11px] font-bold text-amber-700 mb-1.5">As OS marcadas são de empresas diferentes: programe uma empresa por vez (escolha a empresa no topo).</p>
+                  )}
+                  <button type="button" disabled={locked || isPastSel || checkedOrders.length === 0 || checkedMixed} onClick={() => setShowSchedule(true)}
                     className="w-full h-10 rounded-lg bg-[#3525cd] text-white text-xs font-black uppercase tracking-wide cursor-pointer disabled:opacity-40">
                     Programar lote ({checkedOrders.length})
                   </button>
@@ -504,7 +540,7 @@ export default function PlanningBoard({
           unit={unit}
           orders={checkedOrders}
           allOrders={unitOrders}
-          technicians={technicians}
+          technicians={techsFor(checkedOrders)}
           periodStart={sel[0]}
           periodEnd={sel[1]}
           userName={userProfile?.name || ''}

@@ -164,7 +164,7 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
                       {editing!.mode === 'tech' && (
                         <select value={newTech} onChange={(e) => setNewTech(e.target.value)} className={field}>
                           <option value="">Novo técnico...</option>
-                          {technicians.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.matricula})</option>)}
+                          {technicians.filter((t) => !o.company || (t.companies || []).includes(o.company)).map((t) => <option key={t.id} value={t.id}>{t.name} ({t.matricula})</option>)}
                         </select>
                       )}
                       {editing!.mode === 'date' && (

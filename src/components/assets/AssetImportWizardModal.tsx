@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Asset, Company, Management } from '../../types';
-import { companiesOfUnit, dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets, dbCancelOpenOrdersForAssets } from '../../db/firebase';
+import { companiesOfUnit, dbMoveNewOrdersToCompany, dbSaveAssetsBulk, dbSavePeriodicityRules, dbGetAssets, dbCancelOpenOrdersForAssets } from '../../db/firebase';
 
 export interface PeriodicityRule {
   keyword: string;
@@ -24,6 +24,7 @@ export interface AssetImportWizardModalProps {
   assets: Asset[];
   managements: Management[];
   companies: Company[];   // empresas contratadas (a planilha é de uma gerência + empresa)
+  userName: string;       // quem importa (linha do tempo das OS que mudam de empresa)
   periodicityRules: PeriodicityRule[];
   onUpdatePeriodicityRules: (rules: PeriodicityRule[]) => void;
   onImportSuccess: (firstImportedAsset?: Asset) => void;
@@ -37,6 +38,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
   assets,
   managements,
   companies,
+  userName,
   periodicityRules,
   onUpdatePeriodicityRules,
   onImportSuccess,
@@ -70,6 +72,7 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
     unchangedCount: number;
     retiredCount: number;
     cancelledOrders: number;
+    movedOrders?: number;
   }>({
     totalProcessed: 0,
     newCount: 0,
@@ -536,7 +539,18 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
           importTargetSector
         );
       }
-      setImportStats((prev) => ({ ...prev, cancelledOrders }));
+      // Ativos que mudaram de empresa: as OS deles ainda "Novo" passam para a empresa nova (E3)
+      let movedOrders = 0;
+      const movedBySector = new Map<string, string[]>();
+      pendingImport.moved.forEach(({ asset }) => movedBySector.set(asset.sector || importTargetSector, [...(movedBySector.get(asset.sector || importTargetSector) || []), asset.id]));
+      for (const [sector, ids] of movedBySector) {
+        try {
+          movedOrders += await dbMoveNewOrdersToCompany(sector, 'assetId', ids.map((id) => ({ id, company: importCompany })), (id) => companyName(id), userName);
+        } catch (e) {
+          console.warn('Não foi possível passar as OS "Novo" para a empresa nova:', e);
+        }
+      }
+      setImportStats((prev) => ({ ...prev, cancelledOrders, movedOrders }));
 
       // Save dynamic custom fields from import headers
       const defaultFields = [
@@ -1210,6 +1224,12 @@ export const AssetImportWizardModal: React.FC<AssetImportWizardModalProps> = ({
                   <span>OS Abertas Canceladas:</span>
                   <strong className="font-bold">{importStats.cancelledOrders}</strong>
                 </div>
+                {!!importStats.movedOrders && (
+                  <div className="flex justify-between">
+                    <span>OS "Novo" que mudaram de empresa:</span>
+                    <strong className="font-bold">{importStats.movedOrders}</strong>
+                  </div>
+                )}
                 <div className="pt-1.5 border-t border-gray-200 flex justify-between text-[10px]">
                   <span className="text-slate-400">Gravações no Banco:</span>
                   <strong className="text-emerald-600 font-bold">{importStats.newCount + importStats.updatedCount + importStats.retiredCount} ({importStats.unchangedCount} poupadas)</strong>

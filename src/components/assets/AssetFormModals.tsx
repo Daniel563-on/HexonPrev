@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, PlusCircle } from 'lucide-react';
 import { Asset, Company, Management } from '../../types';
-import { companiesOfUnit, dbSaveAsset, randomIdToken } from '../../db/firebase';
+import { companiesOfUnit, dbMoveNewOrdersToCompany, dbSaveAsset, randomIdToken } from '../../db/firebase';
 import { PeriodicityRule } from './AssetImportWizardModal';
 
 // Empresa do ativo (etapa especial E2): empresas ativas que atuam na gerência escolhida
@@ -37,6 +37,7 @@ export interface AssetEditModalProps {
   asset: Asset | null;
   managements: Management[];
   companies: Company[];
+  userName: string; // quem edita (linha do tempo das OS que mudam de empresa)
   onSaveSuccess: (updatedAsset: Asset) => void;
 }
 
@@ -46,6 +47,7 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
   asset,
   managements,
   companies,
+  userName,
   onSaveSuccess
 }) => {
   const [editingCompany, setEditingCompany] = useState('');
@@ -130,6 +132,13 @@ export const AssetEditModal: React.FC<AssetEditModalProps> = ({
       };
 
       await dbSaveAsset(updatedAsset);
+      // Mudou de empresa: as OS dele ainda "Novo" passam para a empresa nova (E3)
+      if (editingCompany && editingCompany !== (asset.company || '')) {
+        const label = (id: string) => companies.find((c) => c.id === id)?.name || id;
+        await dbMoveNewOrdersToCompany(asset.sector || editingSector, 'assetId', [{ id: asset.id, company: editingCompany }], label, userName).catch((e) =>
+          console.warn('Não foi possível passar as OS "Novo" para a empresa nova:', e)
+        );
+      }
       onSaveSuccess(updatedAsset);
       onClose();
       alert('Equipamento atualizado com sucesso no banco de dados!');

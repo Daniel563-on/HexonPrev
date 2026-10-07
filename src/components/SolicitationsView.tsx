@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ClipboardList, Search, SlidersHorizontal, ShieldAlert, Clock, CheckCircle2, XCircle } from 'lucide-react';
-import { ServiceOrder, HexonUser, ChecklistItem, formatDateBR } from '../types';
+import { ServiceOrder, HexonUser, ChecklistItem, formatDateBR, Company } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
 import {
   dbGetHandledSolicitationsPage, dbCountSolicitations, dbDecideCorrective, dbFixCorrective,
-  requestedItems, isItemPending, CorrectiveDecision
+  requestedItems, isItemPending, CorrectiveDecision, dbGetCompanies, isCompanyVisible
 } from '../db/firebase';
 import CorrectiveDecisionNote from './orders/execution/CorrectiveDecisionNote';
 
@@ -19,6 +19,7 @@ const HANDLED_PAGE_SIZE = 20;
 interface SolicitationsViewProps {
   pendingOrders: ServiceOrder[]; // OS com item aguardando decisão (tempo real, já filtradas pela gerência)
   scopeUnits: string[] | null;   // unidades do usuário; null = todas
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as das gerências que vê; etapa especial E3)
   onNavigateToOS: (osId?: string) => void;
   onReload?: () => void;
   userProfile?: HexonUser | null;
@@ -28,8 +29,13 @@ interface SolicitationsViewProps {
 // Edição em andamento de um item: decidir (abrir/não abrir) ou corrigir o texto de uma decisão
 type Editing = { orderId: string; itemId: string; mode: CorrectiveDecision | 'fix'; text: string } | null;
 
-export default function SolicitationsView({ pendingOrders, scopeUnits, onReload, userProfile, userHasActionPermission }: SolicitationsViewProps) {
+export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCompanies = null, onReload, userProfile, userHasActionPermission }: SolicitationsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [company, setCompany] = useState('Todas');
+  const [companies, setCompanies] = useState<Company[]>([]);
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
   const [statusFilter, setStatusFilter] = useState<SolicitationFilter>('Pendente');
   const [handledOrders, setHandledOrders] = useState<ServiceOrder[]>([]);
   const [handledCursor, setHandledCursor] = useState<unknown>(null);
@@ -87,6 +93,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, onReload,
   const orders = source
     .map((o) => local[o.id] || o)
     .filter((o) => o.checklistPending || requestedItems(o).length > 0)
+    .filter((o) => isCompanyVisible(o.company, visibleCompanies) && (company === 'Todas' || o.company === company))
     .filter((o) => {
       const q = searchTerm.trim().toLowerCase();
       if (!q) return true;
@@ -197,6 +204,14 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, onReload,
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar por nº da OS, ativo, técnico, comarca..." className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800" />
         </div>
+        {companies.some((c) => isCompanyVisible(c.id, visibleCompanies)) && (
+          <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Filtrar por empresa" className="text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700 shrink-0">
+            <option value="Todas">Todas as empresas</option>
+            {companies
+              .filter((c) => isCompanyVisible(c.id, visibleCompanies) && (scopeUnits === null || c.units.some((u) => scopeUnits.includes(u))))
+              .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
         <div className="flex items-center gap-2 shrink-0">
           <SlidersHorizontal className="w-4 h-4 text-slate-400" />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SolicitationFilter)} className="text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700">

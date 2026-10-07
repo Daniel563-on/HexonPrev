@@ -43,17 +43,21 @@ export async function dbSaveAddress(address: Address): Promise<void> {
 
 // Importação da planilha (ITEM, CRAAI, COMARCA, ENDEREÇO). Cria ou atualiza pelo código;
 // não altera a situação (ativo/inativo) de endereços que já existem.
+// Empresa (etapa especial E3): escolhida antes do arquivo; todos os endereços da planilha ficam com ela.
+// Retorna também os endereços que mudaram de empresa (as vistorias "Novo" deles passam para a nova).
 // Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
 export function dbImportAddresses(...args: Parameters<typeof dbImportAddressesNow>): ReturnType<typeof dbImportAddressesNow> {
   return runBulk(() => dbImportAddressesNow(...args));
 }
 async function dbImportAddressesNow(
-  rows: Array<{ code: string; craai: string; comarca: string; address: string }>
-): Promise<number> {
+  rows: Array<{ code: string; craai: string; comarca: string; address: string }>,
+  company: string
+): Promise<{ saved: number; moved: string[] }> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível.');
   const existing = new Map((await dbGetAddresses(true)).map((a) => [a.id, a]));
   const now = new Date().toISOString();
   let saved = 0;
+  const moved: string[] = [];
   for (let i = 0; i < rows.length; i += 200) {
     const batch = writeBatch(dbInstance);
     for (const r of rows.slice(i, i + 200)) {
@@ -65,17 +69,19 @@ async function dbImportAddressesNow(
         comarca: r.comarca,
         address: r.address,
         active: prev ? prev.active : true,
+        company,
         createdAt: prev?.createdAt || now,
         updatedAt: now,
         inactivatedAt: prev?.inactivatedAt ?? null
       };
       batch.set(doc(dbInstance, 'addresses', address.id), cleanUndefined(address));
+      if (prev && (prev.company || '') !== company) moved.push(address.id);
       saved++;
     }
     await batch.commit();
   }
   clearAddressesCache();
-  return saved;
+  return { saved, moved };
 }
 
 // Onde as rondas (vistorias sem ativo) são geradas: 1 por endereço ativo.
