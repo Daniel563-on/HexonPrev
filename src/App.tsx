@@ -838,8 +838,8 @@ export default function App() {
   // 1. Same-Browser Duplicate Tab Blocker Overlay
   if (isDuplicate && !publicAssetParam) {
     return (
-      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
-        <div className="max-w-md w-full bg-[#0A101D] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#08122b] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
+        <div className="max-w-md w-full bg-[#08122b] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
           <div className="w-16 h-16 bg-amber-500/15 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -884,8 +884,8 @@ export default function App() {
   // 2. Different-Device Displaced Session Overlay
   if (sessionDisplaced) {
     return (
-      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
-        <div className="max-w-md w-full bg-[#0A101D] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+      <div className={`min-h-screen w-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#08122b] text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
+        <div className="max-w-md w-full bg-[#08122b] border border-slate-800/80 rounded-2xl p-8 shadow-2xl text-center space-y-6">
           <div className="w-16 h-16 bg-rose-500/15 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-pulse">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -1027,7 +1027,7 @@ export default function App() {
   }
 
   return (
-    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 print:h-auto print:w-auto print:overflow-visible print:block print:bg-white print:text-black ${darkMode ? 'bg-[#0A101D] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`h-screen w-screen flex overflow-hidden select-none font-sans transition-colors duration-150 print:h-auto print:w-auto print:overflow-visible print:block print:bg-white print:text-black ${darkMode ? 'bg-[#08122b] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       
       {/* LEFT SIDEBAR: Responsive drawer on mobile, persistent on desktop */}
       <Sidebar 
@@ -1066,7 +1066,7 @@ export default function App() {
         />
 
         {/* COMPARTIMENTALIZED SCROLLABLE SUBVIEW PANEL */}
-        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 print:overflow-visible print:h-auto print:p-0 print:bg-white ${darkMode ? 'bg-[#0A101D]' : 'bg-slate-50'}`}>
+        <div className={`flex-1 overflow-y-auto p-6 transition-colors duration-150 print:overflow-visible print:h-auto print:p-0 print:bg-white ${darkMode ? 'bg-[#08122b]' : 'bg-slate-50'}`}>
           
           {typeof window !== 'undefined' && (window as any).__hexonFirebaseQuotaExceeded && !dismissedQuotaWarning && (
             <div className="mb-6 bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-900/50 rounded-xl p-5 shadow-sm text-red-900 dark:text-red-200 font-sans relative">

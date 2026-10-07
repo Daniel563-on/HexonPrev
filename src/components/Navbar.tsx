@@ -65,7 +65,9 @@ export default function Navbar({
   const displayInitials = getInitials(displayName);
 
   return (
-    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#0A101D]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 flex justify-between items-center sticky top-0 z-40 shadow-xs font-sans transition-colors duration-150 print:hidden">
+    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#08122b]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 flex justify-between items-center sticky top-0 z-40 shadow-xs font-sans transition-colors duration-150 print:hidden">
+      {/* Linha neon da marca (identidade visual 2.0) */}
+      <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
       {/* Tab Context and Title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {onMenuToggle && (
@@ -109,7 +111,7 @@ export default function Navbar({
         {/* 2. Dynamic Dark Mode Toggle (rounded box with indigo moon/sun icon) */}
         <button 
           onClick={onToggleDarkMode}
-          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-850 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08122b] text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-850 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
           title={darkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
         >
           {darkMode ? (
@@ -141,7 +143,7 @@ export default function Navbar({
         {/* 5. Cadeado (Lock) Button - Alterar Senha */}
         <button
           onClick={() => setShowChangePassword(true)}
-          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08122b] text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
           title="Alterar Senha de Acesso"
           aria-label="Alterar Senha"
         >
@@ -151,7 +153,7 @@ export default function Navbar({
         {/* 6. Sair (Logout) Button */}
         <button
           onClick={() => setShowLogoutConfirm(true)}
-          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A101D] text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+          className="h-9 w-9 flex items-center justify-center rounded-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#08122b] text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-800 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
           title="Sair do Console"
           aria-label="Sair"
         >
@@ -179,7 +181,7 @@ export default function Navbar({
           }}
           className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md font-sans p-4 animate-in fade-in duration-200"
         >
-          <div className="bg-white dark:bg-[#0A101D] p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800/80 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-[#08122b] p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800/80 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
             <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100 dark:border-rose-900/20">
               <LogOut className="w-5 h-5" />
             </div>

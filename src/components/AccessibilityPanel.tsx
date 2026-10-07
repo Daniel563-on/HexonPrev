@@ -217,7 +217,7 @@ export default function AccessibilityPanel({
         {isOpen && (
           <div
             ref={panelRef}
-            className="absolute top-12 right-0 w-80 bg-white dark:bg-[#0A101D] border border-gray-200 dark:border-slate-800/80 rounded-2xl shadow-2xl p-5 overflow-hidden animate-in slide-in-from-top-2 duration-200 text-slate-800 dark:text-slate-100 origin-top-right z-50"
+            className="absolute top-12 right-0 w-80 bg-white dark:bg-[#08122b] border border-gray-200 dark:border-slate-800/80 rounded-2xl shadow-2xl p-5 overflow-hidden animate-in slide-in-from-top-2 duration-200 text-slate-800 dark:text-slate-100 origin-top-right z-50"
             role="dialog"
             aria-modal="true"
             aria-label="Opções de Acessibilidade"
