@@ -796,7 +796,7 @@ export interface OsLocationAnswer {
 
 // Campos do sistema: o Hexon sabe para que servem (gerência, atribuição, filtros, históricos)
 export type OsSystemKey =
-  | 'gerencia' | 'numeroOs' | 'tecnico' | 'enderecoExecucao' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
+  | 'gerencia' | 'empresa' | 'numeroOs' | 'tecnico' | 'enderecoExecucao' | 'intervencao' | 'glpi' | 'ativo' | 'prazo'
   | 'equipe' | 'responsavel' | 'pendencia' | 'materiais' | 'homemHora';
 
 export interface OsSystemField {
