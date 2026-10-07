@@ -375,6 +375,53 @@ export async function dbAssignWorkOrder(order: WorkOrder, tech: { matricula: str
   });
 }
 
+// ===== Editar enquanto "Nova" e desatribuir (etapa especial E4) =====
+// Campos que a edição pode mudar (gerência, modelo e número nunca mudam); a regra do banco confere a mesma lista.
+export const OS_EDITABLE_FIELDS = [
+  'answers', 'execAddressId', 'execAddressText', 'execAddressManual', 'craai', 'comarca', 'reqAddressId', 'reqAddressText',
+  'intervencao', 'glpi', 'assetCode', 'assetId', 'assetName', 'deadline', 'company'
+] as const;
+export type OsEditPatch = Partial<Pick<WorkOrder, (typeof OS_EDITABLE_FIELDS)[number]>>;
+
+// Grava só o que mudou; "changes" = o que mudou, em texto ("Campo: antes → depois"), para a linha do tempo
+export async function dbEditWorkOrder(order: WorkOrder, patch: OsEditPatch, changes: string[], by: string): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (order.status !== 'Nova') throw new Error('Só dá para editar a OS enquanto ela está "Nova".');
+  const data: Record<string, any> = {};
+  (OS_EDITABLE_FIELDS as readonly string[]).forEach((k) => {
+    if (!(k in patch)) return;
+    const v = (patch as any)[k];
+    const before = (order as any)[k];
+    if (JSON.stringify(v ?? null) === JSON.stringify(before ?? null)) return;
+    data[k] = v === undefined || v === '' ? deleteField() : k === 'answers' ? cleanUndefined(v) : v;
+  });
+  if (Object.keys(data).length === 0) return;
+  const now = new Date().toISOString();
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    ...data,
+    updatedAt: now,
+    timeline: arrayUnion(cleanUndefined({ at: now, by, action: 'OS editada', note: changes.join(' · ') || undefined }))
+  });
+}
+
+// Desatribuir: só se o técnico ainda não começou (sem execução salva e nunca ficou Pendente).
+// A OS volta para "Nova", sai do celular do técnico e o homem-hora zera (volta a contar na próxima atribuição).
+export const osTechStarted = (o: WorkOrder) => !!o.exec || (o.pauses || []).length > 0;
+export async function dbUnassignWorkOrder(order: WorkOrder, by: string): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (order.status !== 'Em andamento' || osTechStarted(order)) throw new Error('O técnico já começou: não dá para desatribuir.');
+  const now = new Date().toISOString();
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+    status: 'Nova',
+    assignedTechnicianMatricula: deleteField(),
+    assignedTechnicianName: deleteField(),
+    assignedAt: deleteField(),
+    techOpen: deleteField(),
+    updatedAt: now,
+    timeline: arrayUnion(cleanUndefined({ at: now, by, action: `Técnico desatribuído: ${order.assignedTechnicianName || order.assignedTechnicianMatricula} (a OS voltou para "Nova")` }))
+  });
+}
+
 // ===== Execução (Fase 5) =====
 const event = (by: string, action: string, note?: string): WorkOrderEvent => cleanUndefined({ at: new Date().toISOString(), by, action, note });
 

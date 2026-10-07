@@ -6,6 +6,9 @@ import { firebaseActive, dbInstance, checkQuotaException } from './core';
 // Filtros no banco: gerência + (situação OU técnico) + período de abertura. Intervenção e "atrasada" filtram o que já veio.
 // Índices: unit+createdAt (já existe); unit+status+createdAt; unit+assignedTechnicianMatricula+createdAt;
 // unit+status+deadline (atrasadas); unit+status+closedAt (concluídas no período); unit+glpi (busca por GLPI).
+// Empresa (etapa especial E4): "cos" = empresas da busca (null = todas). Uma = igual; várias = "in".
+// Índices: unit+company+createdAt; unit+company+status+createdAt; unit+company+status+deadline; unit+company+status+closedAt.
+// O filtro por técnico não usa a empresa (o técnico é de uma empresa só).
 
 export const OS_LIST_PAGE = 20;
 export const OS_OPEN_STATUSES: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente'];
@@ -31,8 +34,10 @@ export const todayStr = () => {
 };
 export const monthStartStr = () => `${todayStr().slice(0, 8)}01`;
 
-function parts(unit: string, mode: OsListMode): any[] {
+function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
   const p: any[] = [where('unit', '==', unit)];
+  if (cos && !(mode.kind === 'filter' && !mode.status && mode.tech))
+    p.push(cos.length === 1 ? where('company', '==', cos[0]) : where('company', 'in', cos.slice(0, 10)));
   if (mode.kind === 'late') {
     p.push(where('status', 'in', OS_OPEN_STATUSES), where('deadline', '<', todayStr()), orderBy('deadline', 'asc'));
   } else if (mode.kind === 'closed') {
@@ -47,10 +52,10 @@ function parts(unit: string, mode: OsListMode): any[] {
   return p;
 }
 
-export async function dbListWorkOrders(unit: string, mode: OsListMode, after: QueryDocumentSnapshot | null, size = OS_LIST_PAGE): Promise<OsListPage> {
-  if (!unit || !firebaseActive || !dbInstance) return { items: [], cursor: null, hasMore: false };
+export async function dbListWorkOrders(unit: string, mode: OsListMode, after: QueryDocumentSnapshot | null, size = OS_LIST_PAGE, cos: string[] | null = null): Promise<OsListPage> {
+  if (!unit || !firebaseActive || !dbInstance || (cos && cos.length === 0)) return { items: [], cursor: null, hasMore: false };
   try {
-    const q = [...parts(unit, mode)];
+    const q = [...parts(unit, mode, cos)];
     if (after) q.push(startAfter(after));
     q.push(limit(size + 1));
     const snap = await getDocs(query(collection(dbInstance, 'workOrders'), ...q));
@@ -63,9 +68,9 @@ export async function dbListWorkOrders(unit: string, mode: OsListMode, after: Qu
 }
 
 // Quantas OS a consulta traz (contar custa bem menos que baixar)
-export async function dbCountWorkOrders(unit: string, mode: OsListMode): Promise<number> {
-  if (!unit || !firebaseActive || !dbInstance) return 0;
-  const q = parts(unit, mode).filter((c) => c.type !== 'orderBy');
+export async function dbCountWorkOrders(unit: string, mode: OsListMode, cos: string[] | null = null): Promise<number> {
+  if (!unit || !firebaseActive || !dbInstance || (cos && cos.length === 0)) return 0;
+  const q = parts(unit, mode, cos).filter((c) => c.type !== 'orderBy');
   const snap = await getCountFromServer(query(collection(dbInstance, 'workOrders'), ...q));
   return snap.data().count;
 }
@@ -77,14 +82,14 @@ export interface OsCounters {
   total: number;
 }
 // Painel: por situação (abertas e em assinatura), atrasadas e concluídas no mês
-export async function dbGetOsCounters(unit: string): Promise<OsCounters> {
+export async function dbGetOsCounters(unit: string, cos: string[] | null = null): Promise<OsCounters> {
   const shown: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente', 'Aguardando assinaturas', 'Contestada'];
   try {
     const [counts, late, closedMonth, total] = await Promise.all([
-      Promise.all(shown.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }))),
-      dbCountWorkOrders(unit, { kind: 'late' }),
-      dbCountWorkOrders(unit, { kind: 'closed', from: monthStartStr(), to: todayStr() }),
-      dbCountWorkOrders(unit, { kind: 'filter' })
+      Promise.all(shown.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }, cos))),
+      dbCountWorkOrders(unit, { kind: 'late' }, cos),
+      dbCountWorkOrders(unit, { kind: 'closed', from: monthStartStr(), to: todayStr() }, cos),
+      dbCountWorkOrders(unit, { kind: 'filter' }, cos)
     ]);
     const byStatus: Partial<Record<WorkOrderStatus, number>> = {};
     shown.forEach((s, i) => (byStatus[s] = counts[i]));
@@ -96,7 +101,7 @@ export async function dbGetOsCounters(unit: string): Promise<OsCounters> {
 }
 
 // Busca: nº da OS (abre direto) ou nº do GLPI (na gerência escolhida)
-export async function dbFindWorkOrders(unit: string, term: string): Promise<WorkOrder[]> {
+export async function dbFindWorkOrders(unit: string, term: string, cos: string[] | null = null): Promise<WorkOrder[]> {
   if (!firebaseActive || !dbInstance) return [];
   const t = term.trim().toUpperCase();
   if (!t) return [];
@@ -106,11 +111,11 @@ export async function dbFindWorkOrders(unit: string, term: string): Promise<Work
     if (t.startsWith('OS') || digits.length === 10) {
       const snap = await getDoc(doc(dbInstance, 'workOrders', `OS-${digits}`)).catch(() => null);
       if (snap?.exists()) out.push({ ...(snap.data() as WorkOrder), id: snap.id });
-      if (t.startsWith('OS')) return out;
+      if (t.startsWith('OS')) return cos ? out.filter((o) => cos.includes(o.company || '')) : out;
     }
     const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('unit', '==', unit), where('glpi', '==', term.trim()), limit(50)));
     snap.docs.forEach((d) => !out.some((o) => o.id === d.id) && out.push({ ...(d.data() as WorkOrder), id: d.id }));
-    return out;
+    return cos ? out.filter((o) => cos.includes(o.company || '')) : out;
   } catch (err: any) {
     checkQuotaException(err);
     throw err;

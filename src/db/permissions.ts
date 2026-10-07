@@ -119,11 +119,10 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_edit: {
     id: 'os_edit',
     name: 'Editar OS',
-    description: 'Alterar os dados de uma OS aberta.',
+    description: 'Alterar os dados da abertura (inclusive a empresa) enquanto a OS está "Nova". Cada alteração fica na linha do tempo.',
     category: 'Ações',
     area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 5'
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   os_cancel: {
     id: 'os_cancel',

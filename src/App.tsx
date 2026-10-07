@@ -1103,6 +1103,8 @@ export default function App() {
               canSeeOs={userHasActionPermission('os_view')}
               canSeePreventives={userHasActionPermission('view_service_orders')}
               canAssign={userHasActionPermission('os_assign')}
+              canEdit={userHasActionPermission('os_edit')}
+              visibleCompanies={visibleCompanies}
               canCancel={userHasActionPermission('os_cancel')}
               canReplyContest={userHasActionPermission('os_contest_reply')}
               canClientLink={userHasActionPermission('os_client_link')}
@@ -1136,7 +1138,7 @@ export default function App() {
           )}
 
           {currentTab === 'os-emit' && (
-            <EmitOsView userProfile={userProfile} unitOptions={osUnitOptions} canAssign={userHasActionPermission('os_assign')} />
+            <EmitOsView userProfile={userProfile} unitOptions={osUnitOptions} canAssign={userHasActionPermission('os_assign')} visibleCompanies={visibleCompanies} />
           )}
 
           {/* PMOC › Preventivas (Planejamento e Consulta); fica separado para abrir do zero ao trocar de tela */}
