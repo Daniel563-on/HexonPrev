@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Lock } from 'lucide-react';
-import { Address, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
+import { Address, Company, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
 import {
   OS_EMAIL_OK,
   OS_PHONE_OK,
+  companiesOfUnit,
+  dbEditWorkOrder,
   dbEmitWorkOrder,
+  dbGetCompanies,
+  isCompanyVisible,
+  osAnswerText,
   dbGetAddresses,
   dbGetOsTemplates,
   dbGetSingleAssetPublic,
@@ -19,12 +24,19 @@ import OsFieldInput, { LocationPicker, osInput } from './OsFieldInput';
 // (perguntas livres + campos do sistema ligados), com as condições ("só quando...") funcionando na hora.
 // Gerência: fixa = a de quem abre; Super Administrador e gerência "Todas" escolhem.
 // A OS nasce "Nova" (em aberto); quem pode atribuir pode já escolher o técnico e então ela nasce "Em andamento".
+// Empresa (etapa especial E4): obrigatória; o técnico da atribuição é da empresa escolhida.
+// Modo edição ("editOrder"): mesma tela com os dados da OS "Nova"; gerência, modelo e número não mudam;
+// grava só o que mudou e registra cada alteração na linha do tempo.
 
 interface Props {
   userProfile: HexonUser;
   unitOptions: string[]; // gerências para escolher (só Super Administrador / gerência "Todas")
   canAssign: boolean;
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as da gerência)
   onEmitted?: (o: WorkOrder) => void;
+  editOrder?: WorkOrder;
+  onSaved?: () => void;
+  onCancelEdit?: () => void;
 }
 
 const input = osInput;
@@ -38,28 +50,38 @@ const todayStr = () => {
 // Largura do campo (computador): inteira, metade, um terço — no celular sempre inteira
 const SPAN: Record<OsFieldWidth, string> = { full: 'md:col-span-6', half: 'md:col-span-3', third: 'md:col-span-2' };
 
-export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmitted }: Props) {
-  const chooseUnit = userProfile.perfil === 'Super Administrador' || userProfile.gerencia === 'Todas';
-  const [templates, setTemplates] = useState<OsTemplate[]>([]);
+export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibleCompanies = null, onEmitted, editOrder, onSaved, onCancelEdit }: Props) {
+  const isEdit = !!editOrder;
+  const chooseUnit = !isEdit && (userProfile.perfil === 'Super Administrador' || userProfile.gerencia === 'Todas');
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [company, setCompany] = useState<string>(editOrder?.company || '');
+  const [templates, setTemplates] = useState<OsTemplate[]>(() =>
+    editOrder
+      ? [{ id: editOrder.templateId, name: editOrder.templateName, version: editOrder.templateVersion, fields: editOrder.templateFields, systemFields: editOrder.templateSystemFields, signatures: editOrder.templateSignatures } as OsTemplate]
+      : []
+  );
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [users, setUsers] = useState<HexonUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [templateId, setTemplateId] = useState('');
-  const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [asset, setAsset] = useState<{ id: string; name: string } | null | 'none'>(null);
+  const [templateId, setTemplateId] = useState(editOrder?.templateId || '');
+  const [answers, setAnswers] = useState<Record<string, any>>(() => (editOrder ? { ...editOrder.answers } : {}));
+  const [asset, setAsset] = useState<{ id: string; name: string } | null | 'none'>(() =>
+    editOrder?.assetId ? { id: editOrder.assetId, name: editOrder.assetName || editOrder.assetCode || '' } : editOrder?.assetCode ? 'none' : null
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<WorkOrder | null>(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([dbGetOsTemplates(true), dbGetAddresses(), canAssign ? dbGetUsers() : Promise.resolve([] as HexonUser[])])
+    dbGetCompanies().then((c) => alive && setCompanies(c)).catch(() => {});
+    Promise.all([isEdit ? Promise.resolve([] as OsTemplate[]) : dbGetOsTemplates(true), dbGetAddresses(), canAssign ? dbGetUsers() : Promise.resolve([] as HexonUser[])])
       .then(([t, a, u]) => {
         if (!alive) return;
-        setTemplates(t);
+        if (!isEdit) setTemplates(t);
         setAddresses(a);
         setUsers(u);
-        if (t.length === 1) setTemplateId(t[0].id);
+        if (!isEdit && t.length === 1) setTemplateId(t[0].id);
       })
       .catch((err) => alive && setError(`Não foi possível carregar: ${err?.message || err}`))
       .finally(() => alive && setLoading(false));
@@ -71,9 +93,14 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const template = templates.find((t) => t.id === templateId);
   const visible = (f: OsTemplateField) => (template ? osFieldVisible(f, template.fields, answers) : true);
   const items = template ? stageItems(template.fields, template.systemFields, 'criacao').filter((it) => it.kind === 'system' || visible(it.field)) : [];
-  const unit: string = chooseUnit ? answers['sys:gerencia'] || '' : userProfile.gerencia || '';
-  // Técnicos da gerência da OS e, em bloco separado, os que atendem todas as gerências (gerência "Todas")
-  const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo');
+  const unit: string = editOrder ? editOrder.unit : chooseUnit ? answers['sys:gerencia'] || '' : userProfile.gerencia || '';
+  // Empresas da gerência (ativas; na edição, também a que a OS já tem) que o perfil vê
+  const unitCompanies = unit
+    ? companiesOfUnit(companies, unit).filter((c) => (c.active || c.id === editOrder?.company) && isCompanyVisible(c.id, visibleCompanies))
+    : [];
+  const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '—');
+  // Técnicos da gerência da OS e, em bloco separado, os que atendem todas as gerências (gerência "Todas") — só da empresa da OS
+  const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && !!company && (u.companies || []).includes(company));
   const unitTechs = unit ? activeTechs.filter((u) => u.gerencia === unit) : [];
   const allUnitsTechs = unit ? activeTechs.filter((u) => u.gerencia === 'Todas') : [];
   const technicians = [...unitTechs, ...allUnitsTechs];
@@ -82,6 +109,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const reset = () => {
     setAnswers({});
     setAsset(null);
+    setCompany('');
   };
 
   const setA = (key: string, value: any) => setAnswers((prev) => ({ ...prev, [key]: value }));
@@ -110,6 +138,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
   const emit = async () => {
     if (!template) return setError('Escolha o modelo.');
     if (!unit) return setError(chooseUnit ? 'Escolha a gerência responsável.' : 'Seu cadastro está sem gerência: peça ao Super Administrador para corrigir.');
+    if (!company) return setError('Escolha a empresa.');
     // Obrigatórios e formatos (só das perguntas visíveis)
     for (const it of items) {
       if (it.kind === 'system') {
@@ -160,6 +189,53 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
         const a = await dbGetSingleAssetPublic(assetCode).catch(() => null);
         assetInfo = a && !a.kind ? { id: a.id, name: `${a.code} — ${a.name}` } : null;
       }
+      if (editOrder) {
+        // Edição: grava só o que mudou e descreve as mudanças para a linha do tempo
+        const patch = {
+          answers: { ...kept, 'sys:gerencia': editOrder.unit },
+          execAddressId: exec.manual ? '' : exec.addressId || '',
+          execAddressText: String(exec.address || '').trim(),
+          execAddressManual: exec.manual ? true : undefined,
+          craai: exec.craai,
+          comarca: exec.comarca,
+          intervencao: answers['sys:intervencao'] || undefined,
+          glpi: answers['sys:glpi'] ? String(answers['sys:glpi']) : undefined,
+          assetCode: assetCode || undefined,
+          assetId: assetInfo?.id,
+          assetName: assetInfo?.name,
+          deadline: answers['sys:prazo'] || undefined,
+          company
+        };
+        const sysText = (k: string, v: any): string =>
+          v === undefined || v === null || v === ''
+            ? ''
+            : k === 'enderecoExecucao'
+              ? [v.address, v.comarca, v.craai].filter(Boolean).join(' · ')
+              : k === 'prazo'
+                ? String(v).split('-').reverse().join('/')
+                : String(v);
+        const changes: string[] = [];
+        if ((editOrder.company || '') !== company) changes.push(`Empresa: ${companyName(editOrder.company)} → ${companyName(company)}`);
+        stageItems(template.fields, template.systemFields, 'criacao').forEach((it) => {
+          if (it.kind === 'system') {
+            if (['gerencia', 'tecnico', 'numeroOs'].includes(it.sys.key)) return;
+            const b = sysText(it.sys.key, editOrder.answers[`sys:${it.sys.key}`]);
+            const a = sysText(it.sys.key, kept[`sys:${it.sys.key}`]);
+            if (b !== a) changes.push(`${it.sys.label}: ${b || '—'} → ${a || '—'}`);
+          } else {
+            const b = osAnswerText(it.field, editOrder.answers[it.field.id]);
+            const a = osAnswerText(it.field, kept[it.field.id]);
+            if (b !== a) changes.push(`${it.field.label}: ${b || '—'} → ${a || '—'}`);
+          }
+        });
+        if (changes.length === 0) {
+          setError('Nada foi alterado.');
+          return;
+        }
+        await dbEditWorkOrder(editOrder, patch, changes, userProfile.name);
+        onSaved?.();
+        return;
+      }
       const order = await dbEmitWorkOrder(
         {
           templateId: template.id,
@@ -181,6 +257,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           assetId: assetInfo?.id,
           assetName: assetInfo?.name,
           deadline: answers['sys:prazo'] || undefined,
+          company,
           createdByName: userProfile.name,
           createdByMatricula: userProfile.matricula
         },
@@ -191,7 +268,13 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
       reset();
       onEmitted?.(order);
     } catch (err: any) {
-      setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não tem permissão para emitir OS nesta gerência.' : `Não foi possível emitir: ${err?.message || err}`);
+      setError(
+        err?.code === 'permission-denied'
+          ? isEdit
+            ? 'O banco recusou: seu perfil não pode editar esta OS (ou ela não está mais "Nova").'
+            : 'O banco recusou: seu perfil não tem permissão para emitir OS nesta gerência.'
+          : `Não foi possível ${isEdit ? 'salvar' : 'emitir'}: ${err?.message || err}`
+      );
     } finally {
       setBusy(false);
     }
@@ -207,7 +290,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
     switch (s.key) {
       case 'gerencia':
         return chooseUnit ? (
-          <select className={input} value={v || ''} onChange={(e) => setAnswers((prev) => ({ ...prev, [key]: e.target.value, 'sys:tecnico': '' }))}>
+          <select className={input} value={v || ''} onChange={(e) => { setAnswers((prev) => ({ ...prev, [key]: e.target.value, 'sys:tecnico': '' })); setCompany(''); }}>
             <option value="">Selecione a gerência...</option>
             {unitOptions.map((u) => (
               <option key={u} value={u}>{u}</option>
@@ -222,7 +305,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
         if (!assignOn) return null;
         return (
           <div>
-            <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)} disabled={!unit}>
+            <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)} disabled={!unit || !company}>
               <option value="">Deixar em aberto (o Encarregado atribui)</option>
               {unitTechs.length > 0 && (
                 <optgroup label={`Técnicos da ${unit}`}>
@@ -240,7 +323,8 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
               )}
             </select>
             {!unit && <p className="text-[10px] text-slate-500 mt-1">Escolha a gerência para ver os técnicos.</p>}
-            {unit && technicians.length === 0 && <p className="text-[10px] text-slate-500 mt-1">Nenhum técnico ativo na gerência {unit}.</p>}
+            {unit && !company && <p className="text-[10px] text-slate-500 mt-1">Escolha a empresa para ver os técnicos.</p>}
+            {unit && company && technicians.length === 0 && <p className="text-[10px] text-slate-500 mt-1">Nenhum técnico ativo da empresa na gerência {unit}.</p>}
             {v && <p className="text-[10px] font-bold text-amber-700 mt-1">A OS já nasce "Em andamento" e o homem-hora começa a contar.</p>}
           </div>
         );
@@ -323,7 +407,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
-      {templates.length === 0 ? (
+      {isEdit ? null : templates.length === 0 ? (
         <p className="text-xs text-slate-500">Nenhum modelo de OS cadastrado. Peça a quem cuida dos modelos (Configurações › Modelos de OS).</p>
       ) : (
         <label className="block">
@@ -340,8 +424,25 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
       {template && (
         <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-6 gap-x-3 gap-y-4">
+          <div className="min-w-0 md:col-span-3">
+            <span className={label}>Empresa *</span>
+            <select
+              className={input}
+              value={company}
+              onChange={(e) => { setCompany(e.target.value); setA('sys:tecnico', ''); }}
+              disabled={!unit}
+              aria-label="Empresa da OS"
+            >
+              <option value="">{unit ? 'Selecione a empresa...' : 'Escolha a gerência primeiro'}</option>
+              {unitCompanies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            {unit && unitCompanies.length === 0 && <p className="text-[10px] font-bold text-amber-700 mt-1">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>}
+          </div>
           {items.map((it) => {
             if (it.kind === 'system' && it.sys.key === 'tecnico' && !assignOn) return null;
+            if (isEdit && it.kind === 'system' && it.sys.key === 'numeroOs') return null;
             const required =
               it.kind === 'field'
                 ? it.field.required && it.field.type !== 'toggle'
@@ -359,9 +460,14 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, onEmit
           </div>
 
           {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {isEdit && (
+              <button type="button" onClick={onCancelEdit} disabled={busy} className="h-10 px-5 rounded-lg border border-slate-300 text-slate-700 text-xs font-black uppercase tracking-wide cursor-pointer">
+                Cancelar
+              </button>
+            )}
             <button type="button" onClick={emit} disabled={busy} className="h-10 px-5 rounded-lg bg-[#3525cd] text-white text-xs font-black uppercase tracking-wide cursor-pointer disabled:opacity-50">
-              {busy ? 'Emitindo...' : 'Emitir OS'}
+              {isEdit ? (busy ? 'Salvando...' : 'Salvar alterações') : busy ? 'Emitindo...' : 'Emitir OS'}
             </button>
           </div>
         </div>
