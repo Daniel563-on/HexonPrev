@@ -67,7 +67,7 @@ export default function PlanningBoard({
   const [search, setSearch] = useState('');
   const [checked, setChecked] = useState<string[]>([]);
   const [lots, setLots] = useState<PlanningLot[]>([]);
-  const [overnightRate, setOvernightRate] = useState<OvernightRateSetting | null>(null);
+  const [overnightRates, setOvernightRates] = useState<Record<string, OvernightRateSetting | null>>({});
   const [showSchedule, setShowSchedule] = useState(false);
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -96,9 +96,12 @@ export default function PlanningBoard({
       .catch(() => {});
   }, [(visibleUnits || []).join('|'), activeUnit, (unitOptions || []).join('|')]);
 
+  // Valor do pernoite de cada empresa que contabiliza (etapa especial E5)
   useEffect(() => {
-    if (canViewCosts) dbGetOvernightRate().then(setOvernightRate);
-  }, [canViewCosts]);
+    if (!canViewCosts) return;
+    const tracked = companies.filter((c) => c.costTracking);
+    Promise.all(tracked.map((c) => dbGetOvernightRate(c.id).then((r) => [c.id, r] as const))).then((pairs) => setOvernightRates(Object.fromEntries(pairs)));
+  }, [canViewCosts, companies]);
 
   // Lotes que começam no mês (ou até 31 dias antes, para pegar os que atravessam a virada do mês)
   const loadLots = () => {
@@ -506,7 +509,7 @@ export default function PlanningBoard({
                   orders={scheduledOrders}
                   technicians={technicians}
                   lots={periodLots}
-                  overnightRate={overnightRate}
+                  overnightRates={overnightRates}
                   canViewCosts={canViewCosts}
                   locked={locked}
                   todayStr={todayStr}
@@ -541,6 +544,7 @@ export default function PlanningBoard({
           orders={checkedOrders}
           allOrders={unitOrders}
           technicians={techsFor(checkedOrders)}
+          allowOvernight={!!checkedOrders[0]?.company && !!companies.find((c) => c.id === checkedOrders[0].company)?.costTracking}
           periodStart={sel[0]}
           periodEnd={sel[1]}
           userName={userProfile?.name || ''}

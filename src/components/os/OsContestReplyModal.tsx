@@ -143,6 +143,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
                 />
               </div>
               <OsFieldExtras
+                company={order.company}
                 editable
                 extra
                 team={team}

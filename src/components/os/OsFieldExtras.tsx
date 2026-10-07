@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Hotel, Plus, Timer, Trash2 } from 'lucide-react';
 import { OrderParticipant, OvertimeRules, WorkOrderOvertimeDay } from '../../types';
-import { OVERTIME_DAYS, dbGetOvertimeRules, overtimeDayKey, overtimeWarnings } from '../../db/firebase';
+import { OVERTIME_DAYS, companyTracksCost, dbGetCompanies, dbGetOvertimeRules, overtimeDayKey, overtimeWarnings, rulesOfCompany } from '../../db/firebase';
 
 // ADICIONAIS DE CAMPO (técnico): hora extra por dia e pernoite. Dia de hora extra marcado como feriado
 // também zera o homem-hora daquele dia. Valem para todos os colaboradores lançados na OS. O técnico não vê valores (R$).
+// Etapa especial E5: só aparece quando a empresa da OS contabiliza homem-hora, hora extra e pernoite; avisos com as regras dela.
 
 interface Props {
   editable: boolean;
@@ -13,6 +14,7 @@ interface Props {
   overnightNights: number | null;
   onChange: (next: { overtime?: WorkOrderOvertimeDay[] | null; overnightNights?: number | null }) => void;
   extra?: boolean; // resposta à contestação: lança só o que for A MAIS (soma ao que já está na OS)
+  company?: string; // empresa da OS
 }
 
 const today = () => {
@@ -43,17 +45,23 @@ function YesNo({ value, onChange, disabled }: { value: boolean; onChange: (v: bo
   );
 }
 
-export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange, extra }: Props) {
+export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange, extra, company }: Props) {
   const [rules, setRules] = useState<OvertimeRules[]>([]);
+  const [tracks, setTracks] = useState<boolean | null>(null);
   useEffect(() => {
-    if (overtime?.length) dbGetOvertimeRules().then(setRules).catch(() => setRules([]));
-  }, [!!overtime?.length]);
+    dbGetCompanies().then((list) => setTracks(companyTracksCost(list, company))).catch(() => setTracks(false));
+  }, [company]);
+  useEffect(() => {
+    if (overtime?.length) dbGetOvertimeRules().then((r) => setRules(rulesOfCompany(r, company))).catch(() => setRules([]));
+  }, [!!overtime?.length, company]);
 
   const days = overtime || [];
   const setDay = (i: number, patch: Partial<WorkOrderOvertimeDay>) => onChange({ overtime: days.map((d, j) => (j === i ? { ...d, ...patch } : d)) });
   const totalMin = days.reduce((s, d) => s + (d.minutes || 0), 0);
   const warnings = overtimeWarnings(days, team, rules);
   const card = 'p-4 rounded-2xl border border-slate-200 bg-white space-y-3';
+  // Empresa que não contabiliza (ou ainda carregando): sem hora extra e pernoite
+  if (!tracks) return null;
 
   return (
     <div className="space-y-3">

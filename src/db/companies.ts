@@ -58,5 +58,8 @@ export function visibleCompanies(user: HexonUser, profile: AccessProfile | undef
   return list.filter((c) => mine.has(c.id));
 }
 
+// A empresa contabiliza homem-hora, hora extra e pernoite? (sem empresa = não)
+export const companyTracksCost = (list: Company[], id: string | undefined): boolean => !!id && !!list.find((c) => c.id === id)?.costTracking;
+
 export const companyNames = (ids: string[] | undefined, list: Company[]): string =>
   (ids || []).map((id) => list.find((c) => c.id === id)?.name || id).join(', ');

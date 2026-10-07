@@ -6,15 +6,20 @@ import {
   dbSaveOvertimeRules,
   dbSetJobRoleOvertimeTariffs,
   overtimeHourValue,
+  overtimeRuleId,
   overtimePercents,
   localTodayStr
 } from '../../db/firebase';
 
 // HORA EXTRA DO CARGO (Cargos e valores): para cada dia da semana, "primeiras X h a Y%, demais a Z%" e o máximo do dia.
 // Tarifas próprias em R$ por percentual (opcional; em branco = valor da hora × (1 + %)).
+// Etapa especial E5: tudo é da EMPRESA escolhida em "Cargos e valores".
 
 interface Props {
-  role: JobRole;
+  role: JobRole;       // o cargo com os valores da empresa (roleForCompany)
+  baseRole: JobRole;   // o cargo como está no banco (é ele que é gravado)
+  company: string;
+  companyName: string;
   rules: OvertimeRules | null;
   currentUserName: string;
   darkMode: boolean;
@@ -38,7 +43,7 @@ const toForm = (r: OvertimeDayRule): DayForm => ({
   maxHours: r.maxHours === null || r.maxHours === undefined ? '' : String(r.maxHours).replace('.', ',')
 });
 
-export default function OvertimeRulesModal({ role, rules, currentUserName, darkMode, onClose, onSaved }: Props) {
+export default function OvertimeRulesModal({ role, baseRole, company, companyName, rules, currentUserName, darkMode, onClose, onSaved }: Props) {
   const start = rules?.days || blankOvertimeDays();
   const [days, setDays] = useState<Record<OvertimeDayKey, DayForm>>(
     () => Object.fromEntries(OVERTIME_DAYS.map((d) => [d.key, toForm(start[d.key])])) as Record<OvertimeDayKey, DayForm>
@@ -85,9 +90,9 @@ export default function OvertimeRulesModal({ role, rules, currentUserName, darkM
     setSaving(true);
     setError(null);
     try {
-      await dbSaveOvertimeRules({ id: role.id, roleName: role.name, days: parsed.days, updatedAt: new Date().toISOString(), updatedBy: currentUserName });
+      await dbSaveOvertimeRules({ id: overtimeRuleId(company, role.id), company, roleId: role.id, roleName: role.name, days: parsed.days, updatedAt: new Date().toISOString(), updatedBy: currentUserName });
       const before = JSON.stringify(role.overtimeTariffs || {});
-      if (before !== JSON.stringify(cleanTariffs)) await dbSetJobRoleOvertimeTariffs(role, cleanTariffs);
+      if (before !== JSON.stringify(cleanTariffs)) await dbSetJobRoleOvertimeTariffs(baseRole, cleanTariffs, company);
       onSaved();
     } catch (err: any) {
       setError(`Não foi possível salvar: ${err?.message || err}`);
@@ -105,7 +110,7 @@ export default function OvertimeRulesModal({ role, rules, currentUserName, darkM
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className={`w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
         <div>
-          <h3 className={`text-base font-black ${strong}`}>Hora extra — {role.name}</h3>
+          <h3 className={`text-base font-black ${strong}`}>Hora extra — {role.name} · {companyName}</h3>
           <p className="text-xs text-slate-500 mt-1">
             Para cada dia: as primeiras horas recebem um adicional e as demais outro. Acima do máximo do dia, o técnico vê um aviso e o excesso não é pago.
             Feriado marcado pelo técnico conta como domingo.

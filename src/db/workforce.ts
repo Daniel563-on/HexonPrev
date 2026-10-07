@@ -236,15 +236,23 @@ export async function dbSyncJobRoles(cargoNames: string[]): Promise<JobRoleSyncR
   return result;
 }
 
-// Novo valor da hora do cargo, a partir de uma data (o anterior fica no histórico)
-export async function dbSetJobRoleRate(role: JobRole, value: number, from: string, setBy: string): Promise<void> {
+// VALORES POR EMPRESA (etapa especial E5): o cargo "visto" por uma empresa — valor, vigência, histórico e tarifas
+// de hora extra daquela empresa (assim o cálculo e as telas usam o mesmo formato de antes)
+export function roleForCompany(role: JobRole, company: string): JobRole {
+  const c = role.byCompany?.[company];
+  return { ...role, hourlyRate: c?.hourlyRate || 0, rateFrom: c?.rateFrom || '', history: c?.history || [], overtimeTariffs: c?.overtimeTariffs };
+}
+
+// Novo valor da hora do cargo na empresa, a partir de uma data (o anterior fica no histórico)
+export async function dbSetJobRoleRate(role: JobRole, value: number, from: string, setBy: string, company: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const now = new Date().toISOString();
+  const cur = role.byCompany?.[company];
+  const history = [...(cur?.history || []), { value, from, setAt: now, setBy }].sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt));
+  const latest = history[history.length - 1];
   const updated: JobRole = {
     ...role,
-    hourlyRate: value,
-    rateFrom: from,
-    history: [...(role.history || []), { value, from, setAt: now, setBy }],
+    byCompany: { ...(role.byCompany || {}), [company]: { ...(cur || {}), hourlyRate: latest.value, rateFrom: latest.from, history } },
     updatedAt: now
   };
   await setDoc(doc(dbInstance, 'jobRoles', role.id), cleanUndefined(updated));
@@ -253,15 +261,14 @@ export async function dbSetJobRoleRate(role: JobRole, value: number, from: strin
 
 // Exclui um lançamento errado do histórico do cargo (Super Administrador).
 // O valor atual passa a ser o último lançamento que sobrar; sem nenhum, o cargo volta a R$ 0,00.
-export async function dbRemoveJobRoleRateEntry(role: JobRole, entry: JobRole['history'][number]): Promise<void> {
+export async function dbRemoveJobRoleRateEntry(role: JobRole, entry: JobRole['history'][number], company: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  const history = (role.history || []).filter((h) => !(h.setAt === entry.setAt && h.from === entry.from && h.value === entry.value));
+  const cur = role.byCompany?.[company];
+  const history = (cur?.history || []).filter((h) => !(h.setAt === entry.setAt && h.from === entry.from && h.value === entry.value));
   const latest = history[history.length - 1];
   const updated: JobRole = {
     ...role,
-    hourlyRate: latest ? latest.value : 0,
-    rateFrom: latest ? latest.from : '',
-    history,
+    byCompany: { ...(role.byCompany || {}), [company]: { ...(cur || { history: [] }), hourlyRate: latest ? latest.value : 0, rateFrom: latest ? latest.from : '', history } },
     updatedAt: new Date().toISOString()
   };
   await setDoc(doc(dbInstance, 'jobRoles', role.id), cleanUndefined(updated));

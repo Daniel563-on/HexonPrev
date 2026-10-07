@@ -294,6 +294,9 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                     Tempo que contou: <b>{fmtMinutes(cost.minutes)}</b> (seg–sex, 08–12 e 13–18, sem pendências e sem dias de feriado) → <b>{String(cost.billedHours).replace('.', ',')} h</b> cobradas por pessoa
                     {cost.partial ? ' · parcial: conta até agora (fecha na assinatura do técnico)' : ''}.
                   </p>
+                  {!cost.costTracking && (
+                    <p className="text-[11px] font-bold text-slate-500">A empresa da OS não contabiliza homem-hora, hora extra e pernoite: o custo é só dos materiais.</p>
+                  )}
                   {cost.labor.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Homem-hora</p>{cost.labor.map(line)}</div>}
                   {cost.overtime.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Hora extra</p>{cost.overtime.map(line)}</div>}
                   {cost.overnight && <div><p className="text-[10px] font-black text-slate-400 uppercase">Pernoite</p>{line(cost.overnight, 0)}</div>}

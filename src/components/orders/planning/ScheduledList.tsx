@@ -11,7 +11,7 @@ interface Props {
   orders: ServiceOrder[];
   technicians: HexonUser[];
   lots: PlanningLot[];
-  overnightRate: OvernightRateSetting | null;
+  overnightRates: Record<string, OvernightRateSetting | null>; // valor do pernoite por empresa (etapa especial E5)
   canViewCosts: boolean;
   locked: boolean;
   todayStr: string;
@@ -23,7 +23,7 @@ interface Props {
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export default function ScheduledList({ orders, technicians, lots, overnightRate, canViewCosts, locked, todayStr, canRevertUnexecutedOrder, onViewOrder, onChanged, userName }: Props) {
+export default function ScheduledList({ orders, technicians, lots, overnightRates, canViewCosts, locked, todayStr, canRevertUnexecutedOrder, onViewOrder, onChanged, userName }: Props) {
   const [editing, setEditing] = useState<{ id: string; mode: 'tech' | 'date' | 'revert' } | null>(null);
   const [newTech, setNewTech] = useState('');
   const [newStart, setNewStart] = useState('');
@@ -107,7 +107,8 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
         <div className="space-y-1.5">
           <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Lotes do período</p>
           {lots.map((l) => {
-            const cost = lotOvernightCost(l, overnightRate);
+            const lotCompany = l.company || orders.find((o) => o.lotId === l.id)?.company || '';
+            const cost = lotOvernightCost(l, overnightRates[lotCompany] || null);
             return (
               <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px]">
                 <span className="font-bold text-slate-700">

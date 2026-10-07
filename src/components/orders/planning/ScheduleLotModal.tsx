@@ -13,11 +13,12 @@ interface Props {
   periodStart: string;
   periodEnd: string;
   userName: string;
+  allowOvernight?: boolean; // a empresa das OS contabiliza pernoite (etapa especial E5)
   onClose: () => void;
   onDone: (msg: string) => void;
 }
 
-export default function ScheduleLotModal({ unit, orders, allOrders, technicians, periodStart, periodEnd, userName, onClose, onDone }: Props) {
+export default function ScheduleLotModal({ unit, orders, allOrders, technicians, periodStart, periodEnd, userName, allowOvernight = true, onClose, onDone }: Props) {
   const [techId, setTechId] = useState('');
   const [hasOvernight, setHasOvernight] = useState(false);
   const [people, setPeople] = useState('1');
@@ -97,7 +98,9 @@ export default function ScheduleLotModal({ unit, orders, allOrders, technicians,
         </label>
 
         <div className="space-y-2">
-          {nights === 0 ? (
+          {!allowOvernight ? (
+            <p className="text-[11px] text-slate-500">A empresa destas OS não contabiliza pernoite.</p>
+          ) : nights === 0 ? (
             <p className="text-[11px] text-slate-500">Período de 1 dia: sem pernoite.</p>
           ) : (
             <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">

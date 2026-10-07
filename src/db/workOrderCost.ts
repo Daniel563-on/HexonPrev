@@ -1,16 +1,19 @@
 import { JobRole, Material, OrderParticipant, OvertimeRules, WorkOrder, WorkOrderOvertimeDay, WorkOrderPause } from '../types';
 import { brl, fmtMinutes, localDate, toMillis, valueAt } from './manHours';
 import type { OrderCostLine } from './manHours';
-import { cargoKey, dbGetJobRoles } from './workforce';
+import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { doc, getDoc, updateDoc } from './guard';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { dbGetOvernightRate } from './planning';
-import { dbGetOvertimeRules, overtimeDayKey, overtimeHourValue, splitOvertime, OVERTIME_DAYS } from './overtime';
+import { dbGetOvertimeRules, overtimeDayKey, overtimeHourValue, rulesOfCompany, splitOvertime, OVERTIME_DAYS } from './overtime';
+import { companyTracksCost, dbGetCompanies } from './companies';
 
 // HOMEM-HORA E CUSTO DA OS (Hexon 2.0, igual ao principal com o almoço descontado):
 // conta desde a atribuição até a assinatura do técnico, só seg–sex, 08:00–12:00 e 13:00–18:00 (hora do aparelho),
 // sem as pausas (Pendente) e sem os dias marcados como feriado. Menos de 1 h cobra 1 h; acima, proporcional.
 // Cada colaborador da OS: horas cobradas × valor do cargo. Hora extra e pernoite valem para todos da OS.
+// Etapa especial E5: valores, regras de hora extra e pernoite são da EMPRESA da OS; empresa que não contabiliza
+// homem-hora (caixa no cadastro da empresa) = custo só de materiais.
 
 const WINDOWS: [number, number][] = [
   [8 * 60, 12 * 60],
@@ -98,6 +101,7 @@ export interface WorkOrderCost {
   total: number;
   missing: number;           // linhas sem valor (cargo sem valor, sem regra...)
   warnings: string[];        // excesso de hora extra
+  costTracking: boolean;     // false = a empresa não contabiliza homem-hora, hora extra e pernoite (só materiais)
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -122,9 +126,13 @@ async function materialsById(ids: string[]): Promise<Material[]> {
   }
   return ids.map((id) => matCache.get(id)).filter((m): m is Material => !!m);
 }
-// Valor do pernoite: 1 leitura por sessão
-let overnightCache: Promise<Awaited<ReturnType<typeof dbGetOvernightRate>>> | null = null;
-const overnightRateCached = () => (overnightCache ||= dbGetOvernightRate());
+// Valor do pernoite da empresa: 1 leitura por empresa na sessão
+const overnightCache = new Map<string, ReturnType<typeof dbGetOvernightRate>>();
+const overnightRateCached = (company: string) => {
+  let p = overnightCache.get(company);
+  if (!p) overnightCache.set(company, (p = dbGetOvernightRate(company)));
+  return p;
+};
 
 // CUSTO GRAVADO NA OS CONCLUÍDA (Fase 6): resumo para a lista, sem precisar recalcular.
 // É gravado na primeira vez que alguém com "Visualizar Valores" abre a OS concluída (os valores usam a data do fim).
@@ -186,19 +194,22 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   const date = localDate(new Date(endMs).toISOString());
   const exec = o.exec;
   const members = osMembers(o);
+  const companies = await dbGetCompanies().catch(() => []);
+  const tracks = companyTracksCost(companies, o.company);
+  const company = o.company || '';
   const [roles, rules, mats, overnightRate] = await Promise.all([
-    dbGetJobRoles(),
-    exec?.overtime?.length ? dbGetOvertimeRules() : Promise.resolve([] as OvertimeRules[]),
+    tracks ? dbGetJobRoles() : Promise.resolve([] as JobRole[]),
+    tracks && exec?.overtime?.length ? dbGetOvertimeRules() : Promise.resolve([] as OvertimeRules[]),
     (exec?.materials || []).length ? materialsById(exec!.materials.map((m) => m.id)) : Promise.resolve([] as Material[]),
-    exec?.overnightNights ? overnightRateCached() : Promise.resolve(null)
+    tracks && exec?.overnightNights ? overnightRateCached(company) : Promise.resolve(null)
   ]);
-  const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), r]));
-  const ruleById = new Map(rules.map((r) => [r.id, r]));
+  const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), roleForCompany(r, company)]));
+  const ruleById = new Map(rulesOfCompany(rules, company).map((r) => [r.roleId || '', r]));
 
   const minutes = startMs ? osWorkMinutes(startMs, endMs, o.pauses || [], osHolidays(o)) : 0;
   const billed = startMs ? osBilledHours(minutes) : 0;
 
-  const labor: OrderCostLine[] = members.map((p) => {
+  const labor: OrderCostLine[] = !tracks ? [] : members.map((p) => {
     const role = roleByKey.get(cargoKey(p.cargo));
     const rate = role ? valueAt(role.history, date) : null;
     return {
@@ -210,7 +221,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
 
   const overtime: OrderCostLine[] = [];
   const warnings: string[] = [];
-  (exec?.overtime || []).forEach((d) => {
+  (tracks ? exec?.overtime || [] : []).forEach((d) => {
     if (!d.date || !(d.minutes > 0)) return;
     const key = overtimeDayKey(d.date, d.holiday);
     const dayLabel = `${d.date.split('-').reverse().join('/')} ${OVERTIME_DAYS.find((x) => x.key === key)?.label || ''}`;
@@ -236,7 +247,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   });
 
   let overnight: OrderCostLine | null = null;
-  if (exec?.overnightNights) {
+  if (tracks && exec?.overnightNights) {
     const rate = overnightRate ? valueAt(overnightRate.history, date) ?? overnightRate.value : null;
     overnight = {
       label: 'Pernoite',
@@ -268,6 +279,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
     materials,
     total: round2(all.reduce((s, l) => s + (l.value || 0), 0)),
     missing: all.filter((l) => l.value === null).length,
-    warnings
+    warnings,
+    costTracking: tracks
   };
 }
