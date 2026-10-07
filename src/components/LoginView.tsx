@@ -96,9 +96,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         {/* MARCA: logo + HEXON + frase */}
         <div className="text-center flex flex-col items-center mb-7 sm:mb-8">
           <div className="relative mb-3 flex items-center justify-center">
-            <div className="absolute inset-0 bg-gradient-to-tr from-violet-600/40 to-cyan-400/40 blur-2xl rounded-full scale-125" />
             <BrandLogo
-              className="w-32 h-32 md:w-40 md:h-40 relative z-10 drop-shadow-[0_0_22px_rgba(34,211,238,0.55)]"
+              className="w-32 h-32 md:w-40 md:h-40 relative z-10"
               fallback={
                 <svg viewBox="0 0 100 100" className="w-28 h-28 md:w-32 md:h-32 relative z-10 drop-shadow-[0_0_16px_rgba(34,211,238,0.55)]">
                   <defs>
