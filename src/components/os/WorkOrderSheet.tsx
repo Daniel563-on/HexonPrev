@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, X } from 'lucide-react';
-import { HexonUser, WorkOrder } from '../../types';
+import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, Pencil, UserMinus, X } from 'lucide-react';
+import { Company, HexonUser, WorkOrder } from '../../types';
 import {
   WorkOrderCost,
   brl,
   dbCancelWorkOrder,
+  dbGetCompanies,
+  dbUnassignWorkOrder,
+  osTechStarted,
   dbGetWorkOrder,
   dbGetWorkOrderCost,
   dbSaveCostSnapshot,
@@ -20,16 +23,20 @@ import OsSignaturesPanel from './OsSignaturesPanel';
 import OsContestReplyModal from './OsContestReplyModal';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
+import OsEmitForm from './OsEmitForm';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
 // hora extra, pernoite), custo e homem-hora (quem pode ver valores), pausas, linha do tempo.
 // Botões: Pendente/Retomar (quem atribui), Cancelar OS (permissão "Cancelar OS"), Fechar.
 // Contestada: "Responder contestação" (permissão "Responder contestação de OS" ou o técnico da OS).
+// Etapa especial E4: "Editar OS" enquanto "Nova" (permissão "Editar OS") e "Desatribuir técnico" enquanto o técnico
+// não começou (permissão "Atribuir técnico"): a OS volta para "Nova".
 
 interface Props {
   order: WorkOrder;
   userProfile: HexonUser;
   canAssign: boolean;
+  canEdit?: boolean; // "Editar OS"
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean; // "Enviar link de validação ao cliente"
@@ -43,7 +50,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canEdit = false, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -53,6 +60,13 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
   const [msg, setMsg] = useState<string | null>(null);
   const [replying, setReplying] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [unassignAsk, setUnassignAsk] = useState(false);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
+  const companyName = o.company ? companies.find((c) => c.id === o.company)?.name || o.company : '—';
 
   // PDF: o mapeado do modelo (se tiver) ou o padrão; com as imagens das assinaturas feitas. Sem valores em R$.
   const downloadPdf = async () => {
@@ -72,7 +86,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
     setExporting('xlsx');
     setMsg(null);
     try {
-      exportOsXlsx(o, canViewCosts && o.assignedAt ? cost || (await dbGetWorkOrderCost(o)) : null);
+      exportOsXlsx(o, canViewCosts && o.assignedAt ? cost || (await dbGetWorkOrderCost(o)) : null, companyName === '—' ? '' : companyName);
     } catch (err: any) {
       setMsg(`Não foi possível gerar a planilha: ${err?.message || err}`);
     } finally {
@@ -167,8 +181,9 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
         </div>
 
         <div className="p-5 space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
             {[
+              ['Empresa', companyName],
               ['Registrada por', o.createdByName],
               ['Criada em', fmtDT(o.createdAt)],
               ['Prazo (SLA)', dayBR(o.deadline)],
@@ -312,6 +327,33 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             </div>
           )}
 
+          {editing && (
+            <div className="fixed inset-0 z-[1100] bg-slate-900/60 flex items-center justify-center p-2 md:p-4">
+              <div className="w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-2xl bg-slate-50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-black text-slate-900">Editar OS {o.number}</p>
+                  <button type="button" onClick={() => setEditing(false)} className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer" title="Fechar edição">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">Enquanto a OS está "Nova". Gerência, modelo e número não mudam. Cada alteração fica na linha do tempo.</p>
+                <OsEmitForm
+                  userProfile={userProfile}
+                  unitOptions={[o.unit]}
+                  canAssign={false}
+                  editOrder={o}
+                  onCancelEdit={() => setEditing(false)}
+                  onSaved={async () => {
+                    setEditing(false);
+                    const fresh = await dbGetWorkOrder(o.id);
+                    if (fresh) setO(fresh);
+                    onChanged();
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {replying && (
             <OsContestReplyModal
               order={o}
@@ -351,6 +393,26 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             </div>
           ) : (
             <div className="flex flex-wrap justify-end gap-2">
+              {canEdit && o.status === 'Nova' && (
+                <button type="button" onClick={() => setEditing(true)} className="h-9 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black flex items-center gap-1.5 cursor-pointer">
+                  <Pencil className="w-4 h-4" /> Editar OS
+                </button>
+              )}
+              {canAssign && o.status === 'Em andamento' && !osTechStarted(o) && (
+                unassignAsk ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-amber-800">Volta para "Nova" e sai do celular do técnico. Confirmar?</span>
+                    <button type="button" onClick={() => setUnassignAsk(false)} className="h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Não</button>
+                    <button type="button" onClick={() => run(() => dbUnassignWorkOrder(o, userProfile.name)).then(() => setUnassignAsk(false))} disabled={busy} className="h-9 px-3 rounded-lg bg-amber-600 text-white text-xs font-black cursor-pointer disabled:opacity-50">
+                      {busy ? 'Salvando...' : 'Sim, desatribuir'}
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => setUnassignAsk(true)} className="h-9 px-4 rounded-lg border border-amber-300 text-amber-800 text-xs font-black flex items-center gap-1.5 cursor-pointer">
+                    <UserMinus className="w-4 h-4" /> Desatribuir técnico
+                  </button>
+                )
+              )}
               {canAssign && o.status === 'Em andamento' && (
                 <button type="button" onClick={() => setAction('pause')} className="h-9 px-4 rounded-lg border border-orange-300 text-orange-700 text-xs font-black cursor-pointer">Pendente</button>
               )}

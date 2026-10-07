@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, PenTool, RefreshCw, Search, UserPlus, X } from 'lucide-react';
-import { HexonUser, WorkOrder, WorkOrderStatus } from '../../types';
+import { Company, HexonUser, WorkOrder, WorkOrderStatus } from '../../types';
 import {
+  companiesOfUnit,
+  dbGetCompanies,
   OS_ALL_STATUSES,
   OS_LIST_PAGE,
   OsCounters,
@@ -29,11 +31,15 @@ import { ZipBuilder } from '../../lib/zip';
 // filtros (gerência + situação OU técnico + período; intervenção e "só atrasadas" filtram o que já veio),
 // lista em tabela (computador) e cartões (celular), valores para quem vê valores (concluída = custo gravado na OS;
 // em aberto = parcial), planilha da lista filtrada e backup em ZIP só das concluídas (pastas por mês da conclusão).
+// Empresa (etapa especial E4): filtro no banco (lista, contadores, planilha e ZIP); perfil "só as empresas do usuário"
+// vê só as dele. Atribuir/trocar lista só os técnicos da empresa da OS.
 
 interface Props {
   userProfile: HexonUser;
   unitOptions: string[]; // gerências que o usuário pode ver
   canAssign: boolean;
+  canEdit?: boolean;
+  visibleCompanies?: string[] | null; // empresas que vê (null = todas as da gerência)
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean;
@@ -48,7 +54,7 @@ const EXPORT_MAX = 2000;
 const field = 'h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white';
 const label = 'block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5';
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole }: Props) {
   const [signView, setSignView] = useState(false); // "Precisam da minha assinatura"
   const [unit, setUnit] = useState<string>(() => {
     try {
@@ -87,8 +93,22 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [zipOpen, setZipOpen] = useState(false);
   const current = useRef('');
+  // Empresa
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyFilter, setCompanyFilter] = useState('');
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
+  const unitCompanies = useMemo(
+    () => companiesOfUnit(companies, unit).filter((c) => visibleCompanies === null || visibleCompanies.includes(c.id)),
+    [companies, unit, visibleCompanies]
+  );
+  // Empresas da busca: a escolhida; senão as que o perfil vê (null = todas)
+  const cos: string[] | null = companyFilter ? [companyFilter] : visibleCompanies === null ? null : [...visibleCompanies];
+  const cosKey = cos === null ? '*' : cos.join(',');
+  const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '—');
 
-  const modeKey = (m: OsListMode) => `${unit}|${JSON.stringify(m)}`;
+  const modeKey = (m: OsListMode) => `${unit}|${cosKey}|${JSON.stringify(m)}`;
 
   const loadFirst = (m: OsListMode = mode) => {
     const key = modeKey(m);
@@ -99,14 +119,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setFound(null);
     if (!unit) return;
     setLoading(true);
-    dbListWorkOrders(unit, m, null)
+    dbListWorkOrders(unit, m, null, undefined, cos)
       .then((p) => current.current === key && setPages([p]))
       .catch((e) => current.current === key && setError(`Não foi possível carregar: ${e?.message || e}`))
       .finally(() => current.current === key && setLoading(false));
   };
   const loadCounters = () => {
     if (!unit) return;
-    dbGetOsCounters(unit).then(setCounters).catch(() => setCounters(null));
+    setCounters(null);
+    dbGetOsCounters(unit, cos).then(setCounters).catch(() => setCounters(null));
   };
   const refresh = () => {
     loadFirst();
@@ -125,6 +146,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setTo('');
     setInterv('');
     setOnlyLate(false);
+    setCompanyFilter('');
     const m: OsListMode = { kind: 'filter' };
     setMode(m);
     loadFirst(m);
@@ -133,6 +155,16 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       .then((users) => setUnitTechs(users.filter((u) => u.perfil === 'Profissional' && (u.gerencia === unit || u.gerencia === 'Todas'))))
       .catch(() => setUnitTechs([]));
   }, [unit]);
+  // Trocou a empresa: recarrega a lista (mesmos filtros) e os contadores
+  const firstCompanyRun = useRef(true);
+  useEffect(() => {
+    if (firstCompanyRun.current) {
+      firstCompanyRun.current = false;
+      return;
+    }
+    loadFirst(mode);
+    loadCounters();
+  }, [companyFilter]);
 
   const applyFilters = () => {
     if (from && to && from > to) return setError('Período: a data inicial é depois da final.');
@@ -166,7 +198,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setLoading(true);
     setError(null);
     try {
-      setFound(await dbFindWorkOrders(unit, term));
+      setFound(await dbFindWorkOrders(unit, term, cos));
     } catch (e: any) {
       setError(`Não foi possível buscar: ${e?.message || e}`);
     } finally {
@@ -181,7 +213,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     const key = modeKey(mode);
     setLoading(true);
     try {
-      const p = await dbListWorkOrders(unit, mode, page.cursor);
+      const p = await dbListWorkOrders(unit, mode, page.cursor, undefined, cos);
       if (current.current !== key) return;
       setPages((prev) => [...prev.slice(0, index + 1), p]);
       setIndex(index + 1);
@@ -218,7 +250,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setAssignTech(o.assignedTechnicianMatricula || '');
     setError(null);
     const users = await dbGetUsers().catch(() => []);
-    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas')));
+    // Só os técnicos da empresa da OS
+    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas') && (!o.company || (u.companies || []).includes(o.company))));
   };
   const assign = async () => {
     if (!assigning) return;
@@ -246,7 +279,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
         else {
           let cursor: any = null;
           do {
-            const p = await dbListWorkOrders(unit, mode, cursor, 200);
+            const p = await dbListWorkOrders(unit, mode, cursor, 200, cos);
             list.push(...p.items);
             cursor = p.hasMore ? p.cursor : null;
             setExportMsg(`Lendo as OS... ${list.length}`);
@@ -265,7 +298,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
             if (i % 20 === 0) setExportMsg(`Calculando valores... ${i} de ${list.length}`);
           }
         }
-        exportOsListXlsx(list, `OS_${unit}_${todayStr()}.xlsx`, costMap);
+        exportOsListXlsx(list, `OS_${unit}_${todayStr()}.xlsx`, costMap, companyName);
         setExportMsg(`Planilha gerada com ${list.length} OS${list.length >= EXPORT_MAX ? ' (limite de 2.000: diminua o período para o resto)' : ''}.`);
       });
     } catch (e: any) {
@@ -324,6 +357,17 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
               <option key={u} value={u}>{u}</option>
             ))}
           </select>
+          {unitCompanies.length > 0 && !signView && (
+            <>
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-2">Empresa</span>
+              <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer" aria-label="Empresa">
+                <option value="">{visibleCompanies === null ? 'Todas' : 'Todas as minhas'}</option>
+                {unitCompanies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {mySignRole && (
@@ -385,7 +429,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 <span className={label}>ou Técnico</span>
                 <select value={tech} onChange={(e) => { setTech(e.target.value); if (e.target.value) setStatus(''); }} className={`${field} max-w-[200px]`} aria-label="Técnico">
                   <option value="">Todos</option>
-                  {unitTechs.map((t) => (
+                  {unitTechs.filter((t) => !cos || (t.companies || []).some((c) => cos.includes(c))).map((t) => (
                     <option key={t.matricula} value={t.matricula}>{t.name}</option>
                   ))}
                 </select>
@@ -432,6 +476,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                   <th className="p-2.5">Número</th>
+                  <th className="p-2.5">Empresa</th>
                   <th className="p-2.5">Tipo</th>
                   <th className="p-2.5">GLPI</th>
                   <th className="p-2.5">Local de execução</th>
@@ -447,6 +492,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 {items.map((o) => (
                   <tr key={o.id} className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => setSelected(o)}>
                     <td className="p-2.5 font-mono font-bold text-indigo-700 whitespace-nowrap">{o.number}</td>
+                    <td className="p-2.5 font-bold text-slate-700">{companyName(o.company)}</td>
                     <td className="p-2.5">{o.intervencao || '—'}</td>
                     <td className="p-2.5 font-mono">{o.glpi || '—'}</td>
                     <td className="p-2.5">
@@ -464,7 +510,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 ))}
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={canViewCosts ? 10 : 9} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
+                    <td colSpan={canViewCosts ? 11 : 10} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
                   </tr>
                 )}
               </tbody>
@@ -480,6 +526,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   <span>{statusBadge(o)}</span>
                 </div>
                 <p className="text-xs font-bold text-slate-800">{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
+                <p className="text-[10px] font-black uppercase tracking-wide text-blue-700">Empresa: {companyName(o.company)}</p>
                 <p className="text-[11px] text-slate-600">{o.execAddressText}{manualBadge(o)} · {o.comarca}</p>
                 <p className="text-[11px] text-slate-500">{o.assignedTechnicianName || 'Em aberto'} · aberta {dayBR(o.createdAt)} · prazo {dayBR(o.deadline)}</p>
                 <div className="flex items-center justify-between">
@@ -511,6 +558,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           order={selected}
           userProfile={userProfile}
           canAssign={canAssign}
+          canEdit={canEdit}
           canCancel={canCancel}
           canReplyContest={canReplyContest}
           canClientLink={canClientLink}
@@ -522,7 +570,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
         />
       )}
 
-      {zipOpen && <ZipBackupModal unit={unit} onClose={() => setZipOpen(false)} />}
+      {zipOpen && <ZipBackupModal unit={unit} cos={cos} label={companyFilter ? companyName(companyFilter) : ''} onClose={() => setZipOpen(false)} />}
 
       {/* Atribuir técnico */}
       {assigning && (
@@ -566,7 +614,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
 
 // BACKUP DAS OS CONCLUÍDAS EM ZIP: período pela data da conclusão; um PDF por OS, em pastas por mês (AAAA-MM).
 // Antes de gerar, conta as OS; até 500 OS por ZIP.
-function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }) {
+function ZipBackupModal({ unit, cos, label: companyLabel, onClose }: { unit: string; cos: string[] | null; label: string; onClose: () => void }) {
   const [from, setFrom] = useState(monthStartStr());
   const [to, setTo] = useState(todayStr());
   const [count, setCount] = useState<number | null>(null);
@@ -580,7 +628,7 @@ function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }
     setMsg(null);
     setCount(null);
     try {
-      setCount(await dbCountWorkOrders(unit, { kind: 'closed', from, to }));
+      setCount(await dbCountWorkOrders(unit, { kind: 'closed', from, to }, cos));
     } catch (e: any) {
       setMsg(`Não foi possível contar: ${e?.message || e}`);
     } finally {
@@ -597,7 +645,7 @@ function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }
         const list: WorkOrder[] = [];
         let cursor: any = null;
         do {
-          const p = await dbListWorkOrders(unit, { kind: 'closed', from, to }, cursor, 100);
+          const p = await dbListWorkOrders(unit, { kind: 'closed', from, to }, cursor, 100, cos);
           list.push(...p.items);
           cursor = p.hasMore ? p.cursor : null;
         } while (cursor && list.length < ZIP_MAX);
@@ -626,7 +674,7 @@ function ZipBackupModal({ unit, onClose }: { unit: string; onClose: () => void }
     <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-black text-slate-900">Backup das OS concluídas (ZIP) — {unit}</p>
+          <p className="text-sm font-black text-slate-900">Backup das OS concluídas (ZIP) — {unit}{companyLabel ? ` · ${companyLabel}` : ''}</p>
           <button type="button" onClick={onClose} disabled={busy} className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer" title="Fechar"><X className="w-4 h-4" /></button>
         </div>
         <p className="text-[11px] text-slate-500">Só entram as OS <b>concluídas</b> no período (pela data da conclusão). Um PDF por OS, em pastas por mês. Até {ZIP_MAX} OS por ZIP.</p>

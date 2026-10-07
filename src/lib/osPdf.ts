@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from './pdfHelper';
 import { OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplateField, WorkOrder } from '../types';
-import { OS_SIGN_LABEL, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, osAnswerText, osFieldVisible, osMembers } from '../db/firebase';
+import { OS_SIGN_LABEL, dbGetCompanies, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, osAnswerText, osFieldVisible, osMembers } from '../db/firebase';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
 // o PDF mapeado (PDF oficial do modelo + caixas) e o PDF padrão (quando o modelo não tem PDF).
@@ -9,6 +9,7 @@ import { OS_SIGN_LABEL, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage,
 export interface OsPdfData {
   order: WorkOrder;
   signatures: Partial<Record<OsSignatureRole, string>>; // imagem (data:image/png) de cada assinatura feita
+  companyName?: string; // nome da empresa da OS (etapa especial E4)
 }
 export interface OsPdfFieldOption {
   value: string;
@@ -22,6 +23,7 @@ const SYS: [string, string][] = [
   ['numero', 'Nº da OS'],
   ['modelo', 'Modelo'],
   ['gerencia', 'Gerência'],
+  ['empresa', 'Empresa'],
   ['status', 'Situação'],
   ['intervencao', 'Intervenção'],
   ['glpi', 'GLPI'],
@@ -110,6 +112,8 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
       return { text: o.templateName };
     case 'gerencia':
       return { text: o.unit };
+    case 'empresa':
+      return { text: d.companyName || '' };
     case 'status':
       return { text: o.status };
     case 'intervencao':
@@ -330,7 +334,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
   // Cabeçalho
   page.drawText(safe(`ORDEM DE SERVIÇO ${o.number}`, bold), { x: M, y: y - 16, size: 16, font: bold, color: ink });
   y -= 22;
-  text(`${o.intervencao || 'OS'} · modelo ${o.templateName} · gerência ${o.unit} · situação: ${o.status}`, M, 9, regular, soft);
+  text(`${o.intervencao || 'OS'} · modelo ${o.templateName} · gerência ${o.unit}${d.companyName ? ` · empresa ${d.companyName}` : ''} · situação: ${o.status}`, M, 9, regular, soft);
   y -= 4;
 
   section('Dados da OS');
@@ -422,7 +426,8 @@ export async function buildOsPdfBytes(o: WorkOrder, layouts?: Map<string, { layo
     entry = layout && file ? { layout, file } : null;
     layouts?.set(o.templateId, entry);
   }
-  const data = { order: o, signatures };
+  const companyName = o.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === o.company)?.name || o.company : '';
+  const data = { order: o, signatures, companyName };
   return entry ? generateOsMappedPdf(entry.file, entry.layout.pins, data) : generateOsStandardPdf(data);
 }
 

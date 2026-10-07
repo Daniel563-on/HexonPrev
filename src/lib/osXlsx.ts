@@ -8,7 +8,7 @@ import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, osAnswerText, osFieldVis
 const day = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '');
 const dateTime = (s?: string) => (s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
-export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null): void {
+export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyName = ''): void {
   const rows: (string | number)[][] = [];
   const blank = () => rows.push([]);
   const title = (t: string) => {
@@ -24,6 +24,7 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null): void {
   kv('Nº da OS', o.number);
   kv('Modelo', `${o.templateName} (v${o.templateVersion})`);
   kv('Gerência', o.unit);
+  kv('Empresa', companyName || o.company);
   kv('Situação', o.status);
   kv('Intervenção', o.intervencao);
   kv('GLPI', o.glpi);
@@ -114,10 +115,11 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null): void {
 export function exportOsListXlsx(
   orders: WorkOrder[],
   fileName: string,
-  costs: Map<string, { snap: { total: number; labor: number; overtime: number; overnight: number; materials: number; billedHours: number }; partial: boolean }> | null
+  costs: Map<string, { snap: { total: number; labor: number; overtime: number; overnight: number; materials: number; billedHours: number }; partial: boolean }> | null,
+  companyName: (id?: string) => string = (id) => id || ''
 ): void {
   const today = new Date().toISOString().slice(0, 10);
-  const head = ['Nº da OS', 'GLPI', 'Intervenção', 'Situação', 'Atrasada', 'Gerência', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
+  const head = ['Nº da OS', 'GLPI', 'Intervenção', 'Situação', 'Atrasada', 'Gerência', 'Empresa', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
   if (costs) head.push('Horas cobradas', 'Homem-hora (R$)', 'Hora extra (R$)', 'Pernoite (R$)', 'Materiais (R$)', 'Total (R$)', 'Valor');
   const rows: (string | number)[][] = [head];
   orders.forEach((o) => {
@@ -129,6 +131,7 @@ export function exportOsListXlsx(
       o.status,
       late ? 'Sim' : 'Não',
       o.unit,
+      o.company ? companyName(o.company) : '',
       o.execAddressText || '',
       o.execAddressManual ? 'Sim' : 'Não',
       o.comarca || '',

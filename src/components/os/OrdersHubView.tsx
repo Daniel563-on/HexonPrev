@@ -9,6 +9,8 @@ interface Props {
   canSeeOs: boolean;
   canSeePreventives: boolean;
   canAssign: boolean;
+  canEdit: boolean;
+  visibleCompanies: string[] | null;
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean;
@@ -20,7 +22,7 @@ interface Props {
 
 type Section = 'os' | 'preventivas';
 
-export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, preventives }: Props) {
+export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, canEdit, visibleCompanies, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, preventives }: Props) {
   const [section, setSection] = useState<Section>(() => {
     try {
       const saved = localStorage.getItem('hexon_orders_section') as Section | null;
@@ -63,7 +65,7 @@ export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canS
             <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Clique num contador para filtrar e na OS para abrir a ficha.</p>
           </div>
           {unitOptions.length > 0 ? (
-            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canCancel={canCancel} canReplyContest={canReplyContest} canClientLink={canClientLink} canExport={canExport} canViewCosts={canViewCosts} mySignRole={mySignRole} />
+            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canEdit={canEdit} visibleCompanies={visibleCompanies} canCancel={canCancel} canReplyContest={canReplyContest} canClientLink={canClientLink} canExport={canExport} canViewCosts={canViewCosts} mySignRole={mySignRole} />
           ) : (
             <p className="text-xs text-slate-500">Seu perfil não tem gerência para ver OS.</p>
           )}

@@ -942,6 +942,7 @@ export interface WorkOrder {
   answers: Record<string, any>; // id da pergunta -> resposta
   // Campos do sistema (copiados das respostas para filtros e históricos)
   unit: string;                  // gerência responsável
+  company?: string;              // empresa contratada (id), escolhida na emissão (etapa especial E4)
   execAddressId: string;
   execAddressText: string;
   execAddressManual?: boolean;   // endereço da execução digitado (não cadastrado): sem vínculo nem histórico do endereço

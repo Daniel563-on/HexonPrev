@@ -399,8 +399,18 @@ service cloud.firestore {
     }
     function osUpdateOk(u, p) {
       return
+        // EDITAR enquanto "Nova" ("Editar OS"): só os dados da abertura; gerência, modelo e número não mudam; empresa obrigatória
+        (resource.data.status == 'Nova' && osSameStatus()
+          && osChanged().hasOnly(['answers', 'execAddressId', 'execAddressText', 'execAddressManual', 'craai', 'comarca', 'reqAddressId', 'reqAddressText', 'intervencao', 'glpi', 'assetCode', 'assetId', 'assetName', 'deadline', 'company', 'updatedAt', 'timeline'])
+          && request.resource.data.get('company', '') != ''
+          && osPerm(u, p, 'os_edit') && osSees(u, p))
+        // DESATRIBUIR ("Atribuir técnico"): só se o técnico não começou (sem execução salva, nunca Pendente); volta para "Nova"
+        || (osStatusFrom('Em andamento', 'Nova') && !('exec' in resource.data) && resource.data.get('pauses', []).size() == 0
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data) && !('assignedTechnicianMatricula' in request.resource.data)
+          && osPerm(u, p, 'os_assign') && osSees(u, p))
         // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
-        (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
           && (osSameStatus() || osStatusFrom('Nova', 'Em andamento'))
           && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
           && 'assignedTechnicianMatricula' in osChanged()
@@ -467,6 +477,7 @@ service cloud.firestore {
             ? (seesAllUnits() || request.resource.data.unit in myUnits())
             : request.resource.data.unit == me().get('gerencia', ''))
         && orderId == request.resource.data.number
+        && request.resource.data.get('company', '') is string && request.resource.data.get('company', '') != ''
         && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
         && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')))
         && (request.resource.data.status == 'Nova' || request.resource.data.get('techOpen', '') == request.resource.data.assignedTechnicianMatricula);
