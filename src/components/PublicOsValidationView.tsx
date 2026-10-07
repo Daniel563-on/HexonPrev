@@ -3,12 +3,13 @@ import { AlertTriangle, Calendar, CheckCircle2, FileCheck2, Lock, MapPin, Star, 
 import { OsValidation } from '../types';
 import { dbAnswerOsValidation, dbGetOsValidation } from '../db/firebase';
 import BrandLogo from './BrandLogo';
+import BrandBackground from './BrandBackground';
 
 // PÁGINA DO LINK DE VALIDAÇÃO (sem login): o cliente confere o atendimento e APROVA (nome, matrícula, estrelas)
 // ou CONTESTA (motivo). Uma resposta só e dentro do prazo do link (o banco garante). Sem valores.
 
-const card = 'rounded-2xl border border-slate-800 bg-[#0d1424] p-4';
-const input = 'w-full h-11 px-3 rounded-xl bg-[#0a101d] border border-slate-700 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-amber-500';
+const card = 'rounded-2xl border border-slate-800 bg-[#0e1a3a]/80 p-4';
+const input = 'w-full h-11 px-3 rounded-xl bg-[#08122b] border border-slate-700 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-400';
 
 export default function PublicOsValidationView({ token }: { token: string }) {
   const [v, setV] = useState<OsValidation | null>(null);
@@ -52,16 +53,18 @@ export default function PublicOsValidationView({ token }: { token: string }) {
   };
 
   const shell = (body: React.ReactNode) => (
-    <div className="min-h-screen bg-[#060b16] text-slate-100 font-sans flex justify-center p-3 sm:p-6">
-      <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-[#0a101d] overflow-hidden flex flex-col">
-        <header className="px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+    <div className="min-h-screen relative overflow-hidden bg-[#050b1f] text-slate-100 font-sans flex justify-center p-3 sm:p-6">
+      <BrandBackground cacheOnly />
+      <div className="relative z-10 w-full max-w-xl rounded-3xl border border-cyan-300/30 bg-[#0c1b44]/70 backdrop-blur-xl shadow-[0_0_40px_rgba(34,211,238,0.15)] overflow-hidden flex flex-col">
+        <header className="relative px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
           <BrandLogo
             className="w-14 h-14 shrink-0"
-            fallback={<div className="w-10 h-10 rounded-xl border border-amber-500/60 bg-amber-500/10 flex items-center justify-center font-black text-amber-400">H</div>}
+            fallback={<div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-cyan-400 flex items-center justify-center font-black text-white">H</div>}
           />
           <div>
-            <p className="text-xl font-extrabold tracking-[0.15em] font-brand text-amber-400 leading-none">HEXON</p>
-            <p className="text-[11px] text-slate-400">Validação de Ordem de Serviço</p>
+            <p className="text-xl font-extrabold tracking-[0.15em] font-brand text-white leading-none">HEXON</p>
+            <p className="text-[11px] text-cyan-200/80">Validação de Ordem de Serviço</p>
           </div>
         </header>
         <main className="p-4 sm:p-5 space-y-4 flex-1">{body}</main>
@@ -90,7 +93,7 @@ export default function PublicOsValidationView({ token }: { token: string }) {
   return shell(
     <>
       <div className={`${card} flex gap-2 text-xs text-slate-300`}>
-        <FileCheck2 className="w-4 h-4 text-amber-400 shrink-0" />
+        <FileCheck2 className="w-4 h-4 text-cyan-300 shrink-0" />
         Por favor, confira os dados do atendimento técnico abaixo e confirme a conclusão do serviço — ou conteste, se algo não estiver certo.
       </div>
       <div>
@@ -101,7 +104,7 @@ export default function PublicOsValidationView({ token }: { token: string }) {
       <div className={`${card} space-y-3`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex gap-2">
-            <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <MapPin className="w-4 h-4 text-cyan-300 shrink-0 mt-0.5" />
             <div>
               <p className="text-[10px] font-black uppercase text-slate-500">Local de execução</p>
               <p className="text-sm font-bold">{v.local}</p>
@@ -109,7 +112,7 @@ export default function PublicOsValidationView({ token }: { token: string }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Calendar className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <Calendar className="w-4 h-4 text-cyan-300 shrink-0 mt-0.5" />
             <div>
               <p className="text-[10px] font-black uppercase text-slate-500">Data de execução</p>
               <p className="text-sm font-bold">{execDate}</p>
@@ -117,7 +120,7 @@ export default function PublicOsValidationView({ token }: { token: string }) {
           </div>
         </div>
         <div className="flex gap-2 pt-3 border-t border-slate-800">
-          <Users className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <Users className="w-4 h-4 text-cyan-300 shrink-0 mt-0.5" />
           <div>
             <p className="text-[10px] font-black uppercase text-slate-500">Equipe técnica</p>
             <p className="text-xs font-bold uppercase">{(v.team.length ? v.team : [v.technician]).join(', ')}</p>
@@ -126,12 +129,12 @@ export default function PublicOsValidationView({ token }: { token: string }) {
         {v.summary && (
           <div className="pt-3 border-t border-slate-800">
             <p className="text-[10px] font-black uppercase text-slate-500 mb-1">Resumo dos serviços realizados</p>
-            <p className="text-sm whitespace-pre-wrap rounded-xl bg-[#0a101d] border border-slate-800 p-3">{v.summary}</p>
+            <p className="text-sm whitespace-pre-wrap rounded-xl bg-[#08122b] border border-slate-800 p-3">{v.summary}</p>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#0d1424] border border-slate-800">
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#08122b] border border-slate-800">
         {(['aprovar', 'contestar'] as const).map((m) => (
           <button
             key={m}

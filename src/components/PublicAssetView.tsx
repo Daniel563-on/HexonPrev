@@ -22,6 +22,7 @@ import { dbGetSingleAssetPublic } from '../db/firebase';
 import { useHistoryPages, HistoryPagerControls } from './assets/HistoryPager';
 import AssetCorrectiveHistory from './assets/AssetCorrectiveHistory';
 import { sanitizeTechnicianName, sanitizePublicNotes } from '../utils/lgpdUtils';
+import BrandLogo from './BrandLogo';
 
 interface PublicAssetViewProps {
   assetIdentifier: string; // pode ser o ID único ou o código/patrimônio (ex: "AR-001" ou "168548")
@@ -153,17 +154,24 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-100/70 font-sans pb-12">
       {/* Barra de Topo Institucional */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-3xs">
-        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <header className="relative bg-gradient-to-r from-[#0d1c46] via-[#0a1636] to-[#0d1c46] sticky top-0 z-20 shadow-md">
+        {/* Linha neon da marca (identidade visual 2.0) */}
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/80 to-violet-500/0 pointer-events-none" />
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-gradient-to-br from-[#3525cd] to-indigo-800 rounded-xl flex items-center justify-center text-white font-black text-base shadow-xs">
-              H
-            </div>
+            <BrandLogo
+              className="w-11 h-11 shrink-0"
+              fallback={
+                <div className="w-10 h-10 bg-gradient-to-tr from-violet-600 to-cyan-400 rounded-xl flex items-center justify-center text-white font-black text-base shadow-xs">
+                  H
+                </div>
+              }
+            />
             <div>
-              <h1 className="text-xs font-black text-slate-900 tracking-tight leading-none uppercase">
-                Hexon
+              <h1 className="text-lg font-extrabold text-white tracking-[0.15em] font-brand leading-none">
+                HEXON
               </h1>
-              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">
+              <span className="text-[10px] font-bold text-cyan-200/80 uppercase tracking-wider">
                 {asset?.kind === 'address' ? 'Consulta Pública do Imóvel' : 'Consulta Pública de Equipamento'}
               </span>
             </div>
@@ -173,7 +181,7 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
             <button
               type="button"
               onClick={onGoToLogin}
-              className="text-[11px] font-bold text-[#3525cd] hover:text-indigo-900 flex items-center gap-1 cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/80 px-3 py-1.5 rounded-lg border border-indigo-150 transition-all"
+              className="text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg border border-cyan-300/40 transition-all"
             >
               <span>Acesso Técnico</span>
               <ExternalLink className="w-3 h-3" />
