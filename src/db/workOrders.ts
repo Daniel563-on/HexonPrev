@@ -27,6 +27,7 @@ import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from 
 // ===== Campos do sistema =====
 export const OS_SYSTEM_STAGE: Record<OsSystemKey, OsStage> = {
   gerencia: 'criacao',
+  empresa: 'criacao',
   numeroOs: 'criacao',
   tecnico: 'criacao',
   enderecoExecucao: 'criacao',
@@ -42,10 +43,11 @@ export const OS_SYSTEM_STAGE: Record<OsSystemKey, OsStage> = {
 };
 
 // Sempre ligados e obrigatórios (o Hexon precisa deles para funcionar)
-export const OS_LOCKED_SYSTEM: OsSystemKey[] = ['gerencia', 'enderecoExecucao'];
+export const OS_LOCKED_SYSTEM: OsSystemKey[] = ['gerencia', 'empresa', 'enderecoExecucao'];
 
 export const OS_SYSTEM_HINT: Record<OsSystemKey, string> = {
   gerencia: 'Gerência de quem abre (fixa). Só quem é dessa gerência enxerga a OS. Super Administrador e gerência "Todas" escolhem.',
+  empresa: 'Empresa contratada que executa a OS (empresas ativas da gerência). O técnico da atribuição é dessa empresa. Enquanto a OS está "Nova", dá para trocar em "Editar OS".',
   numeroOs: 'Número da OS, automático (OS-AAAA + 6 dígitos). Mostra o próximo número previsto; o definitivo é reservado ao emitir.',
   tecnico: 'Atribuição: lista só os técnicos da gerência da OS. Aparece para quem pode atribuir; ao atribuir, a OS fica "Em andamento".',
   enderecoExecucao: 'Local da execução: CRAAI › Comarca › Endereço (cadastro de Endereços). Monta o histórico de cada endereço.',
@@ -72,6 +74,7 @@ export function defaultSystemFields(): OsSystemField[] {
   return [
     // Criação (a ordem se mistura com as perguntas livres da mesma etapa)
     f('gerencia', 'Gerência responsável', 1, { required: true, width: 'third' }),
+    f('empresa', 'Empresa', 1.5, { required: true, width: 'third' }),
     f('intervencao', 'Intervenção', 2, { required: true, width: 'third', options: ['Corretiva', 'Layout', 'Acompanhamento', 'Vistoria'] }),
     f('numeroOs', 'Nº da OS', 3, { width: 'third' }),
     f('glpi', 'GLPI', 4, { required: true, width: 'third' }),

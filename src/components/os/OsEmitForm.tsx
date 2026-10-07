@@ -142,7 +142,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
     // Obrigatórios e formatos (só das perguntas visíveis)
     for (const it of items) {
       if (it.kind === 'system') {
-        if (it.sys.key === 'gerencia' || it.sys.key === 'tecnico' || it.sys.key === 'numeroOs') continue;
+        if (it.sys.key === 'gerencia' || it.sys.key === 'empresa' || it.sys.key === 'tecnico' || it.sys.key === 'numeroOs') continue;
         if (it.sys.key === 'ativo') {
           if (it.sys.required && !(asset && asset !== 'none')) return setError(`${it.sys.label}: busque e vincule um ativo cadastrado na Gestão de Ativos.`);
           continue;
@@ -180,6 +180,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
       .filter((k) => k.startsWith('sys:') && k !== 'sys:tecnico' && !isEmpty(answers[k]))
       .forEach((k) => (kept[k] = answers[k]));
     kept['sys:gerencia'] = unit;
+    kept['sys:empresa'] = companyName(company); // nome guardado nas respostas (ficha e PDF mostram como estava)
     setBusy(true);
     setError(null);
     try {
@@ -218,7 +219,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
         if ((editOrder.company || '') !== company) changes.push(`Empresa: ${companyName(editOrder.company)} → ${companyName(company)}`);
         stageItems(template.fields, template.systemFields, 'criacao').forEach((it) => {
           if (it.kind === 'system') {
-            if (['gerencia', 'tecnico', 'numeroOs'].includes(it.sys.key)) return;
+            if (['gerencia', 'empresa', 'tecnico', 'numeroOs'].includes(it.sys.key)) return;
             const b = sysText(it.sys.key, editOrder.answers[`sys:${it.sys.key}`]);
             const a = sysText(it.sys.key, kept[`sys:${it.sys.key}`]);
             if (b !== a) changes.push(`${it.sys.label}: ${b || '—'} → ${a || '—'}`);
@@ -280,6 +281,25 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
     }
   };
 
+  // Empresa (campo do sistema "Empresa" do modelo; sempre obrigatório)
+  const companySelect = (
+    <div>
+      <select
+        className={input}
+        value={company}
+        onChange={(e) => { setCompany(e.target.value); setA('sys:tecnico', ''); }}
+        disabled={!unit}
+        aria-label="Empresa da OS"
+      >
+        <option value="">{unit ? 'Selecione a empresa...' : 'Escolha a gerência primeiro'}</option>
+        {unitCompanies.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+      {unit && unitCompanies.length === 0 && <p className="text-[10px] font-bold text-amber-700 mt-1">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>}
+    </div>
+  );
+
   const renderField = (f: OsTemplateField) => (
     <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setA(f.id, v)} addresses={addresses} signerName={userProfile.name} />
   );
@@ -288,6 +308,8 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
     const key = `sys:${s.key}`;
     const v = answers[key];
     switch (s.key) {
+      case 'empresa':
+        return companySelect;
       case 'gerencia':
         return chooseUnit ? (
           <select className={input} value={v || ''} onChange={(e) => { setAnswers((prev) => ({ ...prev, [key]: e.target.value, 'sys:tecnico': '' })); setCompany(''); }}>
@@ -424,29 +446,20 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
       {template && (
         <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-6 gap-x-3 gap-y-4">
-          <div className="min-w-0 md:col-span-3">
-            <span className={label}>Empresa *</span>
-            <select
-              className={input}
-              value={company}
-              onChange={(e) => { setCompany(e.target.value); setA('sys:tecnico', ''); }}
-              disabled={!unit}
-              aria-label="Empresa da OS"
-            >
-              <option value="">{unit ? 'Selecione a empresa...' : 'Escolha a gerência primeiro'}</option>
-              {unitCompanies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {unit && unitCompanies.length === 0 && <p className="text-[10px] font-bold text-amber-700 mt-1">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>}
-          </div>
+          {/* OS antiga (modelo copiado antes do campo "Empresa" existir): a empresa aparece aqui no começo */}
+          {template && !template.systemFields.some((s) => s.key === 'empresa' && s.enabled) && (
+            <div className="min-w-0 md:col-span-3">
+              <span className={label}>Empresa *</span>
+              {companySelect}
+            </div>
+          )}
           {items.map((it) => {
             if (it.kind === 'system' && it.sys.key === 'tecnico' && !assignOn) return null;
             if (isEdit && it.kind === 'system' && it.sys.key === 'numeroOs') return null;
             const required =
               it.kind === 'field'
                 ? it.field.required && it.field.type !== 'toggle'
-                : it.sys.key !== 'tecnico' && (it.sys.required || it.sys.key === 'gerencia' || it.sys.key === 'enderecoExecucao');
+                : it.sys.key !== 'tecnico' && (it.sys.required || it.sys.key === 'gerencia' || it.sys.key === 'empresa' || it.sys.key === 'enderecoExecucao');
             return (
               <div key={it.kind === 'field' ? it.field.id : it.sys.key} className={`min-w-0 ${SPAN[(it.kind === 'field' ? it.field.width : it.sys.width) || 'full']}`}>
                 <span className={label}>
