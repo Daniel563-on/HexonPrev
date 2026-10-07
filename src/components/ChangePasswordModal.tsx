@@ -128,7 +128,7 @@ export default function ChangePasswordModal({
       className="fixed inset-0 z-[99999] overflow-y-auto bg-slate-950/70 backdrop-blur-md font-sans p-4 sm:p-6 flex items-center justify-center min-h-screen"
     >
       <div 
-        className="relative my-auto bg-white dark:bg-[#0A101D] border border-slate-200 dark:border-slate-800/80 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-left z-10"
+        className="relative my-auto bg-white dark:bg-[#08122b] border border-slate-200 dark:border-slate-800/80 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-left z-10"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-change-password-title"

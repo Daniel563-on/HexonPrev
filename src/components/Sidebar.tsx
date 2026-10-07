@@ -95,7 +95,7 @@ export default function Sidebar({
         type="button"
         onClick={item.onClick || (() => go(item.tab))}
         className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl duration-200 text-left active:scale-[0.98] transition-all cursor-pointer ${
-          active ? 'bg-indigo-600 text-white font-bold shadow-xs' : 'text-slate-400 hover:text-white hover:bg-white/5'
+          active ? 'bg-gradient-to-r from-violet-600 to-blue-500 text-white font-bold shadow-[0_0_18px_rgba(99,102,241,0.45)] ring-1 ring-cyan-300/40' : 'text-slate-300/80 hover:text-white hover:bg-cyan-400/10'
         }`}
       >
         <span className="flex items-center gap-3">
@@ -103,7 +103,7 @@ export default function Sidebar({
           <span className="text-sm font-semibold tracking-tight">{item.label}</span>
         </span>
         {!!item.badge && item.badge > 0 && (
-          <span className="bg-rose-600 text-white text-[9.5px] font-black font-mono px-2 py-0.5 rounded-full ring-2 ring-[#0A101D] animate-pulse">
+          <span className="bg-rose-600 text-white text-[9.5px] font-black font-mono px-2 py-0.5 rounded-full ring-2 ring-[#0a1636] animate-pulse">
             {item.badge}
           </span>
         )}
@@ -122,7 +122,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed lg:static top-0 bottom-0 left-0 h-screen w-[280px] bg-[#0A101D] border-r border-slate-800/80 flex flex-col py-6 shadow-2xl lg:shadow-xl shrink-0 z-50 text-white font-sans transition-transform duration-300 ease-in-out print:hidden ${
+        className={`fixed lg:static top-0 bottom-0 left-0 h-screen w-[280px] bg-gradient-to-b from-[#0d1c46] via-[#0a1636] to-[#060d24] border-r border-cyan-400/15 flex flex-col py-6 shadow-2xl lg:shadow-xl shrink-0 z-50 text-white font-sans transition-transform duration-300 ease-in-out print:hidden ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -146,7 +146,7 @@ export default function Sidebar({
             <div>
               <h1 className="text-2xl font-extrabold text-white tracking-[0.16em] font-brand leading-none">HEXON</h1>
               {inPmoc && (
-                <span className="text-[10px] text-indigo-400/90 font-bold tracking-widest font-mono uppercase block mt-1.5">PMOC</span>
+                <span className="text-[10px] text-cyan-300/90 font-bold tracking-widest font-mono uppercase block mt-1.5">PMOC</span>
               )}
             </div>
           </div>
@@ -175,14 +175,14 @@ export default function Sidebar({
                 <span className="text-sm font-semibold tracking-tight">Voltar ao Hexon</span>
               </button>
               <div className="px-3 pb-2 pt-1">
-                <span className="text-[10px] font-bold text-indigo-400/70 uppercase tracking-widest block mb-1 font-mono">PMOC</span>
+                <span className="text-[10px] font-bold text-cyan-300/70 uppercase tracking-widest block mb-1 font-mono">PMOC</span>
               </div>
               {pmocItems.map(renderItem)}
             </>
           ) : (
             <>
               <div className="px-3 pb-2 pt-1">
-                <span className="text-[10px] font-bold text-indigo-400/70 uppercase tracking-widest block mb-1 font-mono">Navegação</span>
+                <span className="text-[10px] font-bold text-cyan-300/70 uppercase tracking-widest block mb-1 font-mono">Navegação</span>
               </div>
               {mainItems.map(renderItem)}
             </>

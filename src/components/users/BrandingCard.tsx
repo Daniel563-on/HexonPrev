@@ -54,7 +54,7 @@ export default function BrandingCard({ darkMode, userName }: { darkMode: boolean
   };
 
   const preview = (src: string | undefined, dark: boolean) => (
-    <div className={`w-24 h-24 rounded-xl border flex items-center justify-center ${dark ? 'bg-[#0A101D] border-slate-700' : 'bg-white border-slate-200'}`}>
+    <div className={`w-24 h-24 rounded-xl border flex items-center justify-center ${dark ? 'bg-[#08122b] border-slate-700' : 'bg-white border-slate-200'}`}>
       {src ? <img src={src} alt="" className="w-16 h-16 object-contain" /> : <span className="text-[10px] text-slate-400 text-center px-2">Logo padrão ("H")</span>}
     </div>
   );

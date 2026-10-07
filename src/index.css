@@ -25,20 +25,20 @@
   animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Dark theme overrides */
+/* Dark theme overrides (identidade visual 2.0: tons de azul-marinho da marca) */
 html.dark, html.dark body, html.dark main, html.dark .bg-\[\#f8f9ff\], html.dark .bg-slate-50 {
-  background-color: #0A101D !important;
+  background-color: #08122b !important;
   color: #f1f5f9 !important;
 }
 
 html.dark .bg-white,
 html.dark .bg-white\/95,
 html.dark header {
-  background-color: #0d1527 !important;
+  background-color: #0e1a3a !important;
 }
 
 html.dark .bg-white\/95 {
-  background-color: rgba(13, 21, 39, 0.95) !important;
+  background-color: rgba(14, 26, 58, 0.95) !important;
 }
 
 html.dark .text-\[\#0b1c30\],
@@ -61,39 +61,99 @@ html.dark .text-slate-600 {
 html.dark .border-gray-200,
 html.dark .border-gray-100,
 html.dark .border-slate-200 {
-  border-color: #1e293b !important;
+  border-color: #1c2a4d !important;
 }
 
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #0a111a !important;
+  background-color: #0a1430 !important;
   color: #f1f5f9 !important;
-  border-color: #334155 !important;
+  border-color: #2a3b66 !important;
 }
 
 html.dark .bg-gray-50,
 html.dark .bg-gray-50\/50,
 html.dark th,
 html.dark .bg-slate-50 {
-  background-color: #0f1c2c !important;
+  background-color: #112047 !important;
 }
 
 html.dark .bg-gray-100 {
-  background-color: #1a2536 !important;
+  background-color: #162452 !important;
 }
 
 html.dark .hover\:bg-gray-50:hover {
-  background-color: #162436 !important;
+  background-color: #142553 !important;
 }
 
 html.dark .hover\:bg-gray-100:hover {
-  background-color: #1e2f47 !important;
+  background-color: #1b2d60 !important;
 }
 
+/* Fundos clarinhos de destaque/selecionado e textos índigo/azul escuros: versão para o modo escuro */
+html.dark .bg-indigo-50,
+html.dark .bg-blue-50,
+html.dark .bg-violet-50 {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+}
+html.dark .text-indigo-700,
+html.dark .text-indigo-800,
+html.dark .text-blue-700,
+html.dark .text-blue-800 {
+  color: #a5b4fc !important;
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-slate-50\/50 {
+  background-color: #162452 !important;
+}
+html.dark .border-slate-100,
+html.dark .border-gray-100,
+html.dark .divide-slate-100 > *,
+html.dark .divide-gray-100 > *,
+html.dark .divide-slate-200 > *,
+html.dark .divide-gray-200 > * {
+  border-color: #1c2a4d !important;
+}
+html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.15) !important; }
+html.dark .bg-rose-50,
+html.dark .bg-red-50 { background-color: rgba(244, 63, 94, 0.15) !important; }
+html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.15) !important; }
+
+html.dark .text-slate-700,
+html.dark .text-gray-700 { color: #cbd5e1 !important; }
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-green-700 { color: #6ee7b7 !important; }
+html.dark .text-rose-700,
+html.dark .text-red-700 { color: #fda4af !important; }
+html.dark .text-amber-700,
+html.dark .text-amber-800 { color: #fcd34d !important; }
+
 html.dark select option {
-  background-color: #0d1926 !important;
+  background-color: #0e1a3a !important;
   color: #f1f5f9 !important;
+}
+
+/* IDENTIDADE VISUAL 2.0: botões e destaques principais (azul e índigo sólidos) viram o degradê da marca, violeta → azul.
+   Verde (salvar/concluir), vermelho (excluir) e amarelo (atenção) continuam como estão. */
+.bg-indigo-600,
+.bg-blue-600,
+.bg-\[\#3525cd\] {
+  background-image: linear-gradient(90deg, #7c3aed 0%, #3b82f6 100%);
+}
+.bg-indigo-600:hover,
+.bg-blue-600:hover,
+.bg-\[\#3525cd\]:hover {
+  filter: brightness(1.08);
+}
+/* Cartões e painéis escuros antigos (cinza-azulado) passam para o azul-marinho da marca */
+.bg-\[\#121b2d\],
+.bg-\[\#0b1220\],
+.bg-\[\#0a1122\],
+.bg-\[\#0d1424\] {
+  background-color: #0e1a3a;
 }
 
 /* Material Symbols configuration matching the mockup image layouts */
