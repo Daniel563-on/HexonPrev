@@ -45,6 +45,7 @@ import CameraQrScanner from '../CameraQrScanner';
 import TechnicianOsTab from './TechnicianOsTab';
 import OsExecutionForm from '../os/OsExecutionForm';
 import { parseScannedQrCode } from '../../utils/qrUtils';
+import BrandLogo from '../BrandLogo';
 
 export interface TechnicianMobileViewProps {
   orders: ServiceOrder[];
@@ -506,12 +507,17 @@ export default function TechnicianMobileView({
         darkMode ? 'bg-[#0A101D]/90 border-slate-800' : 'bg-white/90 border-slate-200'
       }`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 font-black text-sm">
-            H
-          </div>
+          <BrandLogo
+            className="w-9 h-9 shrink-0"
+            fallback={
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 font-black text-sm">
+                H
+              </div>
+            }
+          />
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-sm font-extrabold tracking-tight">HEXON CAMPO</h1>
+              <h1 className="text-base font-extrabold tracking-[0.15em] font-brand leading-none">HEXON</h1>
               <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-500 uppercase tracking-wider">
                 Técnico
               </span>

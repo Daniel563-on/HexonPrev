@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { dbLoginByMatricula } from '../db/firebase';
 import { HexonUser } from '../types';
 import { User, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 
 interface LoginViewProps {
   onLoginSuccess: (user: HexonUser) => Promise<void> | void;
@@ -91,38 +92,43 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           {/* Glowing Hexagon Icon */}
           <div className="relative mb-3 flex items-center justify-center">
             <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full scale-150" />
-            <svg 
-              viewBox="0 0 100 100" 
-              className="w-14 h-14 relative z-10 filter drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
-            >
-              {/* Outer Hexagon */}
-              <polygon
-                points="50,6 88,28 88,72 50,94 12,72 12,28"
-                fill="#0F172A"
-                stroke="#6366F1"
-                strokeWidth="4"
-                strokeLinejoin="round"
-              />
-              {/* Inner Accent Hexagon */}
-              <polygon
-                points="50,22 74,36 74,64 50,78 26,64 26,36"
-                fill="none"
-                stroke="#818CF8"
-                strokeWidth="2.5"
-                strokeDasharray="4,3"
-                strokeLinejoin="round"
-              />
-              {/* Core Solid Micro Hexagon */}
-              <polygon
-                points="50,38 60,44 60,56 50,62 40,56 40,44"
-                fill="#6366F1"
-                fillOpacity="0.85"
-              />
-            </svg>
+            <BrandLogo
+              className="w-16 h-16 relative z-10 drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+              fallback={
+                <svg 
+                  viewBox="0 0 100 100" 
+                  className="w-14 h-14 relative z-10 filter drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+                >
+                  {/* Outer Hexagon */}
+                  <polygon
+                    points="50,6 88,28 88,72 50,94 12,72 12,28"
+                    fill="#0F172A"
+                    stroke="#6366F1"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  />
+                  {/* Inner Accent Hexagon */}
+                  <polygon
+                    points="50,22 74,36 74,64 50,78 26,64 26,36"
+                    fill="none"
+                    stroke="#818CF8"
+                    strokeWidth="2.5"
+                    strokeDasharray="4,3"
+                    strokeLinejoin="round"
+                  />
+                  {/* Core Solid Micro Hexagon */}
+                  <polygon
+                    points="50,38 60,44 60,56 50,62 40,56 40,44"
+                    fill="#6366F1"
+                    fillOpacity="0.85"
+                  />
+                </svg>
+              }
+            />
           </div>
 
           {/* Hexon Brand Title */}
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-[0.25em] font-sans leading-tight">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-[0.22em] font-brand leading-tight">
             HEXON
           </h1>
 

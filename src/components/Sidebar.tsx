@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { HexonUser } from '../types';
+import BrandLogo from './BrandLogo';
 
 // Telas que ficam dentro do PMOC
 export const PMOC_TABS = ['pmoc-preventivas', 'templates'];
@@ -129,14 +130,21 @@ export default function Sidebar({
         <div className="px-6 mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative h-9 w-9 flex items-center justify-center shrink-0">
-              <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500" fill="none">
-                <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="#1e1b4b" fillOpacity="0.4" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M50 25L72 38V62L50 75L28 62V38L50 25Z" fill="currentColor" stroke="none" fillOpacity="0.8" />
-              </svg>
-              <span className="relative z-10 text-[10px] font-black text-white">H</span>
+              <BrandLogo
+                className="h-9 w-9"
+                fallback={
+                  <>
+                    <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500" fill="none">
+                      <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="#1e1b4b" fillOpacity="0.4" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M50 25L72 38V62L50 75L28 62V38L50 25Z" fill="currentColor" stroke="none" fillOpacity="0.8" />
+                    </svg>
+                    <span className="relative z-10 text-[10px] font-black text-white">H</span>
+                  </>
+                }
+              />
             </div>
             <div>
-              <h1 className="text-base font-black text-white tracking-[0.2em] font-sans leading-none">HEXON</h1>
+              <h1 className="text-lg font-extrabold text-white tracking-[0.18em] font-brand leading-none">HEXON</h1>
               {inPmoc && (
                 <span className="text-[10px] text-indigo-400/90 font-bold tracking-widest font-mono uppercase block mt-1.5">PMOC</span>
               )}
