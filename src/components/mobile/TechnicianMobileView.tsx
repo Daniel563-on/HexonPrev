@@ -977,7 +977,7 @@ export default function TechnicianMobileView({
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-250 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                       : scannedAsset.status === 'Em Manutenção'
                       ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-250 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-                      : 'bg-rose-50 dark:rose-950/40 border-rose-250 dark:border-rose-800 text-rose-850 dark:text-rose-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-250 dark:border-rose-800 text-rose-850 dark:text-rose-300'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
                       scannedAsset.status === 'Operando' ? 'bg-emerald-500' : scannedAsset.status === 'Em Manutenção' ? 'bg-amber-500' : 'bg-rose-500'

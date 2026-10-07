@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Address, Asset, AssetTypeConfig, CycleSetting, MaintenanceTemplate } from '../../types';
+import { Address, Asset, AssetTypeConfig, Company, CycleSetting, MaintenanceTemplate } from '../../types';
 import {
   addMonths,
+  dbGetCompanies,
   dbApplyDispatch,
   dbGetAssetTypes,
   dbGetTemplates,
@@ -51,6 +52,11 @@ export default function DispatchTab({ units, assets, templates, addresses, canDi
   const [error, setError] = useState<string | null>(null);
   const [doneMsg, setDoneMsg] = useState<string | null>(null);
   const [openList, setOpenList] = useState<string | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  useEffect(() => {
+    dbGetCompanies().then(setCompanies).catch(() => {});
+  }, []);
+  const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id || 'Sem empresa';
 
   useEffect(() => {
     if (!unit && units.length > 0) setUnit(units[0]);
@@ -205,6 +211,17 @@ export default function DispatchTab({ units, assets, templates, addresses, canDi
 
           <div className="space-y-2 text-xs">
             <p className="font-black text-emerald-700">Serão criadas: {plan.toCreate.length.toLocaleString('pt-BR')} OS</p>
+            {Object.keys(plan.byCompany || {}).length > 0 && (
+              <div className="flex flex-wrap gap-1.5" aria-label="OS por empresa">
+                {Object.entries(plan.byCompany)
+                  .sort(([a], [b]) => companyName(a).localeCompare(companyName(b)))
+                  .map(([id, n]) => (
+                    <span key={id || '_'} className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-[11px] font-bold text-blue-800">
+                      {companyName(id)}: {Number(n).toLocaleString('pt-BR')}
+                    </span>
+                  ))}
+              </div>
+            )}
             {plan.blocked.length > 0 && (
               <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                 <button type="button" onClick={() => setOpenList(openList === 'blocked' ? null : 'blocked')} className="font-bold text-slate-700 cursor-pointer">

@@ -12,6 +12,7 @@ import { isSectorInGerencia } from '../types';
 // Preventiva: 1 OS por ativo por mês, da maior periodicidade que vence no mês do ciclo. Período = mês inteiro.
 // Vistoria (DOM): por endereço, conforme o modelo: Diária (dias úteis), Semanal (seg–sex), Quinzenal (1–15 / 16–fim).
 // Nada cai em fim de semana. Número fixo da OS = ativo/endereço + período, então não existe OS repetida.
+// Empresa (etapa especial E3): a OS leva a empresa do ativo (preventiva) ou do endereço (vistoria); sem empresa não gera.
 
 export const MAX_DISPATCH_MONTHS = 12;
 
@@ -35,6 +36,7 @@ export interface DispatchPlan {
   toCreate: ServiceOrder[];
   blocked: ServiceOrder[];     // já existem (não serão criadas de novo)
   skipped: DispatchSkip[];     // o que não gera OS e por quê
+  byCompany: Record<string, number>; // empresa (id) -> quantidade de OS novas
   usedModels: MaintenanceTemplate[]; // modelos usados (a versão de cada um é congelada ao gravar)
 }
 
@@ -143,6 +145,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
       const tipo = String(asset.specs?.TIPO || asset.specs?.tipo || '').trim();
       const label = `${asset.code} - ${asset.name}`;
       if (!tipo) { skip('Ativo sem TIPO no cadastro', label); continue; }
+      if (!asset.company) { skip('Ativo sem empresa', label); continue; }
       const type = unitTypes.find((t) => assetTypeKey(t.name) === assetTypeKey(tipo));
       if (!type) { skip('Tipo não cadastrado (aba 1: "Atualizar tipos")', tipo); continue; }
       if (type.periodicities.length === 0) { skip('Tipo sem periodicidade marcada (aba 1)', type.name); continue; }
@@ -179,6 +182,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
         updatedAt: now,
         photoEvidence: null,
         periodicity: due,
+        company: asset.company,
         comarca: assetComarca(asset) || undefined,
         craai: assetCraai(asset) || undefined,
         templateId: model.id,
@@ -197,6 +201,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
       for (const addr of addresses.filter((a) => a.active)) {
         const model = byAddress.get(addr.id) || restModel;
         if (!model) { skip('Endereço sem modelo de vistoria (aba 2)', `${addr.code} - ${addr.address}`); continue; }
+        if (!addr.company) { skip('Endereço sem empresa (cadastro de Endereços)', `${addr.code} - ${addr.address}`); continue; }
         for (const p of surveyPeriods(model.periodicity, month, todayStr)) {
           counts[model.periodicity] = (counts[model.periodicity] || 0) + 1;
           orders.push({
@@ -231,6 +236,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
             craai: addr.craai || undefined,
             addressId: addr.id,
             addressText: addr.address,
+            company: addr.company,
             periodicity: model.periodicity,
             templateId: model.id,
             templateVersion: model.version || 1,
@@ -249,7 +255,9 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
     const model = models.find((t) => t.id === o.templateId);
     if (model) usedModels.set(model.id, model);
   });
-  return { unit, months, isTest, summary, toCreate: orders, blocked: [], skipped, usedModels: Array.from(usedModels.values()) };
+  const byCompany: Record<string, number> = {};
+  orders.forEach((o) => (byCompany[o.company || ''] = (byCompany[o.company || ''] || 0) + 1));
+  return { unit, months, isTest, summary, toCreate: orders, blocked: [], skipped, byCompany, usedModels: Array.from(usedModels.values()) };
 }
 
 // Separa as que já existem pelo registro do disparo (poucas leituras). Não há conferência OS a OS: o registro é gravado
@@ -267,7 +275,9 @@ export async function dbSplitExistingOrders(plan: DispatchPlan): Promise<Dispatc
     });
     return { ...s, counts, total: Object.values(counts).reduce((a, b) => a + b, 0) };
   });
-  return { ...plan, toCreate, blocked, summary };
+  const byCompany: Record<string, number> = {};
+  toCreate.forEach((o) => (byCompany[o.company || ''] = (byCompany[o.company || ''] || 0) + 1));
+  return { ...plan, toCreate, blocked, summary, byCompany };
 }
 
 // Grava as OS em lotes (cada lote grava também o registro do disparo: tudo ou nada)
