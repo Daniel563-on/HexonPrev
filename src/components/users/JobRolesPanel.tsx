@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { JobRole, OvernightRateSetting, OvertimeRules } from '../../types';
+import { Company, JobRole, OvernightRateSetting, OvertimeRules } from '../../types';
 import OvertimeRulesModal from './OvertimeRulesModal';
 import {
   cargoKey,
+  dbGetCompanies,
+  roleForCompany,
   dbGetOvernightRate,
   dbGetOvertimeRules,
   dbRemoveJobRoleRateEntry,
@@ -13,8 +15,8 @@ import {
   localTodayStr
 } from '../../db/firebase';
 
-// VALOR DO PERNOITE (único, por pessoa por noite). Cada lote usa o valor vigente na data do agendamento.
-function OvernightRateCard({ currentUserName, card, strong }: { currentUserName: string; card: string; strong: string }) {
+// VALOR DO PERNOITE da empresa (por pessoa, por noite). Cada lote usa o valor vigente na data do agendamento.
+function OvernightRateCard({ company, companyName, currentUserName, card, strong }: { company: string; companyName: string; currentUserName: string; card: string; strong: string }) {
   const [setting, setSetting] = useState<OvernightRateSetting | null>(null);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -28,7 +30,7 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
   const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 
-  const load = () => dbGetOvernightRate().then(setSetting);
+  const load = () => dbGetOvernightRate(company).then(setSetting);
 
   // Exclui um lançamento gravado com erro (só o Super Administrador chega nesta tela; o banco também exige)
   const confirmDelete = async () => {
@@ -36,7 +38,7 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
     setDeleting(true);
     setDeleteError(null);
     try {
-      await dbRemoveOvernightRateEntry(setting, toDelete);
+      await dbRemoveOvernightRateEntry(company, setting, toDelete);
       setToDelete(null);
       await load();
     } catch (err: any) {
@@ -46,8 +48,10 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
     }
   };
   useEffect(() => {
+    setEditing(false);
+    setShowHistory(false);
     load();
-  }, []);
+  }, [company]);
 
   const save = async () => {
     const raw = value.trim();
@@ -57,7 +61,7 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
     setSaving(true);
     setError(null);
     try {
-      await dbSetOvernightRate(setting, Math.round(parsed * 100) / 100, from, currentUserName);
+      await dbSetOvernightRate(company, setting, Math.round(parsed * 100) / 100, from, currentUserName);
       setEditing(false);
       await load();
     } catch (err: any) {
@@ -71,9 +75,9 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
     <div className={`border rounded-xl p-4 space-y-2 ${card}`}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="text-xs">
-          <p className={`font-bold ${strong}`}>Valor do pernoite (por pessoa, por noite)</p>
+          <p className={`font-bold ${strong}`}>Valor do pernoite — {companyName} (por pessoa, por noite)</p>
           <p className="text-slate-500">
-            Valor único. Cada lote usa o valor vigente na data em que foi agendado; um reajuste vale para os lotes agendados depois.
+            Valor da empresa. Cada lote usa o valor vigente na data em que foi agendado; um reajuste vale para os lotes agendados depois.
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -148,7 +152,7 @@ function OvernightRateCard({ currentUserName, card, strong }: { currentUserName:
 }
 
 // CARGOS E VALORES: valor da hora de cada cargo (vale para todos do cargo), com histórico, e as regras de hora extra.
-// Só o Super Administrador.
+// Só o Super Administrador. Etapa especial E5: tudo por EMPRESA (só as que contabilizam homem-hora); a lista de cargos é uma só.
 
 interface Props {
   roles: JobRole[];
@@ -162,7 +166,22 @@ interface Props {
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 
-export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, currentUserName, darkMode, onChanged }: Props) {
+export default function JobRolesPanel({ roles: baseRoles, cargoNames, activeCountByCargo, currentUserName, darkMode, onChanged }: Props) {
+  // Empresa escolhida: só as que contabilizam homem-hora, hora extra e pernoite
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [company, setCompany] = useState('');
+  useEffect(() => {
+    dbGetCompanies(true)
+      .then((list) => {
+        const tracked = list.filter((c) => c.costTracking);
+        setCompanies(tracked);
+        setCompany((cur) => cur || tracked[0]?.id || '');
+      })
+      .catch(() => {});
+  }, []);
+  const companyName = companies.find((c) => c.id === company)?.name || '';
+  const roles = baseRoles.map((r) => roleForCompany(r, company));
+  const baseOf = (r: JobRole) => baseRoles.find((b) => b.id === r.id) || r;
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState<JobRole | null>(null);
@@ -193,7 +212,7 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
     setDeletingEntry(true);
     setEntryError(null);
     try {
-      await dbRemoveJobRoleRateEntry(entryToDelete.role, entryToDelete.entry);
+      await dbRemoveJobRoleRateEntry(baseOf(entryToDelete.role), entryToDelete.entry, company);
       setEntryToDelete(null);
       onChanged();
     } catch (err: any) {
@@ -251,7 +270,7 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
     setSaving(true);
     setError(null);
     try {
-      await dbSetJobRoleRate(editing, Math.round(parsed * 100) / 100, from, currentUserName);
+      await dbSetJobRoleRate(baseOf(editing), Math.round(parsed * 100) / 100, from, currentUserName, company);
       setEditing(null);
       onChanged();
     } catch (err: any) {
@@ -261,15 +280,33 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
     }
   };
 
+  if (companies.length === 0) {
+    return (
+      <p className={`border rounded-xl p-4 text-xs font-bold text-amber-800 bg-amber-50 border-amber-200`}>
+        Nenhuma empresa contabiliza homem-hora, hora extra e pernoite. Marque a caixa no cadastro da empresa (Configurações › Empresas) para informar os valores dela aqui.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <OvernightRateCard currentUserName={currentUserName} card={card} strong={strong} />
+      <div className={`border rounded-xl p-4 flex flex-wrap items-center gap-3 ${card}`}>
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Empresa</span>
+        <select value={company} onChange={(e) => { setCompany(e.target.value); setEditing(null); setHistoryOf(null); setEntryToDelete(null); }} className="h-9 px-3 text-xs font-bold border border-slate-200 rounded-lg bg-white" aria-label="Empresa dos valores">
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <span className="text-[11px] text-slate-500">Valor da hora, hora extra e pernoite desta empresa. Só aparecem as empresas que contabilizam homem-hora.</span>
+      </div>
+
+      <OvernightRateCard company={company} companyName={companyName} currentUserName={currentUserName} card={card} strong={strong} />
 
       <div className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 ${card}`}>
         <div className="text-xs">
           <p className={`font-bold ${strong}`}>Cargos, valor da hora e hora extra</p>
           <p className="text-slate-500">
-            O valor vale para todas as pessoas do cargo. Ao mudar, informe a partir de quando vale; o valor anterior fica no histórico.
+            O valor vale para todas as pessoas do cargo nesta empresa. Ao mudar, informe a partir de quando vale; o valor anterior fica no histórico.
             Em "Hora extra" ficam os adicionais e o máximo de cada dia da semana.
           </p>
         </div>
@@ -306,7 +343,7 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
             </p>
             <p className="text-[11px] text-slate-500">Vigência: {r.rateFrom ? `desde ${dateBR(r.rateFrom)}` : 'não informado'}</p>
             {(() => {
-              const ot = overtime.find((o) => o.id === r.id);
+              const ot = overtime.find((o) => o.company === company && o.roleId === r.id);
               return ot ? (
                 <p className="text-[11px] text-slate-500">Hora extra: {overtimeSummary(ot)}</p>
               ) : (
@@ -376,7 +413,10 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
       {overtimeOf && (
         <OvertimeRulesModal
           role={overtimeOf}
-          rules={overtime.find((o) => o.id === overtimeOf.id) || null}
+          baseRole={baseOf(overtimeOf)}
+          company={company}
+          companyName={companyName}
+          rules={overtime.find((o) => o.company === company && o.roleId === overtimeOf.id) || null}
           currentUserName={currentUserName}
           darkMode={darkMode}
           onClose={() => setOvertimeOf(null)}
@@ -391,7 +431,7 @@ export default function JobRolesPanel({ roles, cargoNames, activeCountByCargo, c
       {editing && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className={`w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className={`text-base font-black ${strong}`}>Valor da hora — {editing.name}</h3>
+            <h3 className={`text-base font-black ${strong}`}>Valor da hora — {editing.name} · {companyName}</h3>
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Valor da hora (R$)</span>
               <input

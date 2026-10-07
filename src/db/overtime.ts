@@ -5,6 +5,7 @@ import { valueAt } from './manHours';
 import { clearWorkforceCache } from './workforce';
 
 // HORA EXTRA (Hexon 2.0): regras por cargo (coleção "overtimeRules") e tarifas em R$ (no cargo, "jobRoles").
+// Etapa especial E5: tudo por empresa — regra = empresa + cargo (id "empresa__cargo"); tarifas em byCompany do cargo.
 // O técnico lança por dia (data, horas, feriado); o tipo do dia sai da data: seg–sex, sábado, domingo/feriado.
 
 export const OVERTIME_DAYS: { key: OvertimeDayKey; label: string }[] = [
@@ -69,6 +70,10 @@ export function overtimePercents(rules: OvertimeRules | null | undefined): numbe
   return Array.from(set).sort((a, b) => a - b);
 }
 
+export const overtimeRuleId = (company: string, roleId: string) => `${company}__${roleId}`;
+// Regras de uma empresa (as antigas, sem empresa, não valem mais)
+export const rulesOfCompany = (rules: OvertimeRules[], company: string | undefined) => (company ? rules.filter((r) => r.company === company) : []);
+
 let cacheRules: OvertimeRules[] | null = null;
 
 export async function dbGetOvertimeRules(force = false): Promise<OvertimeRules[]> {
@@ -90,10 +95,11 @@ export async function dbSaveOvertimeRules(rules: OvertimeRules): Promise<void> {
   cacheRules = null;
 }
 
-// Tarifas próprias de hora extra do cargo (R$ por percentual); vazio = cálculo automático
-export async function dbSetJobRoleOvertimeTariffs(role: JobRole, tariffs: Record<string, number>): Promise<void> {
+// Tarifas próprias de hora extra do cargo na empresa (R$ por percentual); vazio = cálculo automático
+export async function dbSetJobRoleOvertimeTariffs(role: JobRole, tariffs: Record<string, number>, company: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  const updated: JobRole = { ...role, overtimeTariffs: tariffs, updatedAt: new Date().toISOString() };
+  const cur = role.byCompany?.[company] || { hourlyRate: 0, rateFrom: '', history: [] };
+  const updated: JobRole = { ...role, byCompany: { ...(role.byCompany || {}), [company]: { ...cur, overtimeTariffs: tariffs } }, updatedAt: new Date().toISOString() };
   await setDoc(doc(dbInstance, 'jobRoles', role.id), cleanUndefined(updated));
   clearWorkforceCache();
 }

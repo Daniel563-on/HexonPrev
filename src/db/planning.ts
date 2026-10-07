@@ -8,11 +8,12 @@ import { dbSaveServiceOrder } from './serviceOrders';
 // PLANEJAMENTO (Etapa 5): lotes de agendamento e valor do pernoite.
 // A OS guarda só o lote (lotId); o custo do pernoite é calculado na hora, para quem pode ver valores.
 
-// ===== VALOR DO PERNOITE (coleção "costSettings", documento "overnight") =====
-export async function dbGetOvernightRate(): Promise<OvernightRateSetting | null> {
-  if (!firebaseActive || !dbInstance) return null;
+// ===== VALOR DO PERNOITE (coleção "costSettings", documento "overnight__<empresa>": um por empresa, etapa especial E5) =====
+const overnightDoc = (company: string) => `overnight__${company}`;
+export async function dbGetOvernightRate(company: string | undefined): Promise<OvernightRateSetting | null> {
+  if (!firebaseActive || !dbInstance || !company) return null;
   try {
-    const snap = await getDoc(doc(dbInstance, 'costSettings', 'overnight'));
+    const snap = await getDoc(doc(dbInstance, 'costSettings', overnightDoc(company)));
     return snap.exists() ? (snap.data() as OvernightRateSetting) : null;
   } catch (err: any) {
     // Sem a permissão "Visualizar Valores (R$)" o banco não entrega o valor (esperado)
@@ -21,22 +22,22 @@ export async function dbGetOvernightRate(): Promise<OvernightRateSetting | null>
   }
 }
 
-export async function dbSetOvernightRate(current: OvernightRateSetting | null, value: number, from: string, setBy: string): Promise<void> {
+export async function dbSetOvernightRate(company: string, current: OvernightRateSetting | null, value: number, from: string, setBy: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const entry = { value, from, setAt: new Date().toISOString(), setBy };
   const history = [...(current?.history || []), entry].sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt));
   const latest = history[history.length - 1];
-  await setDoc(doc(dbInstance, 'costSettings', 'overnight'), { value: latest.value, from: latest.from, history });
+  await setDoc(doc(dbInstance, 'costSettings', overnightDoc(company)), { value: latest.value, from: latest.from, history });
 }
 
 // Exclui um lançamento errado do histórico (Super Administrador). O valor atual passa a ser o último que sobrar;
 // se não sobrar nenhum, o valor do pernoite fica "não informado".
-export async function dbRemoveOvernightRateEntry(current: OvernightRateSetting, entry: OvernightRateSetting['history'][number]): Promise<void> {
+export async function dbRemoveOvernightRateEntry(company: string, current: OvernightRateSetting, entry: OvernightRateSetting['history'][number]): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const history = current.history
     .filter((h) => !(h.setAt === entry.setAt && h.from === entry.from && h.value === entry.value))
     .sort((a, b) => a.from.localeCompare(b.from) || a.setAt.localeCompare(b.setAt));
-  const ref = doc(dbInstance, 'costSettings', 'overnight');
+  const ref = doc(dbInstance, 'costSettings', overnightDoc(company));
   if (history.length === 0) {
     await deleteDoc(ref);
     return;
@@ -107,6 +108,7 @@ export async function dbScheduleLot(input: ScheduleLotInput): Promise<PlanningLo
   const lot: PlanningLot = {
     id: lotRef.id,
     unit: input.unit,
+    company: input.orders[0]?.company,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     technicianName: input.technician.name,

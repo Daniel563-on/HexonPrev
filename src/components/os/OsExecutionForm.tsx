@@ -361,6 +361,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           )}
 
           <OsFieldExtras
+            company={order.company}
             editable={editable}
             team={exec.team}
             overtime={exec.overtime}

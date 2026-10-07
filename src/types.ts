@@ -442,6 +442,8 @@ export interface JobRole {
   history: JobRoleRate[];
   archived?: boolean;    // ninguém tem mais este cargo: some das listas (valor e histórico ficam guardados)
   overtimeTariffs?: Record<string, number>; // hora extra: R$ por hora de cada percentual ("50" -> 49,03); sem valor = valor da hora × (1 + %)
+  // Valores por empresa (etapa especial E5): só as empresas que contabilizam homem-hora usam; os campos acima ficaram sem uso
+  byCompany?: Record<string, JobRoleCompanyRate>;
   createdAt: string;
   updatedAt: string;
 }
@@ -455,8 +457,18 @@ export interface OvertimeDayRule {
   restPct: number;         // demais horas a este adicional (%)
   maxHours: number | null; // máximo de horas extras no dia (null = sem máximo); o excesso não é pago
 }
+// Valor da hora de um cargo numa empresa (com histórico) e as tarifas próprias de hora extra
+export interface JobRoleCompanyRate {
+  hourlyRate: number;
+  rateFrom: string;
+  history: JobRoleRate[];
+  overtimeTariffs?: Record<string, number>;
+}
+
 export interface OvertimeRules {
-  id: string;              // = id do cargo
+  id: string;              // = empresa + "__" + id do cargo (etapa especial E5)
+  company?: string;
+  roleId?: string;
   roleName: string;
   days: Record<OvertimeDayKey, OvertimeDayRule>;
   updatedAt: string;
@@ -516,6 +528,7 @@ export interface CycleSetting {
 export interface PlanningLot {
   id: string;
   unit: string;
+  company?: string;      // empresa das OS do lote (etapa especial E5: pernoite com o valor da empresa)
   periodStart: string;   // "AAAA-MM-DD"
   periodEnd: string;
   technicianName: string;

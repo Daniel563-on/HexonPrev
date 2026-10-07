@@ -1,9 +1,10 @@
 import { doc, getDoc } from './guard';
 import { JobRole, Material, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
-import { cargoKey, dbGetJobRoles } from './workforce';
+import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { dbGetMaterials } from './materials';
 import { dbGetOvernightRate, lotOvernightCost } from './planning';
+import { companyTracksCost, dbGetCompanies } from './companies';
 
 // HOMEM-HORA (Etapa 7): tempo e homem-hora ficam gravados na OS na conclusão (em minutos).
 // O valor em R$ não é gravado: é calculado na hora, só para quem tem "Visualizar Valores (R$)".
@@ -88,6 +89,7 @@ export interface OrderCost {
   overnight: OrderCostLine | null;
   total: number;
   missing: number;       // linhas sem valor cadastrado (ficam fora do total)
+  costTracking: boolean; // false = a empresa da OS não contabiliza homem-hora e pernoite (só materiais) — etapa especial E5
 }
 
 async function getLot(lotId: string): Promise<PlanningLot | null> {
@@ -102,21 +104,25 @@ async function getLot(lotId: string): Promise<PlanningLot | null> {
 }
 
 // Custo de uma OS concluída: mão de obra (horas × valor do cargo), materiais (qtd × valor) e parte do pernoite do lote.
-// Valores vigentes na data da conclusão.
+// Valores vigentes na data da conclusão. Etapa especial E5: valores e pernoite da EMPRESA da OS;
+// empresa que não contabiliza homem-hora = custo só de materiais.
 export async function dbGetOrderCost(o: ServiceOrder): Promise<OrderCost> {
   const date = localDate(o.completedAt || o.updatedAt || new Date().toISOString());
   const hours = (o.durationMin || 0) / 60;
   const needMaterials = (o.materialsUsed || []).length > 0 && !!o.unit;
+  const companies = await dbGetCompanies().catch(() => []);
+  const tracks = companyTracksCost(companies, o.company);
+  const company = o.company || '';
   const [roles, materials, overnightRate, lot] = await Promise.all([
-    dbGetJobRoles(),
+    tracks ? dbGetJobRoles() : Promise.resolve([] as JobRole[]),
     needMaterials ? dbGetMaterials([o.unit!]) : Promise.resolve([] as Material[]),
-    o.lotId ? dbGetOvernightRate() : Promise.resolve(null),
-    o.lotId ? getLot(o.lotId) : Promise.resolve(null)
+    tracks && o.lotId ? dbGetOvernightRate(company) : Promise.resolve(null),
+    tracks && o.lotId ? getLot(o.lotId) : Promise.resolve(null)
   ]);
-  const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), r]));
+  const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), roleForCompany(r, company)]));
   const matById = new Map<string, Material>(materials.map((m) => [m.id, m]));
 
-  const labor: OrderCostLine[] = (o.participants || []).map((p) => {
+  const labor: OrderCostLine[] = !tracks ? [] : (o.participants || []).map((p) => {
     const role = roleByKey.get(cargoKey(p.cargo));
     const rate = role ? valueAt(role.history, date) : null;
     return {
@@ -153,7 +159,8 @@ export async function dbGetOrderCost(o: ServiceOrder): Promise<OrderCost> {
     materials: materialLines,
     overnight,
     total: round2(all.reduce((sum, l) => sum + (l.value || 0), 0)),
-    missing: all.filter((l) => l.value === null).length
+    missing: all.filter((l) => l.value === null).length,
+    costTracking: tracks
   };
 }
 

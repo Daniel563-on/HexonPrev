@@ -67,6 +67,7 @@ export default function OrderTimeCost({ order, canViewCosts }: { order: ServiceO
             {loading && <p className="text-[11px] text-slate-400">Calculando...</p>}
             {cost && (
               <>
+                {!cost.costTracking && <p className="text-[11px] font-bold text-slate-500">A empresa não contabiliza homem-hora e pernoite: o custo é só dos materiais.</p>}
                 {lines('Mão de obra', cost.labor)}
                 {lines('Materiais', cost.materials)}
                 {cost.overnight && lines('Pernoite', [cost.overnight])}
