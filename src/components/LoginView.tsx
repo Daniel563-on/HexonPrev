@@ -2,8 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { dbLoginByMatricula } from '../db/firebase';
 import { HexonUser } from '../types';
-import { User, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Cloud } from 'lucide-react';
 import BrandLogo from './BrandLogo';
+import BrandBackground from './BrandBackground';
+import { brandTagline, brandTopText, useBranding } from '../db/branding';
 
 interface LoginViewProps {
   onLoginSuccess: (user: HexonUser) => Promise<void> | void;
@@ -73,102 +75,89 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     }
   };
 
+  const branding = useBranding();
+  const tagline = brandTagline(branding);
+  const topText = brandTopText(branding);
+  const inputCls =
+    'w-full pl-11 py-3 sm:py-3.5 bg-[#0a1638]/70 border rounded-xl text-sm font-semibold text-white placeholder:text-slate-500 transition-all outline-none focus:bg-[#0c1a42]/80';
+
   return (
-    <div 
-      className="min-h-screen w-screen flex flex-col justify-center items-center select-none font-sans overflow-y-auto relative bg-[#060913] p-4 sm:p-6"
-      style={{
-        backgroundImage: `
-          radial-gradient(ellipse at 50% 35%, rgba(99, 102, 241, 0.14) 0%, rgba(30, 27, 75, 0.08) 45%, rgba(6, 9, 19, 0.98) 80%),
-          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='104' viewBox='0 0 60 104'%3E%3Cpath d='M30 0 L60 17.32 L60 52 L30 69.32 L0 52 L0 17.32 Z M30 104 L60 86.68 L60 52 L30 34.68 L0 52 L0 86.68 Z' fill='none' stroke='%234338ca' stroke-width='0.75' stroke-opacity='0.16'/%3E%3C/svg%3E")
-        `
-      }}
-    >
-      
-      {/* Central Content Container */}
-      <div className="w-full max-w-[440px] flex flex-col items-center justify-center space-y-7 z-10">
-        
-        {/* BRANDING: Hexagon Icon + HEXON + Subtitle */}
-        <div className="text-center flex flex-col items-center">
-          {/* Glowing Hexagon Icon */}
+    <div className="min-h-screen w-screen relative flex flex-col justify-center items-center select-none font-sans overflow-x-hidden overflow-y-auto bg-[#050b1f] px-4 py-8 sm:p-6">
+      <BrandBackground />
+
+      {/* Texto do canto (só no computador) */}
+      {topText && (
+        <div className="hidden md:block absolute top-6 right-8 z-10 text-sm font-medium tracking-[0.2em] text-slate-100/90 whitespace-pre-line text-right">
+          {topText}
+        </div>
+      )}
+
+      <div className="w-full max-w-[460px] flex flex-col items-center justify-center z-10">
+        {/* MARCA: logo + HEXON + frase */}
+        <div className="text-center flex flex-col items-center mb-7 sm:mb-8">
           <div className="relative mb-3 flex items-center justify-center">
-            <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full scale-150" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-violet-600/40 to-cyan-400/40 blur-2xl rounded-full scale-125" />
             <BrandLogo
-              className="w-28 h-28 sm:w-32 sm:h-32 relative z-10 drop-shadow-[0_0_18px_rgba(99,102,241,0.55)]"
+              className="w-32 h-32 md:w-40 md:h-40 relative z-10 drop-shadow-[0_0_22px_rgba(34,211,238,0.55)]"
               fallback={
-                <svg 
-                  viewBox="0 0 100 100" 
-                  className="w-24 h-24 relative z-10 filter drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
-                >
-                  {/* Outer Hexagon */}
-                  <polygon
-                    points="50,6 88,28 88,72 50,94 12,72 12,28"
-                    fill="#0F172A"
-                    stroke="#6366F1"
-                    strokeWidth="4"
-                    strokeLinejoin="round"
-                  />
-                  {/* Inner Accent Hexagon */}
-                  <polygon
-                    points="50,22 74,36 74,64 50,78 26,64 26,36"
-                    fill="none"
-                    stroke="#818CF8"
-                    strokeWidth="2.5"
-                    strokeDasharray="4,3"
-                    strokeLinejoin="round"
-                  />
-                  {/* Core Solid Micro Hexagon */}
-                  <polygon
-                    points="50,38 60,44 60,56 50,62 40,56 40,44"
-                    fill="#6366F1"
-                    fillOpacity="0.85"
-                  />
+                <svg viewBox="0 0 100 100" className="w-28 h-28 md:w-32 md:h-32 relative z-10 drop-shadow-[0_0_16px_rgba(34,211,238,0.55)]">
+                  <defs>
+                    <linearGradient id="hexLoginGrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#8B5CF6" />
+                      <stop offset="100%" stopColor="#22D3EE" />
+                    </linearGradient>
+                  </defs>
+                  <polygon points="50,6 88,28 88,72 50,94 12,72 12,28" fill="#0B1A3F" stroke="url(#hexLoginGrad)" strokeWidth="5" strokeLinejoin="round" />
+                  <polygon points="50,38 60,44 60,56 50,62 40,56 40,44" fill="url(#hexLoginGrad)" />
                 </svg>
               }
             />
           </div>
 
-          {/* Hexon Brand Title */}
-          <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-[0.2em] font-brand leading-tight">
+          <h1 className="text-6xl md:text-7xl font-extrabold tracking-[0.22em] pl-[0.22em] font-brand leading-tight bg-gradient-to-b from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(139,92,246,0.45)]">
             HEXON
           </h1>
 
+          {tagline && (
+            <div className="mt-3 flex items-center gap-2 sm:gap-4 w-full justify-center">
+              <span className="h-px w-6 sm:w-16 bg-gradient-to-r from-transparent to-violet-400/80 shrink-0" />
+              <p className="text-[10px] sm:text-xs italic font-semibold uppercase tracking-[0.16em] sm:tracking-[0.28em] text-slate-100/90 whitespace-pre-line leading-relaxed">
+                {tagline}
+              </p>
+              <span className="h-px w-6 sm:w-16 bg-gradient-to-l from-transparent to-violet-400/80 shrink-0" />
+            </div>
+          )}
         </div>
 
-        {/* CORE LOGIN CARD */}
-        <div className="w-full bg-[#0B1325]/90 rounded-2xl p-6 sm:p-8 border border-slate-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.6)] backdrop-blur-md relative text-left">
-          
-          {/* Card Header */}
+        {/* CARTÃO DE ACESSO (vidro com borda neon) */}
+        <div className="w-full rounded-[22px] p-6 sm:p-8 bg-[#0c1b44]/55 backdrop-blur-xl border border-cyan-300/40 shadow-[0_0_0_1px_rgba(139,92,246,0.25),0_0_40px_rgba(34,211,238,0.22),inset_0_0_30px_rgba(59,130,246,0.12)] text-left">
           <div className="mb-6">
-            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight font-sans">
+            <h2 className="flex items-center gap-3 text-lg sm:text-xl font-bold text-white tracking-tight">
+              <span className="w-1 h-6 rounded-full bg-gradient-to-b from-violet-400 to-fuchsia-500 -skew-x-12 shadow-[0_0_10px_rgba(168,85,247,0.7)]" />
               Acesso Corporativo
             </h2>
-            <p className="text-xs text-slate-400 font-normal mt-1 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-300/90 mt-1.5 leading-relaxed pl-4">
               Insira sua matrícula e senha homologadas para ingressar no sistema.
             </p>
           </div>
 
-          {/* Alert Error Message */}
           {errorMessage && (
-            <div className="mb-5 p-3 bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs rounded-xl flex items-start gap-2.5 shadow-sm animate-in fade-in">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="mb-5 p-3 bg-rose-500/15 border border-rose-400/40 text-rose-200 text-xs rounded-xl flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-300 shrink-0 mt-0.5" />
               <span className="leading-relaxed font-medium">{errorMessage}</span>
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
-            {/* Field 1: Matrícula */}
-            <div className="space-y-1.5">
-              <label 
-                htmlFor="matricula-input" 
-                className="block text-[10px] font-bold uppercase tracking-wider text-slate-300 font-sans"
-              >
-                MATRÍCULA DO COLABORADOR
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Matrícula */}
+            <div className="space-y-2">
+              <label htmlFor="matricula-input" className="flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-200/90">
+                <User className="w-3.5 h-3.5 text-slate-300" />
+                Matrícula do colaborador
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 flex items-center justify-center pointer-events-none">
-                  <User className="w-4 h-4 text-slate-500" />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                  <User className="w-4 h-4 text-cyan-200/80" />
                 </span>
                 <input
                   id="matricula-input"
@@ -178,22 +167,20 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   onChange={(e) => setMatricula(e.target.value)}
                   onBlur={() => setMatricula(prev => prev.trim())}
                   disabled={isLoading}
-                  className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-[#EEF2F6] hover:bg-white focus:bg-white border border-transparent focus:border-indigo-400 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 transition-all outline-none shadow-xs focus:ring-2 focus:ring-indigo-500/20"
+                  className={`${inputCls} pr-4 border-cyan-400/60 focus:border-cyan-300 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.15),0_0_18px_rgba(34,211,238,0.35)]`}
                 />
               </div>
             </div>
 
-            {/* Field 2: Senha */}
-            <div className="space-y-1.5">
-              <label 
-                htmlFor="senha-input" 
-                className="block text-[10px] font-bold uppercase tracking-wider text-slate-300 font-sans"
-              >
-                SENHA DE ACESSO
+            {/* Senha */}
+            <div className="space-y-2">
+              <label htmlFor="senha-input" className="flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-200/90">
+                <Lock className="w-3.5 h-3.5 text-slate-300" />
+                Senha de acesso
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 flex items-center justify-center pointer-events-none">
-                  <Lock className="w-4 h-4 text-slate-500" />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                  <Lock className="w-4 h-4 text-violet-200/80" />
                 </span>
                 <input
                   id="senha-input"
@@ -205,90 +192,78 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   onKeyUp={handlePasswordKeyEvents}
                   onBlur={() => setIsCapsLockOn(false)}
                   disabled={isLoading}
-                  className="w-full pl-10 pr-10 py-2.5 sm:py-3 bg-[#EEF2F6] hover:bg-white focus:bg-white border border-transparent focus:border-indigo-400 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 tracking-wide transition-all outline-none shadow-xs focus:ring-2 focus:ring-indigo-500/20"
+                  className={`${inputCls} pr-11 tracking-wide border-violet-400/60 focus:border-violet-300 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.18),0_0_18px_rgba(139,92,246,0.4)]`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   tabIndex={-1}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer flex items-center justify-center transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-300 hover:text-white focus:outline-none cursor-pointer flex items-center justify-center transition-colors"
                   title={showPassword ? 'Ocultar Senha' : 'Mostrar Senha'}
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4 text-slate-500" />
-                  ) : (
-                    <Eye className="w-4 h-4 text-slate-500" />
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 
-              {/* Caps Lock Alert */}
               {isCapsLockOn && (
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-400 font-medium animate-in fade-in duration-150 pt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-300 font-medium pt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse shrink-0" />
                   <span>Atenção: <strong>Caps Lock</strong> ativado</span>
                 </div>
               )}
             </div>
 
-            {/* Checkbox: Lembrar Matrícula */}
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none group">
-                <input
-                  type="checkbox"
-                  checked={rememberMatricula}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setRememberMatricula(checked);
-                    if (!checked) {
-                      localStorage.removeItem('hexon_remembered_matricula');
-                      localStorage.setItem('hexon_remember_matricula_optout', 'true');
-                    }
-                  }}
-                  className="w-4 h-4 rounded border-slate-700 bg-[#070D1B] text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer accent-indigo-500"
-                />
-                <span className="text-xs text-slate-300 group-hover:text-white transition-colors">
-                  Lembrar matrícula neste dispositivo
-                </span>
-              </label>
-            </div>
+            {/* Lembrar matrícula */}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none group pt-0.5">
+              <input
+                type="checkbox"
+                checked={rememberMatricula}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setRememberMatricula(checked);
+                  if (!checked) {
+                    localStorage.removeItem('hexon_remembered_matricula');
+                    localStorage.setItem('hexon_remember_matricula_optout', 'true');
+                  }
+                }}
+                className="w-4 h-4 rounded cursor-pointer accent-violet-500"
+              />
+              <span className="text-xs sm:text-sm text-slate-200 group-hover:text-white transition-colors">
+                Lembrar matrícula neste dispositivo
+              </span>
+            </label>
 
-            {/* Submit Sign In Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-3 sm:py-3.5 bg-[#6366F1] hover:bg-[#5254DE] active:scale-[0.99] text-white rounded-xl text-xs sm:text-sm font-bold tracking-normal shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Entrando...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Entrar no Sistema</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-
+            {/* Entrar */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 sm:py-4 rounded-xl text-sm sm:text-base font-bold text-white bg-gradient-to-r from-violet-600 via-blue-500 to-violet-600 border border-cyan-300/50 shadow-[0_0_24px_rgba(99,102,241,0.55)] hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Entrando...</span>
+                </>
+              ) : (
+                <>
+                  <span>Entrar no Sistema</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
           </form>
-
         </div>
 
-        {/* BOTTOM FOOTER */}
-        <div className="text-[10px] font-sans tracking-wider text-slate-500/80 uppercase text-center select-none pt-2">
-          © 2026 HEXON MAINTENANCE SUITE • SEGURANÇA HOMOLOGADA GOOGLE CLOUD
+        {/* RODAPÉ */}
+        <div className="mt-8 flex flex-col items-center gap-2 text-[10px] tracking-[0.2em] text-slate-300/70 uppercase text-center">
+          <Cloud className="w-5 h-5 text-slate-300/80" />
+          <span>© 2026 Hexon Maintenance Suite</span>
+          <span>Segurança homologada Google Cloud</span>
         </div>
-
       </div>
-
     </div>
   );
 }
-

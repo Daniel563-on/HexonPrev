@@ -19,6 +19,7 @@ import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import BrandLogo from './components/BrandLogo';
+import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
@@ -920,8 +921,9 @@ export default function App() {
   // Rendering Session Initializing loader (Sleek minimalist panel)
   if (sessionChecking) {
     return (
-      <div className="h-screen w-screen bg-[#0A101D] flex flex-col items-center justify-center font-sans text-white">
-        <div className="bg-[#0A101D] p-8 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col items-center max-w-sm text-center">
+      <div className="h-screen w-screen relative overflow-hidden bg-[#050b1f] flex flex-col items-center justify-center font-sans text-white">
+        <BrandBackground cacheOnly />
+        <div className="relative z-10 bg-[#0c1b44]/60 backdrop-blur-xl p-8 rounded-2xl border border-cyan-300/40 shadow-[0_0_40px_rgba(34,211,238,0.2)] flex flex-col items-center max-w-sm text-center">
           <div className="relative h-24 w-24 mb-5 flex items-center justify-center shrink-0">
             <BrandLogo
               className="h-24 w-24 animate-pulse"
@@ -939,9 +941,9 @@ export default function App() {
           <h2 className="text-3xl font-extrabold tracking-[0.18em] uppercase text-white font-brand">HEXON</h2>
           <p className="text-xs text-slate-400 mt-2">Carregando credenciais e restabelecendo persistência no Firestore...</p>
           <div className="mt-6 flex gap-1 items-center justify-center">
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
         </div>
       </div>

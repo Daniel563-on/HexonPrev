@@ -103,7 +103,7 @@ export default function BrandingCard({ darkMode, userName }: { darkMode: boolean
           confirmClear ? (
             <>
               <span className={`text-xs font-bold ${strong}`}>Confirma? Volta o "H" padrão em todas as telas.</span>
-              <button type="button" disabled={busy} onClick={() => run(dbClearBranding, 'Logo removido: voltou o padrão.')} className={`${btn} bg-rose-600 hover:bg-rose-700 text-white`}>
+              <button type="button" disabled={busy} onClick={() => run(() => dbClearBranding(userName), 'Logo removido: voltou o padrão.')} className={`${btn} bg-rose-600 hover:bg-rose-700 text-white`}>
                 {busy ? 'Removendo...' : 'Sim, voltar ao padrão'}
               </button>
               <button type="button" disabled={busy} onClick={() => setConfirmClear(false)} className={`${btn} border border-slate-300 text-slate-600`}>
