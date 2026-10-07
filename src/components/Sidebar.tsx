@@ -129,9 +129,9 @@ export default function Sidebar({
         {/* Marca */}
         <div className="px-6 mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative h-9 w-9 flex items-center justify-center shrink-0">
+            <div className="relative h-12 w-12 flex items-center justify-center shrink-0">
               <BrandLogo
-                className="h-9 w-9"
+                className="h-12 w-12"
                 fallback={
                   <>
                     <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500" fill="none">
@@ -144,7 +144,7 @@ export default function Sidebar({
               />
             </div>
             <div>
-              <h1 className="text-lg font-extrabold text-white tracking-[0.18em] font-brand leading-none">HEXON</h1>
+              <h1 className="text-2xl font-extrabold text-white tracking-[0.16em] font-brand leading-none">HEXON</h1>
               {inPmoc && (
                 <span className="text-[10px] text-indigo-400/90 font-bold tracking-widest font-mono uppercase block mt-1.5">PMOC</span>
               )}
