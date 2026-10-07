@@ -508,7 +508,7 @@ export default function TechnicianMobileView({
       }`}>
         <div className="flex items-center gap-2.5">
           <BrandLogo
-            className="w-9 h-9 shrink-0"
+            className="w-11 h-11 shrink-0"
             fallback={
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 font-black text-sm">
                 H
@@ -517,7 +517,7 @@ export default function TechnicianMobileView({
           />
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-base font-extrabold tracking-[0.15em] font-brand leading-none">HEXON</h1>
+              <h1 className="text-xl font-extrabold tracking-[0.15em] font-brand leading-none">HEXON</h1>
               <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-500 uppercase tracking-wider">
                 Técnico
               </span>

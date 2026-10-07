@@ -93,11 +93,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <div className="relative mb-3 flex items-center justify-center">
             <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full scale-150" />
             <BrandLogo
-              className="w-16 h-16 relative z-10 drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+              className="w-28 h-28 sm:w-32 sm:h-32 relative z-10 drop-shadow-[0_0_18px_rgba(99,102,241,0.55)]"
               fallback={
                 <svg 
                   viewBox="0 0 100 100" 
-                  className="w-14 h-14 relative z-10 filter drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+                  className="w-24 h-24 relative z-10 filter drop-shadow-[0_0_12px_rgba(99,102,241,0.5)]"
                 >
                   {/* Outer Hexagon */}
                   <polygon
@@ -128,7 +128,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </div>
 
           {/* Hexon Brand Title */}
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-[0.22em] font-brand leading-tight">
+          <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-[0.2em] font-brand leading-tight">
             HEXON
           </h1>
 
