@@ -9,6 +9,23 @@
   --font-headline: "Plus Jakarta Sans", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
   --font-brand: "Exo 2", "Inter", sans-serif;
+
+  /* Tons intermediários usados no código e que não existem no Tailwind (sem eles a borda saía preta e o texto sem cor) */
+  --color-slate-150: #e9eef4;
+  --color-slate-250: #d6dde7;
+  --color-slate-350: #afbccb;
+  --color-slate-450: #7c8ba1;
+  --color-slate-550: #56657a;
+  --color-slate-650: #3c4a5f;
+  --color-slate-850: #172033;
+  --color-gray-150: #eceef1;
+  --color-gray-250: #dbdee3;
+  --color-gray-350: #b7bcc5;
+  --color-gray-550: #5b6370;
+  --color-gray-650: #414b5a;
+  --color-indigo-150: #d4dcfe;
+  --color-indigo-750: #3d34b6;
+  --color-indigo-850: #342f92;
 }
 
 /* Custom transitions and utility animations */
