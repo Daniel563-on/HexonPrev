@@ -18,6 +18,7 @@ import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import MaintenanceScreen from './components/MaintenanceScreen';
+import BrandLogo from './components/BrandLogo';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
@@ -922,13 +923,20 @@ export default function App() {
       <div className="h-screen w-screen bg-[#0A101D] flex flex-col items-center justify-center font-sans text-white">
         <div className="bg-[#0A101D] p-8 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col items-center max-w-sm text-center">
           <div className="relative h-14 w-14 mb-5 flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500 animate-pulse" fill="none">
-              <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="#1e1b4b" fillOpacity="0.4" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M50 25L72 38V62L50 75L28 62V38L50 25Z" fill="currentColor" stroke="none" fillOpacity="0.8" />
-            </svg>
-            <span className="relative z-10 text-xs font-black text-white">H</span>
+            <BrandLogo
+              className="h-14 w-14 animate-pulse"
+              fallback={
+                <>
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-indigo-500 animate-pulse" fill="none">
+                    <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="#1e1b4b" fillOpacity="0.4" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M50 25L72 38V62L50 75L28 62V38L50 25Z" fill="currentColor" stroke="none" fillOpacity="0.8" />
+                  </svg>
+                  <span className="relative z-10 text-xs font-black text-white">H</span>
+                </>
+              }
+            />
           </div>
-          <h2 className="text-base font-black tracking-widest uppercase text-white font-sans">HEXON PREVENTIVA</h2>
+          <h2 className="text-lg font-extrabold tracking-[0.18em] uppercase text-white font-brand">HEXON</h2>
           <p className="text-xs text-slate-400 mt-2">Carregando credenciais e restabelecendo persistência no Firestore...</p>
           <div className="mt-6 flex gap-1 items-center justify-center">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />

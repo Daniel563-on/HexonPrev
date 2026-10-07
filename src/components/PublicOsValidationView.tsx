@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Calendar, CheckCircle2, FileCheck2, Lock, MapPin, Star, Users, XCircle } from 'lucide-react';
 import { OsValidation } from '../types';
 import { dbAnswerOsValidation, dbGetOsValidation } from '../db/firebase';
+import BrandLogo from './BrandLogo';
 
 // PÁGINA DO LINK DE VALIDAÇÃO (sem login): o cliente confere o atendimento e APROVA (nome, matrícula, estrelas)
 // ou CONTESTA (motivo). Uma resposta só e dentro do prazo do link (o banco garante). Sem valores.
@@ -54,9 +55,12 @@ export default function PublicOsValidationView({ token }: { token: string }) {
     <div className="min-h-screen bg-[#060b16] text-slate-100 font-sans flex justify-center p-3 sm:p-6">
       <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-[#0a101d] overflow-hidden flex flex-col">
         <header className="px-5 py-4 border-b border-slate-800 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl border border-amber-500/60 bg-amber-500/10 flex items-center justify-center font-black text-amber-400">H</div>
+          <BrandLogo
+            className="w-10 h-10 shrink-0"
+            fallback={<div className="w-10 h-10 rounded-xl border border-amber-500/60 bg-amber-500/10 flex items-center justify-center font-black text-amber-400">H</div>}
+          />
           <div>
-            <p className="text-sm font-black tracking-widest text-amber-400">HEXON</p>
+            <p className="text-base font-extrabold tracking-[0.15em] font-brand text-amber-400 leading-none">HEXON</p>
             <p className="text-[11px] text-slate-400">Validação de Ordem de Serviço</p>
           </div>
         </header>

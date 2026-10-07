@@ -26,6 +26,7 @@ import {
 } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { getBorderCssValue, getFieldContent } from './qrPrintHelpers';
+import { useBranding } from '../../db/branding';
 
 export const FONT_OPTIONS = [
   { label: 'Inter (Padrão Limpo)', value: 'Inter, sans-serif' },
@@ -99,6 +100,7 @@ export const QrLayoutEditorTab: React.FC<QrLayoutEditorTabProps> = ({
   darkMode
 }) => {
   const [activeFieldEdit, setActiveFieldEdit] = useState<FieldKey | null>('header');
+  const brandLogo = useBranding().logo;
 
   const handlePaperTypeSelect = (paper: 'A4' | 'A3' | 'Custom') => {
     if (paper === 'A4') {
@@ -528,6 +530,39 @@ export const QrLayoutEditorTab: React.FC<QrLayoutEditorTabProps> = ({
                 className="w-full accent-indigo-600 cursor-pointer"
               />
             </div>
+
+            {/* LOGO DO SISTEMA NA ETIQUETA */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 font-mono cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!placardConfig.showLogo}
+                  onChange={(e) => setPlacardConfig({ ...placardConfig, showLogo: e.target.checked })}
+                  className="accent-indigo-600 cursor-pointer"
+                />
+                <span>Mostrar logo do sistema na etiqueta</span>
+              </label>
+              {placardConfig.showLogo && (
+                <>
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-400 font-mono">
+                    <span>Altura do logo</span>
+                    <span className="text-indigo-600 dark:text-indigo-400">{placardConfig.logoSizeMm || 6} mm</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="3"
+                    max="15"
+                    step="0.5"
+                    value={placardConfig.logoSizeMm || 6}
+                    onChange={(e) => setPlacardConfig({ ...placardConfig, logoSizeMm: parseFloat(e.target.value) })}
+                    className="w-full accent-indigo-600 cursor-pointer"
+                  />
+                  {!brandLogo && (
+                    <p className="text-[10px] text-amber-600 font-bold">Nenhum logo enviado ainda (Configurações › Sistema › Logo do sistema).</p>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -637,6 +672,20 @@ export const QrLayoutEditorTab: React.FC<QrLayoutEditorTabProps> = ({
                     overflow: 'hidden'
                   }}
                 >
+                  {placardConfig.showLogo && brandLogo && (
+                    <img
+                      src={brandLogo}
+                      alt=""
+                      style={{
+                        height: `${(placardConfig.logoSizeMm || 6) * 3.8}px`,
+                        width: 'auto',
+                        maxWidth: '100%',
+                        objectFit: 'contain',
+                        alignSelf: currentOrientationLayout.textAlign === 'center' ? 'center' : 'flex-start',
+                        marginBottom: '2px'
+                      }}
+                    />
+                  )}
                   {activeFieldOrder.map((key) => {
                     const f = placardConfig.fields[key];
                     if (!f || !f.enabled) return null;

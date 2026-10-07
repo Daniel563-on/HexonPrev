@@ -743,6 +743,8 @@ export interface PlacardConfig {
   borderRadiusMm: number;
   backgroundColor: string;
   headerCustomText: string;
+  showLogo?: boolean;   // logo do sistema (Configurações › Sistema) no alto do texto da etiqueta
+  logoSizeMm?: number;  // altura do logo na etiqueta (padrão 6 mm)
   fieldOrder?: FieldKey[];
   fields: {
     header: FieldStyle;

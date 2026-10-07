@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { Asset, FieldKey, PlacardConfig, SheetConfig } from '../../types';
 import { AssetQrCode } from '../AssetQrCode';
 import { getBorderCssValue, getFieldContent } from './qrPrintHelpers';
+import { useBranding } from '../../db/branding';
 
 export interface QrSheetPrintPreviewTabProps {
   sheetConfig: SheetConfig;
@@ -45,6 +46,7 @@ export const QrSheetPrintPreviewTab = React.memo(function QrSheetPrintPreviewTab
   const qrOrder = (placardConfig.orientation === 'horizontal-left' || placardConfig.orientation === 'vertical-top') ? 0 : 1;
   const textOrder = qrOrder === 0 ? 1 : 0;
   const textAlign = isRow ? 'left' : 'center';
+  const brandLogo = useBranding().logo;
 
   return (
     <div className="space-y-4">
@@ -161,6 +163,20 @@ export const QrSheetPrintPreviewTab = React.memo(function QrSheetPrintPreviewTab
                       overflow: 'hidden'
                     }}
                   >
+                    {placardConfig.showLogo && brandLogo && (
+                      <img
+                        src={brandLogo}
+                        alt=""
+                        style={{
+                          height: `${placardConfig.logoSizeMm || 6}mm`,
+                          width: 'auto',
+                          maxWidth: '100%',
+                          objectFit: 'contain',
+                          alignSelf: textAlign === 'center' ? 'center' : 'flex-start',
+                          marginBottom: '0.5mm'
+                        }}
+                      />
+                    )}
                     {activeFieldOrder.map((key) => {
                       const f = placardConfig.fields[key];
                       if (!f || !f.enabled) return null;

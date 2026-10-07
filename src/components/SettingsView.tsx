@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import SystemControlCard from './users/SystemControlCard';
+import BrandingCard from './users/BrandingCard';
 import AuditLogsTab from './users/AuditLogsTab';
 import OsTemplatesEditor from './os/OsTemplatesEditor';
 import CompaniesTab from './users/CompaniesTab';
 import { HexonUser } from '../types';
 
 // CONFIGURAÇÕES: coisas do sistema todo.
-// Sistema = forçar atualização e modo manutenção; Auditoria = ações registradas e acessos (só Super Administrador).
+// Sistema = logo do sistema, forçar atualização e modo manutenção; Auditoria = ações registradas e acessos (só Super Administrador).
 // Empresas = empresas contratadas de cada gerência (só Super Administrador).
 // Modelos de OS = quem tem "Criar e editar modelos de OS" no perfil (o Super Administrador também).
 type SettingsTab = 'system' | 'audit' | 'companies' | 'os-templates';
@@ -47,7 +48,12 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
         {canEditOsTemplates && tabBtn('os-templates', 'description', 'Modelos de OS')}
       </div>
 
-      {tab === 'system' && isSuper && <SystemControlCard darkMode={darkMode} userName={userProfile.name} />}
+      {tab === 'system' && isSuper && (
+        <div className="max-w-3xl mx-auto space-y-4">
+          <BrandingCard darkMode={darkMode} userName={userProfile.name} />
+          <SystemControlCard darkMode={darkMode} userName={userProfile.name} />
+        </div>
+      )}
       {tab === 'audit' && isSuper && <AuditLogsTab darkMode={darkMode} />}
       {tab === 'companies' && isSuper && <CompaniesTab userName={userProfile.name} darkMode={darkMode} />}
       {tab === 'os-templates' && canEditOsTemplates && <OsTemplatesEditor userProfile={userProfile} />}

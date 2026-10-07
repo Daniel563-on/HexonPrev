@@ -1,5 +1,6 @@
 import { Asset, FieldKey, FieldStyle, PlacardConfig, SheetConfig } from '../../types';
 import { getAssetQrDataUrl } from '../../utils/qrUtils';
+import { getBranding } from '../../db/branding';
 
 export const getFieldContent = (key: FieldKey, headerCustomText: string, asset?: Asset): string => {
   switch (key) {
@@ -154,6 +155,9 @@ export async function executeBatchPrint({
     `;
   };
 
+  // Logo do sistema (Configurações › Sistema) no alto do texto, se ligado no editor e se houver logo enviado
+  const brandLogo = placardConfig.showLogo ? getBranding().logo || '' : '';
+
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -235,6 +239,14 @@ export async function executeBatchPrint({
             text-align: ${textAlign};
             overflow: hidden;
           }
+          .logo {
+            height: ${placardConfig.logoSizeMm || 6}mm;
+            width: auto;
+            max-width: 100%;
+            object-fit: contain;
+            align-self: ${textAlign === 'center' ? 'center' : 'flex-start'};
+            margin-bottom: 0.5mm;
+          }
           .f-header { ${generateFieldStyleCss(placardConfig.fields.header)} }
           .f-code { ${generateFieldStyleCss(placardConfig.fields.code)} }
           .f-name { ${generateFieldStyleCss(placardConfig.fields.name)} }
@@ -269,6 +281,7 @@ export async function executeBatchPrint({
                       <img src="${qrUrl}" alt="${asset.code}" />
                     </div>
                     <div class="info-box">
+                      ${brandLogo ? `<img class="logo" src="${brandLogo}" alt="" />` : ''}
                       ${activeFieldOrder.map((key) => {
                         const f = placardConfig.fields[key];
                         if (!f || !f.enabled) return '';
