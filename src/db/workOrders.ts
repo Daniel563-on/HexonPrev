@@ -19,6 +19,7 @@ import {
 } from './guard';
 import { OsLocationAnswer, OsStage, OsSystemField, OsSystemKey, OsTemplate, OsTemplateField, WorkOrder, WorkOrderEvent, WorkOrderExec, WorkOrderPause } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { nowMs, recordLoad } from '../utils/loadTimes';
 
 // OS (Hexon 2.0): corretiva, layout e acompanhamento — modelos ("osTemplates"), OS ("workOrders")
 // e o contador do número por ano ("counters/workOrders_AAAA").
@@ -442,10 +443,13 @@ export async function dbGetWorkOrder(id: string): Promise<WorkOrder | null> {
 // OS que estão com o técnico agora (índice esparso workOrders.techOpen)
 export async function dbGetMyWorkOrders(matricula: string): Promise<WorkOrder[]> {
   if (!matricula || !firebaseActive || !dbInstance) return [];
+  const t0 = nowMs();
   try {
     const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('techOpen', '==', matricula)));
+    recordLoad('Minhas OS (busca no banco)', nowMs() - t0, `${snap.size} OS com o técnico`);
     return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   } catch (err: any) {
+    recordLoad('Minhas OS (busca no banco)', nowMs() - t0, undefined, String(err?.message || err));
     checkQuotaException(err);
     throw err;
   }

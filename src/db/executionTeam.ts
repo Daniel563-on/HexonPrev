@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc } from './guard';
 import { OrderParticipant, OrderTimelineEvent, UsualTeam } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
-import { syncedList } from './localSync';
+import { onSyncChange, syncedList } from './localSync';
 
 // EXECUÇÃO (Etapa 6.2): pessoas da gerência (participantes), equipe habitual e linha do tempo da OS
 
@@ -16,6 +16,9 @@ interface UnitPerson {
   companies: string[];
 }
 const peopleCache = new Map<string, Promise<UnitPerson[]>>();
+// Usuário ou efetivo mudou (tempo real): a próxima leitura monta de novo a partir da cópia já atualizada
+onSyncChange('users', () => peopleCache.clear());
+onSyncChange('workforce', () => peopleCache.clear());
 function unitPeople(unit: string): Promise<UnitPerson[]> {
   if (!unit || !firebaseActive || !dbInstance) return Promise.resolve([]);
   let p = peopleCache.get(unit);

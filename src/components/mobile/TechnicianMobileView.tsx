@@ -47,6 +47,7 @@ import TechnicianOsTab from './TechnicianOsTab';
 import OsExecutionForm from '../os/OsExecutionForm';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 import BrandLogo from '../BrandLogo';
+import LoadTimesCard from './LoadTimesCard';
 
 export interface TechnicianMobileViewProps {
   orders: ServiceOrder[];
@@ -259,14 +260,18 @@ export default function TechnicianMobileView({
     } catch {
       /* sem armazenamento: busca de novo */
     }
-    // Materiais: só a lista da gerência + empresa do técnico (etapa especial E2)
-    Promise.all([dbGetMaterials([unit], false, userProfile.companies?.[0]), dbGetUnitPeople(unit), dbGetUsualTeam(mat)]).then(() => {
-      try {
-        localStorage.setItem(key, today);
-      } catch {
-        /* ignora */
-      }
-    });
+    // Materiais: só a lista da gerência + empresa do técnico (etapa especial E2).
+    // Começa alguns segundos depois de abrir o app, para Minhas OS e Solicitações aparecerem primeiro.
+    const timer = setTimeout(() => {
+      Promise.all([dbGetMaterials([unit], false, userProfile.companies?.[0]), dbGetUnitPeople(unit), dbGetUsualTeam(mat)]).then(() => {
+        try {
+          localStorage.setItem(key, today);
+        } catch {
+          /* ignora */
+        }
+      });
+    }, 6000);
+    return () => clearTimeout(timer);
   }, [userProfile.gerencia, userProfile.matricula, userProfile.companies?.[0]]);
 
   // OS atribuídas a este técnico. Concluídas saem da lista; a iniciada aparece "Em Execução".
@@ -1163,6 +1168,9 @@ export default function TechnicianMobileView({
               </div>
             </div>
           )}
+
+          {/* Diagnóstico: quanto cada carga demorou neste aparelho */}
+          <LoadTimesCard darkMode={darkMode} />
 
           {/* Section: Visual & Acessibilidade */}
           <div className="space-y-1.5">

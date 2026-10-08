@@ -11,6 +11,7 @@ import {
 } from '../../db/firebase';
 import WorkforceImportModal from './WorkforceImportModal';
 import JobRolesPanel from './JobRolesPanel';
+import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // EFETIVO (Super Administrador): todas as pessoas que podem participar de uma preventiva.
 // "Com login" = usuários do sistema; "Só efetivo" = importados por planilha, sem acesso ao sistema.
@@ -60,6 +61,12 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
     load(false);
     dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
+  // Tempo real: alteração feita em outro aparelho aparece sozinha (relê da memória, sem ler o banco)
+  const wfVersion = useSyncVersion('workforce');
+  useEffect(() => {
+    if (wfVersion === 0) return;
+    dbGetWorkforce(false).then(setPeople).catch(() => {});
+  }, [wfVersion]);
   const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id;
 
   const unitNames = managements.map((m) => m.name).filter((n) => n && n !== 'Todas');

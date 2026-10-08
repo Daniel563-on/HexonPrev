@@ -21,6 +21,7 @@ import MaintenanceScreen from './components/MaintenanceScreen';
 import BrandLogo from './components/BrandLogo';
 import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
+import { onSyncChange } from './db/localSync';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, isSectorInGerencia } from './types';
 import { 
@@ -486,6 +487,19 @@ export default function App() {
       console.warn('Silent sync error:', err);
     }
   };
+
+  // Modelos de preventiva em tempo real: alteração feita em outro aparelho chega sozinha (lista vem da memória, sem ler o banco)
+  useEffect(
+    () =>
+      onSyncChange('templates', () => {
+        dbGetTemplates()
+          .then((l) => {
+            if (l && l.length > 0) setTemplates(l);
+          })
+          .catch(() => {});
+      }),
+    []
+  );
 
   const loadPermissions = async () => {
     try {

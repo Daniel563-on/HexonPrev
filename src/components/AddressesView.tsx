@@ -3,6 +3,7 @@ import { MapPin, Plus, Upload, Search, Edit, Power } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Address, Company } from '../types';
 import { companiesOfUnit, dbGetAddresses, dbGetCompanies, dbMoveNewOrdersToCompany, dbSaveAddress, dbImportAddresses, addressCodeFromItem } from '../db/firebase';
+import { useSyncVersion } from '../utils/useSyncVersion';
 
 // CONTROLE DE ENDEREÇOS (somente Super Administrador)
 // Cada endereço ativo recebe sua ronda semanal (vistoria sem ativo da DOM).
@@ -48,6 +49,12 @@ export default function AddressesView({ userName = '' }: { userName?: string }) 
     load();
     dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
+  // Tempo real: alteração feita em outro aparelho aparece sozinha (relê da memória, sem ler o banco)
+  const addrVersion = useSyncVersion('addresses');
+  useEffect(() => {
+    if (addrVersion === 0) return;
+    dbGetAddresses(false).then(setAddresses).catch(() => {});
+  }, [addrVersion]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
