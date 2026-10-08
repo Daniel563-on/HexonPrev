@@ -230,14 +230,16 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // 4j-2. EXCLUSÕES PARA AS CÓPIAS GUARDADAS NOS APARELHOS (materiais, efetivo, usuários da gerência):
-    // só o id excluído (ou que mudou de gerência) e a gerência; quem exclui é o Super Administrador
+    // 4j-2. EXCLUSÕES PARA AS CÓPIAS GUARDADAS NOS APARELHOS (materiais, efetivo, usuários da gerência, modelos de preventiva):
+    // só o id excluído (ou que mudou de gerência) e a gerência ('*' = modelos); quem exclui é o Super Administrador
+    // (modelos: também quem tem "Excluir Modelos")
     match /syncDeletions/{deletionId} {
       allow read: if isStaff();
-      allow create: if isSuperAdmin()
+      allow create: if isStaff()
         && request.resource.data.keys().hasOnly(['coll', 'unit', 'docId', 'syncAt'])
-        && request.resource.data.coll in ['materials', 'workforce', 'users']
-        && request.resource.data.syncAt == request.time;
+        && request.resource.data.syncAt == request.time
+        && ((isSuperAdmin() && request.resource.data.coll in ['materials', 'workforce', 'users', 'templates'])
+            || (request.resource.data.coll == 'templates' && hasPermission('delete_templates')));
       allow update, delete: if false;
     }
 

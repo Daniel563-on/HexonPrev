@@ -1,13 +1,7 @@
-import { collection, deleteDoc, doc, getDocs, setDoc } from './guard';
+import { deleteDoc, doc, serverTimestamp, setDoc } from './guard';
 import { MaintenanceTemplate } from '../types';
-import {
-  firebaseActive,
-  dbInstance,
-  cleanUndefined,
-  checkQuotaException,
-  isCacheValid,
-  updateCacheTimestamp
-} from './core';
+import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { markSyncStale, syncedList, syncTombstone } from './localSync';
 
 export function isMockOrLegacyId(id: string): boolean {
   if (!id) return false;
@@ -28,140 +22,52 @@ export function isMockOrLegacyId(id: string): boolean {
 
 export const DEFAULT_TEMPLATES: MaintenanceTemplate[] = [];
 
-let cacheTemplates: MaintenanceTemplate[] | null = null;
-let cacheTemplatesFromFirebase = false;
-let pendingTemplatesPromise: Promise<MaintenanceTemplate[]> | null = null;
+// MODELOS DE PREVENTIVA: cópia guardada no aparelho (src/db/localSync.ts) — baixa todos 1 vez e depois só o que mudou
+// (antes, todo aparelho baixava todos os modelos a cada 12 h, com os PDFs mapeados junto).
+// Toda gravação leva syncAt; excluir registra em syncDeletions.
+
+// A cópia antiga ficava no armazenamento do navegador (com os PDFs): libera o espaço
+try {
+  localStorage.removeItem('hexon_templates');
+} catch {
+  /* sem armazenamento */
+}
 
 export function clearTemplatesCache(): void {
-  cacheTemplates = null;
-  cacheTemplatesFromFirebase = false;
-  pendingTemplatesPromise = null;
+  markSyncStale('templates');
 }
 
 // GET ALL CHECKLIST/MAINTENANCE TEMPLATES
-// forceFresh: lê do banco agora (tela de Modelos e Disparo: o disparo nunca pode usar um modelo desatualizado)
+// forceFresh: confere agora o que mudou (tela de Modelos e Disparo: o disparo nunca pode usar um modelo desatualizado)
 export async function dbGetTemplates(forceFresh = false): Promise<MaintenanceTemplate[]> {
-  const hasUser = !!(firebaseActive && dbInstance);
-  if (forceFresh && hasUser) clearTemplatesCache();
-
-  // Try retrieving from local storage fallback first
-  let localData: MaintenanceTemplate[] | null = null;
-  try {
-    const saved = localStorage.getItem('hexon_templates');
-    if (saved) {
-      localData = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.warn('Error reading templates from local storage fallback:', e);
-  }
-
-  // Check if in-memory cache OR local storage cache is valid
-  if (cacheTemplates !== null && (!hasUser || cacheTemplatesFromFirebase)) {
-    return [...cacheTemplates];
-  }
-  if (!(forceFresh && hasUser) && isCacheValid('templates') && localData && localData.length > 0) {
-    cacheTemplates = localData;
-    cacheTemplatesFromFirebase = true;
-    return [...cacheTemplates];
-  }
-
-  if (pendingTemplatesPromise !== null) {
-    return pendingTemplatesPromise;
-  }
-
-  pendingTemplatesPromise = (async () => {
-    if (firebaseActive && dbInstance) {
-      const path = 'templates';
-      try {
-        const snap = await getDocs(collection(dbInstance, path));
-        const list: MaintenanceTemplate[] = [];
-        snap.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (!data.deleted && !isMockOrLegacyId(docSnap.id)) {
-            list.push({ id: docSnap.id, ...data } as MaintenanceTemplate);
-          }
-        });
-        cacheTemplates = list;
-        cacheTemplatesFromFirebase = true;
-        updateCacheTimestamp('templates');
-        try {
-          localStorage.setItem('hexon_templates', JSON.stringify(cacheTemplates));
-        } catch (lsErr) {
-          console.warn('LocalStorage limit writing templates:', lsErr);
-        }
-        pendingTemplatesPromise = null;
-        return [...cacheTemplates];
-      } catch (err: any) {
-        console.warn('Could not fetch templates from Firestore. Using local fallback:', err);
-        checkQuotaException(err);
-      }
-    }
-
-    cacheTemplates = localData || [];
-    cacheTemplatesFromFirebase = false;
-    try {
-      localStorage.setItem('hexon_templates', JSON.stringify(cacheTemplates));
-    } catch (lsErr) {
-      console.warn('LocalStorage limit writing templates fallback:', lsErr);
-    }
-    pendingTemplatesPromise = null;
-    return [...cacheTemplates];
-  })();
-
-  return pendingTemplatesPromise;
+  if (!firebaseActive || !dbInstance) return [];
+  const list = await syncedList<MaintenanceTemplate & { deleted?: boolean }>('templates', '*', [], forceFresh);
+  return list.filter((t) => !t.deleted && !isMockOrLegacyId(t.id));
 }
 
 // SAVE OR UPDATE TEMPLATE
 export async function dbSaveTemplate(template: MaintenanceTemplate): Promise<void> {
-  if (cacheTemplates === null) {
-    await dbGetTemplates();
-  }
-
-  const idx = cacheTemplates!.findIndex((t) => t.id === template.id);
-  if (idx >= 0) {
-    cacheTemplates![idx] = { ...template };
-  } else {
-    cacheTemplates!.push({ ...template });
-  }
-
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   try {
-    localStorage.setItem('hexon_templates', JSON.stringify(cacheTemplates));
-  } catch (lsErr) {
-    console.warn('LocalStorage limit saving template:', lsErr);
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await setDoc(doc(dbInstance, 'templates', template.id), cleanUndefined(template));
-    } catch (err: any) {
-      console.warn('Firestore write template failed:', err);
-      checkQuotaException(err);
-      throw new Error('Não foi possível gravar o modelo no banco (verifique sua permissão).');
-    }
+    await setDoc(doc(dbInstance, 'templates', template.id), { ...cleanUndefined(template), syncAt: serverTimestamp() });
+    markSyncStale('templates');
+  } catch (err: any) {
+    console.warn('Firestore write template failed:', err);
+    checkQuotaException(err);
+    throw new Error('Não foi possível gravar o modelo no banco (verifique sua permissão).');
   }
 }
 
 // DELETE TEMPLATE
 export async function dbDeleteTemplate(templateId: string): Promise<void> {
-  if (cacheTemplates === null) {
-    await dbGetTemplates();
-  }
-
-  cacheTemplates = cacheTemplates!.filter((t) => t.id !== templateId);
-
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   try {
-    localStorage.setItem('hexon_templates', JSON.stringify(cacheTemplates));
-  } catch (lsErr) {
-    console.warn('LocalStorage limit deleting template:', lsErr);
-  }
-
-  if (firebaseActive && dbInstance) {
-    try {
-      await deleteDoc(doc(dbInstance, 'templates', templateId));
-    } catch (err: any) {
-      console.warn('Firestore delete template failed:', err);
-      checkQuotaException(err);
-      throw new Error('Não foi possível excluir o modelo (só quem tem a permissão "Excluir Modelos").');
-    }
+    await deleteDoc(doc(dbInstance, 'templates', templateId));
+    await syncTombstone('templates', '*', templateId); // os aparelhos apagam a cópia local
+    markSyncStale('templates');
+  } catch (err: any) {
+    console.warn('Firestore delete template failed:', err);
+    checkQuotaException(err);
+    throw new Error('Não foi possível excluir o modelo (só quem tem a permissão "Excluir Modelos").');
   }
 }
