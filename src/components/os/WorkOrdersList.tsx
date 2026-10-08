@@ -517,10 +517,22 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
             </table>
           </div>
 
-          {/* Celular: cartões */}
+          {/* Celular: cartões (div clicável, não <button>: o cartão tem o botão "Atribuir/Trocar" dentro) */}
           <div className="md:hidden space-y-2">
             {items.map((o) => (
-              <button key={o.id} type="button" onClick={() => setSelected(o)} className="w-full text-left p-3 rounded-xl border border-slate-200 bg-white space-y-1 cursor-pointer">
+              <div
+                key={o.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelected(o)}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    setSelected(o);
+                  }
+                }}
+                className="w-full text-left p-3 rounded-xl border border-slate-200 bg-white space-y-1 cursor-pointer"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs font-black text-indigo-700">{o.number}</span>
                   <span>{statusBadge(o)}</span>
@@ -533,7 +545,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   {canViewCosts ? <span className="text-xs">{costCell(o)}</span> : <span />}
                   {assignBtn(o)}
                 </div>
-              </button>
+              </div>
             ))}
             {!loading && items.length === 0 && <p className="p-6 text-center text-xs text-slate-400">Nenhuma OS encontrada.</p>}
           </div>
