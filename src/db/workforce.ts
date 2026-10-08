@@ -1,9 +1,13 @@
 import { runBulk } from './guard';
-import { collection, deleteDoc, doc, getDocs, setDoc, writeBatch } from './guard';
+import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc, writeBatch } from './guard';
 import { HexonUser, JobRole, WorkforcePerson } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { markSyncStale, syncedList, syncTombstone } from './localSync';
+import { dbGetManagements } from './organization';
 
 // EFETIVO (coleção "workforce": só as pessoas importadas, sem login) e CARGOS (coleção "jobRoles", só o Super Administrador)
+// Efetivo: cópia guardada no aparelho por gerência (src/db/localSync.ts) — baixa 1 vez e depois só o que mudou.
+// Toda gravação leva syncAt; excluir ou trocar de gerência registra em syncDeletions.
 
 export const normalizeMatricula = (m: unknown) => String(m ?? '').trim().toUpperCase();
 export const workforceIdOf = (matricula: string) => `wf_${normalizeMatricula(matricula).replace(/[^A-Z0-9-]/g, '_')}`;
@@ -16,42 +20,39 @@ export const cargoKey = (c: unknown) =>
     .replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, ' ');
 
-let cacheWorkforce: WorkforcePerson[] | null = null;
 let cacheJobRoles: JobRole[] | null = null;
 
 export function clearWorkforceCache(): void {
-  cacheWorkforce = null;
+  markSyncStale('workforce');
   cacheJobRoles = null;
 }
 
-export async function dbGetWorkforce(force = false): Promise<WorkforcePerson[]> {
-  if (cacheWorkforce && !force) return [...cacheWorkforce];
+// Efetivo das gerências (null = todas). force = conferir o que mudou agora.
+export async function dbGetWorkforce(force = false, units: string[] | null = null): Promise<WorkforcePerson[]> {
   if (!firebaseActive || !dbInstance) return [];
-  try {
-    const snap = await getDocs(collection(dbInstance, 'workforce'));
-    cacheWorkforce = snap.docs.map((d) => ({ ...(d.data() as WorkforcePerson), id: d.id }));
-    return [...cacheWorkforce];
-  } catch (err: any) {
-    console.warn('Não foi possível ler o efetivo:', err);
-    checkQuotaException(err);
-    return [];
-  }
+  const list =
+    units === null
+      ? (await dbGetManagements().catch(() => [])).map((m) => m.name).filter((n) => n && n !== 'Todas')
+      : units;
+  const parts = await Promise.all(list.map((u) => syncedList<WorkforcePerson>('workforce', u, [['unit', u]], force)));
+  return parts.flat();
 }
 
 export async function dbSetWorkforceStatus(person: WorkforcePerson, status: WorkforcePerson['status']): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const now = new Date().toISOString();
-  await setDoc(
-    doc(dbInstance, 'workforce', person.id),
-    cleanUndefined({ ...person, status, updatedAt: now, inactivatedAt: status === 'Inativo' ? now : undefined })
-  );
-  cacheWorkforce = null;
+  await setDoc(doc(dbInstance, 'workforce', person.id), {
+    ...cleanUndefined({ ...person, status, updatedAt: now, inactivatedAt: status === 'Inativo' ? now : undefined }),
+    syncAt: serverTimestamp()
+  });
+  markSyncStale('workforce');
 }
 
-export async function dbDeleteWorkforcePerson(personId: string): Promise<void> {
+export async function dbDeleteWorkforcePerson(personId: string, unit: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await deleteDoc(doc(dbInstance, 'workforce', personId));
-  cacheWorkforce = null;
+  await syncTombstone('workforce', unit, personId); // os aparelhos apagam a cópia local
+  markSyncStale('workforce');
 }
 
 // Usuário com login tem prioridade: se havia alguém importado com a mesma matrícula, sai do efetivo importado.
@@ -61,7 +62,7 @@ export async function dbRemoveImportedPersonForUser(user: HexonUser): Promise<Wo
   const list = await dbGetWorkforce(true);
   const found = list.find((p) => normalizeMatricula(p.matricula) === normalizeMatricula(user.matricula));
   if (!found) return null;
-  await dbDeleteWorkforcePerson(found.id);
+  await dbDeleteWorkforcePerson(found.id, found.unit);
   return found;
 }
 
@@ -163,10 +164,14 @@ async function dbApplyWorkforceImportNow(plan: WorkforceImportPlan): Promise<voi
   ];
   for (let i = 0; i < writes.length; i += 400) {
     const batch = writeBatch(db);
-    writes.slice(i, i + 400).forEach((p) => batch.set(doc(db, 'workforce', p.id), cleanUndefined(p)));
+    writes.slice(i, i + 400).forEach((p) => batch.set(doc(db, 'workforce', p.id), { ...cleanUndefined(p), syncAt: serverTimestamp() }));
     await batch.commit();
   }
-  cacheWorkforce = null;
+  // Quem mudou de gerência sai da cópia local da gerência antiga
+  for (const u of plan.toUpdate) {
+    if (u.before.unit && u.before.unit !== u.after.unit) await syncTombstone('workforce', u.before.unit, u.before.id);
+  }
+  markSyncStale('workforce');
 }
 
 // ===== CARGOS =====

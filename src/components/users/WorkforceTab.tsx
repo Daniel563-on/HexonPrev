@@ -141,7 +141,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
     if (!toDelete) return;
     setActionError(null);
     try {
-      await dbDeleteWorkforcePerson(toDelete.id);
+      await dbDeleteWorkforcePerson(toDelete.id, toDelete.unit);
       setToDelete(null);
       await load();
     } catch (err: any) {

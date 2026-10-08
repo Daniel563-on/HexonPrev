@@ -1,6 +1,7 @@
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from './guard';
+import { doc, getDoc, setDoc } from './guard';
 import { OrderParticipant, OrderTimelineEvent, UsualTeam } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { syncedList } from './localSync';
 
 // EXECUÇÃO (Etapa 6.2): pessoas da gerência (participantes), equipe habitual e linha do tempo da OS
 
@@ -9,7 +10,7 @@ export const timelineEvent = (event: string, by?: string, detail?: string): Orde
   cleanUndefined({ at: new Date().toISOString(), event, by, detail });
 
 // Pessoas ativas da gerência: usuários com login + efetivo importado (sem repetir matrícula), com as empresas de cada um.
-// Guardado na memória durante a sessão (lista muda pouco).
+// Cópia guardada no aparelho (src/db/localSync.ts): baixa 1 vez e depois só o que mudou; na sessão fica na memória.
 interface UnitPerson {
   p: OrderParticipant;
   companies: string[];
@@ -19,20 +20,17 @@ function unitPeople(unit: string): Promise<UnitPerson[]> {
   if (!unit || !firebaseActive || !dbInstance) return Promise.resolve([]);
   let p = peopleCache.get(unit);
   if (!p) {
-    const db = dbInstance;
     p = (async () => {
-      const [usersSnap, wfSnap] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('gerencia', '==', unit))),
-        getDocs(query(collection(db, 'workforce'), where('unit', '==', unit)))
+      const [users, workforce] = await Promise.all([
+        syncedList<any>('users', unit, [['gerencia', unit]]),
+        syncedList<any>('workforce', unit, [['unit', unit]])
       ]);
       const byMat = new Map<string, UnitPerson>();
-      wfSnap.forEach((d) => {
-        const w = d.data() as any;
+      workforce.forEach((w) => {
         if (w.status === 'Ativo' && w.matricula)
           byMat.set(String(w.matricula), { p: { matricula: String(w.matricula), name: w.name, cargo: w.cargo || '' }, companies: w.company ? [w.company] : [] });
       });
-      usersSnap.forEach((d) => {
-        const u = d.data() as any;
+      users.forEach((u) => {
         if (u.status === 'Ativo' && u.matricula)
           byMat.set(String(u.matricula), { p: { matricula: String(u.matricula), name: u.name, cargo: u.cargo || '' }, companies: Array.isArray(u.companies) ? u.companies : [] });
       });

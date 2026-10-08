@@ -1,74 +1,69 @@
 import { runBulk } from './guard';
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch } from './guard';
+import { deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from './guard';
 import { Material } from '../types';
-import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { firebaseActive, dbInstance, cleanUndefined } from './core';
 import { localTodayStr } from './serviceOrders';
+import { markSyncStale, syncedList, syncTombstone } from './localSync';
+import { dbGetManagements } from './organization';
 
 // MATERIAIS (coleção "materials"): cada gerência + empresa tem a sua lista (etapa especial E2). Sem controle de estoque.
 // Valor R$ 0,00 = o técnico não pode usar (ex.: saiu da planilha); o material fica para o histórico.
+// Leitura: cópia guardada no aparelho (src/db/localSync.ts) — baixa 1 vez e depois só o que mudou.
+// Toda gravação leva syncAt (horário do servidor); excluir registra em syncDeletions.
 
 export const materialCodeKey = (c: unknown) => String(c ?? '').trim().toUpperCase();
 export const materialIdOf = (unit: string, company: string, code: string) =>
   'mat_' + `${unit.trim().toUpperCase()}_${company.trim().toUpperCase()}_${materialCodeKey(code)}`.replace(/[^A-Z0-9_-]/g, '_');
 
-let cacheMaterials: { key: string; list: Material[] } | null = null;
-
 export function clearMaterialsCache(): void {
-  cacheMaterials = null;
+  markSyncStale('materials');
 }
 
-// Uma busca por gerência (as regras do banco só liberam as gerências do perfil); null = todas.
-// "company": só a lista daquela empresa (o técnico só pode ler a da empresa dele; índice gerência + empresa).
+// Lista de uma ou mais gerências (null = todas). "company": só a lista daquela empresa
+// (o técnico só pode ler a da empresa dele; índice gerência + empresa + syncAt). force = conferir o que mudou agora.
 export async function dbGetMaterials(units: string[] | null, force = false, company?: string): Promise<Material[]> {
-  const key = `${units === null ? '*' : units.join('|')}#${company || ''}`;
-  if (cacheMaterials && cacheMaterials.key === key && !force) return [...cacheMaterials.list];
   if (!firebaseActive || !dbInstance) return [];
-  try {
-    const ref = collection(dbInstance, 'materials');
-    const byUnit = (u: string) => getDocs(company ? query(ref, where('unit', '==', u), where('company', '==', company)) : query(ref, where('unit', '==', u)));
-    const snaps = units === null ? [await getDocs(ref)] : await Promise.all(units.map(byUnit));
-    const list = snaps
-      .flatMap((snap) => snap.docs.map((d) => ({ ...(d.data() as Material), id: d.id })))
-      .sort((a, b) => a.unit.localeCompare(b.unit) || a.description.localeCompare(b.description));
-    cacheMaterials = { key, list };
-    return [...list];
-  } catch (err: any) {
-    console.warn('Não foi possível ler os materiais:', err);
-    checkQuotaException(err);
-    return [];
-  }
+  const list =
+    units === null
+      ? (await dbGetManagements().catch(() => [])).map((m) => m.name).filter((n) => n && n !== 'Todas')
+      : units;
+  const parts = await Promise.all(
+    list.map((u) => syncedList<Material>('materials', u, company ? [['unit', u], ['company', company]] : [['unit', u]], force))
+  );
+  return parts.flat().sort((a, b) => a.unit.localeCompare(b.unit) || a.description.localeCompare(b.description));
 }
 
 // Cadastro manual (novo ou edição de código/descrição/unidade de medida). O valor muda por dbSetMaterialCost.
 export async function dbSaveMaterial(material: Material): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  await setDoc(doc(dbInstance, 'materials', material.id), cleanUndefined({ ...material, updatedAt: new Date().toISOString() }));
-  cacheMaterials = null;
+  await setDoc(doc(dbInstance, 'materials', material.id), { ...cleanUndefined({ ...material, updatedAt: new Date().toISOString() }), syncAt: serverTimestamp() });
+  markSyncStale('materials');
 }
 
 // Exclusão manual (só Super Administrador, para corrigir erro de cadastro).
 // As OS guardam uma cópia do material usado (código, descrição e valor), então o histórico delas não se perde.
-export async function dbDeleteMaterial(materialId: string): Promise<void> {
+export async function dbDeleteMaterial(materialId: string, unit: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await deleteDoc(doc(dbInstance, 'materials', materialId));
-  cacheMaterials = null;
+  await syncTombstone('materials', unit, materialId); // os aparelhos apagam a cópia local
+  markSyncStale('materials');
 }
 
 // Novo valor do material a partir de uma data (o anterior fica no histórico)
 export async function dbSetMaterialCost(material: Material, value: number, from: string, setBy: string, reason?: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const now = new Date().toISOString();
-  await setDoc(
-    doc(dbInstance, 'materials', material.id),
-    cleanUndefined({
+  await setDoc(doc(dbInstance, 'materials', material.id), {
+    ...cleanUndefined({
       ...material,
       cost: value,
       costFrom: from,
       history: [...(material.history || []), { value, from, setAt: now, setBy, reason }],
       updatedAt: now
-    })
-  );
-  cacheMaterials = null;
+    }),
+    syncAt: serverTimestamp()
+  });
+  markSyncStale('materials');
 }
 
 // ===== IMPORTAÇÃO POR GERÊNCIA + EMPRESA =====
@@ -171,8 +166,8 @@ async function dbApplyMaterialImportNow(plan: MaterialImportPlan): Promise<void>
   const writes: Material[] = [...plan.toCreate, ...plan.toUpdate.map((u) => u.after), ...plan.toZero];
   for (let i = 0; i < writes.length; i += 400) {
     const batch = writeBatch(db);
-    writes.slice(i, i + 400).forEach((m) => batch.set(doc(db, 'materials', m.id), cleanUndefined(m)));
+    writes.slice(i, i + 400).forEach((m) => batch.set(doc(db, 'materials', m.id), { ...cleanUndefined(m), syncAt: serverTimestamp() }));
     await batch.commit();
   }
-  cacheMaterials = null;
+  markSyncStale('materials');
 }
