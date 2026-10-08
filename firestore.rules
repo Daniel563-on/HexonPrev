@@ -218,10 +218,15 @@ service cloud.firestore {
     // 4j. MATERIAIS — lista de cada gerência + empresa (sem estoque; etapa especial E2).
     // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência E a empresa dele).
     // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências); todo material tem empresa.
+    // O usuário e o perfil são lidos UMA vez e passados (o banco limita as contas por verificação: com perfil de acesso,
+    // a versão antiga passava do limite de 1000 e o técnico não conseguia ler a lista)
+    function matReadOk(u, p) {
+      return osSees(u, p)
+        && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs')
+            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
+    }
     match /materials/{materialId} {
-      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
-        && (hasPermission('view_materials') || hasPermission('view_costs')
-            || (me().perfil == 'Profissional' && resource.data.get('company', '') in me().get('companies', [])));
+      allow read: if isStaff() && matReadOk(me(), osProfileOf(me()));
       allow create, update: if isStaff() && hasPermission('manage_materials')
         && request.resource.data.company is string && request.resource.data.company.size() > 0
         && (seesAllUnits()
@@ -542,9 +547,37 @@ service cloud.firestore {
     // material do MP"; vê os dele; marca "Retirei" (aprovado → atendido) e "Ciente" (reprovado).
     // Quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material" vê os das suas gerências;
     // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM; reprovar: motivo).
-    function mrStaffSees() {
-      return (hasPermission('material_requests_view') || hasPermission('material_requests_decide'))
-        && (seesAllUnits() || resource.data.unit in myUnits() || resource.data.get('mrPend', '') in myUnits());
+    // Usuário e perfil lidos UMA vez e passados (com perfil de acesso, a versão antiga passava do limite de 1000 contas)
+    function mrStaffSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      return (osPerm(u, p, 'material_requests_view') || osPerm(u, p, 'material_requests_decide'))
+        && (osSees(u, p) || resource.data.get('mrPend', '') in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]));
+    }
+    function mrReadOk(u, p) {
+      return resource.data.get('techMr', '') == u.matricula || resource.data.techMatricula == u.matricula || mrStaffSees(u, p);
+    }
+    function mrUpdateOk(u, p) {
+      return
+        // APROVAR / REPROVAR (só pendente)
+        (resource.data.status == 'Pendente' && request.resource.data.status in ['Aprovado', 'Reprovado']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'items', 'decision', 'mrPend', 'updatedAt', 'timeline'])
+          && !('mrPend' in request.resource.data)
+          && request.resource.data.items.size() == resource.data.items.size()
+          && request.resource.data.decision.byMatricula == u.matricula
+          && (request.resource.data.status == 'Reprovado'
+              ? request.resource.data.decision.get('reason', '').size() >= 3
+              : (request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+')))
+          && osPerm(u, p, 'material_requests_decide') && osSees(u, p))
+        // TÉCNICO: "Retirei" (sai da tela dele)
+        || (resource.data.status == 'Aprovado' && request.resource.data.status == 'Atendido'
+          && resource.data.techMatricula == u.matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pickedUpAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data))
+        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
+        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
+          && resource.data.techMatricula == u.matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ackAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data));
     }
     function mrOrderOk(d) {
       let o = d.orderKind == 'preventiva'
@@ -557,8 +590,7 @@ service cloud.firestore {
         && (d.orderKind == 'preventiva' || o.get('status', '') in ['Em andamento', 'Pendente', 'Contestada']);
     }
     match /materialRequests/{reqId} {
-      allow get, list: if isStaff()
-        && (resource.data.get('techMr', '') == me().matricula || resource.data.techMatricula == me().matricula || mrStaffSees());
+      allow get, list: if isStaff() && mrReadOk(me(), osProfileOf(me()));
       allow create: if isStaff()
         && reqId == request.resource.data.number
         && request.resource.data.status == 'Pendente'
@@ -571,28 +603,7 @@ service cloud.firestore {
         && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 60
         && getAfter(/databases/$(database)/documents/counters/$('materialRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
         && mrOrderOk(request.resource.data);
-      allow update: if isStaff() && (
-        // APROVAR / REPROVAR (só pendente)
-        (resource.data.status == 'Pendente' && request.resource.data.status in ['Aprovado', 'Reprovado']
-          && hasPermission('material_requests_decide') && (seesAllUnits() || resource.data.unit in myUnits())
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'items', 'decision', 'mrPend', 'updatedAt', 'timeline'])
-          && !('mrPend' in request.resource.data)
-          && request.resource.data.items.size() == resource.data.items.size()
-          && request.resource.data.decision.byMatricula == me().matricula
-          && (request.resource.data.status == 'Reprovado'
-              ? request.resource.data.decision.get('reason', '').size() >= 3
-              : (request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+'))))
-        // TÉCNICO: "Retirei" (sai da tela dele)
-        || (resource.data.status == 'Aprovado' && request.resource.data.status == 'Atendido'
-          && resource.data.techMatricula == me().matricula
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pickedUpAt', 'techMr', 'updatedAt', 'timeline'])
-          && !('techMr' in request.resource.data))
-        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
-        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
-          && resource.data.techMatricula == me().matricula
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ackAt', 'techMr', 'updatedAt', 'timeline'])
-          && !('techMr' in request.resource.data))
-      );
+      allow update: if isStaff() && mrUpdateOk(me(), osProfileOf(me()));
       allow delete: if false;
     }
 
