@@ -181,6 +181,22 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
+  material_requests_view: {
+    id: 'material_requests_view',
+    name: 'Ver pedidos de material',
+    description: 'Solicitações › Material: ver os pedidos de material do MP feitos pelos técnicos (das gerências e empresas do perfil).',
+    category: 'Ações',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  material_requests_decide: {
+    id: 'material_requests_decide',
+    name: 'Aprovar / reprovar pedidos de material',
+    description: 'Aprovar (almoxarifado, nº da RM e quantidade fornecida de cada item) ou reprovar (motivo) os pedidos de material do MP.',
+    category: 'Ações',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   manage_solicitations: {
     id: 'manage_solicitations',
     name: 'Decidir solicitações de corretiva',

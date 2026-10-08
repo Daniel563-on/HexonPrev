@@ -5,13 +5,14 @@ import LoginBrandingCard from './users/LoginBrandingCard';
 import AuditLogsTab from './users/AuditLogsTab';
 import OsTemplatesEditor from './os/OsTemplatesEditor';
 import CompaniesTab from './users/CompaniesTab';
+import WarehousesTab from './users/WarehousesTab';
 import { HexonUser } from '../types';
 
 // CONFIGURAÇÕES: coisas do sistema todo.
 // Sistema = logo do sistema, tela de login (frases e fundos), forçar atualização e modo manutenção; Auditoria = ações registradas e acessos (só Super Administrador).
-// Empresas = empresas contratadas de cada gerência (só Super Administrador).
+// Empresas = empresas contratadas de cada gerência (só Super Administrador). Almoxarifados = lista dos pedidos de material (só Super Administrador).
 // Modelos de OS = quem tem "Criar e editar modelos de OS" no perfil (o Super Administrador também).
-type SettingsTab = 'system' | 'audit' | 'companies' | 'os-templates';
+type SettingsTab = 'system' | 'audit' | 'companies' | 'warehouses' | 'os-templates';
 
 export default function SettingsView({ userProfile, darkMode, canEditOsTemplates }: { userProfile: HexonUser; darkMode: boolean; canEditOsTemplates: boolean }) {
   const isSuper = userProfile.perfil === 'Super Administrador';
@@ -46,6 +47,7 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
         {isSuper && tabBtn('system', 'settings_suggest', 'Sistema')}
         {isSuper && tabBtn('audit', 'fact_check', 'Auditoria')}
         {isSuper && tabBtn('companies', 'domain', 'Empresas')}
+        {isSuper && tabBtn('warehouses', 'warehouse', 'Almoxarifados')}
         {canEditOsTemplates && tabBtn('os-templates', 'description', 'Modelos de OS')}
       </div>
 
@@ -58,6 +60,7 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
       )}
       {tab === 'audit' && isSuper && <AuditLogsTab darkMode={darkMode} />}
       {tab === 'companies' && isSuper && <CompaniesTab userName={userProfile.name} darkMode={darkMode} />}
+      {tab === 'warehouses' && isSuper && <WarehousesTab userName={userProfile.name} darkMode={darkMode} />}
       {tab === 'os-templates' && canEditOsTemplates && <OsTemplatesEditor userProfile={userProfile} />}
     </div>
   );

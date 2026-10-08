@@ -29,14 +29,15 @@ import {
   AlertTriangle,
   BellRing
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, WorkOrder, formatDateBR } from '../../types';
+import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames, subscribeMyMaterialRequests
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
+import TechnicianMaterialRequests from './TechnicianMaterialRequests';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
@@ -90,10 +91,18 @@ export default function TechnicianMobileView({
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
   // Empresa do técnico (etapa especial E1): nome para o Meu Perfil
   const [companyLabel, setCompanyLabel] = useState('');
+  // Empresas dele que pedem material do MP (Fase 8B): mostram a seção "Material" em Solicitações
+  const [mpCompanies, setMpCompanies] = useState<string[]>([]);
   useEffect(() => {
-    if (!(userProfile.companies || []).length) return setCompanyLabel('');
+    if (!(userProfile.companies || []).length) {
+      setMpCompanies([]);
+      return setCompanyLabel('');
+    }
     dbGetCompanies()
-      .then((list) => setCompanyLabel(companyNames(userProfile.companies, list)))
+      .then((list) => {
+        setCompanyLabel(companyNames(userProfile.companies, list));
+        setMpCompanies(list.filter((c) => c.active && c.requestsMpMaterial && (userProfile.companies || []).includes(c.id)).map((c) => c.id));
+      })
       .catch(() => setCompanyLabel(''));
   }, [(userProfile.companies || []).join('|')]);
   const [osCount, setOsCount] = useState(0);
@@ -216,6 +225,18 @@ export default function TechnicianMobileView({
     }
     return subscribeTechnicianSolicitations(mat, setMySolicitations);
   }, [userProfile.matricula]);
+
+  // Pedidos de material dele que ainda aparecem para ele (Fase 8B; tempo real, poucos registros)
+  const [myMaterialRequests, setMyMaterialRequests] = useState<MaterialRequest[]>([]);
+  useEffect(() => {
+    const mat = (userProfile.matricula || '').trim();
+    if (!mat) return setMyMaterialRequests([]);
+    return subscribeMyMaterialRequests(mat, setMyMaterialRequests);
+  }, [userProfile.matricula]);
+  const [solSection, setSolSection] = useState<'corretivas' | 'material'>('corretivas');
+  const showMaterial = mpCompanies.length > 0 || myMaterialRequests.length > 0;
+  // Pedidos que pedem ação dele: aprovado (ir retirar) ou reprovado (ciente)
+  const materialActionCount = myMaterialRequests.filter((r) => r.status === 'Aprovado' || r.status === 'Reprovado').length;
 
   // Alerta de tempo longo (Etapa 7): OS em execução há mais de 10h (calculado no aparelho, sem gravar nada)
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -1277,37 +1298,62 @@ export default function TechnicianMobileView({
             <p className="text-[11px] text-slate-500">Acompanhe os seus pedidos.</p>
           </div>
           <div className="flex gap-2">
-            <span className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white">
-              Corretivas ({mySolicitations.length})
-            </span>
+            {(['corretivas', 'material'] as const)
+              .filter((k) => k === 'corretivas' || showMaterial)
+              .map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setSolSection(k)}
+                  className={`px-3 py-2 rounded-xl text-xs font-black cursor-pointer ${
+                    solSection === k
+                      ? 'bg-indigo-600 text-white'
+                      : darkMode
+                      ? 'bg-slate-900 text-slate-300 border border-slate-800'
+                      : 'bg-white text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  {k === 'corretivas' ? `Corretivas (${mySolicitations.length})` : `Material (${myMaterialRequests.length})`}
+                </button>
+              ))}
           </div>
-          <div className="space-y-3">
-            {mySolicitations.length === 0 ? (
-              <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
-                Nenhuma solicitação de corretiva aguardando decisão.
-              </div>
-            ) : (
-              mySolicitations.map((o) => (
-                <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
-                  <div className="flex justify-between gap-2">
-                    <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
-                    <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
-                  </div>
-                  <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
-                  {o.checklistPending ? (
-                    <p className="text-xs text-slate-400">Carregando...</p>
-                  ) : (
-                    requestedItems(o).map((item) => (
-                      <div key={item.id} className="space-y-1">
-                        <p className="text-xs font-semibold">• {item.task}</p>
-                        <CorrectiveDecisionNote item={item} />
-                      </div>
-                    ))
-                  )}
+          {solSection === 'material' && showMaterial ? (
+            <TechnicianMaterialRequests
+              userProfile={userProfile}
+              darkMode={darkMode}
+              preventives={myOrders.filter((o) => o.status !== 'Concluída' && o.status !== 'Não Executada')}
+              mpCompanies={mpCompanies}
+              requests={myMaterialRequests}
+            />
+          ) : (
+            <div className="space-y-3">
+              {mySolicitations.length === 0 ? (
+                <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
+                  Nenhuma solicitação de corretiva aguardando decisão.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                mySolicitations.map((o) => (
+                  <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
+                    <div className="flex justify-between gap-2">
+                      <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
+                      <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
+                    </div>
+                    <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
+                    {o.checklistPending ? (
+                      <p className="text-xs text-slate-400">Carregando...</p>
+                    ) : (
+                      requestedItems(o).map((item) => (
+                        <div key={item.id} className="space-y-1">
+                          <p className="text-xs font-semibold">• {item.task}</p>
+                          <CorrectiveDecisionNote item={item} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </main>
       )}
 
@@ -1319,7 +1365,7 @@ export default function TechnicianMobileView({
         {/* Linha neon da marca (identidade visual 2.0) */}
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
         <div className="max-w-md mx-auto px-2 h-18 grid grid-cols-5 items-center relative">
-          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />, mySolicitations.length)}
+          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />, mySolicitations.length + materialActionCount)}
           {navButton('os', 'Minhas OS', <Wrench className="w-5.5 h-5.5" />, osCount)}
 
           {/* Destaque central: Ler QR Code */}
