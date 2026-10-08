@@ -67,7 +67,7 @@ export interface TechnicianMobileViewProps {
 }
 
 type MobileTab = 'orders' | 'os' | 'solicitations' | 'scanner' | 'profile';
-type FilterStatus = 'pending' | 'in_progress' | 'completed' | 'solicitations';
+type FilterStatus = 'pending' | 'in_progress' | 'completed';
 
 export default function TechnicianMobileView({
   orders,
@@ -338,8 +338,6 @@ export default function TechnicianMobileView({
         if (!isOrderInProgress(o)) return false;
       } else if (filterStatus === 'completed') {
         if (o.status !== 'Concluída') return false;
-      } else if (filterStatus === 'solicitations') {
-        return false; // a aba Solicitações tem lista própria
       }
 
       // 2. Search query filter
@@ -582,8 +580,8 @@ export default function TechnicianMobileView({
             )}
           </div>
 
-          {/* Abas: Pendentes, Execução e Solicitações (concluídas saem do app do técnico) */}
-          <div className="grid grid-cols-3 gap-2 w-full">
+          {/* Abas: Pendentes e Execução (concluídas saem do app do técnico; as solicitações de corretiva ficam na aba Solicitações) */}
+          <div className="grid grid-cols-2 gap-2 w-full">
             <button
               type="button"
               onClick={() => setFilterStatus('pending')}
@@ -622,56 +620,7 @@ export default function TechnicianMobileView({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setFilterStatus('solicitations')}
-              className={`min-h-[44px] py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                filterStatus === 'solicitations'
-                  ? 'bg-indigo-600 text-white shadow-xs font-black'
-                  : darkMode
-                  ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 font-bold'
-                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 shadow-2xs font-bold'
-              }`}
-            >
-              <span className="text-xs sm:text-[13px] leading-tight truncate max-w-full">Solicitações</span>
-              <span className={`text-[11px] font-mono leading-none mt-1 ${
-                filterStatus === 'solicitations' ? 'text-indigo-100 font-bold' : mySolicitations.length > 0 ? 'text-rose-500 font-bold' : 'text-slate-400 font-semibold'
-              }`}>
-                ({mySolicitations.length})
-              </span>
-            </button>
           </div>
-
-          {/* Solicitações de corretiva aguardando o planejador (Etapa 8) */}
-          {filterStatus === 'solicitations' && (
-            <div className="space-y-3">
-              {mySolicitations.length === 0 ? (
-                <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
-                  Nenhuma solicitação de corretiva aguardando decisão.
-                </div>
-              ) : (
-                mySolicitations.map((o) => (
-                  <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
-                      <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
-                    </div>
-                    <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
-                    {o.checklistPending ? (
-                      <p className="text-xs text-slate-400">Carregando...</p>
-                    ) : (
-                      requestedItems(o).map((item) => (
-                        <div key={item.id} className="space-y-1">
-                          <p className="text-xs font-semibold">• {item.task}</p>
-                          <CorrectiveDecisionNote item={item} />
-                        </div>
-                      ))
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
 
           {/* Pagination Summary Info */}
           {totalOrdersCount > 0 && (
@@ -686,7 +635,7 @@ export default function TechnicianMobileView({
           )}
 
           {/* Orders Cards List */}
-          {filterStatus === 'solicitations' ? null : paginatedOrders.length === 0 ? (
+          {paginatedOrders.length === 0 ? (
             <div className={`p-8 rounded-2xl border text-center space-y-3 mt-6 ${
               darkMode ? 'bg-slate-900/40 border-slate-800/80 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
             }`}>
@@ -1319,13 +1268,45 @@ export default function TechnicianMobileView({
       {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
       {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} />}
 
-      {/* ================= TAB: SOLICITAÇÕES (conteúdo em uma próxima fase) ================= */}
+      {/* ================= TAB: SOLICITAÇÕES (Fase 8) ================= */}
+      {/* Seções: Corretivas (itens "Não conforme" das preventivas aguardando o planejador). Material e Insumos chegam nas fases 8B e 8C. */}
       {activeTab === 'solicitations' && (
-        <main className="flex-1 px-4 pt-4">
-          <div className={`p-6 rounded-2xl border text-center space-y-2 ${darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
-            <BellRing className="w-8 h-8 mx-auto text-indigo-500" />
-            <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Solicitações</p>
-            <p className="text-xs text-slate-500">Em construção: as solicitações do técnico chegam numa próxima fase.</p>
+        <main className="flex-1 px-4 pt-4 space-y-4">
+          <div>
+            <h2 className={`text-base font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Solicitações</h2>
+            <p className="text-[11px] text-slate-500">Acompanhe os seus pedidos.</p>
+          </div>
+          <div className="flex gap-2">
+            <span className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white">
+              Corretivas ({mySolicitations.length})
+            </span>
+          </div>
+          <div className="space-y-3">
+            {mySolicitations.length === 0 ? (
+              <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
+                Nenhuma solicitação de corretiva aguardando decisão.
+              </div>
+            ) : (
+              mySolicitations.map((o) => (
+                <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
+                  <div className="flex justify-between gap-2">
+                    <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
+                    <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
+                  </div>
+                  <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
+                  {o.checklistPending ? (
+                    <p className="text-xs text-slate-400">Carregando...</p>
+                  ) : (
+                    requestedItems(o).map((item) => (
+                      <div key={item.id} className="space-y-1">
+                        <p className="text-xs font-semibold">• {item.task}</p>
+                        <CorrectiveDecisionNote item={item} />
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </main>
       )}
@@ -1338,7 +1319,7 @@ export default function TechnicianMobileView({
         {/* Linha neon da marca (identidade visual 2.0) */}
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
         <div className="max-w-md mx-auto px-2 h-18 grid grid-cols-5 items-center relative">
-          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />)}
+          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />, mySolicitations.length)}
           {navButton('os', 'Minhas OS', <Wrench className="w-5.5 h-5.5" />, osCount)}
 
           {/* Destaque central: Ler QR Code */}
