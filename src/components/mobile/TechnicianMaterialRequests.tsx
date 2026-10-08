@@ -15,7 +15,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 
 // PEDIDO DE MATERIAL DO MP (Fase 8B) — aba Solicitações do celular, seção "Material".
 // Só aparece para técnico de empresa marcada no cadastro ("Técnicos pedem material do MP").
-// O pedido é sempre para uma OS aberta dele (preventiva ou corretiva) da empresa marcada; a lista de materiais é a da
+// O pedido é sempre para uma OS aberta dele (preventiva aberta; OS em andamento, pendente ou contestada) da empresa marcada; a lista de materiais é a da
 // gerência + empresa da OS, guardada no aparelho (busca sem gastar leitura). Enviar precisa de internet (número do pedido).
 
 interface OrderOption {
@@ -30,6 +30,9 @@ interface OrderOption {
 interface DraftItem extends MaterialRequestItem {
   qtyText: string;
 }
+
+// Situações da OS (corretiva/layout/acompanhamento) que aceitam pedido de material
+const MR_OS_STATUSES: WorkOrder['status'][] = ['Em andamento', 'Pendente', 'Contestada'];
 
 const STATUS_STYLE: Record<string, string> = {
   Pendente: 'bg-amber-100 text-amber-800',
@@ -71,11 +74,12 @@ export default function TechnicianMaterialRequests({
   const card = darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800';
   const input = `w-full px-3 py-2.5 rounded-xl border text-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'}`;
 
-  // Corretivas dele: 1 busca ao abrir o formulário
+  // Corretivas dele: 1 busca ao abrir o formulário. Só as que ainda podem usar material (a regra do banco confere o mesmo);
+  // "Aguardando assinaturas" fica de fora: o técnico já executou e assinou
   useEffect(() => {
     if (!creating) return;
     dbGetMyWorkOrders(userProfile.matricula)
-      .then((l) => setWorkOrders(l.filter((o) => !['Concluída', 'Cancelada'].includes(o.status))))
+      .then((l) => setWorkOrders(l.filter((o) => MR_OS_STATUSES.includes(o.status))))
       .catch(() => setWorkOrders([]));
   }, [creating, userProfile.matricula]);
 
