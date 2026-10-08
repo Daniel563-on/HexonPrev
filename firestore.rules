@@ -538,7 +538,7 @@ service cloud.firestore {
     }
 
     // 14. PEDIDOS DE MATERIAL DO MP (Fase 8B) — id = número "PM-AAAA-NNNN"; não se exclui.
-    // Técnico: pede para uma OS aberta dele (preventiva ou corretiva), da empresa dele marcada com "Técnicos pedem
+    // Técnico: pede para uma OS aberta dele (preventiva aberta; OS em andamento, pendente ou contestada), da empresa dele marcada com "Técnicos pedem
     // material do MP"; vê os dele; marca "Retirei" (aprovado → atendido) e "Ciente" (reprovado).
     // Quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material" vê os das suas gerências;
     // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM; reprovar: motivo).
@@ -553,7 +553,8 @@ service cloud.firestore {
       return d.orderKind in ['preventiva', 'os']
         && o.get('techOpen', '') == me().matricula
         && o.get('unit', '') == d.unit
-        && o.get('company', '') == d.company;
+        && o.get('company', '') == d.company
+        && (d.orderKind == 'preventiva' || o.get('status', '') in ['Em andamento', 'Pendente', 'Contestada']);
     }
     match /materialRequests/{reqId} {
       allow get, list: if isStaff()
