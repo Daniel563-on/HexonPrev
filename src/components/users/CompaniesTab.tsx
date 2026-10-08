@@ -84,6 +84,7 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
               <th className="py-3 px-4">Empresa</th>
               <th className="py-3 px-4">Gerências</th>
               <th className="py-3 px-4">Contabiliza HH / HE / pernoite</th>
+              <th className="py-3 px-4">Pede material do MP</th>
               <th className="py-3 px-4">Situação</th>
               <th className="py-3 px-4 text-right"></th>
             </tr>
@@ -102,6 +103,7 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
                   </div>
                 </td>
                 <td className="py-3 px-4">{c.costTracking ? <span className="font-black text-emerald-600">Sim</span> : <span className={muted}>Não</span>}</td>
+                <td className="py-3 px-4">{c.requestsMpMaterial ? <span className="font-black text-emerald-600">Sim</span> : <span className={muted}>Não</span>}</td>
                 <td className="py-3 px-4">{c.active ? <span className="font-bold text-emerald-600">Ativa</span> : <span className="font-bold text-rose-600">Inativa</span>}</td>
                 <td className="py-3 px-4 text-right">
                   <button
@@ -121,7 +123,7 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
             ))}
             {!loading && list.length === 0 && (
               <tr>
-                <td colSpan={5} className={`py-8 text-center italic ${muted}`}>Nenhuma empresa cadastrada.</td>
+                <td colSpan={6} className={`py-8 text-center italic ${muted}`}>Nenhuma empresa cadastrada.</td>
               </tr>
             )}
           </tbody>
@@ -168,6 +170,13 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
               <span>
                 Contabiliza homem-hora, hora extra e pernoite
                 <span className={`block text-[10px] font-normal ${muted}`}>Marque só nas empresas em que esses valores são cobrados.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-xs font-bold cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={!!editing.requestsMpMaterial} onChange={(e) => setEditing({ ...editing, requestsMpMaterial: e.target.checked })} />
+              <span>
+                Técnicos pedem material do MP
+                <span className={`block text-[10px] font-normal ${muted}`}>Os técnicos desta empresa passam a ver "Material" na aba Solicitações do celular, para pedir material para as OS deles.</span>
               </span>
             </label>
             <label className="flex items-start gap-2 text-xs font-bold cursor-pointer">

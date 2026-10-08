@@ -40,6 +40,8 @@ export * from './workOrderList';
 export * from './companies';
 export * from './companyMoves';
 export * from './branding';
+export * from './warehouses';
+export * from './materialRequests';
 // Disjuntor do banco (proteção contra loops): só o que as telas usam
 export { runBulk, onGuardTrip, guardTripped, GuardError } from './guard';
 export type { GuardTrip } from './guard';

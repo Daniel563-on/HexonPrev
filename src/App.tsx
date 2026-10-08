@@ -8,7 +8,7 @@ import OrdersHubView from './components/os/OrdersHubView';
 import AssetsView from './components/AssetsView';
 import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
-import SolicitationsView from './components/SolicitationsView';
+import SolicitationsHub from './components/solicitations/SolicitationsHub';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
 import AddressesView from './components/AddressesView';
@@ -22,7 +22,7 @@ import BrandLogo from './components/BrandLogo';
 import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, isSectorInGerencia } from './types';
 import { 
   subscribeTechnicianOrders,
   subscribeUnitOrders,
@@ -30,6 +30,8 @@ import {
   refreshCadastros,
   dbGetManagements,
   subscribePendingSolicitations,
+  subscribePendingMaterialRequests,
+  isCompanyVisible,
   technicianCandidates,
   localMonthKey, 
   dbGetAssets,
@@ -543,6 +545,8 @@ export default function App() {
     const profile = resolveUserProfile(userProfile, accessProfiles);
     const fromProfile = profile ? profilePermission(profile, actionId) : undefined;
     if (fromProfile !== undefined) return fromProfile;
+    // Pedidos de material (Fase 8B): só quem tem no perfil
+    if (actionId.startsWith('material_requests_')) return false;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -563,6 +567,23 @@ export default function App() {
 
     return !!permission.roles[userProfile.perfil];
   };
+
+  // Pedidos de material pendentes (Fase 8B, tempo real): número do menu e aba Material — só quem vê ou aprova
+  const [pendingMaterialRequests, setPendingMaterialRequests] = useState<MaterialRequest[]>([]);
+  const canSeeMaterialRequests =
+    !!userProfile && userProfile.perfil !== 'Profissional' && (userHasActionPermission('material_requests_view') || userHasActionPermission('material_requests_decide'));
+  const materialUnitsKey = (visibleUnits === null ? managementNames : visibleUnits).join('|');
+  useEffect(() => {
+    if (!canSeeMaterialRequests) {
+      setPendingMaterialRequests([]);
+      return;
+    }
+    const units = visibleUnits === null ? managementNames : visibleUnits;
+    return subscribePendingMaterialRequests(units, (list) =>
+      setPendingMaterialRequests(list.filter((r) => isCompanyVisible(r.company, visibleCompanies)))
+    );
+  }, [userProfile?.id, canSeeMaterialRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
+  const solicitationsBadge = pendingSolicitationOrders.length + pendingMaterialRequests.length;
 
   // Check state bypasses manually (Security Guard)
   useEffect(() => {
@@ -1035,7 +1056,7 @@ export default function App() {
         onChangeTab={setCurrentTab} 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
-        pendingSolicitationsCount={pendingSolicitationOrders.length}
+        pendingSolicitationsCount={solicitationsBadge}
         userProfile={userProfile}
         userHasTabPermission={userHasTabPermission}
       />
@@ -1098,7 +1119,7 @@ export default function App() {
             <HomeView
               userProfile={userProfile}
               orders={filteredOrders}
-              pendingSolicitationsCount={pendingSolicitationOrders.length}
+              pendingSolicitationsCount={solicitationsBadge}
               canSeeOrders={userHasActionPermission('view_service_orders')}
               canSeeSolicitations={userHasTabPermission('solicitations')}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
@@ -1194,8 +1215,9 @@ export default function App() {
           )}
 
           {currentTab === 'solicitations' && (
-            <SolicitationsView 
+            <SolicitationsHub
               pendingOrders={pendingSolicitationOrders}
+              pendingMaterialRequests={pendingMaterialRequests}
               scopeUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               onNavigateToOS={handleNavigateToOS}

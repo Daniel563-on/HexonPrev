@@ -405,10 +405,58 @@ export interface Company {
   name: string;
   units: string[];        // gerências em que atua
   costTracking: boolean;  // contabiliza homem-hora, hora extra e pernoite
+  requestsMpMaterial?: boolean; // técnicos pedem material do MP pelo celular (Fase 8B)
   active: boolean;
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
+}
+
+// PEDIDOS DE MATERIAL DO MP (Fase 8B): o técnico pede para uma OS dele; quem tem permissão aprova (almoxarifado, RM e
+// quantidade fornecida de cada item) ou reprova (motivo); o técnico marca "Retirei" (Atendido) ou "Ciente" (reprovado).
+export type MaterialRequestStatus = 'Pendente' | 'Aprovado' | 'Reprovado' | 'Atendido';
+export interface MaterialRequestItem {
+  materialId: string;
+  code: string;
+  description: string;
+  measureUnit: string;
+  qty: number;           // pedida
+  qtySupplied?: number;  // fornecida (na aprovação; 0 = não fornecido)
+}
+export interface MaterialRequestEvent {
+  at: string;
+  by: string;
+  action: string;
+  note?: string;
+}
+export interface MaterialRequest {
+  id: string;            // = number
+  number: string;        // PM-AAAA-NNNN
+  year: number;
+  seq: number;
+  unit: string;
+  company: string;
+  orderKind: 'preventiva' | 'os';
+  orderId: string;
+  orderLabel: string;    // ex.: "OS-2026000012 · GLPI 8001" ou "Preventiva #123 · Ar AR-001"
+  techMatricula: string;
+  techName: string;
+  items: MaterialRequestItem[];
+  note?: string;
+  status: MaterialRequestStatus;
+  decision?: { by: string; byMatricula: string; at: string; warehouse?: string; rm?: string; reason?: string };
+  pickedUpAt?: string;
+  ackAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  timeline: MaterialRequestEvent[];
+  techMr?: string;       // matrícula enquanto o pedido aparece para o técnico (índice esparso)
+  mrPend?: string;       // gerência enquanto pendente (índice esparso: número do menu)
+}
+export interface Warehouse {
+  id: string;
+  name: string;
+  active: boolean;
 }
 
 // EFETIVO: pessoas importadas por planilha, só para compor o efetivo (NÃO têm login).

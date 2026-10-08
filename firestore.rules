@@ -371,13 +371,15 @@ service cloud.firestore {
         && request.resource.data.pdfBase64 is string && request.resource.data.pdfBase64.size() <= 1020000;
       allow delete: if isStaff() && hasPermission('os_templates');
     }
-    // Contador do número da OS por ano: só sobe de 1 em 1 (o número nunca repete)
+    // Contador do número por ano: só sobe de 1 em 1 (o número nunca repete).
+    // OS: "workOrders_AAAA" (quem emite OS). Pedidos de material (Fase 8B): "materialRequests_AAAA" (o técnico que pede).
     match /counters/{counterId} {
-      allow read: if isStaff() && hasPermission('os_create');
-      allow create, update: if isStaff() && hasPermission('os_create')
-        && counterId == 'workOrders_' + string(request.resource.data.year)
+      allow read: if isStaff() && (hasPermission('os_create') || counterId.matches('materialRequests_[0-9]+'));
+      allow create, update: if isStaff()
         && request.resource.data.keys().hasOnly(['year', 'last'])
-        && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1);
+        && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1)
+        && ((hasPermission('os_create') && counterId == 'workOrders_' + string(request.resource.data.year))
+            || counterId == 'materialRequests_' + string(request.resource.data.year));
       allow delete: if false;
     }
     // OS: cada um vê as das gerências do perfil (e o técnico, as que estão com ele); emitir pede "Emitir OS";
@@ -532,6 +534,64 @@ service cloud.firestore {
         && (request.resource.data.status == 'contestada'
             ? request.resource.data.response.get('reason', '').size() >= 5
             : (request.resource.data.response.rating is int && request.resource.data.response.rating >= 1 && request.resource.data.response.rating <= 5));
+      allow delete: if false;
+    }
+
+    // 14. PEDIDOS DE MATERIAL DO MP (Fase 8B) — id = número "PM-AAAA-NNNN"; não se exclui.
+    // Técnico: pede para uma OS aberta dele (preventiva ou corretiva), da empresa dele marcada com "Técnicos pedem
+    // material do MP"; vê os dele; marca "Retirei" (aprovado → atendido) e "Ciente" (reprovado).
+    // Quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material" vê os das suas gerências;
+    // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM; reprovar: motivo).
+    function mrStaffSees() {
+      return (hasPermission('material_requests_view') || hasPermission('material_requests_decide'))
+        && (seesAllUnits() || resource.data.unit in myUnits() || resource.data.get('mrPend', '') in myUnits());
+    }
+    function mrOrderOk(d) {
+      let o = d.orderKind == 'preventiva'
+        ? get(/databases/$(database)/documents/serviceOrders/$(d.orderId)).data
+        : get(/databases/$(database)/documents/workOrders/$(d.orderId)).data;
+      return d.orderKind in ['preventiva', 'os']
+        && o.get('techOpen', '') == me().matricula
+        && o.get('unit', '') == d.unit
+        && o.get('company', '') == d.company;
+    }
+    match /materialRequests/{reqId} {
+      allow get, list: if isStaff()
+        && (resource.data.get('techMr', '') == me().matricula || resource.data.techMatricula == me().matricula || mrStaffSees());
+      allow create: if isStaff()
+        && reqId == request.resource.data.number
+        && request.resource.data.status == 'Pendente'
+        && request.resource.data.techMatricula == me().matricula
+        && request.resource.data.techMr == me().matricula
+        && request.resource.data.mrPend == request.resource.data.unit
+        && !('decision' in request.resource.data)
+        && request.resource.data.company in me().get('companies', [])
+        && get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.get('requestsMpMaterial', false) == true
+        && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 60
+        && getAfter(/databases/$(database)/documents/counters/$('materialRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && mrOrderOk(request.resource.data);
+      allow update: if isStaff() && (
+        // APROVAR / REPROVAR (só pendente)
+        (resource.data.status == 'Pendente' && request.resource.data.status in ['Aprovado', 'Reprovado']
+          && hasPermission('material_requests_decide') && (seesAllUnits() || resource.data.unit in myUnits())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'items', 'decision', 'mrPend', 'updatedAt', 'timeline'])
+          && !('mrPend' in request.resource.data)
+          && request.resource.data.items.size() == resource.data.items.size()
+          && request.resource.data.decision.byMatricula == me().matricula
+          && (request.resource.data.status == 'Reprovado'
+              ? request.resource.data.decision.get('reason', '').size() >= 3
+              : (request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+'))))
+        // TÉCNICO: "Retirei" (sai da tela dele)
+        || (resource.data.status == 'Aprovado' && request.resource.data.status == 'Atendido'
+          && resource.data.techMatricula == me().matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pickedUpAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data))
+        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
+        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
+          && resource.data.techMatricula == me().matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ackAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data))
+      );
       allow delete: if false;
     }
 
