@@ -53,7 +53,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
     setDeleting(true);
     setDeleteError(null);
     try {
-      await dbDeleteMaterial(toDelete.id);
+      await dbDeleteMaterial(toDelete.id, toDelete.unit);
       setToDelete(null);
       await load();
     } catch (err: any) {

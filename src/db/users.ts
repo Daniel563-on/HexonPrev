@@ -8,6 +8,7 @@ import {
   limit,
   onSnapshot,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where
@@ -24,6 +25,7 @@ import {
   signOutHexon
 } from './core';
 import { dbAddAccessLog } from './audit';
+import { markSyncStale, syncTombstone } from './localSync';
 
 // SANITIZE USER: Guarantees password hashes are NEVER exposed to client-side state, UI, or local inspection
 export function sanitizeUserForClient(user: HexonUser): HexonUser {
@@ -228,6 +230,7 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
   // Maintain client-side cache clean without passwords
   const clientUser = sanitizeUserForClient(safeUser);
   const index = users.findIndex(u => u.id === safeUser.id);
+  const previousGerencia = index >= 0 ? users[index].gerencia : '';
 
   if (index >= 0) {
     users[index] = { ...users[index], ...clientUser };
@@ -247,7 +250,11 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
 
   if (firebaseActive && dbInstance) {
     try {
-      await setDoc(doc(dbInstance, 'users', safeUser.id), { ...cleanUndefined(safeUser), senha: deleteField() }, { merge: true });
+      // syncAt: os aparelhos recebem só o que mudou (cópia local das pessoas da gerência, src/db/localSync.ts)
+      await setDoc(doc(dbInstance, 'users', safeUser.id), { ...cleanUndefined(safeUser), senha: deleteField(), syncAt: serverTimestamp() }, { merge: true });
+      // Mudou de gerência: sai da cópia local da gerência antiga
+      if (previousGerencia && previousGerencia !== safeUser.gerencia) await syncTombstone('users', previousGerencia, safeUser.id).catch(() => {});
+      markSyncStale('users');
     } catch (err: any) {
       console.error('Firestore write user failed:', err);
       checkQuotaException(err);
@@ -288,6 +295,7 @@ export async function dbUpdateUserSessionId(userId: string, sessionId: string): 
 // DELETE USER
 export async function dbDeleteUser(userId: string): Promise<void> {
   const users = await dbGetUsers(true);
+  const removed = users.find(u => u.id === userId);
   cacheUsers = users.filter(u => u.id !== userId && u.matricula !== userId);
   cacheUsersFromFirebase = true;
   updateCacheTimestamp('users');
@@ -301,6 +309,8 @@ export async function dbDeleteUser(userId: string): Promise<void> {
   if (firebaseActive && dbInstance) {
     try {
       await deleteDoc(doc(dbInstance, 'users', userId));
+      if (removed?.gerencia) await syncTombstone('users', removed.gerencia, userId).catch(() => {});
+      markSyncStale('users');
     } catch (err: any) {
       console.error('Firestore delete user failed:', err);
       checkQuotaException(err);
