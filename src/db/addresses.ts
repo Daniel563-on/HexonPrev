@@ -1,14 +1,14 @@
 import { runBulk } from './guard';
-import { collection, doc, getDocs, setDoc, writeBatch } from './guard';
+import { doc, serverTimestamp, setDoc, writeBatch } from './guard';
 import { Address, Asset } from '../types';
-import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { firebaseActive, dbInstance, cleanUndefined } from './core';
+import { markSyncStale, syncedList } from './localSync';
 
 // CONTROLE DE ENDEREÇOS
-// Coleção pequena (centenas de endereços): carregada inteira e guardada em memória.
-let cacheAddresses: Address[] | null = null;
-
+// Cópia guardada no aparelho (src/db/localSync.ts): baixa todos 1 vez e depois só o que mudou.
+// Toda gravação leva syncAt. Endereço não é excluído (só inativado).
 export function clearAddressesCache(): void {
-  cacheAddresses = null;
+  markSyncStale('addresses');
 }
 
 export function addressCodeFromItem(item: string | number): string {
@@ -17,28 +17,16 @@ export function addressCodeFromItem(item: string | number): string {
 }
 
 export async function dbGetAddresses(force = false): Promise<Address[]> {
-  if (cacheAddresses && !force) return [...cacheAddresses];
   if (!firebaseActive || !dbInstance) return [];
-  try {
-    const snap = await getDocs(collection(dbInstance, 'addresses'));
-    const list: Address[] = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Address));
-    cacheAddresses = list.sort((a, b) => a.code.localeCompare(b.code));
-    return [...cacheAddresses];
-  } catch (err: any) {
-    console.warn('Firestore fetch addresses failed:', err);
-    checkQuotaException(err);
-    return cacheAddresses ? [...cacheAddresses] : [];
-  }
+  const list = await syncedList<Address>('addresses', '*', [], force);
+  return list.sort((x, y) => x.code.localeCompare(y.code));
 }
 
 export async function dbSaveAddress(address: Address): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível.');
   const toSave: Address = { ...address, id: address.code, updatedAt: new Date().toISOString() };
-  await setDoc(doc(dbInstance, 'addresses', toSave.id), cleanUndefined(toSave));
-  if (cacheAddresses) {
-    cacheAddresses = [...cacheAddresses.filter((a) => a.id !== toSave.id), toSave].sort((a, b) => a.code.localeCompare(b.code));
-  }
+  await setDoc(doc(dbInstance, 'addresses', toSave.id), { ...cleanUndefined(toSave), syncAt: serverTimestamp() });
+  markSyncStale('addresses');
 }
 
 // Importação da planilha (ITEM, CRAAI, COMARCA, ENDEREÇO). Cria ou atualiza pelo código;
@@ -74,7 +62,7 @@ async function dbImportAddressesNow(
         updatedAt: now,
         inactivatedAt: prev?.inactivatedAt ?? null
       };
-      batch.set(doc(dbInstance, 'addresses', address.id), cleanUndefined(address));
+      batch.set(doc(dbInstance, 'addresses', address.id), { ...cleanUndefined(address), syncAt: serverTimestamp() });
       if (prev && (prev.company || '') !== company) moved.push(address.id);
       saved++;
     }

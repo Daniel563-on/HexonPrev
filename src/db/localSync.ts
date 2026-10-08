@@ -3,7 +3,7 @@ import { collection, doc, getDocs, orderBy, query, serverTimestamp, setDoc, Time
 import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, authInstance, checkQuotaException } from './core';
 
-// CÓPIA LOCAL SINCRONIZADA (economia de leituras): materiais, efetivo e usuários da gerência.
+// CÓPIA LOCAL SINCRONIZADA (economia de leituras): materiais, efetivo, usuários da gerência, modelos de preventiva e endereços.
 // - 1ª vez no aparelho (para cada lista): baixa a lista inteira uma vez e guarda no aparelho (IndexedDB, separado por usuário).
 // - Depois: 1 vez por sessão (ou quando a tela pede "atualizar"), busca só o que mudou desde a última vez
 //   (campo syncAt = horário do servidor, gravado em toda alteração) e as exclusões/mudanças de gerência
@@ -11,7 +11,10 @@ import { firebaseActive, dbInstance, authInstance, checkQuotaException } from '.
 // - Sem internet: usa a cópia guardada.
 // Toda gravação dessas coleções precisa levar syncAt: serverTimestamp() (e, ao excluir ou trocar de gerência, syncTombstone).
 
-export type SyncedCollection = 'materials' | 'workforce' | 'users';
+export type SyncedCollection = 'materials' | 'workforce' | 'users' | 'templates' | 'addresses';
+
+// Coleções que nunca são excluídas (só inativadas): não precisam conferir o registro de exclusões
+const NO_DELETIONS: SyncedCollection[] = ['addresses'];
 
 interface Stored {
   v: 1;
@@ -70,6 +73,7 @@ async function fullDownload(coll: SyncedCollection, filters: [string, string][])
 // Só o que mudou (e as exclusões/saídas da gerência) desde a última vez
 async function incremental(coll: SyncedCollection, unit: string, filters: [string, string][], s: Stored): Promise<Stored> {
   const db = dbInstance!;
+  const noDel = NO_DELETIONS.includes(coll);
   const [changed, removed] = await Promise.all([
     getDocs(
       query(
@@ -79,21 +83,23 @@ async function incremental(coll: SyncedCollection, unit: string, filters: [strin
         orderBy('syncAt')
       )
     ),
-    getDocs(
-      query(
-        collection(db, 'syncDeletions'),
-        where('coll', '==', coll),
-        where('unit', '==', unit),
-        where('syncAt', '>', Timestamp.fromMillis(s.lastDelMs)),
-        orderBy('syncAt')
-      )
-    )
+    noDel
+      ? Promise.resolve(null)
+      : getDocs(
+          query(
+            collection(db, 'syncDeletions'),
+            where('coll', '==', coll),
+            where('unit', '==', unit),
+            where('syncAt', '>', Timestamp.fromMillis(s.lastDelMs)),
+            orderBy('syncAt')
+          )
+        )
   ]);
   const items = { ...s.items };
   let lastSyncMs = s.lastSyncMs;
   let lastDelMs = s.lastDelMs;
   // Exclusões primeiro: se o mesmo item voltou depois (ex.: voltou para a gerência), a versão nova prevalece
-  removed.forEach((d) => {
+  removed?.forEach((d) => {
     const data = d.data();
     lastDelMs = Math.max(lastDelMs, toMs(data.syncAt));
     if (data.docId) delete items[String(data.docId)];
@@ -108,7 +114,8 @@ async function incremental(coll: SyncedCollection, unit: string, filters: [strin
 
 /**
  * Lista sincronizada de uma coleção, filtrada por igualdade (ex.: [['unit','DOM'],['company','mprj']]).
- * "unit" = gerência usada nas exclusões (syncDeletions). refresh = confere o que mudou mesmo se já conferiu nesta sessão.
+ * "unit" = gerência usada nas exclusões (syncDeletions); '*' = lista sem gerência (modelos, endereços: baixa todos).
+ * refresh = confere o que mudou mesmo se já conferiu nesta sessão.
  */
 export async function syncedList<T>(coll: SyncedCollection, unit: string, filters: [string, string][], refresh = false): Promise<T[]> {
   if (!firebaseActive || !dbInstance || !unit) return [];
