@@ -35,6 +35,7 @@ import {
 import { isMockOrLegacyId } from './templates';
 import { withOrderControl, orderControlUpdate } from './orderControl';
 import { ensureChecklistVersions, hydrateOrders, onChecklistVersionLoaded, toStoredOrder } from './checklistVersions';
+import { nowMs, recordLoad } from '../utils/loadTimes';
 
 // Busca de uma vez: baixa as versões de modelo que faltarem e monta o checklist (formato enxuto)
 async function withChecklists(list: ServiceOrder[]): Promise<ServiceOrder[]> {
@@ -414,6 +415,8 @@ export function subscribeTechnicianOrders(
     onChange(hydrateOrders(list));
   };
   const stopVersions = onChecklistVersionLoaded(emit);
+  const t0 = nowMs();
+  let timed = false;
   const unsubscribers = filterSets.map((filters, i) =>
     onSnapshot(
       query(collection(dbInstance!, 'serviceOrders'), ...filters),
@@ -423,6 +426,10 @@ export function subscribeTechnicianOrders(
           if (!isMockOrLegacyId(d.id)) list.push({ id: d.id, ...d.data() } as ServiceOrder);
         });
         parts[i] = list;
+        if (!timed && !snap.metadata.fromCache) {
+          timed = true;
+          recordLoad('Preventivas (1ª resposta do banco)', nowMs() - t0, `${list.length} preventiva(s) abertas`);
+        }
         emit();
       },
       (err) => {

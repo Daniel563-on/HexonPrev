@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Material, OrderParticipant, UsedMaterial } from '../../../types';
-import { dbGetMaterials, dbGetPersonCompanies, dbGetTeamPeople } from '../../../db/firebase';
+import { dbGetMaterials, dbGetPersonCompanies, dbGetTeamPeople, materialsSyncStatus } from '../../../db/firebase';
+import { useSyncVersion } from '../../../utils/useSyncVersion';
 
 // MATERIAIS USADOS E PARTICIPANTES (Etapa 6.2)
 // - Materiais: só os da gerência e da empresa de quem executa, com valor cadastrado (R$ 0,00 não pode ser usado); o técnico não vê valor.
 //   Uma linha por material (repetido: ajusta a quantidade na mesma linha); quantidade com casas decimais.
 // - Participantes: pessoas ativas da mesma gerência e da mesma empresa de quem executa; quem executa entra sempre.
 // Tudo fica no rascunho do aparelho e vai para o banco junto com a conclusão.
+// As listas vêm da cópia do aparelho em tempo real: material ou pessoa cadastrada com a tela aberta aparece sozinha.
 
 interface Props {
   unit: string;
@@ -27,15 +29,21 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
   const [personSearch, setPersonSearch] = useState('');
   const [qtyText, setQtyText] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
+  const [matError, setMatError] = useState<string | null>(null);
+  const syncVersion = useSyncVersion('materials', 'users', 'workforce');
 
   useEffect(() => {
     if (!editable || !unit) return;
     const mat = executor?.matricula;
     dbGetPersonCompanies(unit, mat || '').then((cs) =>
-      dbGetMaterials([unit], false, cs[0]).then((list) => setCatalog(list.filter((m) => m.unit === unit && m.cost > 0 && (!cs[0] || m.company === cs[0]))))
+      dbGetMaterials([unit], false, cs[0]).then((list) => {
+        setCatalog(list.filter((m) => m.unit === unit && m.cost > 0 && (!cs[0] || m.company === cs[0])));
+        const st = materialsSyncStatus(unit, cs[0]);
+        setMatError(st?.error ? (st.code === 'permission-denied' ? `O banco não permitiu ler os materiais da ${unit}.` : `Não foi possível atualizar a lista de materiais: ${st.error}`) : null);
+      })
     );
     dbGetTeamPeople(unit, mat).then(setPeople);
-  }, [editable, unit, executor?.matricula]);
+  }, [editable, unit, executor?.matricula, syncVersion]);
 
   // Texto da quantidade (mantém "2," enquanto digita)
   useEffect(() => {
@@ -121,6 +129,7 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
               </div>
             )}
             {matSearch.trim() && matResults.length === 0 && <p className="text-[11px] font-bold text-rose-600 mt-1">Nenhum material encontrado na {unit} com "{matSearch.trim()}".</p>}
+            {matError && <p className="text-[11px] font-bold text-rose-600 mt-1">{matError}</p>}
           </div>
         )}
         {msg && <p className="text-[11px] font-bold text-amber-700">{msg}</p>}

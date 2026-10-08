@@ -1,17 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PackagePlus, Search, Trash2, X, CheckCircle2, XCircle, Clock, Warehouse } from 'lucide-react';
-import { HexonUser, Material, MaterialRequest, MaterialRequestItem, ServiceOrder, WorkOrder } from '../../types';
+import { Company, HexonUser, Material, MaterialRequest, MaterialRequestItem, ServiceOrder, WorkOrder } from '../../types';
 import {
+  companyNames,
   dbAckMaterialRequest,
   dbCreateMaterialRequest,
+  dbGetCompanies,
   dbGetMaterials,
   dbGetMyWorkOrders,
   dbPickUpMaterialRequest,
   formatQty,
+  materialsSyncStatus,
   MR_STATUS_LABEL,
   parseQty
 } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
+import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // PEDIDO DE MATERIAL DO MP (Fase 8B) — aba Solicitações do celular, seção "Material".
 // Só aparece para técnico de empresa marcada no cadastro ("Técnicos pedem material do MP").
@@ -109,18 +113,56 @@ export default function TechnicianMaterialRequests({
 
   const order = options.find((o) => o.key === orderKey) || null;
 
-  // Lista de materiais da gerência + empresa da OS (cópia do aparelho; R$ 0,00 não pode ser usado)
+  // Lista de materiais da gerência + empresa da OS (cópia do aparelho em tempo real; R$ 0,00 não pode ser usado).
+  // Material cadastrado ou alterado com o formulário aberto aparece sozinho (matVersion: relê da memória, sem ler o banco).
+  const matVersion = useSyncVersion('materials');
+  const [catalogInfo, setCatalogInfo] = useState<{ total: number; error?: string; code?: string } | null>(null);
+  const [companyList, setCompanyList] = useState<Company[]>([]);
+  const catalogFor = useRef('');
   useEffect(() => {
-    if (!order) {
-      setCatalog([]);
-      return;
-    }
-    setLoadingCatalog(true);
-    dbGetMaterials([order.unit], false, order.company)
-      .then((l) => setCatalog(l.filter((m) => m.unit === order.unit && m.company === order.company && m.cost > 0)))
-      .catch(() => setCatalog([]))
-      .finally(() => setLoadingCatalog(false));
+    dbGetCompanies().then(setCompanyList).catch(() => {});
+  }, []);
+  const loadCatalog = (silent: boolean) => {
+    if (!order) return;
+    const { unit, company } = order;
+    const tag = `${unit}|${company}`;
+    if (!silent) setLoadingCatalog(true);
+    dbGetMaterials([unit], false, company)
+      .then((l) => {
+        if (catalogFor.current !== tag) return;
+        setCatalog(l.filter((m) => m.unit === unit && m.company === company && m.cost > 0));
+        const st = materialsSyncStatus(unit, company);
+        setCatalogInfo({ total: l.length, error: st?.error, code: st?.code });
+      })
+      .catch((err) => {
+        if (catalogFor.current !== tag) return;
+        setCatalog([]);
+        setCatalogInfo({ total: 0, error: String(err?.message || err), code: String(err?.code || '') });
+      })
+      .finally(() => {
+        if (catalogFor.current === tag) setLoadingCatalog(false);
+      });
+  };
+  useEffect(() => {
+    catalogFor.current = order ? `${order.unit}|${order.company}` : '';
+    setCatalog([]);
+    setCatalogInfo(null);
+    if (order) loadCatalog(false);
   }, [order?.unit, order?.company]);
+  useEffect(() => {
+    if (matVersion > 0) loadCatalog(true);
+  }, [matVersion]);
+  const catalogLine = (() => {
+    if (!order || loadingCatalog || !catalogInfo) return null;
+    const where = `${order.unit} · ${companyNames([order.company], companyList) || order.company}`;
+    if (catalogInfo.error && catalogInfo.code === 'permission-denied')
+      return { bad: true, text: `O banco não permitiu ler os materiais da ${where}. Avise o planejador.` };
+    const n = catalog.length;
+    const noValue = Math.max(0, catalogInfo.total - n);
+    const base = `${n} ${n === 1 ? 'material disponível' : 'materiais disponíveis'} (${where})${noValue ? ` · ${noValue} sem valor (não aparecem)` : ''}`;
+    if (catalogInfo.error) return { bad: true, text: `${base} · não foi possível atualizar a lista: ${catalogInfo.error}` };
+    return { bad: n === 0, text: n === 0 && catalogInfo.total === 0 ? `Nenhum material cadastrado para ${where}.` : `${base} · atualiza sozinho` };
+  })();
 
   const matches = useMemo(() => {
     const words = norm(search).split(/\s+/).filter(Boolean);
@@ -250,6 +292,7 @@ export default function TechnicianMaterialRequests({
                 </div>
               )}
               {search.trim() && matches.length === 0 && !loadingCatalog && <p className="text-[11px] text-slate-500">Nenhum material encontrado.</p>}
+              {catalogLine && <p className={`text-[11px] ${catalogLine.bad ? 'font-bold text-rose-600' : 'text-slate-500'}`}>{catalogLine.text}</p>}
             </div>
 
             {items.length > 0 && (

@@ -3,7 +3,7 @@ import { deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from './guard';
 import { Material } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined } from './core';
 import { localTodayStr } from './serviceOrders';
-import { markSyncStale, syncedList, syncTombstone } from './localSync';
+import { markSyncStale, syncedList, syncStatus, syncTombstone } from './localSync';
 import { dbGetManagements } from './organization';
 
 // MATERIAIS (coleção "materials"): cada gerência + empresa tem a sua lista (etapa especial E2). Sem controle de estoque.
@@ -31,6 +31,11 @@ export async function dbGetMaterials(units: string[] | null, force = false, comp
     list.map((u) => syncedList<Material>('materials', u, company ? [['unit', u], ['company', company]] : [['unit', u]], force))
   );
   return parts.flat().sort((a, b) => a.unit.localeCompare(b.unit) || a.description.localeCompare(b.description));
+}
+
+// Situação da lista guardada de uma gerência + empresa (para a tela explicar quando vem vazia)
+export function materialsSyncStatus(unit: string, company?: string) {
+  return syncStatus('materials', company ? [['unit', unit], ['company', company]] : [['unit', unit]]);
 }
 
 // Cadastro manual (novo ou edição de código/descrição/unidade de medida). O valor muda por dbSetMaterialCost.

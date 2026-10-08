@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search, UserPlus, X } from 'lucide-react';
 import { OrderParticipant } from '../../types';
 import { dbGetTeamPeople, dbGetUsualTeam } from '../../db/firebase';
+import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // EQUIPE DA OS (técnico em campo): o técnico atribuído entra sempre; a equipe que o Encarregado deixou pronta
 // aparece como atalho (um toque adiciona) e qualquer pessoa ativa da gerência e da mesma empresa do técnico pode ser buscada.
@@ -21,12 +22,16 @@ export default function OsTeamPicker({ unit, executor, team, editable, onChange,
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [usual, setUsual] = useState<OrderParticipant[]>([]);
   const [q, setQ] = useState('');
+  const peopleVersion = useSyncVersion('users', 'workforce'); // pessoa cadastrada com a tela aberta aparece sozinha
 
   useEffect(() => {
     if (!editable) return;
     dbGetTeamPeople(unit, executor.matricula).then(setPeople);
+  }, [editable, unit, executor.matricula, peopleVersion]);
+  useEffect(() => {
+    if (!editable) return;
     dbGetUsualTeam(executor.matricula).then((t) => setUsual((t?.members || []).filter((m) => m.matricula !== executor.matricula)));
-  }, [editable, unit, executor.matricula]);
+  }, [editable, executor.matricula]);
 
   const taken = useMemo(() => new Set(team.map((p) => p.matricula)), [team]);
   // Atalhos da equipe habitual: só quem ainda é da mesma empresa

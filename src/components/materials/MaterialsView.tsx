@@ -14,6 +14,7 @@ import {
   materialIdOf
 } from '../../db/firebase';
 import MaterialImportModal from './MaterialImportModal';
+import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // MATERIAIS: lista de cada gerência + empresa (etapa especial E2). Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
 
@@ -68,6 +69,14 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
     setMaterials((await dbGetMaterials(visibleUnits, force)).filter((m) => isCompanyVisible(m.company, visibleCompanies)));
     setLoading(false);
   };
+  // Tempo real: alteração feita em outro aparelho aparece sozinha (relê da memória, sem ler o banco)
+  const matVersion = useSyncVersion('materials');
+  useEffect(() => {
+    if (matVersion === 0) return;
+    dbGetMaterials(visibleUnits, false)
+      .then((l) => setMaterials(l.filter((m) => isCompanyVisible(m.company, visibleCompanies))))
+      .catch(() => {});
+  }, [matVersion]);
   useEffect(() => {
     load(false);
     dbGetCompanies().then(setCompanies).catch(() => {});
