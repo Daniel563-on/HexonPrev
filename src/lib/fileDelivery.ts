@@ -21,7 +21,12 @@ export function isPhoneOrTablet(): boolean {
   return /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 }
 
-export function deliverFile(blob: Blob, fileName: string): void {
+// Nome sem caracteres proibidos em arquivo: o nº da preventiva tem "/" ("123 · MEN 10/26") e o iPhone recusa compartilhar
+export const safeFileName = (name: string): string =>
+  name.replace(/[\/\\:*?"<>|]+/g, '-').replace(/\s*·\s*/g, '_').replace(/\s+/g, '_');
+
+export function deliverFile(blob: Blob, rawName: string): void {
+  const fileName = safeFileName(rawName);
   if (isPhoneOrTablet() && listeners.size > 0) {
     const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
     const ready = { file, url: URL.createObjectURL(file) };
@@ -46,14 +51,16 @@ export function deliverBytes(bytes: Uint8Array, fileName: string, mime = 'applic
 // false = a pessoa fechou o menu sem escolher
 export async function openReadyFile(r: ReadyFile): Promise<boolean> {
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  let shareErr = '';
   if (nav.share && nav.canShare?.({ files: [r.file] })) {
     try {
       await nav.share({ files: [r.file] });
       return true;
     } catch (err: any) {
       if (err?.name === 'AbortError') return false;
+      shareErr = `${err?.name || 'erro'}: ${err?.message || err}`;
     }
   }
-  if (!window.open(r.url, '_blank')) throw new Error('o celular bloqueou a abertura do arquivo');
+  if (!window.open(r.url, '_blank')) throw new Error(shareErr || 'o celular bloqueou a abertura do arquivo');
   return true;
 }
