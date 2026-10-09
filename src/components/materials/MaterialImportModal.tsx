@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Company, Material } from '../../types';
-import { companiesOfUnit, dbApplyMaterialImport, MaterialImportPlan, MaterialImportRow, planMaterialImport } from '../../db/firebase';
+import { CatalogKind, companiesOfUnit, dbApplyMaterialImport, MaterialImportPlan, MaterialImportRow, planMaterialImport } from '../../db/firebase';
 
-// IMPORTAÇÃO DE MATERIAIS POR GERÊNCIA + EMPRESA: escolha a gerência, a empresa, o arquivo e diga qual coluna é o quê.
+// IMPORTAÇÃO DE MATERIAIS (ou INSUMOS, Fase 8C) POR GERÊNCIA + EMPRESA: escolha a gerência, a empresa, o arquivo e diga qual coluna é o quê.
 // Quem sair da planilha fica na lista (histórico) com valor R$ 0,00 (o técnico não pode usar). Só mexe na lista daquela empresa.
 
 interface Props {
+  kind?: CatalogKind; // 'materials' (padrão) ou 'supplies'
   units: string[];
   companies: Company[];
   existing: Material[];
@@ -17,8 +18,8 @@ interface Props {
 
 type Field = 'code' | 'description' | 'measureUnit' | 'cost';
 const FIELDS: { key: Field; label: string; required: boolean; guesses: string[] }[] = [
-  { key: 'code', label: 'Código', required: true, guesses: ['CODIGO', 'COD', 'CÓDIGO', 'CODIGO DO MATERIAL', 'ITEM'] },
-  { key: 'description', label: 'Descrição', required: true, guesses: ['DESCRICAO', 'DESCRIÇÃO', 'MATERIAL', 'NOME'] },
+  { key: 'code', label: 'Código', required: true, guesses: ['CODIGO', 'COD', 'CÓDIGO', 'CODIGO DO MATERIAL', 'CODIGO DO INSUMO', 'ITEM'] },
+  { key: 'description', label: 'Descrição', required: true, guesses: ['DESCRICAO', 'DESCRIÇÃO', 'MATERIAL', 'INSUMO', 'NOME'] },
   { key: 'measureUnit', label: 'Unidade de medida', required: false, guesses: ['UNIDADE', 'UN', 'UND', 'UNID', 'UNIDADE DE MEDIDA', 'MEDIDA'] },
   { key: 'cost', label: 'Valor (R$)', required: false, guesses: ['VALOR', 'PRECO', 'PREÇO', 'CUSTO', 'VALOR UNITARIO', 'VALOR UNITÁRIO'] }
 ];
@@ -35,7 +36,9 @@ function parseCost(v: unknown): number | null {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 }
 
-export default function MaterialImportModal({ units, companies, existing, currentUserName, onClose, onDone }: Props) {
+export default function MaterialImportModal({ kind = 'materials', units, companies, existing, currentUserName, onClose, onDone }: Props) {
+  const plural = kind === 'supplies' ? 'insumos' : 'materiais';
+  const countLabel = kind === 'supplies' ? 'insumo(s)' : 'material(is)';
   const [unit, setUnit] = useState(units.length === 1 ? units[0] : '');
   const [company, setCompany] = useState('');
   const unitCompanies = companiesOfUnit(companies, unit).filter((c) => c.active);
@@ -89,7 +92,7 @@ export default function MaterialImportModal({ units, companies, existing, curren
         line: i + 2
       }))
       .filter((r) => String(r.code).trim() || String(r.description).trim());
-    setPlan(planMaterialImport(unit, company, rows, existing, currentUserName));
+    setPlan(planMaterialImport(unit, company, rows, existing, currentUserName, kind));
   };
 
   const apply = async () => {
@@ -116,7 +119,7 @@ export default function MaterialImportModal({ units, companies, existing, curren
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-4 text-slate-800">
         <div>
-          <h3 className="text-base font-black">Importar materiais</h3>
+          <h3 className="text-base font-black">Importar {plural}</h3>
           <p className="text-xs text-slate-500 mt-1">
             A importação é por gerência + empresa (cada empresa tem a sua lista e os seus preços). Código novo entra; código existente é atualizado; quem sair da planilha fica na lista com valor
             R$ 0,00 (o técnico não pode usar). Sem coluna de valor, os valores atuais são mantidos.
@@ -201,12 +204,12 @@ export default function MaterialImportModal({ units, companies, existing, curren
             </div>
             {plan.toCreate.some((m) => m.cost === 0) && (
               <p className="text-amber-700 font-bold">
-                {plan.toCreate.filter((m) => m.cost === 0).length} material(is) novo(s) sem valor: ficam indisponíveis para o técnico até você informar o valor.
+                {plan.toCreate.filter((m) => m.cost === 0).length} {countLabel} novo(s) sem valor: ficam indisponíveis para o técnico até você informar o valor.
               </p>
             )}
             {bigZero && (
               <p className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold">
-                Atenção: {plan.toZero.length} de {activeBefore} materiais com valor vão para R$ 0,00. Confira se a planilha, a gerência e a empresa estão certas.
+                Atenção: {plan.toZero.length} de {activeBefore} {plural} com valor vão para R$ 0,00. Confira se a planilha, a gerência e a empresa estão certas.
               </p>
             )}
             {plan.skippedDuplicate.length > 0 && (

@@ -406,6 +406,7 @@ export interface Company {
   units: string[];        // gerências em que atua
   costTracking: boolean;  // contabiliza homem-hora, hora extra e pernoite
   requestsMpMaterial?: boolean; // técnicos pedem material do MP pelo celular (Fase 8B)
+  requestsSupplies?: boolean;   // técnicos pedem insumos pelo celular (Fase 8C)
   active: boolean;
   createdAt: string;
   updatedAt: string;

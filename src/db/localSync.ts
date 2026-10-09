@@ -5,7 +5,7 @@ import { idbGet, idbSet } from '../utils/idbCache';
 import { firebaseActive, dbInstance, authInstance, checkQuotaException } from './core';
 import { nowMs, recordLoad } from '../utils/loadTimes';
 
-// CÓPIA LOCAL EM TEMPO REAL (economia de leituras): materiais, efetivo, usuários da gerência, modelos de preventiva e endereços.
+// CÓPIA LOCAL EM TEMPO REAL (economia de leituras): materiais, insumos, efetivo, usuários da gerência, modelos de preventiva e endereços.
 // - 1ª vez no aparelho (para cada lista): baixa a lista inteira uma vez e guarda no aparelho (IndexedDB, separado por usuário).
 // - Depois: a tela usa a cópia guardada e o app abre uma ESCUTA no banco que traz só o que mudou desde a última vez
 //   (campo syncAt = horário do servidor, gravado em toda alteração) e as exclusões/mudanças de gerência ("syncDeletions").
@@ -14,7 +14,7 @@ import { nowMs, recordLoad } from '../utils/loadTimes';
 // - Sem internet: usa a cópia guardada (a escuta continua e recebe as mudanças quando a internet volta).
 // Toda gravação dessas coleções precisa levar syncAt: serverTimestamp() (e, ao excluir ou trocar de gerência, syncTombstone).
 
-export type SyncedCollection = 'materials' | 'workforce' | 'users' | 'templates' | 'addresses';
+export type SyncedCollection = 'materials' | 'supplies' | 'workforce' | 'users' | 'templates' | 'addresses';
 
 // Coleções que nunca são excluídas (só inativadas): não precisam conferir o registro de exclusões
 const NO_DELETIONS: SyncedCollection[] = ['addresses'];
@@ -52,6 +52,7 @@ const PICK: Partial<Record<SyncedCollection, string[]>> = {
 
 const NAMES: Record<SyncedCollection, string> = {
   materials: 'Materiais',
+  supplies: 'Insumos',
   workforce: 'Efetivo',
   users: 'Usuários da gerência',
   templates: 'Modelos de preventiva',
