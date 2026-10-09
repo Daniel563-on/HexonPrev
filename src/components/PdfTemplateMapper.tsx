@@ -436,6 +436,9 @@ export default function PdfTemplateMapper({
               signed_at: 'Data/Hora da Assinatura',
               result_status: 'Status / Laudo Geral',
               notes: 'Observações Gerais',
+              materials_used: 'Materiais Usados',
+              supplies_list: 'Insumos',
+              supplies_by_request: 'Insumos por Pedido',
               fixed_text: 'Texto Fixo Customizado'
             };
             updated.label = labelsMap[updated.fieldType] || updated.fieldType;
@@ -1016,6 +1019,12 @@ export default function PdfTemplateMapper({
                     <option value="technician">Técnico Executor Responsável</option>
                     <option value="result_status">Resultado do Laudo (Aprovado / Não Conforme)</option>
                     <option value="notes">Observações Gerais da Ordem</option>
+                  </optgroup>
+
+                  <optgroup label="📦 Materiais e Insumos">
+                    <option value="materials_used">Materiais Usados (descrição e quantidade)</option>
+                    <option value="supplies_list">Insumos (descrição e quantidade)</option>
+                    <option value="supplies_by_request">Insumos por Pedido (nº e GLPI)</option>
                   </optgroup>
 
                   <optgroup label="✍️ Validação & Assinatura">

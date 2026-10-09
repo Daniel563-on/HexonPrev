@@ -199,6 +199,9 @@ export type PdfPinFieldType =
   | 'signed_at'             // Data/Hora da assinatura
   | 'result_status'         // Aprovado / Aprovado com Ressalvas / Não Conforme
   | 'notes'                 // Observações gerais da OS
+  | 'materials_used'        // Materiais usados (descrição e quantidade) — Fase 8C-3
+  | 'supplies_list'         // Insumos recebidos somados (descrição e quantidade) — Fase 8C-3
+  | 'supplies_by_request'   // Insumos recebidos por pedido (nº e GLPI) — Fase 8C-3
   | 'fixed_text';           // Texto fixo personalizado
 
 export interface PdfMappingPin {

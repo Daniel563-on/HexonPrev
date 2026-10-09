@@ -6,6 +6,7 @@ import {
   brl,
   dbCancelWorkOrder,
   dbGetCompanies,
+  dbGetOrderSupplies,
   dbUnassignWorkOrder,
   osTechStarted,
   dbGetWorkOrder,
@@ -82,12 +83,13 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
       setExporting(null);
     }
   };
-  // Planilha: valores em R$ só para quem vê valores
+  // Planilha: valores em R$ só para quem vê valores; insumos recebidos (Fase 8C-3; a ficha já leu, vem da memória)
   const downloadXlsx = async () => {
     setExporting('xlsx');
     setMsg(null);
     try {
-      exportOsXlsx(o, canViewCosts && o.assignedAt ? cost || (await dbGetWorkOrderCost(o)) : null, companyName === '—' ? '' : companyName);
+      const supplies = await dbGetOrderSupplies(o.id, false, true);
+      exportOsXlsx(o, canViewCosts && o.assignedAt ? cost || (await dbGetWorkOrderCost(o)) : null, companyName === '—' ? '' : companyName, supplies);
     } catch (err: any) {
       setMsg(`Não foi possível gerar a planilha: ${err?.message || err}`);
     } finally {

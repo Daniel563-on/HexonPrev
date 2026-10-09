@@ -16,7 +16,8 @@ import {
   dbSaveServiceOrder, dbRevertOrderToNew, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
   applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes,
-  supplyBlockMessage
+  supplyBlockMessage,
+  dbGetOrderSupplies
 } from '../../db/firebase';
 import OrderTimeCost from './execution/OrderTimeCost';
 import CorrectiveDecisionNote from './execution/CorrectiveDecisionNote';
@@ -24,7 +25,7 @@ import ExecutionExtras from './execution/ExecutionExtras';
 import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
-import { generateFilledPdf } from '../../lib/pdfGenerator';
+import { generateFilledPdf, pdfUsesSupplies } from '../../lib/pdfGenerator';
 import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 export interface OrderDetailsDrawerProps {
@@ -1485,11 +1486,14 @@ export default function OrderDetailsDrawer({
                         const orderForPdf = !selectedOrder.signature && selectedOrder.hasSignature
                           ? { ...selectedOrder, signature: await dbGetOrderSignature(selectedOrder.id) }
                           : selectedOrder;
+                        // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
+                        const supplies = pdfUsesSupplies(matchingTpl.pdfTemplate.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
                         const { blobUrl } = await generateFilledPdf(
                           matchingTpl.pdfTemplate,
                           orderForPdf,
                           assetObj,
-                          matchingTpl
+                          matchingTpl,
+                          supplies
                         );
                         const link = document.createElement('a');
                         link.href = blobUrl;

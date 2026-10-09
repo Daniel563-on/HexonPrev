@@ -282,9 +282,10 @@ export async function dbAckSupplyRequest(req: SupplyRequest, byName: string): Pr
   });
 }
 
-// Insumos recebidos de uma OS (ficha, custo e PDF): 1 leitura; guardado na sessão e renovado a cada 2 minutos
+// Insumos recebidos de uma OS (ficha, custo e PDF): 1 leitura; guardado na sessão e renovado a cada 2 minutos.
+// "strict" (PDF e planilha): se a leitura falhar, avisa em vez de sair "nenhum insumo"
 const osCache = new Map<string, { at: number; value: OrderSupplies | null }>();
-export async function dbGetOrderSupplies(orderId: string, force = false): Promise<OrderSupplies | null> {
+export async function dbGetOrderSupplies(orderId: string, force = false, strict = false): Promise<OrderSupplies | null> {
   if (!firebaseActive || !dbInstance || !orderId) return null;
   const hit = osCache.get(orderId);
   if (hit && !force && Date.now() - hit.at < 120000) return hit.value;
@@ -295,11 +296,32 @@ export async function dbGetOrderSupplies(orderId: string, force = false): Promis
     return value;
   } catch (err: any) {
     checkQuotaException(err);
+    if (strict) throw new Error(`não foi possível ler os insumos da OS (${err?.message || err})`);
     return hit?.value ?? null;
   }
 }
 // Lista (pedido a pedido, na ordem do fornecimento)
 export const orderSupplyEntries = (os: OrderSupplies | null): SupplyOsEntry[] =>
   Object.values(os?.entries || {}).sort((a, b) => a.suppliedAt.localeCompare(b.suppliedAt));
+
+// Insumos somados: o mesmo insumo vindo em pedidos diferentes vira uma linha só (PDF, Fase 8C-3)
+export function orderSuppliesMerged(os: OrderSupplies | null): SupplyOsEntry['items'] {
+  const map = new Map<string, SupplyOsEntry['items'][number]>();
+  orderSupplyEntries(os).forEach((e) =>
+    e.items.forEach((it) => {
+      const cur = map.get(it.supplyId);
+      if (cur) cur.qty = Math.round((cur.qty + it.qty) * 1000) / 1000;
+      else map.set(it.supplyId, { ...it });
+    })
+  );
+  return [...map.values()];
+}
+// Texto do PDF (sem código e sem R$): "DESCRIÇÃO — 3 UN" por linha, ou pedido a pedido com o nº e o GLPI
+const supplyLine = (it: SupplyOsEntry['items'][number]) => `${it.description} — ${fmtQty(it.qty)} ${it.measureUnit}`;
+export const orderSuppliesText = (os: OrderSupplies | null): string => orderSuppliesMerged(os).map(supplyLine).join('\n');
+export const orderSuppliesByRequestText = (os: OrderSupplies | null): string =>
+  orderSupplyEntries(os)
+    .map((e) => [`${e.number} · GLPI ${e.glpi}`, ...e.items.map(supplyLine)].join('\n'))
+    .join('\n');
 
 export const formatSupplyQty = fmtQty;

@@ -1,6 +1,18 @@
 import { PDFDocument, rgb, StandardFonts } from './pdfHelper';
-import { OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplateField, WorkOrder } from '../types';
-import { OS_SIGN_LABEL, dbGetCompanies, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, osAnswerText, osFieldVisible, osMembers } from '../db/firebase';
+import { OrderSupplies, OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplateField, WorkOrder } from '../types';
+import {
+  OS_SIGN_LABEL,
+  dbGetCompanies,
+  dbGetOrderSupplies,
+  dbGetOsPdfFile,
+  dbGetOsPdfLayout,
+  dbGetOsSignatureImage,
+  orderSuppliesByRequestText,
+  orderSuppliesText,
+  osAnswerText,
+  osFieldVisible,
+  osMembers
+} from '../db/firebase';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
 // o PDF mapeado (PDF oficial do modelo + caixas) e o PDF padrão (quando o modelo não tem PDF).
@@ -10,6 +22,7 @@ export interface OsPdfData {
   order: WorkOrder;
   signatures: Partial<Record<OsSignatureRole, string>>; // imagem (data:image/png) de cada assinatura feita
   companyName?: string; // nome da empresa da OS (etapa especial E4)
+  supplies?: OrderSupplies | null; // insumos recebidos (Fase 8C-3)
 }
 export interface OsPdfFieldOption {
   value: string;
@@ -59,6 +72,9 @@ export function osPdfFieldOptions(fields: OsTemplateField[]): OsPdfFieldOption[]
       if (f.locationDepth !== 'comarca') out.push({ value: `q:${f.id}:endereco`, label: `${f.label} — Endereço`, group: LOC });
     });
   SYS.forEach(([k, l]) => out.push({ value: `sys:${k}`, label: l, group: 'Dados da OS' }));
+  // Insumos recebidos (Fase 8C-3): somados ou pedido a pedido; sem código e sem R$
+  out.push({ value: 'sys:insumos', label: 'Insumos (descrição e quantidade)', group: 'Insumos' });
+  out.push({ value: 'sys:insumosPedidos', label: 'Insumos por pedido (nº e GLPI)', group: 'Insumos' });
   fields.filter((f) => f.stage === 'criacao').forEach((f) => out.push({ value: `q:${f.id}`, label: f.label, group: 'Perguntas da criação' }));
   fields.filter((f) => f.stage === 'execucao').forEach((f) => out.push({ value: `q:${f.id}`, label: f.label, group: 'Perguntas da execução' }));
   ROLES.forEach((r) => {
@@ -72,6 +88,9 @@ export function osPdfFieldOptions(fields: OsTemplateField[]): OsPdfFieldOption[]
   out.push({ value: 'fixed', label: 'Texto fixo', group: 'Outros' });
   return out;
 }
+
+// O PDF mapeado tem caixa de insumos? (só então lê os insumos da OS)
+export const osPdfUsesSupplies = (pins: OsPdfPin[]) => pins.some((p) => p.field.startsWith('sys:insumos'));
 
 export function osPdfFieldLabel(value: string, fields: OsTemplateField[]): string {
   return osPdfFieldOptions(fields).find((o) => o.value === value)?.label || (value.startsWith('q:') ? 'Pergunta removida do modelo' : value);
@@ -150,6 +169,10 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
       return { text: exec ? osMembers(o).map((p) => `${p.name}${p.cargo ? ` (${p.cargo})` : ''} — Mat. ${p.matricula}`).join('\n') : '' };
     case 'materiais':
       return { text: (exec?.materials || []).map((m) => `${m.description} — ${qty(m.qty)} ${m.measureUnit}`).join('\n') };
+    case 'insumos':
+      return { text: orderSuppliesText(d.supplies || null) };
+    case 'insumosPedidos':
+      return { text: orderSuppliesByRequestText(d.supplies || null) };
     case 'horaExtra':
       return { text: (exec?.overtime || []).map((x) => `${day(x.date)}: ${hm(x.minutes)}${x.holiday ? ' (feriado)' : ''}`).join('\n') };
     case 'pernoite':
@@ -167,8 +190,8 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
 // ===== Ferramentas de desenho =====
 type Font = Awaited<ReturnType<PDFDocument['embedFont']>>;
 
-// A fonte padrão do PDF não tem todos os símbolos: troca os que não existem
-function safe(text: string, font: Font): string {
+// A fonte padrão do PDF não tem todos os símbolos: troca os que não existem (usado também no PDF da preventiva)
+export function safe(text: string, font: Font): string {
   const map: Record<string, string> = { '★': '*', '☆': '-', '→': '->', '\t': '    ' };
   let out = '';
   for (const ch of text.replace(/\r/g, '')) {
@@ -187,7 +210,7 @@ function safe(text: string, font: Font): string {
   return out;
 }
 
-function wrap(text: string, font: Font, size: number, maxWidth: number): string[] {
+export function wrap(text: string, font: Font, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   text.split('\n').forEach((para) => {
     let line = '';
@@ -363,6 +386,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
     section('Equipe, materiais e adicionais');
     kv('Equipe', v('equipeCompleta'));
     kv('Materiais', v('materiais') || 'nenhum');
+    kv('Insumos', v('insumos') || 'nenhum');
     kv('Hora extra', v('horaExtra') || 'não houve');
     kv('Pernoite', v('pernoite') || 'não houve');
   }
@@ -427,7 +451,9 @@ export async function buildOsPdfBytes(o: WorkOrder, layouts?: Map<string, { layo
     layouts?.set(o.templateId, entry);
   }
   const companyName = o.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === o.company)?.name || o.company : '';
-  const data = { order: o, signatures, companyName };
+  // Insumos (Fase 8C-3): 1 leitura, só quando o PDF mostra insumos (padrão: OS já executada; mapeado: com caixa de insumos)
+  const supplies = (entry ? osPdfUsesSupplies(entry.layout.pins) : !!o.exec) ? await dbGetOrderSupplies(o.id, false, true) : null;
+  const data = { order: o, signatures, companyName, supplies };
   return entry ? generateOsMappedPdf(entry.file, entry.layout.pins, data) : generateOsStandardPdf(data);
 }
 

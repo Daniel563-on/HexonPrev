@@ -1,14 +1,14 @@
 import * as XLSX from 'xlsx';
-import { WorkOrder } from '../types';
-import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, osAnswerText, osFieldVisible, osMembers, osSignOrder } from '../db/firebase';
+import { OrderSupplies, WorkOrder } from '../types';
+import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, orderSupplyEntries, osAnswerText, osFieldVisible, osMembers, osSignOrder } from '../db/firebase';
 
 // FICHA DA OS EM PLANILHA (Fase 5C): uma aba com as seções da OS.
-// Valores em R$ só quando "cost" vem preenchido (quem tem "Visualizar Valores").
+// Valores em R$ só quando "cost" vem preenchido (quem tem "Visualizar Valores"). Insumos recebidos em "supplies" (Fase 8C-3).
 
 const day = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '');
 const dateTime = (s?: string) => (s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
-export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyName = ''): void {
+export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyName = '', supplies: OrderSupplies | null = null): void {
   const rows: (string | number)[][] = [];
   const blank = () => rows.push([]);
   const title = (t: string) => {
@@ -61,7 +61,13 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
   if (!mats.length) rows.push(['—', 'Nenhum material']);
   mats.forEach((m) => rows.push([m.code, m.description, m.qty, m.measureUnit]));
 
-  title('6. Hora extra e pernoite');
+  title('6. Insumos');
+  rows.push(['Pedido', 'GLPI', 'Código', 'Descrição', 'Quantidade', 'Unidade', 'Fornecido em']);
+  const sups = orderSupplyEntries(supplies);
+  if (!sups.length) rows.push(['—', 'Nenhum insumo']);
+  sups.forEach((e) => e.items.forEach((it) => rows.push([e.number, e.glpi, it.code, it.description, it.qty, it.measureUnit, dateTime(e.suppliedAt)])));
+
+  title('7. Hora extra e pernoite');
   rows.push(['Dia', 'Horas', 'Feriado']);
   const ot = o.exec?.overtime || [];
   if (!ot.length) rows.push(['Não houve hora extra']);
@@ -69,7 +75,7 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
   kv('Pernoite (diárias)', o.exec?.overnightNights ? o.exec.overnightNights : 'Não houve');
 
   if (cost) {
-    title('7. Homem-hora e custos');
+    title('8. Homem-hora e custos');
     kv('Tempo que contou', fmtMinutes(cost.minutes));
     kv('Horas cobradas por pessoa', cost.billedHours);
     if (cost.partial) kv('Atenção', 'Parcial: conta até agora (fecha na assinatura do técnico)');
@@ -79,11 +85,12 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
     cost.overtime.forEach((l) => line('Hora extra', l));
     if (cost.overnight) line('Pernoite', cost.overnight);
     cost.materials.forEach((l) => line('Material', l));
+    cost.supplies.forEach((l) => line('Insumo', l));
     rows.push([cost.partial ? 'TOTAL PARCIAL' : 'TOTAL', '', brl(cost.total)]);
     cost.warnings.forEach((w) => kv('Aviso', w));
   }
 
-  title(`${cost ? 8 : 7}. Assinaturas`);
+  title(`${cost ? 9 : 8}. Assinaturas`);
   rows.push(['Papel', 'Nome', 'Matrícula', 'Cargo', 'Data e hora', 'Por onde', 'Avaliação']);
   osSignOrder(o).forEach((r) => {
     const m = o.signatures?.[r];
@@ -94,12 +101,12 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
     );
   });
 
-  title(`${cost ? 9 : 8}. Contestações`);
+  title(`${cost ? 10 : 9}. Contestações`);
   if (!(o.contests || []).length) rows.push(['Nenhuma contestação']);
   else rows.push(['Data', 'Cliente', 'Motivo', 'Resposta', 'Respondida por', 'Respondida em', 'Acrescentado']);
   (o.contests || []).forEach((c) => rows.push([dateTime(c.at), `${c.clientName}${c.clientMatricula ? ` (${c.clientMatricula})` : ''}`, c.reason, c.resolution || 'Sem resposta', c.resolvedBy || '—', dateTime(c.resolvedAt) || '—', c.added || '—']));
 
-  title(`${cost ? 10 : 9}. Linha do tempo`);
+  title(`${cost ? 11 : 10}. Linha do tempo`);
   rows.push(['Data e hora', 'O que aconteceu', 'Detalhe', 'Quem']);
   (o.timeline || []).forEach((e) => rows.push([dateTime(e.at), e.action, e.note || '', e.by]));
 
@@ -115,12 +122,12 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
 export function exportOsListXlsx(
   orders: WorkOrder[],
   fileName: string,
-  costs: Map<string, { snap: { total: number; labor: number; overtime: number; overnight: number; materials: number; billedHours: number }; partial: boolean }> | null,
+  costs: Map<string, { snap: { total: number; labor: number; overtime: number; overnight: number; materials: number; supplies?: number; billedHours: number }; partial: boolean }> | null,
   companyName: (id?: string) => string = (id) => id || ''
 ): void {
   const today = new Date().toISOString().slice(0, 10);
   const head = ['Nº da OS', 'GLPI', 'Intervenção', 'Situação', 'Atrasada', 'Gerência', 'Empresa', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
-  if (costs) head.push('Horas cobradas', 'Homem-hora (R$)', 'Hora extra (R$)', 'Pernoite (R$)', 'Materiais (R$)', 'Total (R$)', 'Valor');
+  if (costs) head.push('Horas cobradas', 'Homem-hora (R$)', 'Hora extra (R$)', 'Pernoite (R$)', 'Materiais (R$)', 'Insumos (R$)', 'Total (R$)', 'Valor');
   const rows: (string | number)[][] = [head];
   orders.forEach((o) => {
     const late = !!o.deadline && !['Concluída', 'Cancelada'].includes(o.status) && o.deadline < today;
@@ -147,8 +154,8 @@ export function exportOsListXlsx(
     ];
     if (costs) {
       const c = costs.get(o.id);
-      if (c) r.push(c.snap.billedHours, c.snap.labor, c.snap.overtime, c.snap.overnight, c.snap.materials, c.snap.total, c.partial ? 'Parcial (até agora)' : 'Fechado');
-      else r.push('', '', '', '', '', '', 'Sem cálculo');
+      if (c) r.push(c.snap.billedHours, c.snap.labor, c.snap.overtime, c.snap.overnight, c.snap.materials, c.snap.supplies || 0, c.snap.total, c.partial ? 'Parcial (até agora)' : 'Fechado');
+      else r.push('', '', '', '', '', '', '', 'Sem cálculo');
     }
     rows.push(r);
   });

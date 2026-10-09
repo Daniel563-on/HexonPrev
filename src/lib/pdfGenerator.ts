@@ -1,5 +1,12 @@
 import { PDFDocument, rgb, StandardFonts } from './pdfHelper';
-import { PdfTemplateConfig, PdfMappingPin, ServiceOrder, Asset, MaintenanceTemplate, formatDateBR } from '../types';
+import { PdfTemplateConfig, PdfMappingPin, PdfPinFieldType, ServiceOrder, Asset, MaintenanceTemplate, OrderSupplies, formatDateBR } from '../types';
+import { orderSuppliesByRequestText, orderSuppliesText } from '../db/firebase';
+import { safe, wrap } from './osPdf';
+
+// Caixas de lista (materiais e insumos, Fase 8C-3): várias linhas; a letra diminui até caber na caixa
+export const PDF_LIST_FIELDS: PdfPinFieldType[] = ['materials_used', 'supplies_list', 'supplies_by_request'];
+// O modelo tem caixa de insumos? (só então lê os insumos da preventiva)
+export const pdfUsesSupplies = (pins: PdfMappingPin[] = []) => pins.some((p) => p.fieldType === 'supplies_list' || p.fieldType === 'supplies_by_request');
 
 /**
  * Converte cor hexadecimal (#RRGGBB) para valores rgb do pdf-lib (0-1)
@@ -25,7 +32,8 @@ export function getPinValue(
   pin: PdfMappingPin,
   order?: Partial<ServiceOrder> | null,
   asset?: Partial<Asset> | null,
-  template?: Partial<MaintenanceTemplate> | null
+  template?: Partial<MaintenanceTemplate> | null,
+  supplies?: OrderSupplies | null
 ): { text?: string; isImage?: boolean; imageData?: string } {
   // Simulação / Fallback quando nenhum dado real for passado (modo teste)
   const isMock = !order && !asset;
@@ -89,6 +97,20 @@ export function getPinValue(
 
   if (pin.fieldType === 'notes') {
     return { text: order?.notes || (isMock ? 'Equipamento operando dentro dos parâmetros nominais de pressão e temperatura.' : '') };
+  }
+
+  // Materiais usados e insumos recebidos (Fase 8C-3): sem código e sem R$
+  if (pin.fieldType === 'materials_used') {
+    if (isMock) return { text: 'CABO PP 4x2,5MM — 3 M\nDISJUNTOR 20A — 1 UN' };
+    return { text: (order?.materialsUsed || []).filter((m) => m.qty > 0).map((m) => `${m.description} — ${String(m.qty).replace('.', ',')} ${m.measureUnit}`).join('\n') };
+  }
+  if (pin.fieldType === 'supplies_list') {
+    if (isMock) return { text: 'FITA ISOLANTE 19MM — 2 UN\nABRAÇADEIRA NYLON — 50 UN' };
+    return { text: orderSuppliesText(supplies || null) };
+  }
+  if (pin.fieldType === 'supplies_by_request') {
+    if (isMock) return { text: 'PI-2026-0001 · GLPI 8200\nFITA ISOLANTE 19MM — 2 UN\nABRAÇADEIRA NYLON — 50 UN' };
+    return { text: orderSuppliesByRequestText(supplies || null) };
   }
 
   if (pin.fieldType === 'signed_by') {
@@ -168,7 +190,8 @@ export async function generateFilledPdf(
   pdfConfig: PdfTemplateConfig,
   order?: Partial<ServiceOrder> | null,
   asset?: Partial<Asset> | null,
-  template?: Partial<MaintenanceTemplate> | null
+  template?: Partial<MaintenanceTemplate> | null,
+  supplies?: OrderSupplies | null
 ): Promise<{ pdfBytes: Uint8Array; blobUrl: string }> {
   if (!pdfConfig.pdfBase64) {
     throw new Error('O modelo não possui arquivo PDF base importado.');
@@ -201,7 +224,7 @@ export async function generateFilledPdf(
     const boxTopY = height - ((pin.y / 100) * height);
     const fontSize = pin.fontSize || 10;
 
-    const pinVal = getPinValue(pin, order, asset, template);
+    const pinVal = getPinValue(pin, order, asset, template, supplies);
     const textColor = hexToRgb(pin.fontColor);
 
     if (pinVal.isImage && pinVal.imageData && pinVal.imageData.startsWith('data:image/png;base64,')) {
@@ -245,6 +268,24 @@ export async function generateFilledPdf(
           color: textColor,
         });
       }
+    } else if (pinVal.text && PDF_LIST_FIELDS.includes(pin.fieldType)) {
+      // Lista (materiais/insumos): quebra em linhas e diminui a letra até caber na caixa (mínimo 5 pt)
+      const font = pin.bold ? helveticaBold : helveticaFont;
+      const text = safe(pinVal.text, font);
+      let size = fontSize;
+      let lines = wrap(text, font, size, boxWidth);
+      while (size > 5 && lines.length * size * 1.15 > boxHeight) {
+        size -= 0.5;
+        lines = wrap(text, font, size, boxWidth);
+      }
+      const lh = size * 1.15;
+      lines.forEach((ln, i) => {
+        const y = boxTopY - size - i * lh + size * 0.15;
+        if (y < boxTopY - boxHeight - size * 0.5) return;
+        const tw = font.widthOfTextAtSize(ln, size);
+        const x = pin.align === 'center' ? boxX + (boxWidth - tw) / 2 : pin.align === 'right' ? boxX + boxWidth - tw : boxX;
+        page.drawText(ln, { x, y, size, font, color: textColor });
+      });
     } else if (pinVal.text) {
       const isBold = pin.bold || pin.fieldType === 'os_id' || pin.fieldType === 'result_status' || pin.style === 'cross_mark';
       const font = isBold ? helveticaBold : helveticaFont;
