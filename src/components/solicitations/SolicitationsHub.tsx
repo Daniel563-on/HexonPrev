@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Construction } from 'lucide-react';
 import { HexonUser, MaterialRequest, ServiceOrder, SupplyRequest } from '../../types';
 import SolicitationsView from '../SolicitationsView';
 import MaterialRequestsTab from './MaterialRequestsTab';
@@ -7,6 +8,7 @@ import SupplyRequestsBoard from '../supplies/SupplyRequestsBoard';
 // TELA SOLICITAÇÕES (Fase 8): abas "De corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
 // e "Insumos" (pedidos de insumos, 8C-2). Material: quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
 // Insumos: quem tem "Ver pedidos de insumos" ou "Confirmar pedidos de insumos".
+// "Hora extra" e "Pernoite" (Fase 8D): só as abas, em construção (pedido do usuário); aparecem para todos.
 export default function SolicitationsHub(props: {
   pendingOrders: ServiceOrder[];
   pendingMaterialRequests: MaterialRequest[];
@@ -23,7 +25,7 @@ export default function SolicitationsHub(props: {
   const canSeeMaterial = canDecide || userHasActionPermission('material_requests_view');
   const canConfirmSupplies = userHasActionPermission('supply_requests_confirm');
   const canSeeSupplies = canConfirmSupplies || userHasActionPermission('supply_requests_view');
-  type Tab = 'corretiva' | 'material' | 'insumos';
+  type Tab = 'corretiva' | 'material' | 'insumos' | 'horaExtra' | 'pernoite';
   const [tab, setTab] = useState<Tab>('corretiva');
 
   const tabBtn = (key: Tab, label: string, n: number) => (
@@ -41,14 +43,20 @@ export default function SolicitationsHub(props: {
 
   return (
     <div className="space-y-5">
-      {(canSeeMaterial || canSeeSupplies) && (
-        <div className="flex border-b border-slate-200 gap-1">
-          {tabBtn('corretiva', 'De corretiva', props.pendingOrders.length)}
-          {canSeeMaterial && tabBtn('material', 'Material', props.pendingMaterialRequests.length)}
-          {canSeeSupplies && tabBtn('insumos', 'Insumos', props.pendingSupplyRequests.length)}
+      <div className="flex flex-wrap border-b border-slate-200 gap-1">
+        {tabBtn('corretiva', 'De corretiva', props.pendingOrders.length)}
+        {canSeeMaterial && tabBtn('material', 'Material', props.pendingMaterialRequests.length)}
+        {canSeeSupplies && tabBtn('insumos', 'Insumos', props.pendingSupplyRequests.length)}
+        {tabBtn('horaExtra', 'Hora extra', 0)}
+        {tabBtn('pernoite', 'Pernoite', 0)}
+      </div>
+      {tab === 'horaExtra' || tab === 'pernoite' ? (
+        <div className="p-8 rounded-2xl border border-dashed border-amber-300 bg-amber-50 text-center space-y-2">
+          <Construction className="w-8 h-8 mx-auto text-amber-600" />
+          <p className="text-sm font-black text-amber-800">{tab === 'horaExtra' ? 'Hora extra' : 'Pernoite'} — em construção</p>
+          <p className="text-xs text-amber-700">As solicitações de {tab === 'horaExtra' ? 'hora extra' : 'pernoite'} ainda vão ser feitas.</p>
         </div>
-      )}
-      {tab === 'insumos' && canSeeSupplies ? (
+      ) : tab === 'insumos' && canSeeSupplies ? (
         <SupplyRequestsBoard
           mode="confirm"
           live={props.pendingSupplyRequests}
