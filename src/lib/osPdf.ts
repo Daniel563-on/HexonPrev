@@ -13,6 +13,7 @@ import {
   osFieldVisible,
   osMembers
 } from '../db/firebase';
+import { deliverBytes, deliverFile } from './fileDelivery';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
 // o PDF mapeado (PDF oficial do modelo + caixas) e o PDF padrão (quando o modelo não tem PDF).
@@ -457,25 +458,11 @@ export async function buildOsPdfBytes(o: WorkOrder, layouts?: Map<string, { layo
   return entry ? generateOsMappedPdf(entry.file, entry.layout.pins, data) : generateOsStandardPdf(data);
 }
 
+// Computador: baixa; celular: aviso "PDF pronto" com o menu de compartilhar (P39, ver fileDelivery.ts)
 export function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 20000);
+  deliverFile(blob, fileName);
 }
 
 export function downloadBytes(bytes: Uint8Array, fileName: string, mime = 'application/pdf'): void {
-  const blob = new Blob([bytes], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  deliverBytes(bytes, fileName, mime);
 }

@@ -28,6 +28,7 @@ import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf, pdfUsesSupplies } from '../../lib/pdfGenerator';
 import { generatePreventiveStandardPdf } from '../../lib/preventivePdf';
+import { deliverBytes } from '../../lib/fileDelivery';
 import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 export interface OrderDetailsDrawerProps {
@@ -1493,22 +1494,15 @@ export default function OrderDetailsDrawer({
                         if (mapped) {
                           // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
                           const supplies = pdfUsesSupplies(matchingTpl!.pdfTemplate!.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
-                          const { blobUrl } = await generateFilledPdf(matchingTpl!.pdfTemplate!, orderForPdf, assetObj, matchingTpl, supplies);
-                          const link = document.createElement('a');
-                          link.href = blobUrl;
-                          link.download = `${fileBase}.pdf`;
-                          link.click();
+                          const { pdfBytes, blobUrl } = await generateFilledPdf(matchingTpl!.pdfTemplate!, orderForPdf, assetObj, matchingTpl, supplies);
+                          URL.revokeObjectURL(blobUrl);
+                          deliverBytes(pdfBytes, `${fileBase}.pdf`);
                         } else {
                           // Modelo sem PDF mapeado: PDF padrão (checklist, execução, insumos e assinatura)
                           const supplies = await dbGetOrderSupplies(selectedOrder.id, false, true);
                           const companyName = selectedOrder.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === selectedOrder.company)?.name || selectedOrder.company : '';
                           const bytes = await generatePreventiveStandardPdf({ order: orderForPdf, templateName: matchingTpl?.name, companyName, signature, supplies });
-                          const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-                          const link = document.createElement('a');
-                          link.href = url;
-                          link.download = `${fileBase}.pdf`;
-                          link.click();
-                          setTimeout(() => URL.revokeObjectURL(url), 10000);
+                          deliverBytes(bytes, `${fileBase}.pdf`);
                         }
                       } catch (err: any) {
                         setExecMsg({ type: 'error', text: `Não foi possível gerar o PDF: ${err?.message || err}` });
