@@ -11,6 +11,7 @@ import {
   QrCode,
   MapPin,
   Package,
+  PackageOpen,
   CalendarRange,
   Settings,
   ArrowLeft,
@@ -70,6 +71,7 @@ export default function Sidebar({
       ? [{ tab: 'pmoc', label: 'PMOC', icon: CalendarRange, onClick: () => go(pmocTabs[0]), active: inPmoc }]
       : []),
     ...(userHasTabPermission('materials') ? [{ tab: 'materials', label: 'Gestão de Materiais', icon: Package }] : []),
+    ...(userHasTabPermission('supplies') ? [{ tab: 'supplies', label: 'Gestão de Insumos', icon: PackageOpen }] : []),
     ...(isSuperAdmin
       ? [
           { tab: 'user-control', label: 'Usuários', icon: ShieldCheck },

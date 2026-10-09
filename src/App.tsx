@@ -531,6 +531,7 @@ export default function App() {
     else if (tab === 'templates') permId = 'view_templates';
     else if (tab === 'solicitations') permId = 'view_solicitations';
     else if (tab === 'materials') permId = 'view_materials';
+    else if (tab === 'supplies') permId = 'view_supplies';
 
     if (!permId) return true;
 
@@ -541,7 +542,7 @@ export default function App() {
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
       if (tab === 'templates') return userProfile.perfil !== 'Profissional';
-      if (tab === 'materials') return false; // padrão: só Super Administrador
+      if (tab === 'materials' || tab === 'supplies') return false; // padrão: só Super Administrador
       return true;
     }
 
@@ -564,7 +565,7 @@ export default function App() {
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
-      if (actionId === 'manage_materials') return false; // padrão: só Super Administrador
+      if (actionId === 'manage_materials' || actionId === 'manage_supplies') return false; // padrão: só Super Administrador
       if (actionId === 'delete_asset' || actionId === 'delete_order') {
         return false; // strictly Super Admin
       }
@@ -604,7 +605,7 @@ export default function App() {
     if (!userProfile) return;
 
     // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
-    const firstAllowedTab = ['home', 'service-orders', 'solicitations', 'assets', 'pmoc-preventivas', 'templates', 'materials'].find((t) =>
+    const firstAllowedTab = ['home', 'service-orders', 'solicitations', 'assets', 'pmoc-preventivas', 'templates', 'materials', 'supplies'].find((t) =>
       userHasTabPermission(t)
     );
 
@@ -834,6 +835,8 @@ export default function App() {
         return 'Solicitações';
       case 'materials':
         return 'Gestão de Materiais';
+      case 'supplies':
+        return 'Gestão de Insumos';
       case 'user-control':
         return 'Usuários';
       case 'addresses':
@@ -1258,6 +1261,17 @@ export default function App() {
               visibleUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               canManage={userHasActionPermission('manage_materials')}
+            />
+          )}
+
+          {/* Gestão de Insumos (Fase 8C): mesma tela dos materiais, com a lista de insumos */}
+          {currentTab === 'supplies' && userProfile && (
+            <MaterialsView
+              kind="supplies"
+              userProfile={userProfile}
+              visibleUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
+              canManage={userHasActionPermission('manage_supplies')}
             />
           )}
 
