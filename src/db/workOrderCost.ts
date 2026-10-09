@@ -1,5 +1,5 @@
 import { JobRole, Material, OrderParticipant, OvertimeRules, WorkOrder, WorkOrderOvertimeDay, WorkOrderPause } from '../types';
-import { brl, fmtMinutes, localDate, toMillis, valueAt } from './manHours';
+import { brl, fmtMinutes, localDate, supplyCostLines, toMillis, valueAt } from './manHours';
 import type { OrderCostLine } from './manHours';
 import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { doc, getDoc, updateDoc } from './guard';
@@ -98,6 +98,7 @@ export interface WorkOrderCost {
   overtime: OrderCostLine[];
   overnight: OrderCostLine | null;
   materials: OrderCostLine[];
+  supplies: OrderCostLine[]; // insumos recebidos (Fase 8C-2)
   total: number;
   missing: number;           // linhas sem valor (cargo sem valor, sem regra...)
   warnings: string[];        // excesso de hora extra
@@ -142,6 +143,7 @@ export interface WorkOrderCostSnapshot {
   overtime: number;
   overnight: number;
   materials: number;
+  supplies?: number; // insumos (Fase 8C-2; resumos antigos não têm)
   minutes: number;
   billedHours: number;
   missing: number;
@@ -155,6 +157,7 @@ export function osCostSnapshot(c: WorkOrderCost): WorkOrderCostSnapshot {
     overtime: sum(c.overtime),
     overnight: c.overnight?.value || 0,
     materials: sum(c.materials),
+    supplies: sum(c.supplies),
     minutes: c.minutes,
     billedHours: c.billedHours,
     missing: c.missing,
@@ -197,11 +200,12 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   const companies = await dbGetCompanies().catch(() => []);
   const tracks = companyTracksCost(companies, o.company);
   const company = o.company || '';
-  const [roles, rules, mats, overnightRate] = await Promise.all([
+  const [roles, rules, mats, overnightRate, supplies] = await Promise.all([
     tracks ? dbGetJobRoles() : Promise.resolve([] as JobRole[]),
     tracks && exec?.overtime?.length ? dbGetOvertimeRules() : Promise.resolve([] as OvertimeRules[]),
     (exec?.materials || []).length ? materialsById(exec!.materials.map((m) => m.id)) : Promise.resolve([] as Material[]),
-    tracks && exec?.overnightNights ? overnightRateCached(company) : Promise.resolve(null)
+    tracks && exec?.overnightNights ? overnightRateCached(company) : Promise.resolve(null),
+    supplyCostLines(o.id, date)
   ]);
   const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), roleForCompany(r, company)]));
   const ruleById = new Map(rulesOfCompany(rules, company).map((r) => [r.roleId || '', r]));
@@ -268,7 +272,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
     };
   });
 
-  const all = [...labor, ...overtime, ...(overnight ? [overnight] : []), ...materials];
+  const all = [...labor, ...overtime, ...(overnight ? [overnight] : []), ...materials, ...supplies];
   return {
     minutes,
     billedHours: billed,
@@ -277,6 +281,7 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
     overtime,
     overnight,
     materials,
+    supplies,
     total: round2(all.reduce((s, l) => s + (l.value || 0), 0)),
     missing: all.filter((l) => l.value === null).length,
     warnings,

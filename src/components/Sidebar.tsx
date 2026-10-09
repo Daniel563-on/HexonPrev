@@ -12,6 +12,7 @@ import {
   MapPin,
   Package,
   PackageOpen,
+  Warehouse,
   CalendarRange,
   Settings,
   ArrowLeft,
@@ -30,6 +31,7 @@ interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   pendingSolicitationsCount?: number; // solicitações de corretiva pendentes de ação (já filtradas pela gerência)
+  pendingStoreCount?: number;         // pedidos de insumos aguardando o almoxarifado (Fase 8C-2)
   userProfile: HexonUser | null;
   userHasTabPermission: (tab: string) => boolean;
 }
@@ -49,6 +51,7 @@ export default function Sidebar({
   isOpen = false,
   onClose,
   pendingSolicitationsCount = 0,
+  pendingStoreCount = 0,
   userProfile,
   userHasTabPermission
 }: SidebarProps) {
@@ -72,6 +75,7 @@ export default function Sidebar({
       : []),
     ...(userHasTabPermission('materials') ? [{ tab: 'materials', label: 'Gestão de Materiais', icon: Package }] : []),
     ...(userHasTabPermission('supplies') ? [{ tab: 'supplies', label: 'Gestão de Insumos', icon: PackageOpen }] : []),
+    ...(userHasTabPermission('almoxarifado') ? [{ tab: 'almoxarifado', label: 'Almoxarifado', icon: Warehouse, badge: pendingStoreCount }] : []),
     ...(isSuperAdmin
       ? [
           { tab: 'user-control', label: 'Usuários', icon: ShieldCheck },

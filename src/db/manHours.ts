@@ -5,6 +5,7 @@ import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { dbGetMaterials } from './materials';
 import { dbGetOvernightRate, lotOvernightCost } from './planning';
 import { companyTracksCost, dbGetCompanies } from './companies';
+import { dbGetOrderSupplies, orderSupplyEntries } from './supplyRequests';
 
 // HOMEM-HORA (Etapa 7): tempo e homem-hora ficam gravados na OS na conclusão (em minutos).
 // O valor em R$ não é gravado: é calculado na hora, só para quem tem "Visualizar Valores (R$)".
@@ -86,10 +87,44 @@ export interface OrderCostLine {
 export interface OrderCost {
   labor: OrderCostLine[];
   materials: OrderCostLine[];
+  supplies: OrderCostLine[]; // insumos recebidos (Fase 8C-2)
   overnight: OrderCostLine | null;
   total: number;
   missing: number;       // linhas sem valor cadastrado (ficam fora do total)
   costTracking: boolean; // false = a empresa da OS não contabiliza homem-hora e pernoite (só materiais) — etapa especial E5
+}
+
+// INSUMOS RECEBIDOS DA OS (Fase 8C-2): quantidade × valor do insumo na data (lista de insumos da gerência + empresa).
+// Lê o registro de insumos da OS (1 leitura) e só os insumos recebidos (1 leitura por insumo, guardada na sessão).
+const supCache = new Map<string, Material | null>();
+export async function supplyCostLines(orderId: string, date: string): Promise<OrderCostLine[]> {
+  const entries = orderSupplyEntries(await dbGetOrderSupplies(orderId));
+  const items = entries.flatMap((e) => e.items.map((it) => ({ ...it, number: e.number })));
+  if (items.length === 0) return [];
+  const missing = Array.from(new Set(items.map((i) => i.supplyId))).filter((id) => !supCache.has(id));
+  if (missing.length && firebaseActive && dbInstance) {
+    await Promise.all(
+      missing.map(async (id) => {
+        try {
+          const snap = await getDoc(doc(dbInstance!, 'supplies', id));
+          supCache.set(id, snap.exists() ? ({ ...(snap.data() as Material), id: snap.id }) : null);
+        } catch (err: any) {
+          checkQuotaException(err);
+          supCache.set(id, null);
+        }
+      })
+    );
+  }
+  return items.map((it) => {
+    const sup = supCache.get(it.supplyId);
+    const price = sup ? valueAt(sup.history, date) : null;
+    const qty = String(it.qty).replace('.', ',');
+    return {
+      label: `${it.description} (${it.code}) · ${it.number}`,
+      detail: price ? `${qty} ${it.measureUnit} × ${brl(price)}` : `${qty} ${it.measureUnit} • sem valor cadastrado`,
+      value: price ? round2(it.qty * price) : null
+    };
+  });
 }
 
 async function getLot(lotId: string): Promise<PlanningLot | null> {
@@ -113,11 +148,12 @@ export async function dbGetOrderCost(o: ServiceOrder): Promise<OrderCost> {
   const companies = await dbGetCompanies().catch(() => []);
   const tracks = companyTracksCost(companies, o.company);
   const company = o.company || '';
-  const [roles, materials, overnightRate, lot] = await Promise.all([
+  const [roles, materials, overnightRate, lot, supplies] = await Promise.all([
     tracks ? dbGetJobRoles() : Promise.resolve([] as JobRole[]),
     needMaterials ? dbGetMaterials([o.unit!]) : Promise.resolve([] as Material[]),
     tracks && o.lotId ? dbGetOvernightRate(company) : Promise.resolve(null),
-    tracks && o.lotId ? getLot(o.lotId) : Promise.resolve(null)
+    tracks && o.lotId ? getLot(o.lotId) : Promise.resolve(null),
+    supplyCostLines(o.id, date)
   ]);
   const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), roleForCompany(r, company)]));
   const matById = new Map<string, Material>(materials.map((m) => [m.id, m]));
@@ -153,10 +189,11 @@ export async function dbGetOrderCost(o: ServiceOrder): Promise<OrderCost> {
     };
   }
 
-  const all = [...labor, ...materialLines, ...(overnight ? [overnight] : [])];
+  const all = [...labor, ...materialLines, ...supplies, ...(overnight ? [overnight] : [])];
   return {
     labor,
     materials: materialLines,
+    supplies,
     overnight,
     total: round2(all.reduce((sum, l) => sum + (l.value || 0), 0)),
     missing: all.filter((l) => l.value === null).length,

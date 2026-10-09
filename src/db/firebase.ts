@@ -25,6 +25,7 @@ export * from './profiles';
 export * from './workforce';
 export * from './materials';
 export * from './supplies';
+export * from './supplyRequests';
 export * from './cycle';
 export * from './dispatch';
 export * from './planning';

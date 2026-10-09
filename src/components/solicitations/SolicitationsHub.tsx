@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { HexonUser, MaterialRequest, ServiceOrder } from '../../types';
+import { HexonUser, MaterialRequest, ServiceOrder, SupplyRequest } from '../../types';
 import SolicitationsView from '../SolicitationsView';
 import MaterialRequestsTab from './MaterialRequestsTab';
+import SupplyRequestsBoard from '../supplies/SupplyRequestsBoard';
 
-// TELA SOLICITAÇÕES (Fase 8): abas "De corretiva" (itens das preventivas) e "Material" (pedidos de material do MP, 8B).
-// A aba Material só aparece para quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
+// TELA SOLICITAÇÕES (Fase 8): abas "De corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
+// e "Insumos" (pedidos de insumos, 8C-2). Material: quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
+// Insumos: quem tem "Ver pedidos de insumos" ou "Confirmar pedidos de insumos".
 export default function SolicitationsHub(props: {
   pendingOrders: ServiceOrder[];
   pendingMaterialRequests: MaterialRequest[];
+  pendingSupplyRequests: SupplyRequest[]; // aguardando confirmação (tempo real)
   scopeUnits: string[] | null;
   visibleCompanies?: string[] | null;
   onNavigateToOS: (osId?: string) => void;
@@ -18,9 +21,12 @@ export default function SolicitationsHub(props: {
   const { userProfile, userHasActionPermission } = props;
   const canDecide = userHasActionPermission('material_requests_decide');
   const canSeeMaterial = canDecide || userHasActionPermission('material_requests_view');
-  const [tab, setTab] = useState<'corretiva' | 'material'>('corretiva');
+  const canConfirmSupplies = userHasActionPermission('supply_requests_confirm');
+  const canSeeSupplies = canConfirmSupplies || userHasActionPermission('supply_requests_view');
+  type Tab = 'corretiva' | 'material' | 'insumos';
+  const [tab, setTab] = useState<Tab>('corretiva');
 
-  const tabBtn = (key: 'corretiva' | 'material', label: string, n: number) => (
+  const tabBtn = (key: Tab, label: string, n: number) => (
     <button
       type="button"
       onClick={() => setTab(key)}
@@ -35,13 +41,23 @@ export default function SolicitationsHub(props: {
 
   return (
     <div className="space-y-5">
-      {canSeeMaterial && (
+      {(canSeeMaterial || canSeeSupplies) && (
         <div className="flex border-b border-slate-200 gap-1">
           {tabBtn('corretiva', 'De corretiva', props.pendingOrders.length)}
-          {tabBtn('material', 'Material', props.pendingMaterialRequests.length)}
+          {canSeeMaterial && tabBtn('material', 'Material', props.pendingMaterialRequests.length)}
+          {canSeeSupplies && tabBtn('insumos', 'Insumos', props.pendingSupplyRequests.length)}
         </div>
       )}
-      {tab === 'material' && canSeeMaterial ? (
+      {tab === 'insumos' && canSeeSupplies ? (
+        <SupplyRequestsBoard
+          mode="confirm"
+          live={props.pendingSupplyRequests}
+          scopeUnits={props.scopeUnits}
+          visibleCompanies={props.visibleCompanies}
+          userProfile={userProfile}
+          canAct={canConfirmSupplies}
+        />
+      ) : tab === 'material' && canSeeMaterial ? (
         <MaterialRequestsTab
           pending={props.pendingMaterialRequests}
           scopeUnits={props.scopeUnits}
