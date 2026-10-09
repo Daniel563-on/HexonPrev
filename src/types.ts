@@ -1088,6 +1088,7 @@ export interface WorkOrder {
   assignedTechnicianName?: string;
   assignedAt?: any;              // hora do servidor (o homem-hora conta a partir daqui)
   techOpen?: string;             // matrícula do técnico enquanto a OS está com ele (índice esparso: "minhas OS")
+  cliSigned?: string;            // matrícula do técnico: aviso "Assinadas pelo cliente" (validada pelo link) até ele tocar em OK (índice esparso)
   exec?: WorkOrderExec;
   pauses?: WorkOrderPause[];     // Pendente: o tempo parado não conta no homem-hora
   cancelReason?: string;

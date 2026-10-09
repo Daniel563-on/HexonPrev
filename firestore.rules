@@ -476,9 +476,11 @@ service cloud.firestore {
           && request.resource.data.signatures.keys().hasOnly(['tecnico'])
           && osTech(u))
         // Vez do CLIENTE: gerar o link (só "Enviar link de validação ao cliente"), registrar a assinatura
-        // (celular ou link aprovado) ou a contestação do link
+        // (celular ou link aprovado; o link aprovado deixa o aviso "Assinadas pelo cliente" para o técnico da OS)
+        // ou a contestação do link
         || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
-          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests'])
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests', 'cliSigned'])
+          && request.resource.data.get('cliSigned', resource.data.get('assignedTechnicianMatricula', '')) == resource.data.get('assignedTechnicianMatricula', '')
           && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline'])
                && osPerm(u, p, 'os_client_link') && osSees(u, p))
               || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
@@ -502,6 +504,8 @@ service cloud.firestore {
           && resource.data.nextSigner in request.resource.data.signatures
           && (u.perfil == 'Super Administrador' || p.get('osSignAs', 'none') == resource.data.nextSigner)
           && osSees(u, p))
+        // TÉCNICO: "OK" no aviso "Assinadas pelo cliente" (só tira o aviso dele; qualquer situação da OS)
+        || (resource.data.get('cliSigned', '') == u.matricula && osChanged().hasOnly(['cliSigned']) && !('cliSigned' in request.resource.data))
         // OS CONCLUÍDA: grava uma vez o resumo do custo (lista sem recalcular) — só quem vê valores
         || (resource.data.status == 'Concluída' && !('costSnapshot' in resource.data)
           && osChanged().hasOnly(['costSnapshot'])
@@ -516,6 +520,7 @@ service cloud.firestore {
     match /workOrders/{orderId} {
       // Fila de assinatura ("GERÊNCIA|papel"): a gerência vem no próprio campo (a busca da fila não filtra por gerência)
       allow get, list: if isStaff() && (osUnitOk() || resource.data.get('techOpen', '') == me().matricula
+        || resource.data.get('cliSigned', '') == me().matricula
         || (resource.data.get('signQueue', '') != '' && resource.data.get('signQueue', '').split('[|]')[0] in myUnits()));
       // Gerência da OS = a de quem abre; Super Administrador e gerência "Todas" escolhem (dentro do que enxergam)
       allow create: if isStaff() && hasPermission('os_create')

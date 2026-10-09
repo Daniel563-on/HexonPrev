@@ -323,13 +323,15 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
         updatedAt: now,
         timeline: arrayUnion(ev(by, 'Validada pelo cliente (link)', `${meta.name}${meta.rating ? ` · ${meta.rating} estrela(s)` : ''}`))
       };
+      // Aviso para o técnico (ele não estava junto): a OS aparece em "Assinadas pelo cliente" até ele tocar em OK
+      if (cur.assignedTechnicianMatricula) updates.cliSigned = cur.assignedTechnicianMatricula;
       if (next) Object.assign(updates, { nextSigner: next, ...(qk ? { signQueue: qk } : { signQueue: deleteField() }) });
       else {
         Object.assign(updates, closeFields(cur, now));
         if (cur.assetId) tx.set(doc(dbInstance!, 'histories', `os_${cur.id}`), historyDoc(cur, now));
       }
       tx.update(ref, updates);
-      return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída' } as WorkOrder;
+      return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída', cliSigned: cur.assignedTechnicianMatricula || undefined } as WorkOrder;
     }
     // Contestada (a pausa vai do fim do trabalho — assinatura do técnico ou última resposta — até a contestação)
     const pauses: WorkOrderPause[] = [
@@ -355,6 +357,23 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
     checkQuotaException(err);
     throw err;
   });
+}
+
+// AVISO "ASSINADAS PELO CLIENTE" (ajustes da etapa 8): a OS validada pelo link sai da lista do técnico; ela fica
+// marcada para ele (cliSigned = matrícula, índice esparso) até ele tocar em "OK" — dá tempo de baixar o PDF assinado
+export async function dbGetClientSignedOrders(matricula: string): Promise<WorkOrder[]> {
+  if (!firebaseActive || !dbInstance || !matricula) return [];
+  try {
+    const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('cliSigned', '==', matricula)));
+    return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id }));
+  } catch (err: any) {
+    checkQuotaException(err);
+    throw err;
+  }
+}
+export async function dbDismissClientSigned(o: WorkOrder): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  await updateDoc(doc(dbInstance, 'workOrders', o.id), { cliSigned: deleteField() });
 }
 
 // ===== Resposta à contestação =====

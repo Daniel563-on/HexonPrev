@@ -203,6 +203,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
       } else {
         const updated = await dbSignClient(order, { name: who.name, matricula: who.matricula, rating: who.rating, at, via: 'celular', by: userProfile.name }, image, userProfile.name);
         setMsg({ ok: true, text: 'Assinatura do cliente registrada.' });
+        setClientSignedNow(true);
         onChanged(updated);
       }
     } catch (err: any) {
@@ -234,6 +235,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const section = 'p-4 rounded-2xl border border-slate-200 bg-white space-y-3';
   // PDF da OS (mapeado do modelo ou o padrão), com o que já está salvo no banco
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [clientSignedNow, setClientSignedNow] = useState(false); // o cliente acabou de assinar neste celular
   const downloadPdf = async () => {
     setPdfBusy(true);
     setMsg(null);
@@ -266,6 +268,22 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         </header>
 
         <div className="px-4 pt-4 space-y-3">
+          {clientSignedNow && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2">
+              <p className="text-xs font-black text-emerald-800 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" /> Assinatura do cliente registrada
+              </p>
+              <p className="text-[11px] text-emerald-800">
+                {order.status === 'Concluída' ? 'A OS foi concluída' : 'A OS segue para as próximas assinaturas'} e sai da sua lista ao fechar esta tela.
+                {canPdf ? ' Se o cliente quiser a OS assinada, baixe o PDF agora.' : ''}
+              </p>
+              {canPdf && (
+                <button type="button" onClick={downloadPdf} disabled={pdfBusy} className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                  <FileDown className="w-4 h-4" /> {pdfBusy ? 'Gerando...' : 'Baixar PDF com a assinatura do cliente'}
+                </button>
+              )}
+            </div>
+          )}
           {isOverdue(order) && <p className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-black text-rose-700">Atrasada: prazo {dayBR(order.deadline)}</p>}
           {order.status === 'Pendente' && (
             <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 space-y-2">
