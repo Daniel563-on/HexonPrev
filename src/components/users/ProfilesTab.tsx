@@ -17,12 +17,6 @@ const OS_SIGN_LABEL: Record<NonNullable<AccessProfile['osSignAs']>, string> = {
   gerente: 'Gerente'
 };
 
-const OS_SCOPE_LABEL: Record<NonNullable<AccessProfile['osScope']>, string> = {
-  own: 'Só as minhas',
-  unit: 'Da minha gerência',
-  all: 'Todas as gerências do perfil'
-};
-
 const SCOPE_LABEL: Record<AccessProfile['unitScope'], string> = {
   own: 'Só a unidade do usuário',
   selected: 'Unidades escolhidas',
@@ -316,6 +310,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                 {/* Permissões, por área */}
                 <div className="space-y-3">
                   <span className={`block text-[10px] font-black uppercase tracking-wider ${muted}`}>Permissões</span>
+                  <p className={`text-[10px] -mt-2 ${muted}`}>Valem no computador. As que também valem no celular do técnico dizem isso na descrição.</p>
                   {PERMISSION_AREAS.map((area) => {
                     const list = permissionList.filter((perm) => perm.area === area.id);
                     if (list.length === 0) return null;
@@ -347,6 +342,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                           ))}
                           {area.id === 'os' && (
                             <div className="px-3 py-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* "Alcance das OS" saiu (não tinha efeito): quem vê quais OS = unidades + empresas do perfil */}
                               <label className="block">
                                 <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>
                                   Assinar OS como <span className="normal-case font-normal">(engenheiro assina antes do gerente)</span>
@@ -358,20 +354,6 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                                 >
                                   {(Object.keys(OS_SIGN_LABEL) as NonNullable<AccessProfile['osSignAs']>[]).map((k) => (
                                     <option key={k} value={k}>{OS_SIGN_LABEL[k]}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="block">
-                                <span className={`block text-[10px] font-black uppercase tracking-wider mb-1 ${muted}`}>
-                                  Alcance das OS <span className="text-amber-700 normal-case">(em construção · Fase 6)</span>
-                                </span>
-                                <select
-                                  value={editing.osScope || 'unit'}
-                                  onChange={(e) => setEditing({ ...editing, osScope: e.target.value as AccessProfile['osScope'] })}
-                                  className={input}
-                                >
-                                  {(Object.keys(OS_SCOPE_LABEL) as NonNullable<AccessProfile['osScope']>[]).map((k) => (
-                                    <option key={k} value={k}>{OS_SCOPE_LABEL[k]}</option>
                                   ))}
                                 </select>
                               </label>

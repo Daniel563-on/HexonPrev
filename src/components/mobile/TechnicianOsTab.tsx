@@ -14,13 +14,15 @@ export default function TechnicianOsTab({
   darkMode,
   onCount,
   refreshKey = 0,
-  canClientLink = false
+  canClientLink = false,
+  canPdf = false
 }: {
   userProfile: HexonUser;
   darkMode: boolean;
   onCount?: (n: number) => void;
   refreshKey?: number; // botão Atualizar do cabeçalho
   canClientLink?: boolean;
+  canPdf?: boolean; // "Baixar PDF da OS": botão PDF na OS
 }) {
   const [list, setList] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +110,7 @@ export default function TechnicianOsTab({
           order={open}
           userProfile={userProfile}
           canClientLink={canClientLink}
+          canPdf={canPdf}
           onClose={() => {
             setOpen(null);
             load();

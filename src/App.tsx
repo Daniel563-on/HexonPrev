@@ -1090,6 +1090,9 @@ export default function App() {
         onLogout={handleLogoutState}
         onUpdateUserProfile={(updated) => setUserProfile(updated)}
         canClientLink={userHasActionPermission('os_client_link')}
+        canViewCosts={userHasActionPermission('view_costs')}
+        canPreventivePdf={userHasActionPermission('preventive_pdf')}
+        canOsPdf={userHasActionPermission('os_pdf')}
       />
     );
   }
@@ -1188,6 +1191,7 @@ export default function App() {
               canReplyContest={userHasActionPermission('os_contest_reply')}
               canClientLink={userHasActionPermission('os_client_link')}
               canExport={userHasActionPermission('os_export')}
+              canPdf={userHasActionPermission('os_pdf')}
               canViewCosts={userHasActionPermission('view_costs')}
               mySignRole={
                 userProfile.perfil === 'Super Administrador'

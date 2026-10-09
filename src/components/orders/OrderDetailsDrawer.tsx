@@ -17,7 +17,8 @@ import {
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
   applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes,
   supplyBlockMessage,
-  dbGetOrderSupplies
+  dbGetOrderSupplies,
+  dbGetCompanies
 } from '../../db/firebase';
 import OrderTimeCost from './execution/OrderTimeCost';
 import CorrectiveDecisionNote from './execution/CorrectiveDecisionNote';
@@ -26,6 +27,7 @@ import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf, pdfUsesSupplies } from '../../lib/pdfGenerator';
+import { generatePreventiveStandardPdf } from '../../lib/preventivePdf';
 import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 export interface OrderDetailsDrawerProps {
@@ -126,6 +128,7 @@ export default function OrderDetailsDrawer({
   const [myStart, setMyStart] = useState<OrderStart | null>(null);
   const [dbOnline, setDbOnline] = useState(true);   // banco conectado ao servidor agora (sem internet = fila no aparelho)
   const [execMsg, setExecMsg] = useState<{ type: 'ok' | 'error' | 'info'; text: string } | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [execBusy, setExecBusy] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
   const myMatricula = (userProfile?.matricula || '').trim();
@@ -1462,8 +1465,8 @@ export default function OrderDetailsDrawer({
                 </button>
               )}
 
-              {/* DOWNLOAD FILLED MAPPED PDF IF TEMPLATE HAS PDF */}
-              {(() => {
+              {/* PDF DA PREVENTIVA: o mapeado do modelo (se tiver) ou o padrão; só com "Baixar PDF da preventiva" */}
+              {(!userHasActionPermission || userHasActionPermission('preventive_pdf')) && (() => {
                 const assetObj = assets.find(a => a.id === selectedOrder.assetId);
                 const matchingTpl = templates.find(t => {
                   if (selectedOrder.templateId && t.id === selectedOrder.templateId) return true;
@@ -1474,40 +1477,51 @@ export default function OrderDetailsDrawer({
                   }
                   return false;
                 });
-
-                if (!matchingTpl?.pdfTemplate?.pdfBase64) return null;
+                const mapped = !!matchingTpl?.pdfTemplate?.pdfBase64;
 
                 return (
                   <button
                     type="button"
+                    disabled={pdfBusy || !!selectedOrder.checklistPending}
                     onClick={async () => {
+                      setPdfBusy(true);
                       try {
                         // A assinatura fica gravada à parte: busca antes de montar o PDF
-                        const orderForPdf = !selectedOrder.signature && selectedOrder.hasSignature
-                          ? { ...selectedOrder, signature: await dbGetOrderSignature(selectedOrder.id) }
-                          : selectedOrder;
-                        // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
-                        const supplies = pdfUsesSupplies(matchingTpl.pdfTemplate.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
-                        const { blobUrl } = await generateFilledPdf(
-                          matchingTpl.pdfTemplate,
-                          orderForPdf,
-                          assetObj,
-                          matchingTpl,
-                          supplies
-                        );
-                        const link = document.createElement('a');
-                        link.href = blobUrl;
-                        link.download = `Laudo_PDF_${selectedOrder.id}_${matchingTpl.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-                        link.click();
+                        const signature = selectedOrder.signature || (selectedOrder.hasSignature ? await dbGetOrderSignature(selectedOrder.id) : null);
+                        const orderForPdf = { ...selectedOrder, signature };
+                        const fileBase = `Preventiva_${formatOrderNumber(selectedOrder.id)}`;
+                        if (mapped) {
+                          // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
+                          const supplies = pdfUsesSupplies(matchingTpl!.pdfTemplate!.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
+                          const { blobUrl } = await generateFilledPdf(matchingTpl!.pdfTemplate!, orderForPdf, assetObj, matchingTpl, supplies);
+                          const link = document.createElement('a');
+                          link.href = blobUrl;
+                          link.download = `${fileBase}.pdf`;
+                          link.click();
+                        } else {
+                          // Modelo sem PDF mapeado: PDF padrão (checklist, execução, insumos e assinatura)
+                          const supplies = await dbGetOrderSupplies(selectedOrder.id, false, true);
+                          const companyName = selectedOrder.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === selectedOrder.company)?.name || selectedOrder.company : '';
+                          const bytes = await generatePreventiveStandardPdf({ order: orderForPdf, templateName: matchingTpl?.name, companyName, signature, supplies });
+                          const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `${fileBase}.pdf`;
+                          link.click();
+                          setTimeout(() => URL.revokeObjectURL(url), 10000);
+                        }
                       } catch (err: any) {
-                        alert(`Erro ao gerar PDF preenchido: ${err?.message || err}`);
+                        setExecMsg({ type: 'error', text: `Não foi possível gerar o PDF: ${err?.message || err}` });
+                      } finally {
+                        setPdfBusy(false);
                       }
                     }}
-                    className="px-3 h-11 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black transition-all shadow-sm cursor-pointer shrink-0"
-                    title="Baixar Documento PDF Oficial Mapeado Preenchido"
+                    className="px-3 h-11 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black transition-all shadow-sm cursor-pointer shrink-0 disabled:opacity-50"
+                    title={mapped ? 'Baixar o PDF mapeado do modelo, preenchido' : 'Baixar o PDF padrão da preventiva (o modelo não tem PDF mapeado)'}
                   >
                     <Download className="w-4 h-4" />
-                    <span className="hidden sm:inline">Baixar PDF Mapeado</span>
+                    <span className="sm:hidden">{pdfBusy ? '...' : 'PDF'}</span>
+                    <span className="hidden sm:inline">{pdfBusy ? 'Gerando...' : 'Baixar PDF'}</span>
                   </button>
                 );
               })()}
