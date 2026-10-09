@@ -119,7 +119,7 @@ export async function generatePreventiveStandardPdf(d: PreventivePdfData): Promi
   };
 
   // ===== Cabeçalho
-  page.drawRectangle({ x: M, y: y - 4, width: 4, height: 24, color: BRAND });
+  page.drawRectangle({ x: M, y: y - 21, width: 4, height: 22, color: BRAND });
   page.drawText(safe(`PREVENTIVA #${formatOrderNumber(o.id)}`, bold), { x: M + 10, y: y - 16, size: 16, font: bold, color: INK });
   y -= 24;
   text(
