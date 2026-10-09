@@ -14,7 +14,8 @@ import {
   osFieldVisible,
   osValidationLink,
   stageItems,
-  supplyBlockMessage
+  supplyBlockMessage,
+  osStatusLabel
 } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import OsFieldInput from './OsFieldInput';
@@ -259,7 +260,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             <p className="font-mono text-sm font-black text-indigo-700">{order.number}</p>
             <p className="text-[11px] text-slate-500 truncate">{order.intervencao || 'OS'} · {order.execAddressText}</p>
           </div>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{order.status}</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel(order)}</span>
           {canPdf && (
             <button type="button" onClick={downloadPdf} disabled={pdfBusy} title="Baixar o PDF da OS (com o que já está salvo)" className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-black text-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-50">
               <FileDown className="w-4 h-4" /> {pdfBusy ? '...' : 'PDF'}

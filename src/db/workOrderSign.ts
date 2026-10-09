@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   runTransaction,
   updateDoc,
@@ -34,6 +35,12 @@ export const OS_SIGN_COLOR: Record<OsSignatureRole, string> = {
 };
 
 // Papéis exigidos, na ordem (o técnico sempre primeiro)
+// Situação para mostrar: "Aguardando assinaturas" diz de quem é a vez (cliente, engenheiro ou gerente)
+export function osStatusLabel(o: { status: string; nextSigner?: string | null }): string {
+  const who = o.status === 'Aguardando assinaturas' && o.nextSigner ? OS_SIGN_LABEL[o.nextSigner as OsSignatureRole] : '';
+  return who ? `Aguardando assinatura do ${who.toLowerCase()}` : o.status;
+}
+
 export function osSignOrder(o: WorkOrder): OsSignatureRole[] {
   const list = (o.templateSignatures?.length ? o.templateSignatures : (['tecnico', 'cliente', 'engenheiro', 'gerente'] as OsSignatureRole[])).filter(
     (r) => r !== 'tecnico'
@@ -132,6 +139,7 @@ export async function dbSignClient(o: WorkOrder, meta: OsSignatureMeta, image: s
   const qk = queueKey(o, next);
   const updates: any = {
     signatures: { ...(o.signatures || {}), cliente: cleanUndefined(meta) },
+    ...(o.assignedTechnicianMatricula ? { cliSigned: o.assignedTechnicianMatricula } : {}),
     validationToken: deleteField(),
     updatedAt: now,
     timeline: arrayUnion(ev(by, meta.via === 'link' ? 'Validada pelo cliente (link)' : 'Assinada pelo cliente', `${meta.name}${meta.rating ? ` · ${meta.rating} estrela(s)` : ''}`))
@@ -143,7 +151,7 @@ export async function dbSignClient(o: WorkOrder, meta: OsSignatureMeta, image: s
   }
   batch.update(doc(dbInstance, 'workOrders', o.id), updates);
   await batch.commit();
-  return { ...o, signatures: { ...(o.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, status: next ? o.status : 'Concluída' };
+  return { ...o, signatures: { ...(o.signatures || {}), cliente: meta }, cliSigned: o.assignedTechnicianMatricula || o.cliSigned, validationToken: undefined, nextSigner: next || undefined, status: next ? o.status : 'Concluída' };
 }
 
 // ENGENHEIRO / GERENTE: assina uma ou várias OS de uma vez (mesmo desenho; carimbo com a hora de cada uma)
@@ -359,17 +367,23 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
   });
 }
 
-// AVISO "ASSINADAS PELO CLIENTE" (ajustes da etapa 8): a OS validada pelo link sai da lista do técnico; ela fica
-// marcada para ele (cliSigned = matrícula, índice esparso) até ele tocar em "OK" — dá tempo de baixar o PDF assinado
-export async function dbGetClientSignedOrders(matricula: string): Promise<WorkOrder[]> {
-  if (!firebaseActive || !dbInstance || !matricula) return [];
-  try {
-    const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('cliSigned', '==', matricula)));
-    return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id }));
-  } catch (err: any) {
-    checkQuotaException(err);
-    throw err;
+// AVISO "ASSINADAS PELO CLIENTE" (ajustes da etapa 8): a OS assinada pelo cliente (link ou celular) fica marcada para
+// o técnico (cliSigned = matrícula, índice esparso) até ele tocar em "OK" — dá tempo de baixar o PDF assinado.
+// Também quando o cliente assina no celular. Em tempo real; sai sozinha da tela quando o engenheiro assina.
+export function subscribeClientSignedOrders(matricula: string, onChange: (list: WorkOrder[]) => void): () => void {
+  if (!firebaseActive || !dbInstance || !matricula) {
+    onChange([]);
+    return () => {};
   }
+  return onSnapshot(
+    query(collection(dbInstance, 'workOrders'), where('cliSigned', '==', matricula)),
+    (snap) => onChange(snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id }))),
+    (err) => {
+      console.warn('Não foi possível acompanhar as OS assinadas pelo cliente:', err);
+      checkQuotaException(err);
+      onChange([]);
+    }
+  );
 }
 export async function dbDismissClientSigned(o: WorkOrder): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');

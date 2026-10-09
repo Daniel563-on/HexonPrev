@@ -34,7 +34,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, subscribeMyWorkOrders, subscribeClientSignedOrders, dbDismissClientSigned, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import TechnicianMaterialRequests from './TechnicianMaterialRequests';
@@ -117,8 +117,7 @@ export default function TechnicianMobileView({
       })
       .catch(() => setCompanyLabel(''));
   }, [(userProfile.companies || []).join('|')]);
-  const [osCount, setOsCount] = useState(0);
-  const [refreshKey, setRefreshKey] = useState(0); // botão Atualizar do cabeçalho (relê as OS do banco)
+  const [refreshKey, setRefreshKey] = useState(0); // botão Atualizar do cabeçalho (traz de novo as respostas do link do cliente)
   const [scannedWorkOrders, setScannedWorkOrders] = useState<WorkOrder[]>([]); // OS (corretiva) do ativo lido no QR
   const [qrWorkOrder, setQrWorkOrder] = useState<WorkOrder | null>(null);
   const navButton = (tab: MobileTab, label: string, icon: React.ReactNode, badge = 0) => (
@@ -137,12 +136,33 @@ export default function TechnicianMobileView({
       <span className="text-[10px] tracking-tight">{label}</span>
     </button>
   );
-  // Quantas OS (corretiva, layout, acompanhamento) estão com o técnico: 1 busca ao abrir o app
+  // MINHAS OS em tempo real (ajustes da etapa 8): a lista fica pronta (trocar de aba é instantâneo), a OS atribuída
+  // aparece sozinha e o número da barra se atualiza. "Assinadas pelo cliente": até o OK ou até o engenheiro assinar.
+  const [myWorkOrders, setMyWorkOrders] = useState<WorkOrder[] | null>(null);
+  const [clientSigned, setClientSigned] = useState<WorkOrder[]>([]);
   useEffect(() => {
-    dbGetMyWorkOrders(userProfile.matricula)
-      .then((l) => setOsCount(l.filter((o) => !(o.status === 'Aguardando assinaturas' && o.nextSigner !== 'cliente') && o.status !== 'Concluída').length))
-      .catch(() => {});
-  }, [userProfile.matricula, refreshKey]);
+    const mat = (userProfile.matricula || '').trim();
+    if (!mat) return setMyWorkOrders([]);
+    return subscribeMyWorkOrders(mat, setMyWorkOrders);
+  }, [userProfile.matricula]);
+  useEffect(() => {
+    const mat = (userProfile.matricula || '').trim();
+    if (!mat) return setClientSigned([]);
+    return subscribeClientSignedOrders(mat, setClientSigned);
+  }, [userProfile.matricula]);
+  const signedShown = clientSigned.filter((o) => !o.signatures?.engenheiro);
+  // O engenheiro assinou e o técnico não tocou em OK: tira o aviso sozinho (1 gravação por OS)
+  const dismissedRef = React.useRef(new Set<string>());
+  useEffect(() => {
+    clientSigned
+      .filter((o) => o.signatures?.engenheiro && !dismissedRef.current.has(o.id))
+      .forEach((o) => {
+        dismissedRef.current.add(o.id);
+        dbDismissClientSigned(o).catch(() => dismissedRef.current.delete(o.id));
+      });
+  }, [clientSigned]);
+  const osCount =
+    (myWorkOrders || []).filter((o) => !(o.status === 'Aguardando assinaturas' && o.nextSigner !== 'cliente') && o.status !== 'Concluída').length + signedShown.length;
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
@@ -462,7 +482,7 @@ export default function TechnicianMobileView({
     }
 
     // 2a. OS (corretiva, layout, acompanhamento) com este ativo vinculado que estão com o técnico
-    const myWork = await dbGetMyWorkOrders(userProfile.matricula).catch(() => [] as WorkOrder[]);
+    const myWork = myWorkOrders ?? (await dbGetMyWorkOrders(userProfile.matricula).catch(() => [] as WorkOrder[]));
     const assetWork = myWork.filter((w) => w.assetId === asset!.id || (!!w.assetCode && w.assetCode.toLowerCase() === asset!.code.toLowerCase()));
     setScannedWorkOrders(assetWork);
     const workNote = assetWork.length ? ` ${assetWork.length} OS corretiva(s) com este ativo atribuída(s) a você.` : '';
@@ -1317,7 +1337,7 @@ export default function TechnicianMobileView({
       )}
 
       {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
-      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} canPdf={canOsPdf} />}
+      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} orders={myWorkOrders} signed={signedShown} refreshKey={refreshKey} canClientLink={canClientLink} canPdf={canOsPdf} />}
 
       {/* ================= TAB: SOLICITAÇÕES (Fase 8) ================= */}
       {/* Seções: Corretivas (itens "Não conforme" das preventivas aguardando o planejador), Material (8B) e Insumos (8C). */}

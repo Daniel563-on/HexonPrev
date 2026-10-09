@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { OrderSupplies, WorkOrder } from '../types';
-import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, orderSupplyEntries, osAnswerText, osFieldVisible, osMembers, osSignOrder } from '../db/firebase';
+import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, orderSupplyEntries, osAnswerText, osFieldVisible, osMembers, osSignOrder, osStatusLabel } from '../db/firebase';
 
 // FICHA DA OS EM PLANILHA (Fase 5C): uma aba com as seções da OS.
 // Valores em R$ só quando "cost" vem preenchido (quem tem "Visualizar Valores"). Insumos recebidos em "supplies" (Fase 8C-3).
@@ -25,7 +25,7 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
   kv('Modelo', `${o.templateName} (v${o.templateVersion})`);
   kv('Gerência', o.unit);
   kv('Empresa', companyName || o.company);
-  kv('Situação', o.status);
+  kv('Situação', osStatusLabel(o));
   kv('Intervenção', o.intervencao);
   kv('GLPI', o.glpi);
   kv('Aberta em', dateTime(o.createdAt));
@@ -135,7 +135,7 @@ export function exportOsListXlsx(
       o.number,
       o.glpi || '',
       o.intervencao || '',
-      o.status,
+      osStatusLabel(o),
       late ? 'Sim' : 'Não',
       o.unit,
       o.company ? companyName(o.company) : '',

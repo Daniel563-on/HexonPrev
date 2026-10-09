@@ -17,7 +17,8 @@ import {
   dbResumeWorkOrder,
   fmtMinutes,
   osHolidays,
-  osMembers
+  osMembers,
+  osStatusLabel
 } from '../../db/firebase';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
@@ -172,7 +173,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-base font-black text-indigo-700">{o.number}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{o.status}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
               {isOverdue(o) && <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white">ATRASADA</span>}
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
