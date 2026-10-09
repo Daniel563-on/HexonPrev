@@ -675,8 +675,7 @@ export interface AccessProfile {
   unitScope: 'own' | 'selected' | 'all'; // unidades visíveis: a do usuário, as escolhidas ou todas
   units: string[]; // usadas quando unitScope = 'selected'
   permissions: Record<string, boolean>; // id da permissão -> liberada
-  osSignAs?: 'none' | 'engenheiro' | 'gerente'; // OS: assinar como (em construção)
-  osScope?: 'own' | 'unit' | 'all'; // OS: alcance — só as minhas, da minha gerência, todas as gerências do perfil (em construção)
+  osSignAs?: 'none' | 'engenheiro' | 'gerente'; // OS: assinar como engenheiro ou gerente (fila "Precisam da minha assinatura")
   companyScope?: 'own' | 'all'; // empresas que vê: só as do usuário, ou todas das gerências que vê (sem = todas)
   system: boolean; // perfis de fábrica: podem ser renomeados, mas não excluídos
   createdAt: string;
