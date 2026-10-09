@@ -67,6 +67,9 @@ export interface TechnicianMobileViewProps {
   onUpdateUserProfile: (updated: HexonUser) => void;
   canRevertUnexecutedOrder?: (os: ServiceOrder, targetMonthDate?: Date) => boolean;
   canClientLink?: boolean; // "Enviar link de validação ao cliente" (OS)
+  canViewCosts?: boolean;  // "Ver valores em R$": custo da preventiva
+  canPreventivePdf?: boolean; // "Baixar PDF da preventiva"
+  canOsPdf?: boolean;      // "Baixar PDF da OS"
 }
 
 type MobileTab = 'orders' | 'os' | 'solicitations' | 'scanner' | 'profile';
@@ -88,7 +91,10 @@ export default function TechnicianMobileView({
   onLogout,
   onUpdateUserProfile,
   canRevertUnexecutedOrder = () => false,
-  canClientLink = false
+  canClientLink = false,
+  canViewCosts = false,
+  canPreventivePdf = false,
+  canOsPdf = false
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
   // Empresa do técnico (etapa especial E1): nome para o Meu Perfil
@@ -1311,7 +1317,7 @@ export default function TechnicianMobileView({
       )}
 
       {/* ================= TAB: MINHAS OS (corretiva, layout, acompanhamento) ================= */}
-      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} />}
+      {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} canPdf={canOsPdf} />}
 
       {/* ================= TAB: SOLICITAÇÕES (Fase 8) ================= */}
       {/* Seções: Corretivas (itens "Não conforme" das preventivas aguardando o planejador), Material (8B) e Insumos (8C). */}
@@ -1432,6 +1438,7 @@ export default function TechnicianMobileView({
           order={qrWorkOrder}
           userProfile={userProfile}
           canClientLink={canClientLink}
+          canPdf={canOsPdf}
           onClose={() => {
             setQrWorkOrder(null);
             setRefreshKey((k) => k + 1);
@@ -1455,7 +1462,9 @@ export default function TechnicianMobileView({
           assets={effectiveAssets}
           templates={templates}
           userProfile={userProfile}
-          userHasActionPermission={() => true}
+          // No celular o técnico executa e conclui as preventivas atribuídas a ele (atribuição);
+          // do perfil valem só "Ver valores em R$" e "Baixar PDF da preventiva"
+          userHasActionPermission={(p) => (p === 'view_costs' ? canViewCosts : p === 'preventive_pdf' ? canPreventivePdf : true)}
           canRevertUnexecutedOrder={canRevertUnexecutedOrder}
           currentCalendarDate={new Date()}
           onOrderUpdated={(updated) => {
