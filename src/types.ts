@@ -460,6 +460,64 @@ export interface Warehouse {
   active: boolean;
 }
 
+// PEDIDOS DE INSUMOS (Fase 8C-2): o técnico pede para uma OS dele (chamado GLPI ou preventiva) com o nº do GLPI;
+// o administrativo confirma (ou reprova); o almoxarifado fornece (quantidade de cada item) ou recusa; o técnico
+// marca "Recebi" e os insumos entram na OS (registro "orderSupplies"). Reprovado/recusado → o técnico toca em "Ciente".
+export type SupplyRequestStatus = 'Pendente' | 'Confirmado' | 'Fornecido' | 'Recebido' | 'Reprovado';
+export interface SupplyRequestItem {
+  supplyId: string;
+  code: string;
+  description: string;
+  measureUnit: string;
+  qty: number;           // pedida (aceita decimais)
+  qtySupplied?: number;  // fornecida pelo almoxarifado (pode ser menor; 0 = não fornecido)
+}
+// O que entra na OS (gravado pelo almoxarifado ao fornecer e copiado para a OS no "Recebi")
+export interface SupplyOsEntry {
+  number: string;        // PI-AAAA-NNNN
+  glpi: string;
+  suppliedAt: string;
+  suppliedBy: string;
+  items: { supplyId: string; code: string; description: string; measureUnit: string; qty: number }[];
+}
+export interface SupplyRequest {
+  id: string;            // = number
+  number: string;        // PI-AAAA-NNNN
+  year: number;
+  seq: number;
+  unit: string;
+  company: string;
+  orderKind: 'preventiva' | 'os';
+  orderId: string;
+  orderLabel: string;
+  glpi: string;          // chamado: vem da OS; preventiva: digitado pelo técnico
+  techMatricula: string;
+  techName: string;
+  items: SupplyRequestItem[];
+  note?: string;
+  status: SupplyRequestStatus;
+  confirmation?: { by: string; byMatricula: string; at: string };
+  supply?: { by: string; byMatricula: string; at: string; note?: string };
+  rejection?: { by: string; byMatricula: string; at: string; reason: string; stage: 'confirmacao' | 'almoxarifado' };
+  osEntry?: SupplyOsEntry;
+  receivedAt?: string;
+  ackAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  timeline: MaterialRequestEvent[];
+  techSr?: string;       // matrícula enquanto o pedido aparece para o técnico (índice esparso)
+  srConf?: string;       // gerência enquanto aguarda a confirmação (índice esparso)
+  srStore?: string;      // gerência enquanto aguarda o almoxarifado (índice esparso)
+}
+// Insumos recebidos de uma OS (coleção "orderSupplies", id = id da OS): fora da OS para não se perderem
+// quando a OS é regravada inteira (preventiva) e para as listas continuarem leves
+export interface OrderSupplies {
+  orderId: string;
+  entries: Record<string, SupplyOsEntry>; // por número do pedido
+  last: string;
+  updatedAt: string;
+}
+
 // EFETIVO: pessoas importadas por planilha, só para compor o efetivo (NÃO têm login).
 // Quem tem login fica em "users" e também conta no efetivo.
 export interface WorkforcePerson {

@@ -9,6 +9,7 @@ import AssetsView from './components/AssetsView';
 import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
 import SolicitationsHub from './components/solicitations/SolicitationsHub';
+import SupplyRequestsBoard from './components/supplies/SupplyRequestsBoard';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
 import AddressesView from './components/AddressesView';
@@ -23,7 +24,7 @@ import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { onSyncChange } from './db/localSync';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, SupplyRequest, isSectorInGerencia } from './types';
 import { 
   subscribeTechnicianOrders,
   subscribeUnitOrders,
@@ -32,6 +33,8 @@ import {
   dbGetManagements,
   subscribePendingSolicitations,
   subscribePendingMaterialRequests,
+  subscribeSupplyAwaitingConfirm,
+  subscribeSupplyAwaitingStore,
   isCompanyVisible,
   technicianCandidates,
   localMonthKey, 
@@ -523,6 +526,8 @@ export default function App() {
     if (tab === 'settings') return userHasActionPermission('os_templates');
     // Só Super Administrador
     if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses') return false;
+    // Almoxarifado (Fase 8C-2): quem fornece insumos
+    if (tab === 'almoxarifado') return userHasActionPermission('supply_requests_supply');
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
@@ -560,8 +565,8 @@ export default function App() {
     const profile = resolveUserProfile(userProfile, accessProfiles);
     const fromProfile = profile ? profilePermission(profile, actionId) : undefined;
     if (fromProfile !== undefined) return fromProfile;
-    // Pedidos de material (Fase 8B): só quem tem no perfil
-    if (actionId.startsWith('material_requests_')) return false;
+    // Pedidos de material (Fase 8B) e de insumos (Fase 8C-2): só quem tem no perfil
+    if (actionId.startsWith('material_requests_') || actionId.startsWith('supply_requests_')) return false;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -598,14 +603,37 @@ export default function App() {
       setPendingMaterialRequests(list.filter((r) => isCompanyVisible(r.company, visibleCompanies)))
     );
   }, [userProfile?.id, canSeeMaterialRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
-  const solicitationsBadge = pendingSolicitationOrders.length + pendingMaterialRequests.length;
+  // Pedidos de insumos (Fase 8C-2, tempo real): aguardando confirmação (Solicitações › Insumos) e aguardando o almoxarifado
+  // (menu Almoxarifado) — cada um só para quem tem a permissão
+  const [pendingSupplyConfirm, setPendingSupplyConfirm] = useState<SupplyRequest[]>([]);
+  const [pendingSupplyStore, setPendingSupplyStore] = useState<SupplyRequest[]>([]);
+  const canSeeSupplyRequests =
+    !!userProfile && userProfile.perfil !== 'Profissional' && (userHasActionPermission('supply_requests_view') || userHasActionPermission('supply_requests_confirm'));
+  const canSupplyStore = !!userProfile && userProfile.perfil !== 'Profissional' && userHasActionPermission('supply_requests_supply');
+  useEffect(() => {
+    if (!canSeeSupplyRequests) {
+      setPendingSupplyConfirm([]);
+      return;
+    }
+    const units = visibleUnits === null ? managementNames : visibleUnits;
+    return subscribeSupplyAwaitingConfirm(units, (list) => setPendingSupplyConfirm(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))));
+  }, [userProfile?.id, canSeeSupplyRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
+  useEffect(() => {
+    if (!canSupplyStore) {
+      setPendingSupplyStore([]);
+      return;
+    }
+    const units = visibleUnits === null ? managementNames : visibleUnits;
+    return subscribeSupplyAwaitingStore(units, (list) => setPendingSupplyStore(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))));
+  }, [userProfile?.id, canSupplyStore, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
+  const solicitationsBadge = pendingSolicitationOrders.length + pendingMaterialRequests.length + pendingSupplyConfirm.length;
 
   // Check state bypasses manually (Security Guard)
   useEffect(() => {
     if (!userProfile) return;
 
     // Primeira aba que o perfil pode ver (quem não tem o Dashboard cai direto na tela dele)
-    const firstAllowedTab = ['home', 'service-orders', 'solicitations', 'assets', 'pmoc-preventivas', 'templates', 'materials', 'supplies'].find((t) =>
+    const firstAllowedTab = ['home', 'service-orders', 'solicitations', 'assets', 'pmoc-preventivas', 'templates', 'materials', 'supplies', 'almoxarifado'].find((t) =>
       userHasTabPermission(t)
     );
 
@@ -837,6 +865,8 @@ export default function App() {
         return 'Gestão de Materiais';
       case 'supplies':
         return 'Gestão de Insumos';
+      case 'almoxarifado':
+        return 'Almoxarifado';
       case 'user-control':
         return 'Usuários';
       case 'addresses':
@@ -1074,6 +1104,7 @@ export default function App() {
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         pendingSolicitationsCount={solicitationsBadge}
+        pendingStoreCount={pendingSupplyStore.length}
         userProfile={userProfile}
         userHasTabPermission={userHasTabPermission}
       />
@@ -1235,6 +1266,7 @@ export default function App() {
             <SolicitationsHub
               pendingOrders={pendingSolicitationOrders}
               pendingMaterialRequests={pendingMaterialRequests}
+              pendingSupplyRequests={pendingSupplyConfirm}
               scopeUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               onNavigateToOS={handleNavigateToOS}
@@ -1261,6 +1293,18 @@ export default function App() {
               visibleUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               canManage={userHasActionPermission('manage_materials')}
+            />
+          )}
+
+          {/* Almoxarifado (Fase 8C-2): fornecer ou recusar os pedidos de insumos confirmados */}
+          {currentTab === 'almoxarifado' && userProfile && (
+            <SupplyRequestsBoard
+              mode="store"
+              live={pendingSupplyStore}
+              scopeUnits={visibleUnits}
+              visibleCompanies={visibleCompanies}
+              userProfile={userProfile}
+              canAct={userHasActionPermission('supply_requests_supply')}
             />
           )}
 

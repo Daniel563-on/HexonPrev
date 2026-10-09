@@ -24,6 +24,7 @@ import OsContestReplyModal from './OsContestReplyModal';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
 import OsEmitForm from './OsEmitForm';
+import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
 // hora extra, pernoite), custo e homem-hora (quem pode ver valores), pausas, linha do tempo.
@@ -256,6 +257,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                   <p key={m.id} className="text-xs text-slate-700">{m.description} <span className="text-slate-400">· {String(m.qty).replace('.', ',')} {m.measureUnit}</span></p>
                 ))}
               </div>
+              <OrderSuppliesBlock orderId={o.id} />
               <div className="p-3 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 space-y-1">
                 <p className={h3}>Feriados, hora extra e pernoite</p>
                 <p>Feriados (homem-hora não conta): {osHolidays(o).length ? osHolidays(o).map(dayBR).join(', ') : 'nenhum'}</p>
@@ -301,6 +303,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
                   {cost.overtime.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Hora extra</p>{cost.overtime.map(line)}</div>}
                   {cost.overnight && <div><p className="text-[10px] font-black text-slate-400 uppercase">Pernoite</p>{line(cost.overnight, 0)}</div>}
                   {cost.materials.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Materiais</p>{cost.materials.map(line)}</div>}
+                  {cost.supplies.length > 0 && <div><p className="text-[10px] font-black text-slate-400 uppercase">Insumos</p>{cost.supplies.map(line)}</div>}
                   {cost.warnings.map((w, i) => (
                     <p key={i} className="text-[11px] font-bold text-amber-700 flex gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {w}</p>
                   ))}

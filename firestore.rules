@@ -236,12 +236,13 @@ service cloud.firestore {
     }
 
     // 4j-1. INSUMOS (Fase 8C) — lista de cada gerência + empresa, igual à de materiais.
-    // Lê: quem tem "Ver insumos" ou "Cadastrar e importar insumos" (suas gerências) e o técnico (só a gerência E a empresa dele).
+    // Lê: quem tem "Ver insumos", "Cadastrar e importar insumos" ou "Visualizar Valores" (custo da OS) nas suas gerências
+    // e o técnico (só a gerência E a empresa dele).
     // Altera: só quem tem "Cadastrar e importar insumos" (suas gerências); todo insumo tem empresa. Excluir: só o Super Administrador.
     // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
     function supReadOk(u, p) {
       return osSees(u, p)
-        && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies')
+        && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
             || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
     }
     function supWriteOk(u, p) {
@@ -400,14 +401,16 @@ service cloud.firestore {
       allow delete: if isStaff() && hasPermission('os_templates');
     }
     // Contador do número por ano: só sobe de 1 em 1 (o número nunca repete).
-    // OS: "workOrders_AAAA" (quem emite OS). Pedidos de material (Fase 8B): "materialRequests_AAAA" (o técnico que pede).
+    // OS: "workOrders_AAAA" (quem emite OS). Pedidos de material (Fase 8B): "materialRequests_AAAA" e de insumos (Fase 8C-2):
+    // "supplyRequests_AAAA" (o técnico que pede).
     match /counters/{counterId} {
-      allow read: if isStaff() && (hasPermission('os_create') || counterId.matches('materialRequests_[0-9]+'));
+      allow read: if isStaff() && (hasPermission('os_create') || counterId.matches('materialRequests_[0-9]+') || counterId.matches('supplyRequests_[0-9]+'));
       allow create, update: if isStaff()
         && request.resource.data.keys().hasOnly(['year', 'last'])
         && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1)
         && ((hasPermission('os_create') && counterId == 'workOrders_' + string(request.resource.data.year))
-            || counterId == 'materialRequests_' + string(request.resource.data.year));
+            || counterId == 'materialRequests_' + string(request.resource.data.year)
+            || counterId == 'supplyRequests_' + string(request.resource.data.year));
       allow delete: if false;
     }
     // OS: cada um vê as das gerências do perfil (e o técnico, as que estão com ele); emitir pede "Emitir OS";
@@ -627,6 +630,112 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/counters/$('materialRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
         && mrOrderOk(request.resource.data);
       allow update: if isStaff() && mrUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // 15. PEDIDOS DE INSUMOS (Fase 8C-2) — id = número "PI-AAAA-NNNN"; não se exclui.
+    // Técnico: pede para uma OS aberta dele (preventiva aberta; chamado em andamento, pendente ou contestado), da empresa dele
+    // marcada com "Técnicos pedem insumos", com o nº do GLPI (chamado: o da OS); vê os dele; "Recebi" (fornecido → recebido,
+    // só junto com a entrada dos insumos na OS) e "Ciente" (reprovado).
+    // Quem tem "Ver pedidos de insumos", "Confirmar pedidos de insumos" ou "Fornecer insumos" vê os das suas gerências;
+    // confirmar/reprovar (pendente) pede "Confirmar"; fornecer/recusar (confirmado) pede "Fornecer".
+    // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
+    function srStaffSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
+      return (osPerm(u, p, 'supply_requests_view') || osPerm(u, p, 'supply_requests_confirm') || osPerm(u, p, 'supply_requests_supply'))
+        && (osSees(u, p) || resource.data.get('srConf', '') in mine || resource.data.get('srStore', '') in mine);
+    }
+    function srReadOk(u, p) {
+      return resource.data.get('techSr', '') == u.matricula || resource.data.techMatricula == u.matricula || srStaffSees(u, p);
+    }
+    function srChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function srUpdateOk(u, p) {
+      return
+        // CONFIRMAR (administrativo): vai para o almoxarifado
+        (resource.data.status == 'Pendente' && request.resource.data.status == 'Confirmado'
+          && srChanged().hasOnly(['status', 'confirmation', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && !('srConf' in request.resource.data) && request.resource.data.get('srStore', '') == resource.data.unit
+          && request.resource.data.confirmation.byMatricula == u.matricula
+          && osPerm(u, p, 'supply_requests_confirm') && osSees(u, p))
+        // REPROVAR (administrativo, pendente) ou RECUSAR (almoxarifado, confirmado): motivo obrigatório
+        || (resource.data.status in ['Pendente', 'Confirmado'] && request.resource.data.status == 'Reprovado'
+          && srChanged().hasOnly(['status', 'rejection', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && !('srConf' in request.resource.data) && !('srStore' in request.resource.data)
+          && request.resource.data.rejection.byMatricula == u.matricula
+          && request.resource.data.rejection.get('reason', '').size() >= 3
+          && osPerm(u, p, resource.data.status == 'Pendente' ? 'supply_requests_confirm' : 'supply_requests_supply') && osSees(u, p))
+        // FORNECER (almoxarifado): quantidade de cada item e o que entra na OS
+        || (resource.data.status == 'Confirmado' && request.resource.data.status == 'Fornecido'
+          && srChanged().hasOnly(['status', 'items', 'supply', 'osEntry', 'srStore', 'updatedAt', 'timeline'])
+          && !('srStore' in request.resource.data)
+          && request.resource.data.items.size() == resource.data.items.size()
+          && request.resource.data.supply.byMatricula == u.matricula
+          && request.resource.data.osEntry.number == resource.data.number
+          && request.resource.data.osEntry.glpi == resource.data.glpi
+          && request.resource.data.osEntry.items.size() > 0 && request.resource.data.osEntry.items.size() <= resource.data.items.size()
+          && osPerm(u, p, 'supply_requests_supply') && osSees(u, p))
+        // TÉCNICO: "Recebi" — só junto com a entrada dos insumos na OS (registro orderSupplies, mesmo pacote)
+        || (resource.data.status == 'Fornecido' && request.resource.data.status == 'Recebido'
+          && resource.data.techMatricula == u.matricula
+          && srChanged().hasOnly(['status', 'receivedAt', 'techSr', 'updatedAt', 'timeline'])
+          && !('techSr' in request.resource.data)
+          && getAfter(/databases/$(database)/documents/orderSupplies/$(resource.data.orderId)).data.entries.get(resource.data.number, null) == resource.data.osEntry)
+        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
+        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
+          && resource.data.techMatricula == u.matricula
+          && srChanged().hasOnly(['ackAt', 'techSr', 'updatedAt', 'timeline'])
+          && !('techSr' in request.resource.data));
+    }
+    function srOrderOk(d) {
+      let o = d.orderKind == 'preventiva'
+        ? get(/databases/$(database)/documents/serviceOrders/$(d.orderId)).data
+        : get(/databases/$(database)/documents/workOrders/$(d.orderId)).data;
+      return d.orderKind in ['preventiva', 'os']
+        && o.get('techOpen', '') == me().matricula
+        && o.get('unit', '') == d.unit
+        && o.get('company', '') == d.company
+        && (d.orderKind == 'preventiva'
+            || (o.get('status', '') in ['Em andamento', 'Pendente', 'Contestada'] && string(o.get('glpi', '')).replace('[^0-9]', '') == d.glpi));
+    }
+    match /supplyRequests/{reqId} {
+      allow get, list: if isStaff() && srReadOk(me(), osProfileOf(me()));
+      allow create: if isStaff()
+        && reqId == request.resource.data.number
+        && request.resource.data.status == 'Pendente'
+        && request.resource.data.techMatricula == me().matricula
+        && request.resource.data.techSr == me().matricula
+        && request.resource.data.srConf == request.resource.data.unit
+        && !('confirmation' in request.resource.data) && !('supply' in request.resource.data) && !('rejection' in request.resource.data)
+        && !('osEntry' in request.resource.data) && !('srStore' in request.resource.data)
+        && request.resource.data.glpi is string && request.resource.data.glpi.matches('[0-9]+') && request.resource.data.glpi.size() <= 30
+        && request.resource.data.company in me().get('companies', [])
+        && get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.get('requestsSupplies', false) == true
+        && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 60
+        && getAfter(/databases/$(database)/documents/counters/$('supplyRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && srOrderOk(request.resource.data);
+      allow update: if isStaff() && srUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // 15b. INSUMOS RECEBIDOS DA OS (id = id da OS; Fase 8C-2): a equipe lê (ficha, custo, PDF).
+    // Só cresce: o técnico acrescenta um pedido por vez, no "Recebi", exatamente o que o almoxarifado registrou.
+    function osupOk(orderId) {
+      let k = request.resource.data.last;
+      let r = getAfter(/databases/$(database)/documents/supplyRequests/$(k)).data;
+      return request.resource.data.keys().hasOnly(['orderId', 'entries', 'last', 'updatedAt'])
+        && request.resource.data.orderId == orderId
+        && (resource == null
+            ? request.resource.data.entries.keys().hasOnly([k])
+            : (!(k in resource.data.entries) && request.resource.data.entries.diff(resource.data.entries).affectedKeys().hasOnly([k])))
+        && r.status == 'Recebido' && r.orderId == orderId && r.techMatricula == me().matricula
+        && request.resource.data.entries[k] == r.osEntry;
+    }
+    match /orderSupplies/{orderId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && osupOk(orderId);
       allow delete: if false;
     }
 

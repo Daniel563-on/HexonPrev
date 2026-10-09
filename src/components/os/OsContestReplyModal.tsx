@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, MessageSquareReply, X } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, UsedMaterial, WorkOrder, WorkOrderOvertimeDay } from '../../types';
-import { dbGetAddresses, dbReplyContest, osFieldVisible } from '../../db/firebase';
+import { dbGetAddresses, dbReplyContest, osFieldVisible, supplyBlockMessage } from '../../db/firebase';
 import OsFieldInput from './OsFieldInput';
 import OsTeamPicker from './OsTeamPicker';
 import OsFieldExtras from './OsFieldExtras';
@@ -52,6 +52,9 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
 
   const confirm = async () => {
     if (resolution.trim().length < 5) return setMsg('Informe o que foi resolvido (pelo menos algumas palavras).');
+    // Pedido de insumos em aberto para esta OS (Fase 8C-2): responder também encerra o trabalho do técnico
+    const supplyBlock = supplyBlockMessage(order.id);
+    if (supplyBlock) return setMsg(supplyBlock);
     if (overtime !== null) {
       const valid = overtime.filter((d) => d.date && d.minutes > 0);
       if (valid.length !== overtime.length || valid.length === 0) return setMsg('Hora extra a mais: informe o dia e as horas de cada dia, ou marque "Não".');

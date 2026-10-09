@@ -15,7 +15,8 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbRevertOrderToNew, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
-  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes
+  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes,
+  supplyBlockMessage
 } from '../../db/firebase';
 import OrderTimeCost from './execution/OrderTimeCost';
 import CorrectiveDecisionNote from './execution/CorrectiveDecisionNote';
@@ -24,6 +25,7 @@ import OrderTimeline from './execution/OrderTimeline';
 import SignatureCanvas from '../SignatureCanvas';
 import OrderSignatureImage from './OrderSignatureImage';
 import { generateFilledPdf } from '../../lib/pdfGenerator';
+import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 export interface OrderDetailsDrawerProps {
   isOpen: boolean;
@@ -542,6 +544,9 @@ export default function OrderDetailsDrawer({
     if (userHasActionPermission && !userHasActionPermission('sign_order')) return stop('Seu perfil não tem autorização para assinar e concluir.');
     if (!isStartedByMe) return stop('Inicie a preventiva antes de concluir.');
     if (deadlinePassed) return stop(`Prazo da OS encerrado em ${formatDateBR(selectedOrder.endDate)}: não é possível concluir. Ela fica Não Executada.`);
+    // Pedido de insumos em aberto para esta OS (Fase 8C-2): não conclui
+    const supplyBlock = supplyBlockMessage(selectedOrder.id);
+    if (supplyBlock) return stop(supplyBlock);
 
     // Quem executa entra sempre como participante
     const executor = { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' };
@@ -1279,6 +1284,9 @@ export default function OrderDetailsDrawer({
                 />
               )}
 
+              {/* Insumos recebidos (Fase 8C-2): entram pelo "Recebi" do pedido de insumos; aparece só se houver */}
+              <OrderSuppliesBlock orderId={selectedOrder.id} compact />
+
               {/* Technician Notes Card - Fully Editable Free Textarea */}
               <div className="space-y-2">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -1404,6 +1412,12 @@ export default function OrderDetailsDrawer({
                 /* Primary completion CTA triggers signature box after checking validator rules */
                 <button 
                   onClick={() => {
+                    // Pedido de insumos em aberto para esta OS (Fase 8C-2): avisa antes de tudo e não conclui
+                    const supplyBlock = supplyBlockMessage(selectedOrder.id);
+                    if (supplyBlock) {
+                      setExecMsg({ type: 'error', text: supplyBlock });
+                      return;
+                    }
                     const errors = validateServiceOrder(selectedOrder);
                     const failedIds = getFailedItemIds(selectedOrder);
                     setFailedItemIds(failedIds);

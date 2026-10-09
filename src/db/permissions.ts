@@ -197,6 +197,30 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
+  supply_requests_view: {
+    id: 'supply_requests_view',
+    name: 'Ver pedidos de insumos',
+    description: 'Solicitações › Insumos: ver os pedidos de insumos das gerências do perfil (sem confirmar).',
+    category: 'Abas',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  supply_requests_confirm: {
+    id: 'supply_requests_confirm',
+    name: 'Confirmar pedidos de insumos',
+    description: 'Confirmar (vai para o almoxarifado) ou reprovar (motivo) os pedidos de insumos dos técnicos.',
+    category: 'Ações',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  supply_requests_supply: {
+    id: 'supply_requests_supply',
+    name: 'Fornecer insumos (almoxarifado)',
+    description: 'Menu Almoxarifado: fornecer os pedidos de insumos confirmados (quantidade de cada item) ou recusar (motivo).',
+    category: 'Abas',
+    area: 'solicitacoes',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   manage_solicitations: {
     id: 'manage_solicitations',
     name: 'Decidir solicitações de corretiva',

@@ -29,15 +29,16 @@ import {
   AlertTriangle,
   BellRing
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, formatDateBR } from '../../types';
+import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, SupplyRequest, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames, subscribeMyMaterialRequests
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import TechnicianMaterialRequests from './TechnicianMaterialRequests';
+import TechnicianSupplyRequests from './TechnicianSupplyRequests';
 import UsualTeamEditor from '../orders/execution/UsualTeamEditor';
 import { dbGetSingleAssetPublic } from '../../db/assets';
 import ChangePasswordModal from '../ChangePasswordModal';
@@ -94,15 +95,19 @@ export default function TechnicianMobileView({
   const [companyLabel, setCompanyLabel] = useState('');
   // Empresas dele que pedem material do MP (Fase 8B): mostram a seção "Material" em Solicitações
   const [mpCompanies, setMpCompanies] = useState<string[]>([]);
+  // Empresas dele que pedem insumos (Fase 8C-2): mostram a seção "Insumos" em Solicitações
+  const [spCompanies, setSpCompanies] = useState<string[]>([]);
   useEffect(() => {
     if (!(userProfile.companies || []).length) {
       setMpCompanies([]);
+      setSpCompanies([]);
       return setCompanyLabel('');
     }
     dbGetCompanies()
       .then((list) => {
         setCompanyLabel(companyNames(userProfile.companies, list));
         setMpCompanies(list.filter((c) => c.active && c.requestsMpMaterial && (userProfile.companies || []).includes(c.id)).map((c) => c.id));
+        setSpCompanies(list.filter((c) => c.active && c.requestsSupplies && (userProfile.companies || []).includes(c.id)).map((c) => c.id));
       })
       .catch(() => setCompanyLabel(''));
   }, [(userProfile.companies || []).join('|')]);
@@ -234,8 +239,19 @@ export default function TechnicianMobileView({
     if (!mat) return setMyMaterialRequests([]);
     return subscribeMyMaterialRequests(mat, setMyMaterialRequests);
   }, [userProfile.matricula]);
-  const [solSection, setSolSection] = useState<'corretivas' | 'material'>('corretivas');
+  // Pedidos de insumos dele que ainda aparecem para ele (Fase 8C-2; tempo real). A mesma escuta trava a conclusão
+  // da OS com pedido em aberto (supplyBlockMessage)
+  const [mySupplyRequests, setMySupplyRequests] = useState<SupplyRequest[]>([]);
+  useEffect(() => {
+    const mat = (userProfile.matricula || '').trim();
+    if (!mat) return setMySupplyRequests([]);
+    return subscribeMySupplyRequests(mat, setMySupplyRequests);
+  }, [userProfile.matricula]);
+  const [solSection, setSolSection] = useState<'corretivas' | 'material' | 'insumos'>('corretivas');
   const showMaterial = mpCompanies.length > 0 || myMaterialRequests.length > 0;
+  const showSupplies = spCompanies.length > 0 || mySupplyRequests.length > 0;
+  // Pedidos de insumos que pedem ação dele: fornecido (Recebi) ou reprovado (ciente)
+  const supplyActionCount = mySupplyRequests.filter((r) => r.status === 'Fornecido' || r.status === 'Reprovado').length;
   // Pedidos que pedem ação dele: aprovado (ir retirar) ou reprovado (ciente)
   const materialActionCount = myMaterialRequests.filter((r) => r.status === 'Aprovado' || r.status === 'Reprovado').length;
 
@@ -1298,7 +1314,7 @@ export default function TechnicianMobileView({
       {activeTab === 'os' && <TechnicianOsTab userProfile={userProfile} darkMode={darkMode} onCount={setOsCount} refreshKey={refreshKey} canClientLink={canClientLink} />}
 
       {/* ================= TAB: SOLICITAÇÕES (Fase 8) ================= */}
-      {/* Seções: Corretivas (itens "Não conforme" das preventivas aguardando o planejador). Material e Insumos chegam nas fases 8B e 8C. */}
+      {/* Seções: Corretivas (itens "Não conforme" das preventivas aguardando o planejador), Material (8B) e Insumos (8C). */}
       {activeTab === 'solicitations' && (
         <main className="flex-1 px-4 pt-4 space-y-4">
           <div>
@@ -1306,8 +1322,8 @@ export default function TechnicianMobileView({
             <p className="text-[11px] text-slate-500">Acompanhe os seus pedidos.</p>
           </div>
           <div className="flex gap-2">
-            {(['corretivas', 'material'] as const)
-              .filter((k) => k === 'corretivas' || showMaterial)
+            {(['corretivas', 'material', 'insumos'] as const)
+              .filter((k) => k === 'corretivas' || (k === 'material' ? showMaterial : showSupplies))
               .map((k) => (
                 <button
                   key={k}
@@ -1321,11 +1337,23 @@ export default function TechnicianMobileView({
                       : 'bg-white text-slate-700 border border-slate-200'
                   }`}
                 >
-                  {k === 'corretivas' ? `Corretivas (${mySolicitations.length})` : `Material (${myMaterialRequests.length})`}
+                  {k === 'corretivas'
+                    ? `Corretivas (${mySolicitations.length})`
+                    : k === 'material'
+                    ? `Material (${myMaterialRequests.length})`
+                    : `Insumos (${mySupplyRequests.length})`}
                 </button>
               ))}
           </div>
-          {solSection === 'material' && showMaterial ? (
+          {solSection === 'insumos' && showSupplies ? (
+            <TechnicianSupplyRequests
+              userProfile={userProfile}
+              darkMode={darkMode}
+              preventives={myOrders.filter((o) => o.status !== 'Concluída' && o.status !== 'Não Executada')}
+              spCompanies={spCompanies}
+              requests={mySupplyRequests}
+            />
+          ) : solSection === 'material' && showMaterial ? (
             <TechnicianMaterialRequests
               userProfile={userProfile}
               darkMode={darkMode}
@@ -1373,7 +1401,7 @@ export default function TechnicianMobileView({
         {/* Linha neon da marca (identidade visual 2.0) */}
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
         <div className="max-w-md mx-auto px-2 h-18 grid grid-cols-5 items-center relative">
-          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />, mySolicitations.length + materialActionCount)}
+          {navButton('solicitations', 'Solicitações', <BellRing className="w-5.5 h-5.5" />, mySolicitations.length + materialActionCount + supplyActionCount)}
           {navButton('os', 'Minhas OS', <Wrench className="w-5.5 h-5.5" />, osCount)}
 
           {/* Destaque central: Ler QR Code */}

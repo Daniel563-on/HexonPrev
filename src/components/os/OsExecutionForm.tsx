@@ -13,7 +13,8 @@ import {
   osAnswerText,
   osFieldVisible,
   osValidationLink,
-  stageItems
+  stageItems,
+  supplyBlockMessage
 } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import OsFieldInput from './OsFieldInput';
@@ -22,6 +23,7 @@ import OsTeamPicker from './OsTeamPicker';
 import OsFieldExtras from './OsFieldExtras';
 import ExecutionExtras from '../orders/execution/ExecutionExtras';
 import OsContestReplyModal from './OsContestReplyModal';
+import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 // EXECUÇÃO DA OS PELO TÉCNICO (celular): perguntas de Execução do modelo, equipe, materiais, feriados,
 // hora extra e pernoite. Salvar grava no banco; o próximo técnico (se a OS for passada) continua daqui.
@@ -169,6 +171,9 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
 
   // CONCLUIR: obrigatórias respondidas → o técnico assina
   const conclude = () => {
+    // Pedido de insumos em aberto para esta OS (Fase 8C-2): avisa antes de tudo e não conclui
+    const supplyBlock = supplyBlockMessage(order.id);
+    if (supplyBlock) return setMsg({ ok: false, text: supplyBlock });
     const toSave = prepare();
     if (!toSave) return;
     const missing = fields.find(
@@ -359,6 +364,9 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
               />
             </div>
           )}
+
+          {/* Insumos recebidos (Fase 8C-2): entram pelo "Recebi" do pedido de insumos; aparece só se houver */}
+          <OrderSuppliesBlock orderId={order.id} compact />
 
           <OsFieldExtras
             company={order.company}
