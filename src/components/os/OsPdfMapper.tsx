@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, Bold, ChevronLeft, ChevronRight, Copy, FileDown, FileUp, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { OsPdfLayout, OsPdfPin, OsSignatureRole, OsTemplate } from '../../types';
-import { OS_PDF_MAX_BYTES, dbDeleteOsPdfLayout, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, dbGetWorkOrder, dbSaveOsPdfLayout } from '../../db/firebase';
+import { OS_PDF_MAX_BYTES, dbDeleteOsPdfLayout, dbGetOrderSupplies, dbGetOsPdfFile, dbGetOsPdfLayout, dbGetOsSignatureImage, dbGetWorkOrder, dbSaveOsPdfLayout } from '../../db/firebase';
 import { pdfjsLib } from '../../lib/pdfHelper';
-import { downloadBytes, generateOsMappedPdf, osPdfFieldLabel, osPdfFieldOptions } from '../../lib/osPdf';
+import { downloadBytes, generateOsMappedPdf, osPdfFieldLabel, osPdfFieldOptions, osPdfUsesSupplies } from '../../lib/osPdf';
 
 // PDF MAPEADO DO MODELO DE OS (Fase 5C): sobe o PDF oficial (frente e verso), desenha caixas sobre ele
 // e escolhe o que vai em cada uma (pergunta, dado da OS, assinatura, texto fixo). "Testar com uma OS" gera o PDF
@@ -238,7 +238,9 @@ export default function OsPdfMapper({ template, userName, onClose }: Props) {
           if (img) signatures[r] = img;
         })
       );
-      downloadBytes(await generateOsMappedPdf(pdfB64, pins, { order: o, signatures }), `Teste_${o.number}.pdf`);
+      // Insumos da OS só se alguma caixa mostrar insumos (Fase 8C-3)
+      const supplies = osPdfUsesSupplies(pins) ? await dbGetOrderSupplies(o.id, false, true) : null;
+      downloadBytes(await generateOsMappedPdf(pdfB64, pins, { order: o, signatures, supplies }), `Teste_${o.number}.pdf`);
       setMsg({ ok: true, text: `PDF de teste da ${o.number} baixado${o.templateId !== template.id ? ' (atenção: essa OS é de outro modelo; as perguntas deste modelo podem sair em branco)' : ''}.` });
     } catch (err: any) {
       setMsg({ ok: false, text: `Não foi possível testar: ${err?.message || err}` });

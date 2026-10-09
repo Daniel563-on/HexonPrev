@@ -324,7 +324,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     if (c === undefined) return <span className="text-slate-400">...</span>;
     if (c === null) return <span className="text-slate-400">—</span>;
     return (
-      <span title={`HH ${brl(c.snap.labor)} · Hora extra ${brl(c.snap.overtime)} · Pernoite ${brl(c.snap.overnight)} · Materiais ${brl(c.snap.materials)}`}>
+      <span title={`HH ${brl(c.snap.labor)} · Hora extra ${brl(c.snap.overtime)} · Pernoite ${brl(c.snap.overnight)} · Materiais ${brl(c.snap.materials)} · Insumos ${brl(c.snap.supplies || 0)}`}>
         <span className="font-black text-slate-800 tabular-nums">{brl(c.snap.total)}</span>
         {c.partial && <span className="block text-[9px] font-bold text-amber-600">parcial</span>}
       </span>
