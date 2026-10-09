@@ -426,6 +426,8 @@ export interface MaterialRequestItem {
   measureUnit: string;
   qty: number;           // pedida
   qtySupplied?: number;  // fornecida (na aprovação; 0 = não fornecido)
+  warehouse?: string;    // almoxarifado onde retirar este item (ajuste da etapa 8: cada item com o seu)
+  rm?: string;           // nº da RM deste item (só números; a mesma RM pode repetir em vários itens)
 }
 export interface MaterialRequestEvent {
   at: string;
@@ -448,7 +450,8 @@ export interface MaterialRequest {
   items: MaterialRequestItem[];
   note?: string;
   status: MaterialRequestStatus;
-  decision?: { by: string; byMatricula: string; at: string; warehouse?: string; rm?: string; reason?: string };
+  // Aprovação: RMs e almoxarifados usados nos itens (rms/warehouses); pedidos antigos têm uma RM só (warehouse/rm)
+  decision?: { by: string; byMatricula: string; at: string; rms?: string[]; warehouses?: string[]; warehouse?: string; rm?: string; reason?: string };
   pickedUpAt?: string;
   ackAt?: string;
   createdAt: string;

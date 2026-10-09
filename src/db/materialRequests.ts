@@ -150,25 +150,41 @@ export async function dbGetMaterialRequestsPage(
   }
 }
 
-// APROVAR: almoxarifado, nº da RM e quantidade fornecida de cada item (0 = não fornecido)
+// APROVAR: quantidade fornecida, almoxarifado e nº da RM de CADA item (0 = não fornecido: sem almoxarifado/RM).
+// Um item pode sair do Sub e outro do Central, com RMs diferentes; a mesma RM pode repetir em vários itens.
+export interface MaterialApprovalItem {
+  supplied: number;
+  warehouse: string;
+  rm: string;
+}
 export async function dbApproveMaterialRequest(
   req: MaterialRequest,
-  supplied: number[],
-  warehouse: string,
-  rm: string,
+  picks: MaterialApprovalItem[],
   by: { name: string; matricula: string }
 ): Promise<MaterialRequest> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  const rmClean = String(rm || '').replace(/\D/g, '');
-  if (!warehouse) throw new Error('Escolha o almoxarifado.');
-  if (!rmClean) throw new Error('Informe o número da RM (só números).');
-  if (supplied.length !== req.items.length || supplied.some((q) => !Number.isFinite(q) || q < 0)) throw new Error('Confira as quantidades fornecidas.');
-  if (supplied.every((q) => q === 0)) throw new Error('Nenhum item fornecido: use "Reprovar" e informe o motivo.');
+  if (picks.length !== req.items.length || picks.some((p) => !Number.isFinite(p.supplied) || p.supplied < 0)) throw new Error('Confira as quantidades fornecidas.');
+  if (picks.every((p) => p.supplied === 0)) throw new Error('Nenhum item fornecido: use "Reprovar" e informe o motivo.');
+  const clean = picks.map((p) => ({ ...p, rm: String(p.rm || '').replace(/\D/g, '') }));
+  req.items.forEach((it, i) => {
+    if (clean[i].supplied === 0) return;
+    if (!clean[i].warehouse) throw new Error(`Escolha o almoxarifado de "${it.description}".`);
+    if (!clean[i].rm) throw new Error(`Informe o nº da RM de "${it.description}" (só números).`);
+  });
   const now = new Date().toISOString();
-  const items = req.items.map((it, i) => ({ ...it, qtySupplied: supplied[i] }));
+  const items: MaterialRequestItem[] = req.items.map((it, i) => {
+    const { warehouse: _w, rm: _r, ...base } = it;
+    return clean[i].supplied > 0 ? { ...base, qtySupplied: clean[i].supplied, warehouse: clean[i].warehouse, rm: clean[i].rm } : { ...base, qtySupplied: 0 };
+  });
   const partial = items.filter((it) => (it.qtySupplied || 0) < it.qty).map((it) => `${it.code}: ${fmtQty(it.qtySupplied || 0)} de ${fmtQty(it.qty)}`);
-  const decision = { by: by.name, byMatricula: by.matricula, at: now, warehouse, rm: rmClean };
-  const event = ev(by.name, `Aprovado — ${warehouse}, RM ${rmClean}`, partial.length ? `Fornecido menos que o pedido: ${partial.join('; ')}` : undefined);
+  const groups = materialPickupGroups({ ...req, items }).groups;
+  const uniq = (l: string[]) => l.filter((x, i) => l.indexOf(x) === i);
+  const decision = { by: by.name, byMatricula: by.matricula, at: now, rms: uniq(groups.map((g) => g.rm)), warehouses: uniq(groups.map((g) => g.warehouse)) };
+  const event = ev(
+    by.name,
+    `Aprovado — ${groups.map((g) => `RM ${g.rm} (${g.warehouse})`).join('; ')}`,
+    partial.length ? `Fornecido menos que o pedido: ${partial.join('; ')}` : undefined
+  );
   await updateDoc(doc(dbInstance, 'materialRequests', req.id), {
     status: 'Aprovado',
     items: items.map((it) => cleanUndefined(it)),
@@ -178,6 +194,30 @@ export async function dbApproveMaterialRequest(
     timeline: arrayUnion(event)
   });
   return { ...req, status: 'Aprovado', items, decision, mrPend: undefined, updatedAt: now, timeline: [...req.timeline, event] };
+}
+
+// ONDE RETIRAR: itens fornecidos agrupados por RM + almoxarifado (o técnico vê junto) e os não fornecidos.
+// Pedidos antigos (uma RM só) usam a RM e o almoxarifado da decisão.
+export interface MaterialPickupGroup {
+  rm: string;
+  warehouse: string;
+  items: MaterialRequestItem[];
+}
+export function materialPickupGroups(r: MaterialRequest): { groups: MaterialPickupGroup[]; notSupplied: MaterialRequestItem[] } {
+  const groups: MaterialPickupGroup[] = [];
+  const notSupplied: MaterialRequestItem[] = [];
+  r.items.forEach((it) => {
+    if (it.qtySupplied !== undefined && it.qtySupplied <= 0) {
+      notSupplied.push(it);
+      return;
+    }
+    const rm = it.rm || r.decision?.rm || '';
+    const warehouse = it.warehouse || r.decision?.warehouse || '';
+    const g = groups.find((x) => x.rm === rm && x.warehouse === warehouse);
+    if (g) g.items.push(it);
+    else groups.push({ rm, warehouse, items: [it] });
+  });
+  return { groups, notSupplied };
 }
 
 // REPROVAR: motivo obrigatório (ex.: "o técnico não irá mais precisar do material")

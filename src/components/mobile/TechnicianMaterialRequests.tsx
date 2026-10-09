@@ -10,6 +10,7 @@ import {
   dbGetMyWorkOrders,
   dbPickUpMaterialRequest,
   formatQty,
+  materialPickupGroups,
   materialsSyncStatus,
   MR_STATUS_LABEL,
   parseQty
@@ -389,12 +390,29 @@ export default function TechnicianMaterialRequests({
             )}
             {r.status === 'Aprovado' && (
               <div className="space-y-2">
-                <p className="text-xs p-2 rounded-lg bg-blue-500/10 flex items-start gap-1.5">
-                  <Warehouse className="w-4 h-4 shrink-0 text-blue-600" />
-                  <span>
-                    Retirar no <b>{r.decision?.warehouse}</b> · RM <b>{r.decision?.rm}</b>
-                  </span>
-                </p>
+                {/* Onde retirar: itens juntos por RM + almoxarifado (cada item pode ter o seu) */}
+                <div className="text-xs p-2 rounded-lg bg-blue-500/10 space-y-2">
+                  {materialPickupGroups(r).groups.map((g) => (
+                    <div key={`${g.rm}|${g.warehouse}`}>
+                      <p className="flex items-start gap-1.5">
+                        <Warehouse className="w-4 h-4 shrink-0 text-blue-600" />
+                        <span>
+                          RM <b>{g.rm}</b> · retirar no <b>{g.warehouse}</b>
+                        </span>
+                      </p>
+                      <ul className="pl-6">
+                        {g.items.map((it) => (
+                          <li key={it.materialId}>
+                            • {it.description} — {formatQty(it.qtySupplied ?? it.qty)} {it.measureUnit}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                  {materialPickupGroups(r).notSupplied.length > 0 && (
+                    <p className="text-amber-700">Não fornecido: {materialPickupGroups(r).notSupplied.map((it) => it.description).join(', ')}</p>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => act(r, 'pickup')}

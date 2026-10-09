@@ -10,13 +10,15 @@ import {
   dbRejectMaterialRequest,
   formatQty,
   isCompanyVisible,
+  materialPickupGroups,
   MR_STATUS_LABEL,
   parseQty
 } from '../../db/firebase';
 
 // SOLICITAÇÕES › MATERIAL (Fase 8B): pedidos de material do MP feitos pelos técnicos.
 // Pendentes chegam em tempo real (lista do App); as outras situações vêm do banco em páginas de 20, por gerência.
-// Aprovar: quantidade fornecida de cada item (já vem a pedida; 0 = não fornecido), almoxarifado e nº da RM (só números).
+// Aprovar: para cada item, a quantidade fornecida (já vem a pedida; 0 = não fornecido), o almoxarifado e o nº da RM (só números);
+// "Preencher todos" copia o almoxarifado e a RM para todos os itens. O técnico vê os itens agrupados por RM + almoxarifado.
 // Reprovar: motivo obrigatório. Depois do "Retirei" do técnico o pedido vira Atendido.
 
 type Filter = MaterialRequestStatus;
@@ -37,8 +39,10 @@ const STATUS_STYLE: Record<string, string> = {
 interface Analysis {
   id: string;
   supplied: string[];
-  warehouse: string;
-  rm: string;
+  whs: string[];   // almoxarifado de cada item
+  rms: string[];   // nº da RM de cada item
+  allWh: string;   // "Preencher todos"
+  allRm: string;
   rejecting: boolean;
   reason: string;
 }
@@ -121,7 +125,7 @@ export default function MaterialRequestsTab({
     const q = search.trim().toLowerCase();
     if (!q) return base;
     return base.filter((r) =>
-      [r.number, r.techName, r.techMatricula, r.orderLabel, ...r.items.map((i) => `${i.code} ${i.description}`)].join(' ').toLowerCase().includes(q)
+      [r.number, r.techName, r.techMatricula, r.orderLabel, r.decision?.rm || '', ...r.items.map((i) => `${i.code} ${i.description} ${i.rm || ''}`)].join(' ').toLowerCase().includes(q)
     );
   }, [filter, pending, page, unit, company, search, changed, visibleCompanies]);
 
@@ -131,7 +135,7 @@ export default function MaterialRequestsTab({
 
   const startAnalysis = (r: MaterialRequest) => {
     setMsg(null);
-    setAnalysis({ id: r.id, supplied: r.items.map((i) => formatQty(i.qty)), warehouse: '', rm: '', rejecting: false, reason: '' });
+    setAnalysis({ id: r.id, supplied: r.items.map((i) => formatQty(i.qty)), whs: r.items.map(() => ''), rms: r.items.map(() => ''), allWh: '', allRm: '', rejecting: false, reason: '' });
   };
 
   const approve = async (r: MaterialRequest) => {
@@ -142,7 +146,8 @@ export default function MaterialRequestsTab({
     if (over) return setMsg({ id: r.id, ok: false, text: `A quantidade fornecida de "${over.description}" é maior que a pedida.` });
     setBusy(true);
     try {
-      const updated = await dbApproveMaterialRequest(r, supplied, analysis.warehouse, analysis.rm, by);
+      const picks = r.items.map((_, i) => ({ supplied: supplied[i], warehouse: analysis.whs[i], rm: analysis.rms[i] }));
+      const updated = await dbApproveMaterialRequest(r, picks, by);
       setChanged({ ...changed, [r.id]: updated });
       setAnalysis(null);
       setMsg({ id: r.id, ok: true, text: `${r.number} aprovado: o técnico vê onde retirar.` });
@@ -177,8 +182,8 @@ export default function MaterialRequestsTab({
         <div className="border-l-4 border-indigo-500 pl-4">
           <h1 className="text-xl font-black text-slate-800 tracking-tight">Pedidos de material</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Material do MP pedido pelos técnicos para as OS deles. Aprove informando a quantidade fornecida de cada item, o almoxarifado e o nº da
-            RM, ou reprove com o motivo. Depois do "Retirei" do técnico, o pedido fica como Atendido.
+            Material do MP pedido pelos técnicos para as OS deles. Aprove informando, em cada item, a quantidade fornecida, o almoxarifado e o nº
+            da RM (o técnico vê os itens juntos por RM), ou reprove com o motivo. Depois do "Retirei" do técnico, o pedido fica como Atendido.
           </p>
         </div>
       </section>
@@ -189,7 +194,7 @@ export default function MaterialRequestsTab({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nº do pedido, técnico, OS ou material..."
+            placeholder="Buscar por nº do pedido, técnico, OS, material ou RM..."
             className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800"
           />
         </div>
@@ -246,6 +251,39 @@ export default function MaterialRequestsTab({
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${STATUS_STYLE[r.status] || ''}`}>{MR_STATUS_LABEL[r.status]}</span>
               </div>
 
+              {a && !a.rejecting && (
+                <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 flex flex-wrap items-end gap-2">
+                  <span className="text-[10px] font-black uppercase text-indigo-700 self-center">Preencher todos</span>
+                  <select value={a.allWh} onChange={(e) => setAnalysis({ ...a, allWh: e.target.value })} aria-label="Almoxarifado de todos os itens" className={inputCls}>
+                    <option value="">Almoxarifado</option>
+                    {activeWarehouses.map((w) => (
+                      <option key={w.id} value={w.name}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={a.allRm}
+                    onChange={(e) => setAnalysis({ ...a, allRm: e.target.value.replace(/\D/g, '') })}
+                    inputMode="numeric"
+                    placeholder="Nº da RM"
+                    aria-label="RM de todos os itens"
+                    className={`${inputCls} w-32`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnalysis({ ...a, whs: a.whs.map((w) => a.allWh || w), rms: a.rms.map((x) => a.allRm || x) });
+                      setMsg(null);
+                    }}
+                    disabled={!a.allWh && !a.allRm}
+                    className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black cursor-pointer disabled:opacity-40"
+                  >
+                    Aplicar a todos os itens
+                  </button>
+                  <span className="text-[10px] text-slate-500 self-center">Depois mude só os itens que forem de outro almoxarifado ou outra RM.</span>
+                </div>
+              )}
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[10px] uppercase text-slate-400 text-left">
@@ -253,6 +291,8 @@ export default function MaterialRequestsTab({
                     <th className="py-1 pr-2">Material</th>
                     <th className="py-1 pr-2 text-right">Pedido</th>
                     {(a || r.status === 'Aprovado' || r.status === 'Atendido') && <th className="py-1 text-right">Fornecido</th>}
+                    {a && <th className="py-1 pl-3">Almoxarifado</th>}
+                    {a && <th className="py-1 pl-2">Nº da RM</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -264,15 +304,48 @@ export default function MaterialRequestsTab({
                         {formatQty(it.qty)} {it.measureUnit}
                       </td>
                       {a ? (
-                        <td className="py-1.5 text-right">
-                          <input
-                            value={a.supplied[i]}
-                            onChange={(e) => setAnalysis({ ...a, supplied: a.supplied.map((x, j) => (j === i ? e.target.value : x)) })}
-                            inputMode="decimal"
-                            aria-label={`Fornecido de ${it.description}`}
-                            className="w-20 px-2 py-1 border border-slate-300 rounded text-right font-bold"
-                          />
-                        </td>
+                        <>
+                          <td className="py-1.5 text-right">
+                            <input
+                              value={a.supplied[i]}
+                              onChange={(e) => setAnalysis({ ...a, supplied: a.supplied.map((x, j) => (j === i ? e.target.value : x)) })}
+                              inputMode="decimal"
+                              aria-label={`Fornecido de ${it.description}`}
+                              className="w-20 px-2 py-1 border border-slate-300 rounded text-right font-bold"
+                            />
+                          </td>
+                          <td className="py-1.5 pl-3">
+                            <select
+                              value={a.whs[i]}
+                              onChange={(e) => {
+                                setAnalysis({ ...a, whs: a.whs.map((x, j) => (j === i ? e.target.value : x)) });
+                                setMsg(null);
+                              }}
+                              aria-label={`Almoxarifado de ${it.description}`}
+                              className="px-2 py-1 border border-slate-300 rounded font-bold bg-white"
+                            >
+                              <option value="">Escolha</option>
+                              {activeWarehouses.map((w) => (
+                                <option key={w.id} value={w.name}>
+                                  {w.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-1.5 pl-2">
+                            <input
+                              value={a.rms[i]}
+                              onChange={(e) => {
+                                setAnalysis({ ...a, rms: a.rms.map((x, j) => (j === i ? e.target.value.replace(/\D/g, '') : x)) });
+                                setMsg(null);
+                              }}
+                              inputMode="numeric"
+                              placeholder="Só números"
+                              aria-label={`RM de ${it.description}`}
+                              className="w-28 px-2 py-1 border border-slate-300 rounded font-bold"
+                            />
+                          </td>
+                        </>
                       ) : (
                         (r.status === 'Aprovado' || r.status === 'Atendido') && (
                           <td className={`py-1.5 text-right font-bold whitespace-nowrap ${(it.qtySupplied ?? 0) < it.qty ? 'text-amber-600' : 'text-emerald-700'}`}>
@@ -287,15 +360,24 @@ export default function MaterialRequestsTab({
               {r.note && <p className="text-xs text-slate-600">Observação do técnico: {r.note}</p>}
 
               {(r.status === 'Aprovado' || r.status === 'Atendido') && r.decision && (
-                <p className="text-xs text-slate-600 flex items-center gap-1.5">
-                  <WarehouseIcon className="w-4 h-4 text-blue-600" />
-                  {r.decision.warehouse} · RM <b>{r.decision.rm}</b> · aprovado por {r.decision.by} em {fmtDate(r.decision.at)}
-                  {r.status === 'Atendido' && r.pickedUpAt && (
-                    <span className="flex items-center gap-1 text-emerald-700 font-bold">
-                      <PackageCheck className="w-4 h-4" /> retirado em {fmtDate(r.pickedUpAt)}
-                    </span>
-                  )}
-                </p>
+                <div className="text-xs text-slate-600 space-y-1">
+                  {materialPickupGroups(r).groups.map((g) => (
+                    <p key={`${g.rm}|${g.warehouse}`} className="flex items-start gap-1.5">
+                      <WarehouseIcon className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        RM <b>{g.rm}</b> · {g.warehouse}: {g.items.map((it) => `${it.description} (${formatQty(it.qtySupplied ?? it.qty)} ${it.measureUnit})`).join(' · ')}
+                      </span>
+                    </p>
+                  ))}
+                  <p className="flex flex-wrap items-center gap-1.5">
+                    Aprovado por {r.decision.by} em {fmtDate(r.decision.at)}
+                    {r.status === 'Atendido' && r.pickedUpAt && (
+                      <span className="flex items-center gap-1 text-emerald-700 font-bold">
+                        <PackageCheck className="w-4 h-4" /> retirado em {fmtDate(r.pickedUpAt)}
+                      </span>
+                    )}
+                  </p>
+                </div>
               )}
               {r.status === 'Reprovado' && r.decision && (
                 <p className="text-xs text-rose-700">
@@ -316,34 +398,8 @@ export default function MaterialRequestsTab({
               )}
 
               {a && !a.rejecting && (
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-wrap items-end gap-3">
-                  <label className="space-y-1">
-                    <span className="block text-[10px] font-bold uppercase text-slate-500">Almoxarifado *</span>
-                    <select value={a.warehouse} onChange={(e) => {
-                        setAnalysis({ ...a, warehouse: e.target.value });
-                        setMsg(null);
-                      }} className={inputCls}>
-                      <option value="">Escolha</option>
-                      {activeWarehouses.map((w) => (
-                        <option key={w.id} value={w.name}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="block text-[10px] font-bold uppercase text-slate-500">Nº da RM *</span>
-                    <input
-                      value={a.rm}
-                      onChange={(e) => {
-                        setAnalysis({ ...a, rm: e.target.value.replace(/\D/g, '') });
-                        setMsg(null);
-                      }}
-                      inputMode="numeric"
-                      placeholder="Só números"
-                      className={`${inputCls} w-36`}
-                    />
-                  </label>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] text-slate-500">Item com fornecido 0 não precisa de almoxarifado nem RM.</span>
                   <button type="button" disabled={busy} onClick={() => approve(r)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer disabled:opacity-50 flex items-center gap-1">
                     <CheckCircle2 className="w-4 h-4" /> {busy ? 'Salvando...' : 'Aprovar'}
                   </button>

@@ -572,7 +572,8 @@ service cloud.firestore {
     // Técnico: pede para uma OS aberta dele (preventiva aberta; OS em andamento, pendente ou contestada), da empresa dele marcada com "Técnicos pedem
     // material do MP"; vê os dele; marca "Retirei" (aprovado → atendido) e "Ciente" (reprovado).
     // Quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material" vê os das suas gerências;
-    // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM; reprovar: motivo).
+    // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM de cada item — a decisão guarda a lista das RMs
+    // e dos almoxarifados; o formato antigo, uma RM só, continua aceito; reprovar: motivo).
     // Usuário e perfil lidos UMA vez e passados (com perfil de acesso, a versão antiga passava do limite de 1000 contas)
     function mrStaffSees(u, p) {
       let scope = p.get('unitScope', 'own');
@@ -592,7 +593,11 @@ service cloud.firestore {
           && request.resource.data.decision.byMatricula == u.matricula
           && (request.resource.data.status == 'Reprovado'
               ? request.resource.data.decision.get('reason', '').size() >= 3
-              : (request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+')))
+              : ((request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+'))
+                || (request.resource.data.decision.get('rms', []).size() > 0
+                  && request.resource.data.decision.get('rms', []).size() <= request.resource.data.items.size()
+                  && request.resource.data.decision.rms.join(',').matches('[0-9]+(,[0-9]+)*')
+                  && request.resource.data.decision.get('warehouses', []).size() > 0)))
           && osPerm(u, p, 'material_requests_decide') && osSees(u, p))
         // TÉCNICO: "Retirei" (sai da tela dele)
         || (resource.data.status == 'Aprovado' && request.resource.data.status == 'Atendido'
