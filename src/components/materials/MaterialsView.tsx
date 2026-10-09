@@ -1,35 +1,67 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Company, HexonUser, Material } from '../../types';
 import {
+  CatalogKind,
+  catalogIdOf,
   companiesOfUnit,
   dbGetCompanies,
   dbGetManagements,
   isCompanyVisible,
-  dbDeleteMaterial,
-  dbGetMaterials,
-  dbSaveMaterial,
-  dbSetMaterialCost,
+  dbDeleteCatalogItem,
+  dbGetCatalog,
+  dbSaveCatalogItem,
+  dbSetCatalogCost,
   localTodayStr,
-  materialCodeKey,
-  materialIdOf
+  materialCodeKey
 } from '../../db/firebase';
 import MaterialImportModal from './MaterialImportModal';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
-// MATERIAIS: lista de cada gerência + empresa (etapa especial E2). Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
+// GESTÃO DE MATERIAIS e GESTÃO DE INSUMOS (Fase 8C): lista de cada gerência + empresa (etapa especial E2), a mesma tela
+// para as duas ("kind"). Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
 
 interface Props {
   userProfile: HexonUser;
   visibleUnits: string[] | null; // gerências do perfil (null = todas)
   visibleCompanies: string[] | null; // empresas que vê (null = todas as das gerências que vê)
-  canManage: boolean;            // permissão "Cadastrar e Importar Materiais"
+  canManage: boolean;            // permissão "Cadastrar e Importar Materiais" (ou "... Insumos")
+  kind?: CatalogKind;            // 'materials' (padrão) ou 'supplies' (insumos)
 }
+
+// Textos de cada lista
+export const CATALOG_TEXT: Record<CatalogKind, { title: string; intro: string; count: string; item: string; newItem: string; editItem: string; deleteItem: string; none: string; clash: string; keepNote: string }> = {
+  materials: {
+    title: 'Materiais',
+    intro: 'Cada gerência + empresa tem a sua lista, com os seus preços. O técnico só usa materiais da gerência e da empresa dele, com valor; material com R$ 0,00 fica aqui para o histórico.',
+    count: 'material(is)',
+    item: 'material',
+    newItem: 'Novo material',
+    editItem: 'Editar material',
+    deleteItem: 'Excluir material',
+    none: 'Nenhum material encontrado.',
+    clash: 'Já existe um material com esse código nesta gerência e empresa.',
+    keepNote: 'As OS que já usaram este material mantêm o registro delas.'
+  },
+  supplies: {
+    title: 'Insumos',
+    intro: 'Cada gerência + empresa tem a sua lista de insumos, com os seus preços. O técnico pede insumos da gerência e da empresa dele, com valor; insumo com R$ 0,00 fica aqui para o histórico.',
+    count: 'insumo(s)',
+    item: 'insumo',
+    newItem: 'Novo insumo',
+    editItem: 'Editar insumo',
+    deleteItem: 'Excluir insumo',
+    none: 'Nenhum insumo encontrado.',
+    clash: 'Já existe um insumo com esse código nesta gerência e empresa.',
+    keepNote: 'As OS que já receberam este insumo mantêm o registro delas.'
+  }
+};
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 const PAGE = 200;
 
-export default function MaterialsView({ userProfile, visibleUnits, visibleCompanies, canManage }: Props) {
+export default function MaterialsView({ userProfile, visibleUnits, visibleCompanies, canManage, kind = 'materials' }: Props) {
+  const T = CATALOG_TEXT[kind];
   const [materials, setMaterials] = useState<Material[]>([]);
   const [units, setUnits] = useState<string[]>(visibleUnits || []);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -54,7 +86,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
     setDeleting(true);
     setDeleteError(null);
     try {
-      await dbDeleteMaterial(toDelete.id, toDelete.unit);
+      await dbDeleteCatalogItem(kind, toDelete.id, toDelete.unit);
       setToDelete(null);
       await load();
     } catch (err: any) {
@@ -66,14 +98,14 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
   const load = async (force = true) => {
     setLoading(true);
-    setMaterials((await dbGetMaterials(visibleUnits, force)).filter((m) => isCompanyVisible(m.company, visibleCompanies)));
+    setMaterials((await dbGetCatalog(kind, visibleUnits, force)).filter((m) => isCompanyVisible(m.company, visibleCompanies)));
     setLoading(false);
   };
   // Tempo real: alteração feita em outro aparelho aparece sozinha (relê da memória, sem ler o banco)
-  const matVersion = useSyncVersion('materials');
+  const matVersion = useSyncVersion(kind);
   useEffect(() => {
     if (matVersion === 0) return;
-    dbGetMaterials(visibleUnits, false)
+    dbGetCatalog(kind, visibleUnits, false)
       .then((l) => setMaterials(l.filter((m) => isCompanyVisible(m.company, visibleCompanies))))
       .catch(() => {});
   }, [matVersion]);
@@ -123,15 +155,13 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
     <div className="space-y-4">
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-black text-slate-800">Materiais</h2>
-          <p className="text-xs text-slate-500">
-            Cada gerência + empresa tem a sua lista, com os seus preços. O técnico só usa materiais da gerência e da empresa dele, com valor; material com R$ 0,00 fica aqui para o histórico.
-          </p>
+          <h2 className="text-lg font-black text-slate-800">{T.title}</h2>
+          <p className="text-xs text-slate-500">{T.intro}</p>
         </div>
         {canManage && (
           <div className="flex gap-2 shrink-0">
             <button type="button" onClick={openNew} className="px-4 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold cursor-pointer">
-              Novo material
+              {T.newItem}
             </button>
             <button type="button" onClick={() => setShowImport(true)} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
               Importar planilha
@@ -142,7 +172,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
         <p className="text-xs font-bold text-slate-700">
-          {inUnit.length} material(is){unit !== 'Todas' ? ` em ${unit}` : ''}{company !== 'Todas' ? ` • ${companyName(company)}` : ''} • {available} disponível(is) para o técnico • {inUnit.length - available} com R$ 0,00
+          {inUnit.length} {T.count}{unit !== 'Todas' ? ` em ${unit}` : ''}{company !== 'Todas' ? ` • ${companyName(company)}` : ''} • {available} disponível(is) para o técnico • {inUnit.length - available} com R$ 0,00
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <input value={search} onChange={(e) => { setSearch(e.target.value); setShown(PAGE); }} placeholder="Buscar código, descrição..." className={field} />
@@ -216,7 +246,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
               </tr>
             ))}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-400 italic">Nenhum material encontrado.</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-slate-400 italic">{T.none}</td></tr>
             )}
             {loading && (
               <tr><td colSpan={7} className="p-6 text-center text-slate-400">Carregando...</td></tr>
@@ -234,6 +264,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       {showImport && (
         <MaterialImportModal
+          kind={kind}
           units={units}
           companies={myCompanies}
           existing={materials}
@@ -245,6 +276,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       {editing && (
         <MaterialFormModal
+          kind={kind}
           material={editing}
           isNew={isNew}
           units={units}
@@ -257,6 +289,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       {costOf && (
         <MaterialCostModal
+          kind={kind}
           material={costOf}
           userName={userProfile.name}
           onClose={() => setCostOf(null)}
@@ -267,10 +300,10 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
       {toDelete && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-            <h3 className="text-base font-black text-slate-800">Excluir material</h3>
+            <h3 className="text-base font-black text-slate-800">{T.deleteItem}</h3>
             <p className="text-xs text-slate-600">
               Excluir <strong>{toDelete.code} - {toDelete.description}</strong> ({toDelete.unit} • {companyName(toDelete.company)})? Use para corrigir um cadastro errado.
-              As OS que já usaram este material mantêm o registro delas.
+              {' '}{T.keepNote}
             </p>
             {deleteError && <p className="text-xs font-bold text-rose-600">{deleteError}</p>}
             <div className="flex justify-end gap-2">
@@ -307,9 +340,10 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 }
 
 // Cadastro manual: código, descrição, unidade de medida, gerência e empresa (o valor é informado em "Valor")
-function MaterialFormModal({ material, isNew, units, companies, materials, onClose, onSaved }: {
-  material: Material; isNew: boolean; units: string[]; companies: Company[]; materials: Material[]; onClose: () => void; onSaved: () => void;
+function MaterialFormModal({ kind, material, isNew, units, companies, materials, onClose, onSaved }: {
+  kind: CatalogKind; material: Material; isNew: boolean; units: string[]; companies: Company[]; materials: Material[]; onClose: () => void; onSaved: () => void;
 }) {
+  const T = CATALOG_TEXT[kind];
   const [form, setForm] = useState(material);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -319,14 +353,14 @@ function MaterialFormModal({ material, isNew, units, companies, materials, onClo
     if (!form.unit) return setError('Escolha a gerência.');
     if (!form.company) return setError('Escolha a empresa.');
     if (!form.code.trim() || !form.description.trim()) return setError('Informe o código e a descrição.');
-    const id = isNew ? materialIdOf(form.unit, form.company, form.code) : form.id;
+    const id = isNew ? catalogIdOf(kind, form.unit, form.company, form.code) : form.id;
     const clash = materials.find((m) => m.id !== form.id && m.unit === form.unit && m.company === form.company && materialCodeKey(m.code) === materialCodeKey(form.code));
-    if (clash || (isNew && materials.some((m) => m.id === id))) return setError('Já existe um material com esse código nesta gerência e empresa.');
+    if (clash || (isNew && materials.some((m) => m.id === id))) return setError(T.clash);
     setSaving(true);
     setError(null);
     try {
       const now = new Date().toISOString();
-      await dbSaveMaterial({
+      await dbSaveCatalogItem(kind, {
         ...form,
         id,
         code: form.code.trim(),
@@ -344,7 +378,7 @@ function MaterialFormModal({ material, isNew, units, companies, materials, onClo
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-        <h3 className="text-base font-black text-slate-800">{isNew ? 'Novo material' : 'Editar material'}</h3>
+        <h3 className="text-base font-black text-slate-800">{isNew ? T.newItem : T.editItem}</h3>
         <label className="block">
           <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Gerência *</span>
           <select value={form.unit} disabled={!isNew} onChange={(e) => setForm({ ...form, unit: e.target.value, company: '' })} className={field}>
@@ -354,7 +388,7 @@ function MaterialFormModal({ material, isNew, units, companies, materials, onClo
         </label>
         <label className="block">
           <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Empresa *</span>
-          <select value={form.company} disabled={!isNew || !form.unit} onChange={(e) => setForm({ ...form, company: e.target.value })} className={field} aria-label="Empresa do material">
+          <select value={form.company} disabled={!isNew || !form.unit} onChange={(e) => setForm({ ...form, company: e.target.value })} className={field} aria-label={`Empresa do ${T.item}`}>
             <option value="">{form.unit ? 'Selecione...' : 'Escolha a gerência primeiro'}</option>
             {companiesOfUnit(companies, form.unit)
               .filter((c) => c.active || c.id === form.company)
@@ -388,9 +422,9 @@ function MaterialFormModal({ material, isNew, units, companies, materials, onClo
   );
 }
 
-// Novo valor a partir de uma data (R$ 0,00 deixa o material indisponível para o técnico)
-function MaterialCostModal({ material, userName, onClose, onSaved }: {
-  material: Material; userName: string; onClose: () => void; onSaved: () => void;
+// Novo valor a partir de uma data (R$ 0,00 deixa o item indisponível para o técnico)
+function MaterialCostModal({ kind, material, userName, onClose, onSaved }: {
+  kind: CatalogKind; material: Material; userName: string; onClose: () => void; onSaved: () => void;
 }) {
   const [value, setValue] = useState(material.cost ? String(material.cost).replace('.', ',') : '');
   const [from, setFrom] = useState(localTodayStr());
@@ -406,7 +440,7 @@ function MaterialCostModal({ material, userName, onClose, onSaved }: {
     setSaving(true);
     setError(null);
     try {
-      await dbSetMaterialCost(material, Math.round(parsed * 100) / 100, from, userName, 'manual');
+      await dbSetCatalogCost(kind, material, Math.round(parsed * 100) / 100, from, userName, 'manual');
       onSaved();
     } catch (err: any) {
       setError(`Não foi possível salvar: ${err?.message || err}`);

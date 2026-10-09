@@ -6,70 +6,79 @@ import { localTodayStr } from './serviceOrders';
 import { markSyncStale, syncedList, syncStatus, syncTombstone } from './localSync';
 import { dbGetManagements } from './organization';
 
-// MATERIAIS (coleção "materials"): cada gerência + empresa tem a sua lista (etapa especial E2). Sem controle de estoque.
-// Valor R$ 0,00 = o técnico não pode usar (ex.: saiu da planilha); o material fica para o histórico.
-// Leitura: cópia guardada no aparelho (src/db/localSync.ts) — baixa 1 vez e depois só o que mudou.
+// MATERIAIS (coleção "materials") e INSUMOS (coleção "supplies", Fase 8C): cada gerência + empresa tem a sua lista
+// (etapa especial E2). As duas listas funcionam igual (mesmos campos, mesma tela, mesma importação): "kind" diz qual.
+// Sem controle de estoque. Valor R$ 0,00 = o técnico não pode usar (ex.: saiu da planilha); o item fica para o histórico.
+// Leitura: cópia guardada no aparelho em tempo real (src/db/localSync.ts) — baixa 1 vez e depois só o que mudou.
 // Toda gravação leva syncAt (horário do servidor); excluir registra em syncDeletions.
 
+export type CatalogKind = 'materials' | 'supplies';
+const ID_PREFIX: Record<CatalogKind, string> = { materials: 'mat_', supplies: 'sup_' };
+
 export const materialCodeKey = (c: unknown) => String(c ?? '').trim().toUpperCase();
-export const materialIdOf = (unit: string, company: string, code: string) =>
-  'mat_' + `${unit.trim().toUpperCase()}_${company.trim().toUpperCase()}_${materialCodeKey(code)}`.replace(/[^A-Z0-9_-]/g, '_');
+export const catalogIdOf = (kind: CatalogKind, unit: string, company: string, code: string) =>
+  ID_PREFIX[kind] + `${unit.trim().toUpperCase()}_${company.trim().toUpperCase()}_${materialCodeKey(code)}`.replace(/[^A-Z0-9_-]/g, '_');
+export const materialIdOf = (unit: string, company: string, code: string) => catalogIdOf('materials', unit, company, code);
 
 export function clearMaterialsCache(): void {
   markSyncStale('materials');
 }
 
+const catalogFilters = (unit: string, company?: string): [string, string][] => (company ? [['unit', unit], ['company', company]] : [['unit', unit]]);
+
 // Lista de uma ou mais gerências (null = todas). "company": só a lista daquela empresa
 // (o técnico só pode ler a da empresa dele; índice gerência + empresa + syncAt). force = conferir o que mudou agora.
-export async function dbGetMaterials(units: string[] | null, force = false, company?: string): Promise<Material[]> {
+export async function dbGetCatalog(kind: CatalogKind, units: string[] | null, force = false, company?: string): Promise<Material[]> {
   if (!firebaseActive || !dbInstance) return [];
   const list =
     units === null
       ? (await dbGetManagements().catch(() => [])).map((m) => m.name).filter((n) => n && n !== 'Todas')
       : units;
-  const parts = await Promise.all(
-    list.map((u) => syncedList<Material>('materials', u, company ? [['unit', u], ['company', company]] : [['unit', u]], force))
-  );
+  const parts = await Promise.all(list.map((u) => syncedList<Material>(kind, u, catalogFilters(u, company), force)));
   return parts.flat().sort((a, b) => a.unit.localeCompare(b.unit) || a.description.localeCompare(b.description));
 }
+export const dbGetMaterials = (units: string[] | null, force = false, company?: string) => dbGetCatalog('materials', units, force, company);
 
 // Situação da lista guardada de uma gerência + empresa (para a tela explicar quando vem vazia)
-export function materialsSyncStatus(unit: string, company?: string) {
-  return syncStatus('materials', company ? [['unit', unit], ['company', company]] : [['unit', unit]]);
-}
+export const catalogSyncStatus = (kind: CatalogKind, unit: string, company?: string) => syncStatus(kind, catalogFilters(unit, company));
+export const materialsSyncStatus = (unit: string, company?: string) => catalogSyncStatus('materials', unit, company);
 
-// Cadastro manual (novo ou edição de código/descrição/unidade de medida). O valor muda por dbSetMaterialCost.
-export async function dbSaveMaterial(material: Material): Promise<void> {
+// Cadastro manual (novo ou edição de código/descrição/unidade de medida). O valor muda por dbSetCatalogCost.
+export async function dbSaveCatalogItem(kind: CatalogKind, item: Material): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  await setDoc(doc(dbInstance, 'materials', material.id), { ...cleanUndefined({ ...material, updatedAt: new Date().toISOString() }), syncAt: serverTimestamp() });
-  markSyncStale('materials');
+  await setDoc(doc(dbInstance, kind, item.id), { ...cleanUndefined({ ...item, updatedAt: new Date().toISOString() }), syncAt: serverTimestamp() });
+  markSyncStale(kind);
 }
+export const dbSaveMaterial = (material: Material) => dbSaveCatalogItem('materials', material);
 
 // Exclusão manual (só Super Administrador, para corrigir erro de cadastro).
-// As OS guardam uma cópia do material usado (código, descrição e valor), então o histórico delas não se perde.
-export async function dbDeleteMaterial(materialId: string, unit: string): Promise<void> {
+// As OS guardam uma cópia do que usaram (código, descrição e valor), então o histórico delas não se perde.
+export async function dbDeleteCatalogItem(kind: CatalogKind, itemId: string, unit: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  await deleteDoc(doc(dbInstance, 'materials', materialId));
-  await syncTombstone('materials', unit, materialId); // os aparelhos apagam a cópia local
-  markSyncStale('materials');
+  await deleteDoc(doc(dbInstance, kind, itemId));
+  await syncTombstone(kind, unit, itemId); // os aparelhos apagam a cópia local
+  markSyncStale(kind);
 }
+export const dbDeleteMaterial = (materialId: string, unit: string) => dbDeleteCatalogItem('materials', materialId, unit);
 
-// Novo valor do material a partir de uma data (o anterior fica no histórico)
-export async function dbSetMaterialCost(material: Material, value: number, from: string, setBy: string, reason?: string): Promise<void> {
+// Novo valor a partir de uma data (o anterior fica no histórico)
+export async function dbSetCatalogCost(kind: CatalogKind, item: Material, value: number, from: string, setBy: string, reason?: string): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const now = new Date().toISOString();
-  await setDoc(doc(dbInstance, 'materials', material.id), {
+  await setDoc(doc(dbInstance, kind, item.id), {
     ...cleanUndefined({
-      ...material,
+      ...item,
       cost: value,
       costFrom: from,
-      history: [...(material.history || []), { value, from, setAt: now, setBy, reason }],
+      history: [...(item.history || []), { value, from, setAt: now, setBy, reason }],
       updatedAt: now
     }),
     syncAt: serverTimestamp()
   });
-  markSyncStale('materials');
+  markSyncStale(kind);
 }
+export const dbSetMaterialCost = (material: Material, value: number, from: string, setBy: string, reason?: string) =>
+  dbSetCatalogCost('materials', material, value, from, setBy, reason);
 
 // ===== IMPORTAÇÃO POR GERÊNCIA + EMPRESA =====
 export interface MaterialImportRow {
@@ -81,6 +90,7 @@ export interface MaterialImportRow {
 }
 
 export interface MaterialImportPlan {
+  kind: CatalogKind;
   unit: string;
   company: string;
   toCreate: Material[];
@@ -91,8 +101,15 @@ export interface MaterialImportPlan {
   unchanged: number;
 }
 
-export function planMaterialImport(unit: string, company: string, rows: MaterialImportRow[], existing: Material[], setBy: string): MaterialImportPlan {
-  const plan: MaterialImportPlan = { unit, company, toCreate: [], toUpdate: [], toZero: [], skippedDuplicate: [], skippedInvalid: [], unchanged: 0 };
+export function planMaterialImport(
+  unit: string,
+  company: string,
+  rows: MaterialImportRow[],
+  existing: Material[],
+  setBy: string,
+  kind: CatalogKind = 'materials'
+): MaterialImportPlan {
+  const plan: MaterialImportPlan = { kind, unit, company, toCreate: [], toUpdate: [], toZero: [], skippedDuplicate: [], skippedInvalid: [], unchanged: 0 };
   const now = new Date().toISOString();
   const today = localTodayStr();
   const mine = existing.filter((m) => m.unit === unit && m.company === company);
@@ -110,7 +127,7 @@ export function planMaterialImport(unit: string, company: string, rows: Material
       plan.skippedInvalid.push({ row, reason: 'valor inválido' });
       continue;
     }
-    const id = materialIdOf(unit, company, code);
+    const id = catalogIdOf(kind, unit, company, code);
     if (seen.has(id)) {
       plan.skippedDuplicate.push(row);
       continue;
@@ -171,8 +188,8 @@ async function dbApplyMaterialImportNow(plan: MaterialImportPlan): Promise<void>
   const writes: Material[] = [...plan.toCreate, ...plan.toUpdate.map((u) => u.after), ...plan.toZero];
   for (let i = 0; i < writes.length; i += 400) {
     const batch = writeBatch(db);
-    writes.slice(i, i + 400).forEach((m) => batch.set(doc(db, 'materials', m.id), { ...cleanUndefined(m), syncAt: serverTimestamp() }));
+    writes.slice(i, i + 400).forEach((m) => batch.set(doc(db, plan.kind, m.id), { ...cleanUndefined(m), syncAt: serverTimestamp() }));
     await batch.commit();
   }
-  markSyncStale('materials');
+  markSyncStale(plan.kind);
 }

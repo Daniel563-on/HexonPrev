@@ -253,6 +253,22 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'cadastros',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
+  view_supplies: {
+    id: 'view_supplies',
+    name: 'Ver insumos',
+    description: 'Acesso à Gestão de Insumos (gerências do perfil).',
+    category: 'Abas',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  manage_supplies: {
+    id: 'manage_supplies',
+    name: 'Cadastrar e importar insumos',
+    description: 'Cadastrar, editar, alterar o valor e importar a planilha de insumos das gerências do perfil.',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   view_costs: {
     id: 'view_costs',
     name: 'Ver valores em R$',
