@@ -85,6 +85,20 @@ if (typeof window !== 'undefined') {
 
 // QR Code externo (?public_asset=...): carrega SÓ a página pública, sem baixar o sistema inteiro
 // (painéis, gráficos, Excel, PDF...). Fica muito mais rápido no celular.
+// iPhone (P39): quando a página "sai" (ex.: um arquivo aberto na mesma tela), o banco do Firebase se desliga até
+// recarregar. Se o app volta a aparecer depois disso, recarrega sozinho em vez de ficar travado
+// (o preenchimento da preventiva fica guardado no aparelho).
+let pageLeft = false;
+const reloadIfLeft = () => {
+  if (pageLeft) window.location.reload();
+};
+window.addEventListener('pagehide', () => {
+  pageLeft = true;
+});
+window.addEventListener('pageshow', (e) => (e.persisted ? window.location.reload() : reloadIfLeft()));
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reloadIfLeft());
+window.addEventListener('focus', reloadIfLeft);
+
 const root = createRoot(document.getElementById('root')!);
 const params = new URLSearchParams(window.location.search);
 const publicAssetParam = params.get('public_asset') || params.get('asset_id') || params.get('patrimonio');
@@ -116,7 +130,7 @@ if (validationToken) {
     );
   });
 } else {
-  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner'), import('./components/GuardBanner')]).then(([{ default: App }, { default: AppUpdateBanner }, { default: GuardBanner }]) => {
+  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner'), import('./components/GuardBanner'), import('./components/PdfReadySheet')]).then(([{ default: App }, { default: AppUpdateBanner }, { default: GuardBanner }, { default: PdfReadySheet }]) => {
     root.render(
       <StrictMode>
         <App />
@@ -124,6 +138,8 @@ if (validationToken) {
         <AppUpdateBanner />
         {/* Aviso do disjuntor do banco (uso anormal) */}
         <GuardBanner />
+        {/* Celular: "PDF pronto" com o menu de compartilhar (P39) */}
+        <PdfReadySheet />
       </StrictMode>
     );
   });
