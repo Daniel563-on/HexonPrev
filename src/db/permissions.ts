@@ -11,6 +11,7 @@ import {
 // CATÁLOGO DE PERMISSÕES (Hexon 2.0, Fase 2), organizado por área na tela de perfis.
 // Os ids antigos continuam os mesmos (as regras do banco usam view_materials, manage_materials, manage_templates,
 // view_costs, dispatch_orders e delete_templates). "soon" = módulo ainda em construção: aparece na tela, sem efeito.
+// As permissões valem no computador; as que também valem no celular do técnico dizem isso na descrição.
 export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_service_orders: {
     id: 'view_service_orders',
@@ -39,7 +40,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   execute_order: {
     id: 'execute_order',
     name: 'Executar checklist das preventivas',
-    description: 'Iniciar a preventiva e preencher o checklist.',
+    description: 'Computador: iniciar a preventiva e preencher o checklist. No celular, o técnico sempre executa as preventivas atribuídas a ele.',
     category: 'Ações',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
@@ -47,7 +48,15 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   sign_order: {
     id: 'sign_order',
     name: 'Assinar e concluir preventivas',
-    description: 'Colher a assinatura e concluir a preventiva.',
+    description: 'Computador: colher a assinatura e concluir a preventiva. No celular, o técnico sempre conclui as preventivas atribuídas a ele.',
+    category: 'Ações',
+    area: 'preventiva',
+    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
+  },
+  preventive_pdf: {
+    id: 'preventive_pdf',
+    name: 'Baixar PDF da preventiva',
+    description: 'Computador e celular: botão PDF da preventiva — o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão (checklist, execução e assinatura). Sem valores em R$.',
     category: 'Ações',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
@@ -135,7 +144,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_client_link: {
     id: 'os_client_link',
     name: 'Enviar link de validação ao cliente',
-    description: 'Gerar, copiar e enviar por e-mail o link para o cliente validar ou contestar a OS (quem não tem não vê o link). Assinar no celular do técnico não depende desta permissão.',
+    description: 'Computador e celular: gerar, copiar e enviar por e-mail o link para o cliente validar ou contestar a OS (quem não tem não vê o link). Assinar no celular do técnico não depende desta permissão.',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -148,15 +157,6 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
-  os_execute: {
-    id: 'os_execute',
-    name: 'Executar OS',
-    description: 'Preencher a execução da OS.',
-    category: 'Ações',
-    area: 'os',
-    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false },
-    soon: 'Fase 5'
-  },
   os_templates: {
     id: 'os_templates',
     name: 'Criar e editar modelos de OS',
@@ -167,8 +167,16 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   },
   os_export: {
     id: 'os_export',
-    name: 'Exportar OS (planilha / PDF)',
-    description: 'Na ficha da OS: baixar o PDF (mapeado do modelo ou o padrão) e a ficha em planilha. Exportar várias OS de uma vez chega na Fase 6.',
+    name: 'Exportar OS (planilha e backup ZIP)',
+    description: 'Computador: ficha da OS em planilha (XLSX), exportar a planilha da lista e o backup das concluídas em ZIP.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  os_pdf: {
+    id: 'os_pdf',
+    name: 'Baixar PDF da OS',
+    description: 'Computador (ficha da OS) e celular do técnico (botão PDF na OS): o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão. Sem valores em R$.',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -296,7 +304,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_costs: {
     id: 'view_costs',
     name: 'Ver valores em R$',
-    description: 'Ver valores em reais: homem-hora, pernoite e materiais (telas e relatórios).',
+    description: 'Computador e celular: ver valores em reais (homem-hora, hora extra, pernoite, materiais e insumos) nas telas e relatórios. Sem ela, o técnico não vê o custo da preventiva no celular.',
     category: 'Ações',
     area: 'valores',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -316,7 +324,9 @@ export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: strin
 // (assim ninguém perde nem ganha acesso na troca)
 export const DERIVED_PERMISSIONS: Record<string, string> = {
   view_pmoc_planning: 'view_service_orders',
-  plan_orders: 'view_service_orders'
+  plan_orders: 'view_service_orders',
+  preventive_pdf: 'execute_order', // ajustes da etapa 8: quem executa o checklist já vem podendo baixar o PDF
+  os_pdf: 'os_export'               // o PDF da OS saiu de "Exportar OS": quem exportava continua baixando o PDF
 };
 
 let cachePermissions: { [key: string]: SystemPermission } | null = null;

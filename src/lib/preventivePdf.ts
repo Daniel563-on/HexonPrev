@@ -179,7 +179,7 @@ export async function generatePreventiveStandardPdf(d: PreventivePdfData): Promi
       page.drawText(String(i + 1), { x: cols[0].x + 3, y: top - size - 2, size, font: bold, color: SOFT });
       q.forEach((ln, k) => page.drawText(ln, { x: cols[1].x + 3, y: top - size - 2 - k * lh, size, font: regular, color: INK }));
       r.forEach((ln, k) => page.drawText(ln, { x: cols[2].x + 3, y: top - size - 2 - k * lh, size, font: bold, color: a.color }));
-      n.forEach((ln, k) => page.drawText(ln, { x: cols[3].x + 3, y: top - 8 - 2 - k * lh, size, 8, font: regular, color: SOFT }));
+      n.forEach((ln, k) => page.drawText(ln, { x: cols[3].x + 3, y: top - 8 - 2 - k * lh, size: 8, font: regular, color: SOFT }));
       y -= rowH;
       page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE });
     });

@@ -43,7 +43,8 @@ interface Props {
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean;
-  canExport: boolean;
+  canExport: boolean; // "Exportar OS (planilha e backup ZIP)"
+  canPdf: boolean;    // "Baixar PDF da OS" (ficha)
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null;
 }
@@ -54,7 +55,7 @@ const EXPORT_MAX = 2000;
 const field = 'h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white';
 const label = 'block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5';
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole }: Props) {
   const [signView, setSignView] = useState(false); // "Precisam da minha assinatura"
   const [unit, setUnit] = useState<string>(() => {
     try {
@@ -575,6 +576,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           canReplyContest={canReplyContest}
           canClientLink={canClientLink}
           canExport={canExport}
+          canPdf={canPdf}
           canViewCosts={canViewCosts}
           mySignRole={mySignRole}
           onClose={() => setSelected(null)}

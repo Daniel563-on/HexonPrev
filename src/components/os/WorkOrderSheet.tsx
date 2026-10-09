@@ -42,7 +42,8 @@ interface Props {
   canCancel: boolean;
   canReplyContest: boolean;
   canClientLink: boolean; // "Enviar link de validação ao cliente"
-  canExport: boolean; // "Exportar OS (planilha / PDF)"
+  canExport: boolean; // "Exportar OS (planilha e backup ZIP)": ficha em planilha
+  canPdf: boolean;    // "Baixar PDF da OS"
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
   onClose: () => void;
@@ -52,7 +53,7 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canEdit = false, canCancel, canReplyContest, canClientLink, canExport, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canEdit = false, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
@@ -427,15 +428,15 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
               {canAssign && o.status === 'Pendente' && (
                 <button type="button" onClick={() => run(() => dbResumeWorkOrder(o, userProfile.name))} disabled={busy} className="h-9 px-4 rounded-lg border border-orange-300 text-orange-700 text-xs font-black cursor-pointer disabled:opacity-50">Retomar</button>
               )}
+              {canPdf && (
+                <button type="button" onClick={downloadPdf} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                  <FileDown className="w-4 h-4" /> {exporting === 'pdf' ? 'Gerando...' : 'PDF'}
+                </button>
+              )}
               {canExport && (
-                <>
-                  <button type="button" onClick={downloadPdf} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-                    <FileDown className="w-4 h-4" /> {exporting === 'pdf' ? 'Gerando...' : 'PDF'}
-                  </button>
-                  <button type="button" onClick={downloadXlsx} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-                    <FileSpreadsheet className="w-4 h-4" /> {exporting === 'xlsx' ? 'Gerando...' : 'Ficha (XLSX)'}
-                  </button>
-                </>
+                <button type="button" onClick={downloadXlsx} disabled={!!exporting} className="h-9 px-4 rounded-lg border border-slate-300 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                  <FileSpreadsheet className="w-4 h-4" /> {exporting === 'xlsx' ? 'Gerando...' : 'Ficha (XLSX)'}
+                </button>
               )}
               {canCancel && open && (
                 <button type="button" onClick={() => setAction('cancel')} className="h-9 px-4 rounded-lg border border-rose-300 text-rose-700 text-xs font-black cursor-pointer">Cancelar OS</button>
