@@ -1,4 +1,4 @@
-import { QueryDocumentSnapshot, collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, startAfter, where } from './guard';
+import { QueryDocumentSnapshot, collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from './guard';
 import { OsSignatureRole, WorkOrder, WorkOrderStatus } from '../types';
 import { osStatusLabel } from './workOrderSign';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
@@ -99,6 +99,29 @@ export async function dbGetOsCounters(unit: string, cos: string[] | null = null)
     checkQuotaException(err);
     throw err;
   }
+}
+
+// Mudanças nas OS da gerência a partir de agora (números do painel em tempo real; ajustes da etapa 8).
+// Abrir não lê nada antigo: só chegam as OS gravadas depois de "since" (updatedAt), 1 leitura por OS que mudar.
+// Índice: workOrders unit + updatedAt. A 1ª resposta (o que já estava no intervalo) é ignorada.
+export function subscribeWorkOrderChanges(unit: string, sinceIso: string, onChange: (changed: WorkOrder[]) => void): () => void {
+  if (!unit || !firebaseActive || !dbInstance) return () => {};
+  let first = true;
+  return onSnapshot(
+    query(collection(dbInstance, 'workOrders'), where('unit', '==', unit), where('updatedAt', '>=', sinceIso)),
+    (snap) => {
+      if (first) {
+        first = false;
+        return;
+      }
+      const changed = snap.docChanges().filter((c) => c.type !== 'removed').map((c) => ({ ...(c.doc.data() as WorkOrder), id: c.doc.id }));
+      if (changed.length) onChange(changed);
+    },
+    (err) => {
+      console.warn('Não foi possível acompanhar as mudanças das OS:', err);
+      checkQuotaException(err);
+    }
+  );
 }
 
 // Busca: nº da OS (abre direto) ou nº do GLPI (na gerência escolhida)

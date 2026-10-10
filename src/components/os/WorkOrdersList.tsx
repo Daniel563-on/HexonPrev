@@ -20,6 +20,7 @@ import {
   dbGetUsers,
   dbGetWorkOrderCostSummary,
   dbListWorkOrders,
+  subscribeWorkOrderChanges,
   monthStartStr,
   runBulk,
   todayStr
@@ -116,7 +117,10 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
 
   const modeKey = (m: OsListMode) => `${unit}|${cosKey}|${JSON.stringify(m)}`;
 
-  const loadFirst = (m: OsListMode = mode) => {
+  // Primeira página de cada filtro guardada enquanto a tela está aberta: voltar a um card já visto não lê de novo.
+  // Qualquer mudança nas OS da gerência apaga a guarda; "Atualizar" sempre lê (ajustes da etapa 8)
+  const pageCache = useRef(new Map<string, { items: WorkOrder[]; cursor: any; hasMore: boolean }>());
+  const loadFirst = (m: OsListMode = mode, force = false) => {
     const key = modeKey(m);
     current.current = key;
     setPages([]);
@@ -124,21 +128,78 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setError(null);
     setFound(null);
     if (!unit) return;
+    const hit = force ? undefined : pageCache.current.get(key);
+    if (hit) {
+      setPages([hit]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     dbListWorkOrders(unit, m, null, undefined, cos)
-      .then((p) => current.current === key && setPages([p]))
+      .then((p) => {
+        pageCache.current.set(key, p);
+        if (current.current === key) setPages([p]);
+      })
       .catch((e) => current.current === key && setError(`Não foi possível carregar: ${e?.message || e}`))
       .finally(() => current.current === key && setLoading(false));
   };
-  const loadCounters = () => {
+  // quiet: recontagem em segundo plano (mantém os números na tela até chegarem os novos)
+  const loadCounters = (quiet = false) => {
     if (!unit) return;
-    setCounters(null);
-    dbGetOsCounters(unit, cos).then(setCounters).catch(() => setCounters(null));
+    if (!quiet) setCounters(null);
+    dbGetOsCounters(unit, cos)
+      .then(setCounters)
+      .catch(() => !quiet && setCounters(null));
   };
   const refresh = () => {
-    loadFirst();
+    loadFirst(mode, true);
     loadCounters();
   };
+
+  // NÚMEROS DOS CARDS EM TEMPO REAL (ajustes da etapa 8): escuta só as OS da gerência que mudarem depois de abrir a
+  // tela. Mudou: refaz as contagens (junta as mudanças de 3 s), atualiza a linha na tela e apaga a guarda das páginas.
+  // Margem de 10 min no início para pegar aparelho com o relógio um pouco atrasado.
+  const loadCountersRef = useRef(loadCounters);
+  loadCountersRef.current = loadCounters;
+  const cosRef = useRef(cos);
+  cosRef.current = cos;
+  const [costVersion, setCostVersion] = useState(0);
+  const costLoading = useRef(new Set<string>()); // valores sendo calculados
+  const costStale = useRef(new Set<string>()); // mudaram durante o cálculo: calcular de novo
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!unit) return;
+    let timer: number | undefined;
+    const stop = subscribeWorkOrderChanges(unit, new Date(Date.now() - 10 * 60000).toISOString(), (changed) => {
+      const cs = cosRef.current;
+      const mine = cs ? changed.filter((o) => cs.includes(o.company || '')) : changed;
+      if (!mine.length) return;
+      pageCache.current.clear();
+      const byId = new Map(mine.map((o) => [o.id, o]));
+      const patchList = (list: WorkOrder[]) => list.map((o) => byId.get(o.id) || o);
+      setPages((prev) => prev.map((p) => ({ ...p, items: patchList(p.items) })));
+      setFound((prev) => (prev ? patchList(prev) : prev));
+      mine.forEach((o) => costLoading.current.has(o.id) && costStale.current.add(o.id));
+      setCosts((prev) => {
+        const n = { ...prev };
+        mine.forEach((o) => delete n[o.id]);
+        return n;
+      });
+      setCostVersion((v) => v + 1);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => loadCountersRef.current(true), 3000);
+    });
+    return () => {
+      stop();
+      window.clearTimeout(timer);
+    };
+  }, [unit]);
 
   useEffect(() => {
     try {
@@ -234,21 +295,26 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   const intervOptions = useMemo(() => Array.from(new Set(baseItems.map((o) => o.intervencao).filter(Boolean) as string[])).sort(), [baseItems]);
   const items = baseItems.filter((o) => (!interv || o.intervencao === interv) && (!onlyLate || isOverdue(o)));
 
-  // Valores das OS que aparecem (concluída: custo gravado; em aberto: parcial)
+  // Valores das OS que aparecem (concluída: custo gravado; em aberto: parcial). Um cálculo por OS de cada vez; o que
+  // está em andamento não é cancelado (com as mudanças em tempo real ele recomeçaria sem parar). Se a OS mudou durante o
+  // cálculo, o resultado antigo é descartado e ela é calculada de novo.
   useEffect(() => {
     if (!canViewCosts) return;
-    let alive = true;
     items
-      .filter((o) => o.assignedAt && !(o.id in costs))
+      .filter((o) => o.assignedAt && !(o.id in costs) && !costLoading.current.has(o.id))
       .forEach((o) => {
+        costLoading.current.add(o.id);
         dbGetWorkOrderCostSummary(o)
-          .then((c) => alive && setCosts((p) => ({ ...p, [o.id]: c })))
-          .catch(() => alive && setCosts((p) => ({ ...p, [o.id]: null })));
+          .then((c) => ({ c }))
+          .catch(() => ({ c: null }))
+          .then(({ c }) => {
+            costLoading.current.delete(o.id);
+            if (!mounted.current) return;
+            if (costStale.current.delete(o.id)) return setCostVersion((v) => v + 1);
+            setCosts((p) => ({ ...p, [o.id]: c }));
+          });
       });
-    return () => {
-      alive = false;
-    };
-  }, [items.map((o) => o.id).join('|'), canViewCosts]);
+  }, [items.map((o) => o.id).join('|'), canViewCosts, costVersion]);
 
   // ===== Atribuir técnico =====
   const openAssign = async (o: WorkOrder) => {
