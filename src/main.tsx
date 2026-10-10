@@ -1,6 +1,8 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import './index.css';
+// App instalável (PWA): guarda o pedido de instalação do navegador para o botão "Instalar aplicativo"
+import './lib/installApp';
 
 // Intercept and suppress noisy browser extension/MetaMask console errors in the iframe
 if (typeof window !== 'undefined') {

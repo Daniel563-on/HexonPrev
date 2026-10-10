@@ -5,6 +5,7 @@ import { HexonUser } from '../types';
 import { User, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Cloud } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 import BrandBackground from './BrandBackground';
+import InstallAppButton from './InstallAppButton';
 import { brandTagline, brandTopText, useBranding } from '../db/branding';
 
 interface LoginViewProps {
@@ -255,6 +256,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </button>
           </form>
         </div>
+
+        {/* App instalável (PWA): celular, ou computador quando o navegador liberar */}
+        <InstallAppButton variant="login" />
 
         {/* RODAPÉ */}
         <div className="mt-8 flex flex-col items-center gap-2 text-[10px] tracking-[0.2em] text-slate-300/70 uppercase text-center">
