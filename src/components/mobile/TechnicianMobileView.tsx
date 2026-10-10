@@ -49,6 +49,7 @@ import OsExecutionForm from '../os/OsExecutionForm';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 import BrandLogo from '../BrandLogo';
 import LoadTimesCard from './LoadTimesCard';
+import InstallAppButton from '../InstallAppButton';
 
 export interface TechnicianMobileViewProps {
   orders: ServiceOrder[];
@@ -1190,6 +1191,9 @@ export default function TechnicianMobileView({
               </button>
             </div>
           </div>
+
+          {/* Section: App instalável (PWA) — some quando o app já foi aberto pelo ícone */}
+          <InstallAppButton variant="profile" darkMode={darkMode} />
 
           {/* Section: Equipe habitual (Etapa 6.2): entra como participante ao iniciar uma OS */}
           {userProfile.matricula && userProfile.gerencia && userProfile.gerencia !== 'Todas' && (
