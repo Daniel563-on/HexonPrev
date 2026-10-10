@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   QueryDocumentSnapshot,
@@ -453,6 +454,24 @@ export async function dbGetMyWorkOrders(matricula: string): Promise<WorkOrder[]>
     checkQuotaException(err);
     throw err;
   }
+}
+
+// Minhas OS em tempo real (ajustes da etapa 8): a lista fica pronta no celular (trocar de aba é instantâneo) e a OS
+// atribuída pelo escritório aparece sozinha. 1 leitura por OS ao abrir o app; depois, só as que mudam.
+export function subscribeMyWorkOrders(matricula: string, onChange: (list: WorkOrder[]) => void): () => void {
+  if (!firebaseActive || !dbInstance || !matricula) {
+    onChange([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(collection(dbInstance, 'workOrders'), where('techOpen', '==', matricula)),
+    (snap) => onChange(snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id })).sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
+    (err) => {
+      console.warn('Não foi possível acompanhar as OS do técnico:', err);
+      checkQuotaException(err);
+      onChange([]);
+    }
+  );
 }
 
 // O técnico salva o que preencheu (respostas, equipe, materiais, feriados, hora extra, pernoite)

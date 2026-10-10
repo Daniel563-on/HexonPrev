@@ -1,5 +1,6 @@
 import { QueryDocumentSnapshot, collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, startAfter, where } from './guard';
-import { WorkOrder, WorkOrderStatus } from '../types';
+import { OsSignatureRole, WorkOrder, WorkOrderStatus } from '../types';
+import { osStatusLabel } from './workOrderSign';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 
 // LISTA E ACOMPANHAMENTO DAS OS (Fase 6): busca, filtros, contadores e as consultas da exportação.
@@ -13,9 +14,16 @@ import { firebaseActive, dbInstance, checkQuotaException } from './core';
 export const OS_LIST_PAGE = 20;
 export const OS_OPEN_STATUSES: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente'];
 export const OS_ALL_STATUSES: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente', 'Aguardando assinaturas', 'Contestada', 'Concluída', 'Cancelada'];
+// Filtro de situação: "Aguardando assinaturas" separada por quem falta assinar (campo nextSigner, que só existe
+// enquanto a OS espera assinatura). Índices: unit+nextSigner+createdAt e unit+company+nextSigner+createdAt (esparsos).
+export type OsStatusFilter = WorkOrderStatus | `sign:${OsSignatureRole}`;
+export const OS_SIGN_FILTERS: OsStatusFilter[] = ['sign:cliente', 'sign:engenheiro', 'sign:gerente'];
+export const OS_FILTER_STATUSES: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada', 'Concluída', 'Cancelada'];
+export const osFilterLabel = (s: OsStatusFilter): string =>
+  s.startsWith('sign:') ? osStatusLabel({ status: 'Aguardando assinaturas', nextSigner: s.slice(5) }) : s;
 
 export type OsListMode =
-  | { kind: 'filter'; status?: WorkOrderStatus; tech?: string; from?: string; to?: string } // datas AAAA-MM-DD (abertura)
+  | { kind: 'filter'; status?: OsStatusFilter; tech?: string; from?: string; to?: string } // datas AAAA-MM-DD (abertura)
   | { kind: 'late' } // atrasadas: prazo passou e ainda em aberto
   | { kind: 'closed'; from: string; to: string }; // concluídas no período (data da conclusão)
 
@@ -43,7 +51,8 @@ function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
   } else if (mode.kind === 'closed') {
     p.push(where('status', '==', 'Concluída'), where('closedAt', '>=', startOf(mode.from)), where('closedAt', '<=', endOf(mode.to)), orderBy('closedAt', 'desc'));
   } else {
-    if (mode.status) p.push(where('status', '==', mode.status));
+    if (mode.status?.startsWith('sign:')) p.push(where('nextSigner', '==', mode.status.slice(5)));
+    else if (mode.status) p.push(where('status', '==', mode.status));
     else if (mode.tech) p.push(where('assignedTechnicianMatricula', '==', mode.tech));
     if (mode.from) p.push(where('createdAt', '>=', startOf(mode.from)));
     if (mode.to) p.push(where('createdAt', '<=', endOf(mode.to)));
@@ -76,14 +85,14 @@ export async function dbCountWorkOrders(unit: string, mode: OsListMode, cos: str
 }
 
 export interface OsCounters {
-  byStatus: Partial<Record<WorkOrderStatus, number>>;
+  byStatus: Partial<Record<OsStatusFilter, number>>;
   late: number;
   closedMonth: number;
   total: number;
 }
 // Painel: por situação (abertas e em assinatura), atrasadas e concluídas no mês
 export async function dbGetOsCounters(unit: string, cos: string[] | null = null): Promise<OsCounters> {
-  const shown: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente', 'Aguardando assinaturas', 'Contestada'];
+  const shown: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada'];
   try {
     const [counts, late, closedMonth, total] = await Promise.all([
       Promise.all(shown.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }, cos))),
@@ -91,7 +100,7 @@ export async function dbGetOsCounters(unit: string, cos: string[] | null = null)
       dbCountWorkOrders(unit, { kind: 'closed', from: monthStartStr(), to: todayStr() }, cos),
       dbCountWorkOrders(unit, { kind: 'filter' }, cos)
     ]);
-    const byStatus: Partial<Record<WorkOrderStatus, number>> = {};
+    const byStatus: Partial<Record<OsStatusFilter, number>> = {};
     shown.forEach((s, i) => (byStatus[s] = counts[i]));
     return { byStatus, late, closedMonth, total };
   } catch (err: any) {

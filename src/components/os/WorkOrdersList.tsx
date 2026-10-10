@@ -4,7 +4,11 @@ import { Company, HexonUser, WorkOrder, WorkOrderStatus } from '../../types';
 import {
   companiesOfUnit,
   dbGetCompanies,
-  OS_ALL_STATUSES,
+  OS_FILTER_STATUSES,
+  OS_SIGN_FILTERS,
+  OsStatusFilter,
+  osFilterLabel,
+  osStatusLabel,
   OS_LIST_PAGE,
   OsCounters,
   OsListMode,
@@ -67,7 +71,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     return unitOptions[0] || '';
   });
   // Filtros do banco
-  const [status, setStatus] = useState<WorkOrderStatus | ''>('');
+  const [status, setStatus] = useState<OsStatusFilter | ''>('');
   const [tech, setTech] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -185,7 +189,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setMode(m);
     loadFirst(m);
   };
-  const pickCounter = (m: OsListMode, st: WorkOrderStatus | '' = '') => {
+  const pickCounter = (m: OsListMode, st: OsStatusFilter | '' = '') => {
     setStatus(st);
     setTech('');
     setFrom('');
@@ -333,7 +337,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   };
   const statusBadge = (o: WorkOrder) => (
     <>
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || 'bg-slate-100'}`}>{o.status}</span>
+      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || 'bg-slate-100'}`}>{osStatusLabel(o)}</span>
       {isOverdue(o) && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-600 text-white">ATRASADA</span>}
     </>
   );
@@ -400,8 +404,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           {/* Painel de acompanhamento */}
           <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Painel de acompanhamento">
             {chip('Todas', counters?.total, isMode('filter', '') && !tech && !from && !to, () => pickCounter({ kind: 'filter' }))}
-            {(['Nova', 'Em andamento', 'Pendente', 'Aguardando assinaturas', 'Contestada'] as WorkOrderStatus[]).map((s) =>
-              chip(s === 'Aguardando assinaturas' ? 'Aguardando assinaturas' : s === 'Nova' ? 'Novas' : s === 'Pendente' ? 'Pendentes' : s === 'Contestada' ? 'Contestadas' : s, counters?.byStatus[s], isMode('filter', s), () => pickCounter({ kind: 'filter', status: s }, s), s === 'Contestada' ? 'text-rose-700' : 'text-slate-800')
+            {(['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada'] as OsStatusFilter[]).map((s) =>
+              chip(s === 'Nova' ? 'Novas' : s === 'Pendente' ? 'Pendentes' : s === 'Contestada' ? 'Contestadas' : osFilterLabel(s), counters?.byStatus[s], isMode('filter', s), () => pickCounter({ kind: 'filter', status: s }, s), s === 'Contestada' ? 'text-rose-700' : 'text-slate-800')
             )}
             {chip('Atrasadas', counters?.late, isMode('late'), () => pickCounter({ kind: 'late' }), 'text-rose-600')}
             {chip('Concluídas no mês', counters?.closedMonth, isMode('closed'), () => pickCounter({ kind: 'closed', from: monthStartStr(), to: todayStr() }), 'text-emerald-700')}
@@ -421,8 +425,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 <span className={label}>Situação</span>
                 <select value={status} onChange={(e) => { setStatus(e.target.value as any); if (e.target.value) setTech(''); }} className={field} aria-label="Situação">
                   <option value="">Todas</option>
-                  {OS_ALL_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {OS_FILTER_STATUSES.map((s) => (
+                    <option key={s} value={s}>{osFilterLabel(s)}</option>
                   ))}
                 </select>
               </label>

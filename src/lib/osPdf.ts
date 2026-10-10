@@ -11,7 +11,8 @@ import {
   orderSuppliesText,
   osAnswerText,
   osFieldVisible,
-  osMembers
+  osMembers,
+  osStatusLabel
 } from '../db/firebase';
 import { deliverBytes, deliverFile } from './fileDelivery';
 
@@ -135,7 +136,7 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
     case 'empresa':
       return { text: d.companyName || '' };
     case 'status':
-      return { text: o.status };
+      return { text: osStatusLabel(o) };
     case 'intervencao':
       return { text: o.intervencao || '' };
     case 'glpi':
@@ -358,7 +359,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
   // Cabeçalho
   page.drawText(safe(`ORDEM DE SERVIÇO ${o.number}`, bold), { x: M, y: y - 16, size: 16, font: bold, color: ink });
   y -= 22;
-  text(`${o.intervencao || 'OS'} · modelo ${o.templateName} · gerência ${o.unit}${d.companyName ? ` · empresa ${d.companyName}` : ''} · situação: ${o.status}`, M, 9, regular, soft);
+  text(`${o.intervencao || 'OS'} · modelo ${o.templateName} · gerência ${o.unit}${d.companyName ? ` · empresa ${d.companyName}` : ''} · situação: ${osStatusLabel(o)}`, M, 9, regular, soft);
   y -= 4;
 
   section('Dados da OS');
