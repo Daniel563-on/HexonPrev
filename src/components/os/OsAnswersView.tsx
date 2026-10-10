@@ -17,8 +17,9 @@ export const STATUS_STYLE: Record<string, string> = {
 export const dayBR = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—');
 
 // Atrasada: passou do prazo e ainda não foi concluída nem cancelada
+// Atrasada: prazo passou e o técnico ainda não executou (antes da assinatura dele; depois disso não conta)
 export const isOverdue = (o: WorkOrder) => {
-  if (!o.deadline || o.status === 'Concluída' || o.status === 'Cancelada') return false;
+  if (!o.deadline || o.techSignedAt || o.status === 'Concluída' || o.status === 'Cancelada') return false;
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
   return o.deadline < `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;

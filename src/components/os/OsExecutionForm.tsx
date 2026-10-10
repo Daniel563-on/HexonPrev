@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, FileDown, Link2, Mail, MessageSquareReply, PauseCircle, PenTool, PlayCircle, Save } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, FileDown, Link2, Mail, MessageSquarePlus, MessageSquareReply, PauseCircle, PenTool, PlayCircle } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, WorkOrder, WorkOrderExec } from '../../types';
 import {
   OS_SIGN_LABEL,
   dbConcludeWorkOrder,
+  dbAddWorkOrderNote,
   dbCreateOsValidation,
   dbGetAddresses,
   dbPauseWorkOrder,
   dbResumeWorkOrder,
-  dbSaveWorkOrderExec,
   dbSignClient,
   osAnswerText,
   osFieldVisible,
@@ -27,7 +27,7 @@ import OsContestReplyModal from './OsContestReplyModal';
 import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 
-// EXECUÇÃO DA OS PELO TÉCNICO (celular): perguntas de Execução do modelo, equipe, materiais, feriados,
+// EXECUÇÃO DA OS PELO TÉCNICO (celular): perguntas de Execução do modelo (na ordem do modelo), equipe, materiais, feriados,
 // hora extra e pernoite. Salvar grava no banco; o próximo técnico (se a OS for passada) continua daqui.
 // Pendente = pausa com motivo (o tempo parado não conta). Concluir = o técnico assina (o homem-hora para);
 // depois o cliente assina no celular ou recebe o link de validação. Depois da assinatura do técnico nada muda:
@@ -62,13 +62,16 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     };
   };
   const [exec, setExec] = useState<WorkOrderExec>(initial);
-  const [dirty, setDirty] = useState(false);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [showCreation, setShowCreation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [pausing, setPausing] = useState(false);
-  const [reason, setReason] = useState('');
+  // Pendente e Acompanhamento (ajustes da etapa 8): caixa no meio da tela, texto obrigatório; ao salvar, aviso e volta
+  // para a lista. A execução não é salva no meio do caminho: só vai para o banco ao Concluir.
+  const [dialog, setDialog] = useState<'pendente' | 'acompanhamento' | null>(null);
+  const [dialogText, setDialogText] = useState('');
+  const [dialogErr, setDialogErr] = useState('');
+  const [done, setDone] = useState('');
 
   // Contestada antes desta mudança (sem a assinatura do técnico guardada): ainda corrige e conclui de novo
   const oldContest = order.status === 'Contestada' && !order.techSignedAt;
@@ -89,17 +92,26 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
 
   const patch = (p: Partial<WorkOrderExec>) => {
     setExec((prev) => ({ ...prev, ...p }));
-    setDirty(true);
     setMsg(null);
   };
   const setAnswer = (id: string, v: any) => patch({ answers: { ...exec.answers, [id]: v } });
 
-  const showsTeam = items.some((it) => it.kind === 'system' && it.sys.key === 'equipe');
-  const showsMaterials = items.some((it) => it.kind === 'system' && it.sys.key === 'materiais');
-  const execQuestions = useMemo(
-    () => items.filter((it) => it.kind === 'field' && osFieldVisible(it.field, fields, exec.answers)),
-    [items, fields, exec.answers]
-  );
+  // Execução na ordem do modelo: perguntas em sequência ficam no mesmo cartão; Equipe e Materiais no lugar deles.
+  // Responsável (já entra na equipe), Pendência (botão Pendente) e Homem-hora (calculado) não viram campo.
+  type ExecBlock = { kind: 'fields'; fields: typeof fields } | { kind: 'system'; key: 'equipe' | 'materiais' };
+  const execBlocks = useMemo(() => {
+    const out: ExecBlock[] = [];
+    items.forEach((it) => {
+      if (it.kind === 'field') {
+        if (!osFieldVisible(it.field, fields, exec.answers)) return;
+        const last = out[out.length - 1];
+        if (last?.kind === 'fields') last.fields.push(it.field);
+        else out.push({ kind: 'fields', fields: [it.field] });
+      } else if (it.sys.key === 'equipe' || it.sys.key === 'materiais') out.push({ kind: 'system', key: it.sys.key });
+    });
+    return out;
+  }, [items, fields, exec.answers]);
+  const firstFields = execBlocks.findIndex((b) => b.kind === 'fields');
 
   // Confere e monta o que vai para o banco (null = algo a corrigir; a mensagem já aparece)
   const prepare = (): WorkOrderExec | null => {
@@ -127,34 +139,29 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     return { ...exec, answers, materials: exec.materials.filter((m) => m.qty > 0) };
   };
 
-  const save = async () => {
-    const toSave = prepare();
-    if (!toSave) return;
-    setBusy(true);
+  const openDialog = (d: 'pendente' | 'acompanhamento') => {
+    setDialog(d);
+    setDialogText('');
+    setDialogErr('');
     setMsg(null);
-    try {
-      await dbSaveWorkOrderExec(order, toSave, userProfile.name, !order.exec);
-      const updated: WorkOrder = { ...order, exec: { ...toSave, updatedAt: new Date().toISOString(), updatedBy: userProfile.name } };
-      setDirty(false);
-      setMsg({ ok: true, text: navigator.onLine === false ? 'Salvo no aparelho: vai para o banco quando a internet voltar.' : 'Execução salva.' });
-      onChanged(updated);
-    } catch (err: any) {
-      setMsg({ ok: false, text: err?.code === 'permission-denied' ? 'O banco recusou: esta OS não está mais com você.' : `Não foi possível salvar: ${err?.message || err}` });
-    } finally {
-      setBusy(false);
-    }
   };
-
-  const pause = async () => {
-    if (!reason.trim()) return setMsg({ ok: false, text: 'Informe o motivo da pendência.' });
+  const submitDialog = async () => {
+    const text = dialogText.trim();
+    if (!text) return setDialogErr(dialog === 'pendente' ? 'Informe o motivo da pendência.' : 'Escreva o acompanhamento.');
     setBusy(true);
+    setDialogErr('');
     try {
-      const pauses = await dbPauseWorkOrder(order, reason, userProfile.name);
-      setPausing(false);
-      setReason('');
-      onChanged({ ...order, status: 'Pendente', pauses });
+      if (dialog === 'pendente') {
+        const pauses = await dbPauseWorkOrder(order, text, userProfile.name);
+        onChanged({ ...order, status: 'Pendente', pauses });
+        setDone('Pendência registrada. A contagem do custo da OS parou até você retomar.');
+      } else {
+        await dbAddWorkOrderNote(order, text, userProfile.name);
+        setDone('Acompanhamento salvo na linha do tempo da OS.');
+      }
+      setDialog(null);
     } catch (err: any) {
-      setMsg({ ok: false, text: `Não foi possível: ${err?.message || err}` });
+      setDialogErr(`Não foi possível salvar: ${err?.message || err}`);
     } finally {
       setBusy(false);
     }
@@ -198,7 +205,6 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         const toSave = prepare();
         if (!toSave) return;
         const updated = await dbConcludeWorkOrder(order, toSave, { name: who.name, matricula: who.matricula, cargo: who.cargo, at, via: 'celular' }, image, userProfile.name);
-        setDirty(false);
         setMsg({ ok: true, text: updated.status === 'Concluída' ? 'OS concluída.' : 'Assinada! Agora a assinatura do cliente.' });
         onChanged(updated);
       } else {
@@ -365,43 +371,39 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             {showCreation && <OsAnswersView order={order} stage="criacao" />}
           </div>
 
-          {execQuestions.length > 0 && (
-            <div className={section}>
-              <p className="text-xs font-black text-slate-800">Execução</p>
-              {execQuestions.map((it) =>
-                it.kind === 'field' ? (
-                  <div key={it.field.id}>
-                    <span className={label}>{it.field.label}{it.field.required && it.field.type !== 'toggle' ? ' *' : ''}</span>
+          {execBlocks.map((b, i) =>
+            b.kind === 'fields' ? (
+              <div key={`f${i}`} className={section}>
+                {i === firstFields && <p className="text-xs font-black text-slate-800">Execução</p>}
+                {b.fields.map((f) => (
+                  <div key={f.id}>
+                    <span className={label}>{f.label}{f.required && f.type !== 'toggle' ? ' *' : ''}</span>
                     {editable ? (
-                      <OsFieldInput field={it.field} value={exec.answers[it.field.id]} onChange={(v) => setAnswer(it.field.id, v)} addresses={addresses} signerName={userProfile.name} />
+                      <OsFieldInput field={f} value={exec.answers[f.id]} onChange={(v) => setAnswer(f.id, v)} addresses={addresses} signerName={userProfile.name} />
                     ) : (
-                      <p className="text-xs text-slate-700 whitespace-pre-wrap">{osAnswerText(it.field, exec.answers[it.field.id]) || '—'}</p>
+                      <p className="text-xs text-slate-700 whitespace-pre-wrap">{osAnswerText(f, exec.answers[f.id]) || '—'}</p>
                     )}
                   </div>
-                ) : null
-              )}
-            </div>
-          )}
-
-          {showsTeam && (
-            <div className={section}>
-              <p className="text-xs font-black text-slate-800">Equipe</p>
-              <OsTeamPicker unit={order.unit} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
-            </div>
-          )}
-
-          {showsMaterials && (
-            <div className={section}>
-              <ExecutionExtras
-                unit={order.unit}
-                editable={editable}
-                executor={me}
-                materials={exec.materials}
-                participants={[]}
-                hideParticipants
-                onChange={(next) => next.materialsUsed && patch({ materials: next.materialsUsed })}
-              />
-            </div>
+                ))}
+              </div>
+            ) : b.key === 'equipe' ? (
+              <div key="equipe" className={section}>
+                <p className="text-xs font-black text-slate-800">Equipe</p>
+                <OsTeamPicker unit={order.unit} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
+              </div>
+            ) : (
+              <div key="materiais" className={section}>
+                <ExecutionExtras
+                  unit={order.unit}
+                  editable={editable}
+                  executor={me}
+                  materials={exec.materials}
+                  participants={[]}
+                  hideParticipants
+                  onChange={(next) => next.materialsUsed && patch({ materials: next.materialsUsed })}
+                />
+              </div>
+            )
           )}
 
           {/* Insumos recebidos (Fase 8C-2): entram pelo "Recebi" do pedido de insumos; aparece só se houver */}
@@ -417,7 +419,6 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           />
 
           {msg && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
-          {exec.updatedBy && !dirty && <p className="text-[10px] text-slate-400">Último salvamento por {exec.updatedBy}{exec.updatedAt ? ` em ${new Date(exec.updatedAt).toLocaleString('pt-BR')}` : ''}.</p>}
         </div>
       </div>
 
@@ -445,30 +446,69 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         />
       )}
 
+      {dialog && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/50 flex items-center justify-center p-4">
+          <div role="dialog" aria-label={dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'} className="w-full max-w-md rounded-2xl bg-white p-4 space-y-3 shadow-2xl">
+            <p className="text-sm font-black text-slate-900">{dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'}</p>
+            <p className="text-[11px] text-slate-500">
+              {dialog === 'pendente'
+                ? 'A contagem do custo da OS para até você retomar. Informe o motivo.'
+                : 'O texto vai para a linha do tempo da OS exatamente como você escrever. A OS continua em andamento.'}
+            </p>
+            <textarea
+              value={dialogText}
+              onChange={(e) => {
+                setDialogText(e.target.value);
+                setDialogErr('');
+              }}
+              rows={4}
+              autoFocus
+              placeholder={dialog === 'pendente' ? 'Motivo da pendência (ex.: aguardando peça)' : 'Escreva o acompanhamento'}
+              aria-label={dialog === 'pendente' ? 'Motivo da pendência' : 'Texto do acompanhamento'}
+              className="w-full p-3 text-base border border-slate-200 rounded-xl"
+            />
+            {dialogErr && <p className="text-xs font-bold text-rose-600">{dialogErr}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setDialog(null)} disabled={busy} className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 cursor-pointer disabled:opacity-50">
+                Cancelar
+              </button>
+              <button type="button" onClick={submitDialog} disabled={busy || !dialogText.trim()} className={`flex-1 h-11 rounded-xl text-white text-xs font-black cursor-pointer disabled:opacity-40 ${dialog === 'pendente' ? 'bg-orange-600' : 'bg-[#3525cd]'}`}>
+                {busy ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {done && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/50 flex items-center justify-center p-4">
+          <div role="dialog" aria-label="Salvo" className="w-full max-w-sm rounded-2xl bg-white p-5 space-y-3 text-center shadow-2xl">
+            <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+            <p className="text-sm font-black text-slate-900">Salvo</p>
+            <p className="text-xs text-slate-600">{done}</p>
+            <button type="button" onClick={onClose} className="w-full h-11 rounded-xl bg-emerald-600 text-white text-xs font-black cursor-pointer">
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {editable && (
         <div className="fixed bottom-0 left-0 right-0 z-[61] bg-white/95 backdrop-blur border-t border-slate-200">
           <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
-            {pausing ? (
-              <div className="flex gap-2">
-                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo da pendência (ex.: aguardando peça)" className="flex-1 h-10 px-3 text-xs border border-slate-200 rounded-xl" autoFocus />
-                <button type="button" onClick={() => setPausing(false)} className="h-10 px-3 rounded-xl border border-slate-200 text-xs font-bold cursor-pointer">Voltar</button>
-                <button type="button" onClick={pause} disabled={busy} className="h-10 px-3 rounded-xl bg-orange-600 text-white text-xs font-black cursor-pointer disabled:opacity-50">Confirmar</button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                {order.status === 'Em andamento' && (
-                  <button type="button" onClick={() => { setPausing(true); setMsg(null); }} disabled={busy || dirty} title={dirty ? 'Salve antes de deixar pendente' : ''} className="h-11 px-3 rounded-xl border border-orange-300 text-orange-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-40">
-                    <PauseCircle className="w-4 h-4" /> Pendente
-                  </button>
-                )}
-                <button type="button" onClick={save} disabled={busy || !dirty} className="flex-1 h-11 rounded-xl border border-[#3525cd] text-[#3525cd] text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
-                  <Save className="w-4 h-4" /> {busy ? 'Salvando...' : dirty ? 'Salvar' : 'Salvo'}
+            <div className="flex gap-2">
+              {order.status === 'Em andamento' && (
+                <button type="button" onClick={() => openDialog('pendente')} disabled={busy} className="h-11 px-3 rounded-xl border border-orange-300 text-orange-700 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-40">
+                  <PauseCircle className="w-4 h-4" /> Pendente
                 </button>
-                <button type="button" onClick={conclude} disabled={busy} className="flex-1 h-11 rounded-xl bg-[#3525cd] text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
-                  <CheckCircle2 className="w-4 h-4" /> Concluir
-                </button>
-              </div>
-            )}
+              )}
+              <button type="button" onClick={() => openDialog('acompanhamento')} disabled={busy} className="flex-1 h-11 rounded-xl border border-[#3525cd] text-[#3525cd] text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
+                <MessageSquarePlus className="w-4 h-4" /> Acompanhamento
+              </button>
+              <button type="button" onClick={conclude} disabled={busy} className="flex-1 h-11 rounded-xl bg-[#3525cd] text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50">
+                <CheckCircle2 className="w-4 h-4" /> Concluir
+              </button>
+            </div>
           </div>
         </div>
       )}
