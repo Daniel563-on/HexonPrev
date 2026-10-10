@@ -61,6 +61,22 @@ function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
   return p;
 }
 
+// A OS combina com o filtro da tela? Mesma regra da busca no banco (parts); usada nas mudanças em tempo real para
+// tirar da lista a OS que saiu do filtro e pôr a que entrou, sem ler de novo
+export function osMatchesMode(o: WorkOrder, mode: OsListMode, cos: string[] | null): boolean {
+  if (cos && !(mode.kind === 'filter' && !mode.status && mode.tech) && !cos.includes(o.company || '')) return false;
+  if (mode.kind === 'late') return OS_OPEN_STATUSES.includes(o.status) && !!o.deadline && o.deadline < todayStr();
+  if (mode.kind === 'closed') return o.status === 'Concluída' && !!o.closedAt && o.closedAt >= startOf(mode.from) && o.closedAt <= endOf(mode.to);
+  if (mode.status?.startsWith('sign:')) {
+    if (o.nextSigner !== mode.status.slice(5)) return false;
+  } else if (mode.status) {
+    if (o.status !== mode.status) return false;
+  } else if (mode.tech && o.assignedTechnicianMatricula !== mode.tech) return false;
+  if (mode.from && o.createdAt < startOf(mode.from)) return false;
+  if (mode.to && o.createdAt > endOf(mode.to)) return false;
+  return true;
+}
+
 export async function dbListWorkOrders(unit: string, mode: OsListMode, after: QueryDocumentSnapshot | null, size = OS_LIST_PAGE, cos: string[] | null = null): Promise<OsListPage> {
   if (!unit || !firebaseActive || !dbInstance || (cos && cos.length === 0)) return { items: [], cursor: null, hasMore: false };
   try {
