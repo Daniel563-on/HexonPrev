@@ -208,7 +208,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         setMsg({ ok: true, text: updated.status === 'Concluída' ? 'OS concluída.' : 'Assinada! Agora a assinatura do cliente.' });
         onChanged(updated);
       } else {
-        const updated = await dbSignClient(order, { name: who.name, matricula: who.matricula, rating: who.rating, at, via: 'celular', by: userProfile.name }, image, userProfile.name);
+        const updated = await dbSignClient(order, { name: who.name, matricula: who.matricula || undefined, rating: who.rating, at, via: 'celular', by: userProfile.name }, image, userProfile.name);
         setMsg({ ok: true, text: 'Assinatura do cliente registrada.' });
         setClientSignedNow(true);
         onChanged(updated);

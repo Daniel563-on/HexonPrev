@@ -30,7 +30,8 @@ export default function TechnicianOsTab({
   canPdf?: boolean; // "Baixar PDF da OS": botão PDF na OS
 }) {
   const [open, setOpen] = useState<WorkOrder | null>(null);
-  const [view, setView] = useState<'open' | 'contested' | 'signed'>('open');
+  type View = 'open' | 'pending' | 'contested' | 'signed';
+  const [view, setView] = useState<View>('open');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -49,8 +50,11 @@ export default function TechnicianOsTab({
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200';
   const contested = list.filter((o) => o.status === 'Contestada');
-  const shown = view === 'contested' ? contested : view === 'signed' ? [] : list.filter((o) => o.status !== 'Contestada');
-  const tabBtn = (v: 'open' | 'contested' | 'signed', label: string, n: number) => {
+  // Pendentes em botão próprio (ajustes da etapa 8); "Em aberto" = em andamento e aguardando a assinatura do cliente
+  const pending = list.filter((o) => o.status === 'Pendente');
+  const openList = list.filter((o) => o.status !== 'Contestada' && o.status !== 'Pendente');
+  const shown = view === 'contested' ? contested : view === 'pending' ? pending : view === 'signed' ? [] : openList;
+  const tabBtn = (v: View, label: string, n: number) => {
     const on = view === v;
     const alert = (v === 'contested' || v === 'signed') && n > 0;
     return (
@@ -82,14 +86,15 @@ export default function TechnicianOsTab({
         <h2 className={`text-base font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Minhas OS</h2>
         <p className="text-[11px] text-slate-500">Corretiva, layout e acompanhamento atribuídas a você.{loading || syncing ? ' Atualizando...' : ''}</p>
       </div>
-      <div className="grid grid-cols-3 gap-2 w-full">
-        {tabBtn('open', 'Em aberto', list.length - contested.length)}
+      <div className="grid grid-cols-4 gap-1.5 w-full">
+        {tabBtn('open', 'Em aberto', openList.length)}
+        {tabBtn('pending', 'Pendentes', pending.length)}
         {tabBtn('contested', 'Contestadas', contested.length)}
         {tabBtn('signed', 'Assinadas pelo cliente', signed.length)}
       </div>
       {notice && <p className={`text-xs font-bold ${notice.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{notice.text}</p>}
       {!loading && view !== 'signed' && shown.length === 0 && (
-        <p className="text-xs text-slate-500 py-6 text-center">{view === 'contested' ? 'Nenhuma OS contestada.' : 'Nenhuma OS com você agora.'}</p>
+        <p className="text-xs text-slate-500 py-6 text-center">{view === 'contested' ? 'Nenhuma OS contestada.' : view === 'pending' ? 'Nenhuma OS pendente.' : 'Nenhuma OS com você agora.'}</p>
       )}
       {view === 'signed' && (
         <>

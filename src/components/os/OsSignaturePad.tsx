@@ -8,7 +8,8 @@ import { OS_SIGN_COLOR, OS_SIGN_LABEL } from '../../db/firebase';
 // girado e a pessoa vira o celular. Ao confirmar, volta para retrato.
 // O desenho é guardado em pontos; a imagem final é gerada com o carimbo e a hora de cada assinatura
 // (assinatura em lote: o mesmo desenho, cada OS com a sua hora).
-// Cliente: primeiro uma tela em pé com nome, matrícula e estrelas; depois o quadro deitado, com o carimbo já preenchido.
+// Cliente (ajustes da etapa 8): tudo num bloco só, deitado — nome, matrícula (opcional) e estrelas ao lado do quadro;
+// o próprio cliente preenche e assina (evita fraude). O carimbo vai se preenchendo enquanto ele digita.
 
 export type Stroke = { x: number; y: number }[];
 export interface StampInfo {
@@ -101,7 +102,7 @@ interface Props {
   role: OsSignatureRole;
   signer: { name: string; matricula?: string; cargo?: string };
   title?: string;           // ex.: "Assinar 3 OS"
-  client?: boolean;         // cliente: pede nome, matrícula e estrelas
+  client?: boolean;         // cliente: pede nome, matrícula (opcional) e estrelas no mesmo bloco do quadro
   onConfirm: (strokes: Stroke[], signer: { name: string; matricula?: string; cargo?: string; rating?: number }) => void;
   onCancel: () => void;
 }
@@ -116,12 +117,10 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
   const [rating, setRating] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [rotated, setRotated] = useState(false);
-  const [step, setStep] = useState<'data' | 'sign'>(client ? 'data' : 'sign');
   const [now, setNow] = useState(() => new Date().toISOString());
 
   // Paisagem: tenta virar a tela (tela cheia + trava); se não der, gira o quadro na tela
   useEffect(() => {
-    if (step !== 'sign') return;
     const isPhonePortrait = () => window.matchMedia('(max-width: 900px) and (orientation: portrait)').matches;
     let locked = false;
     let alive = true;
@@ -153,7 +152,7 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
       }
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     };
-  }, [step]);
+  }, []);
 
   // Hora do carimbo na tela (a definitiva é a do momento de confirmar)
   useEffect(() => {
@@ -173,7 +172,7 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
     drawStamp(ctx, stamp());
     drawStrokes(ctx, strokes.current);
   };
-  useEffect(redraw, [name, matricula, rating, now, rotated, step]);
+  useEffect(redraw, [name, matricula, rating, now, rotated]);
 
   // Ponto do dedo/caneta nas coordenadas do quadro (também com o quadro girado 90°)
   const point = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -206,20 +205,10 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
     redraw();
   };
 
-  const dataError = () =>
-    !client ? null : !name.trim() ? 'Informe o nome do cliente.' : !matricula.trim() ? 'Informe a matrícula do cliente.' : !rating ? 'O cliente precisa escolher de 1 a 5 estrelas.' : null;
-  const goSign = () => {
-    const err = dataError();
-    if (err) return setMsg(err);
-    setMsg(null);
-    setStep('sign');
-  };
+  const dataError = () => (!client ? null : !name.trim() ? 'Informe o nome do cliente.' : !rating ? 'O cliente precisa escolher de 1 a 5 estrelas.' : null);
   const confirm = () => {
     const err = dataError();
-    if (err) {
-      setMsg(err);
-      return setStep('data');
-    }
+    if (err) return setMsg(err);
     if (!hasInk) return setMsg('Desenhe a assinatura no quadro.');
     onConfirm(strokes.current.map((s) => [...s]), { name: client ? name.trim() : signer.name, matricula: client ? matricula.trim() : signer.matricula, cargo: signer.cargo, rating: client ? rating : undefined });
   };
@@ -229,49 +218,6 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
     ? { width: '100vh', height: '100vw', transform: 'rotate(90deg)', transformOrigin: 'center center', position: 'absolute' as const, top: 'calc(50% - 50vw)', left: 'calc(50% - 50vh)' }
     : { width: '100%', height: '100%' };
 
-  // 1º passo do cliente (em pé): dados do carimbo
-  if (step === 'data')
-    return (
-      <div className="fixed inset-0 z-[2000] bg-slate-900/80 overflow-y-auto flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-2" style={{ borderTop: `4px solid ${color}` }}>
-            <p className="text-sm font-black text-slate-900 truncate">{title || `Assinatura — ${OS_SIGN_LABEL[role]}`}</p>
-            <button type="button" onClick={onCancel} className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer shrink-0" title="Cancelar">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="p-4 space-y-3">
-            <p className="text-[11px] text-slate-500">Preencha os dados do cliente. Depois o quadro abre deitado para a assinatura.</p>
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Nome do cliente *</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 h-11 w-full px-3 text-sm border border-slate-200 rounded-lg" autoComplete="off" />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Matrícula *</span>
-              <input value={matricula} onChange={(e) => setMatricula(e.target.value)} className="mt-1 h-11 w-full px-3 text-sm border border-slate-200 rounded-lg" autoComplete="off" />
-            </label>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Avaliação do atendimento *</span>
-              <div className="mt-1 flex gap-1">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button key={n} type="button" onClick={() => setRating(n)} className="p-1 cursor-pointer" aria-label={`${n} estrela(s)`}>
-                    <Star className={`w-8 h-8 ${n <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
-                  </button>
-                ))}
-              </div>
-            </div>
-            {msg && <p className="text-xs font-bold text-rose-600">{msg}</p>}
-          </div>
-          <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-            <button type="button" onClick={onCancel} className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
-            <button type="button" onClick={goSign} className="h-10 px-5 rounded-xl text-white text-xs font-black cursor-pointer" style={{ background: color }}>
-              Continuar para assinar
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
   return (
     <div className="fixed inset-0 z-[2000] bg-slate-900/80 overflow-hidden">
       <div style={box} className="flex items-center justify-center p-2">
@@ -280,10 +226,7 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
             <div className="min-w-0">
               <p className="text-sm font-black text-slate-900 truncate">{title || `Assinatura — ${OS_SIGN_LABEL[role]}`}</p>
               {client ? (
-                <p className="text-[11px] text-slate-500 truncate">
-                  {name} · {matricula} · {'★'.repeat(rating)}{' '}
-                  <button type="button" onClick={() => setStep('data')} className="font-bold underline cursor-pointer" style={{ color }}>Alterar</button>
-                </p>
+                <p className="text-[11px] text-slate-500 truncate">O cliente preenche os dados, avalia o atendimento e assina.</p>
               ) : (
                 <p className="text-[11px] text-slate-500 truncate">{signer.name}{signer.matricula ? ` · ${signer.matricula}` : ''}{signer.cargo ? ` · ${signer.cargo}` : ''}</p>
               )}
@@ -292,19 +235,43 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="p-2 flex-1 min-h-0 flex items-center justify-center bg-slate-50">
-            <canvas
-              ref={canvasRef}
-              width={W}
-              height={H}
-              onPointerDown={down}
-              onPointerMove={move}
-              onPointerUp={up}
-              onPointerCancel={up}
-              className="w-full max-h-full bg-white rounded-xl border-2 border-dashed touch-none cursor-crosshair"
-              style={{ aspectRatio: `${W} / ${H}`, borderColor: color }}
-              aria-label="Quadro de assinatura"
-            />
+          <div className="p-2 flex-1 min-h-0 flex items-stretch gap-2 bg-slate-50">
+            {client && (
+              <div className="w-56 shrink-0 overflow-y-auto space-y-2 pr-1">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Nome do cliente *</span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} className="mt-0.5 h-9 w-full px-2.5 text-base border border-slate-200 rounded-lg bg-white" autoComplete="off" aria-label="Nome do cliente" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Matrícula (opcional)</span>
+                  <input value={matricula} onChange={(e) => setMatricula(e.target.value)} className="mt-0.5 h-9 w-full px-2.5 text-base border border-slate-200 rounded-lg bg-white" autoComplete="off" aria-label="Matrícula do cliente" />
+                </label>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Avaliação do atendimento *</span>
+                  <div className="flex">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} type="button" onClick={() => setRating(n)} className="p-0.5 cursor-pointer" aria-label={`${n} estrela(s)`}>
+                        <Star className={`w-7 h-7 ${n <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="flex-1 min-w-0 flex items-center justify-center">
+              <canvas
+                ref={canvasRef}
+                width={W}
+                height={H}
+                onPointerDown={down}
+                onPointerMove={move}
+                onPointerUp={up}
+                onPointerCancel={up}
+                className="w-full max-h-full bg-white rounded-xl border-2 border-dashed touch-none cursor-crosshair"
+                style={{ aspectRatio: `${W} / ${H}`, borderColor: color }}
+                aria-label="Quadro de assinatura"
+              />
+            </div>
           </div>
           {msg && <p className="px-4 text-xs font-bold text-rose-600">{msg}</p>}
           <div className="px-4 py-2.5 border-t border-slate-200 flex justify-between gap-2">

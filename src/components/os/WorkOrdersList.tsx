@@ -20,6 +20,7 @@ import {
   dbGetUsers,
   dbGetWorkOrderCostSummary,
   dbListWorkOrders,
+  osMatchesMode,
   subscribeWorkOrderChanges,
   monthStartStr,
   runBulk,
@@ -163,6 +164,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   loadCountersRef.current = loadCounters;
   const cosRef = useRef(cos);
   cosRef.current = cos;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const [costVersion, setCostVersion] = useState(0);
   const costLoading = useRef(new Set<string>()); // valores sendo calculados
   const costStale = useRef(new Set<string>()); // mudaram durante o cálculo: calcular de novo
@@ -183,7 +186,17 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       pageCache.current.clear();
       const byId = new Map(mine.map((o) => [o.id, o]));
       const patchList = (list: WorkOrder[]) => list.map((o) => byId.get(o.id) || o);
-      setPages((prev) => prev.map((p) => ({ ...p, items: patchList(p.items) })));
+      // A que saiu do filtro sai da lista; a que passou a combinar entra na 1ª página (ordem de abertura)
+      const m = modeRef.current;
+      setPages((prev) => {
+        const shown = new Set(prev.flatMap((p) => p.items.map((o) => o.id)));
+        const enter = mine.filter((o) => !shown.has(o.id) && osMatchesMode(o, m, cs));
+        return prev.map((p, i) => {
+          let items = patchList(p.items).filter((o) => !byId.has(o.id) || osMatchesMode(o, m, cs));
+          if (i === 0 && enter.length) items = [...items, ...enter].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          return { ...p, items };
+        });
+      });
       setFound((prev) => (prev ? patchList(prev) : prev));
       mine.forEach((o) => costLoading.current.has(o.id) && costStale.current.add(o.id));
       setCosts((prev) => {
