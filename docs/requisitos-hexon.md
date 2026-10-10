@@ -2,7 +2,7 @@
 
 > Documento vivo. Guarda o que o sistema precisa ter, o que já existe, o que muda e a ordem das etapas.
 > **Se o contexto da conversa se perder, este arquivo é a referência.** Consultar antes de mexer em qualquer parte e atualizar ao fim de cada entrega.
-> Última atualização: 03/10/2026.
+> Última atualização: 10/10/2026 (resumo do estado atual na seção 0.1).
 
 ---
 
@@ -20,8 +20,8 @@
 **Como trabalhamos (fluxo de cada entrega)**
 1. Conversar e **desenhar antes de programar**; o usuário aprova. Nada inventado: o que não foi confirmado é dito como "não sei / não confirmei".
 2. Claude programa no ramo `claude/...`, roda `npx tsc --noEmit` e `npm run build`, faz commit e push.
-3. Claude entrega **trechos** (.md, até ~10–15 KB por arquivo; pares "Trocar / Por" ou arquivo inteiro) e **confere aplicando os trechos sobre o `main`** antes de enviar.
-4. O usuário aplica no **Google AI Studio** e faz commit no `main`. Claude confere com `git fetch origin main && git diff --stat -w origin/main -- src firestore.rules`.
+3. Claude entrega **trechos** (.md com pares "Trocar / Por" ou arquivo inteiro) e **confere aplicando os trechos sobre o `main`** antes de enviar. **Cada parte com no máximo ~2.000 caracteres e um arquivo do sistema por parte** (parte maior o AI Studio corta ou aplica pela metade). O usuário faz o commit depois de aplicar o grupo inteiro.
+4. O usuário aplica no **Google AI Studio** e faz commit no `main`. Claude confere com `git fetch -q origin main && git diff --stat -w origin/main HEAD -- src index.html` (o `firestore.rules` do main não conta: vale o publicado). Se faltou algo, reenviar só o que faltou, em partes menores.
    - Diferenças antigas e inofensivas (ignorar): função `dbGetClientSignedOrders` sobrando em `workOrderSign.ts` (não usada); linhas em branco em `NewModelModal.tsx`, `JobRolesPanel.tsx`, `core.ts`; 1 comentário em `serviceOrders.ts`; `export * from './orderControl'` no `firebase.ts` do `main`; 2 linhas de comentário no `App.tsx`. O `firestore.rules` do `main` fica desatualizado: **vale o que está publicado no Console**.
 5. Deploy do site (usuário): `git pull` → `npm run build` → `firebase deploy` (só hosting) → botão **Forçar atualização** (Controle de Usuários → Sistema).
 6. **Regras do banco:** publicadas à mão no Console → Firestore → banco `ai-studio-…` → aba **Segurança** (Ctrl+A, colar o arquivo inteiro, conferir 1ª linha `rules_version = '2';` e última `}`, Publicar). Mandar o texto completo **no chat**, dentro de um bloco de código (copiar de arquivo falhava). Quando a regra nova depende do app novo, **publicar só depois do deploy**.
@@ -33,9 +33,64 @@
    npx firebase-tools@latest deploy --only functions --project core-philosophy-lr5vm
    gcloud run services add-iam-policy-binding resetuserpassword --region=us-central1 --project=core-philosophy-lr5vm --member="allUsers" --role="roles/run.invoker"
    ```
-9. Testes: o usuário testa no site ou no preview com Super Admin, planejador (Carlos Miguel) e técnico. Medições de custo pelo Console → Uso ("Últimos 60 minutos", passando o mouse no minuto) e Query Insights.
+9. Testes: Claude testa antes de entregar com os **emuladores do Firebase + o site local (vite, porta 5173) + Playwright/Chromium**, usando as **regras publicadas** (o usuário cola no chat) e dados de teste criados na hora (os roteiros ficam no rascunho da sessão e se perdem entre sessões). Cuidados: depois de trocar as regras no emulador, `touch` no arquivo; se o ambiente cair, recriar os dados do zero; o modo de desenvolvimento do React monta as telas 2 vezes. O usuário testa no site ou no preview com Super Admin, planejador (Carlos Miguel) e técnico. Medições de custo pelo Console → Uso ("Últimos 60 minutos", passando o mouse no minuto) e Query Insights.
 
 **Preferências do usuário:** respostas diretas e sem invenção; pedir instrução antes de decidir; sem janelas `alert/confirm` do navegador em telas novas (mensagens na própria tela); o banco será **zerado antes da produção** (ficam só os Super Admins).
+
+---
+
+## 0.1 Estado atual do app (10/10/2026) — ler logo depois do Guia rápido
+
+> Fotografia do app inteiro para não perder o contexto. O histórico detalhado de cada fase está na seção 11 (itens longos, do mais novo para o mais antigo em boa parte). Atualizar esta seção a cada entrega grande.
+
+**O que é:** **Hexon 2.0** = a Preventiva (PMOC, feita por nós desde o início) + ideias tiradas do Hexon principal (hexon.app.br; código só lido, nunca alterado; não temos acesso ao servidor nem ao banco dele). Um site só (`hexonpreventiva.web.app`), usado no **computador** (gestão) e no **celular do técnico** pelo navegador (ainda **não** é app instalável — ver "Próximos assuntos").
+
+**Plano de 12 fases (aprovado 03/10/2026) — onde estamos**
+| Fase | Situação |
+|---|---|
+| 1. Nova casca (menu, PMOC como página própria, Configurações, Início v1) | ✅ (Início: usuário ainda quer melhorar) |
+| 2. Usuários, gerências e permissões para o sistema todo | ✅ |
+| 3. Gestão de Ativos (histórico em 2 abas, valor linha a linha; sem "saúde do ativo") | ✅ |
+| 4. Emitir OS (GLPI) + Modelos de OS (4b, 4c) | ✅ |
+| 5. Execução dos chamados: 5A execução e homem-hora, 5B assinaturas em ordem + link do cliente + contestação, 5C PDF mapeado e ficha XLSX | ✅ |
+| 6. Ordens de Serviço › Chamados GLPI: lista, filtros, planilha, ZIP | ✅ |
+| 7. Equipes e Programação Semanal | ⏸ pulada por decisão do usuário (08/10) |
+| 8. Solicitações: 8A aba do técnico, 8B pedido de material (PM-AAAA-NNNN), 8C insumos (PI-AAAA-NNNN) | ✅ — **8D hora extra e pernoite adiada** |
+| 9. Quadro de Avisos e Histórico GLPI | 🔴 não começou |
+| 10. Ponto e Contratos | 🔴 não começou |
+| 11. Relatórios (é a antiga "Etapa 9" da Preventiva) | 🔴 adiada |
+| 12. Celular do técnico (quando o usuário mostrar como quer) | 🔴 |
+
+Feitos fora das fases: **Empresas contratadas** (E1–E5: tudo separado por gerência **e** empresa), **Identidade visual 2.0** (Fases 1–4), **economia de leituras** (cadastros guardados no aparelho e atualizados em tempo real, `src/db/localSync.ts`), **P39** (travamento no iPhone, resolvido) e **7 rodadas de ajustes da etapa 8** — a última aplicada no main `d31f689` (10/10/2026); usuário: "está tudo perfeito".
+
+**Menu do computador (`Sidebar.tsx`; cada item depende da permissão do perfil)**
+- **Início** · **Emitir OS (GLPI)** · **Ordens de Serviço** (botões **Chamados GLPI** e **Preventivas** = Realização) · **Solicitações** · **Gestão de Ativos** · **PMOC** (página própria: **Preventivas** = Planejamento e Consulta; **Modelos e Protocolos** = tipos/ciclo, modelos, disparo) · **Gestão de Materiais** · **Gestão de Insumos** · **Almoxarifado** · **Usuários** · **QR-Codes** · **Endereços** · **Configurações** (Sistema, Auditoria, Empresas, Almoxarifados, Modelos de OS).
+- **Chamados GLPI (lista):** abre em **"Novas"**; cards Nova, Em andamento, Pendente, Aguardando assinatura do cliente / do engenheiro / do gerente, Contestada, Cancelada — números e lista **em tempo real** (a OS entra/sai do filtro sozinha); "ATRASADA" só antes da assinatura do técnico; PDF/XLSX/ZIP conforme permissão.
+- **Status mostrado x gravado:** no banco a OS fica "Aguardando assinaturas" + campo `nextSigner` (cliente/engenheiro/gerente); a tela, o PDF e a planilha mostram `osStatusLabel` ("Aguardando assinatura do cliente" etc.).
+
+**Celular do técnico (`TechnicianMobileView.tsx`)** — barra de baixo: **Solicitações** · **Minhas OS** · **Escanear QR** (botão do meio) · **Preventivas** · **Meu Perfil**.
+- **Minhas OS:** lista em tempo real (`subscribeMyWorkOrders`, campo `techOpen`); botões **Em aberto**, **Pendentes**, **Contestadas**, **Assinadas pelo cliente** (tempo real por `cliSigned`; some sozinha quando o engenheiro assina).
+- **Formulário da OS no celular não tem "Salvar":** o técnico só tem **Pendente** (pausa a contagem de custo; só em "Em andamento"), **Acompanhamento** (anota na linha do tempo) — os dois abrem caixa no meio da tela com texto **obrigatório**, depois "Salvo" e volta à lista — e **Concluir** (só aí grava a execução). Perguntas, equipe e materiais seguem a **ordem do modelo**.
+- **Assinatura do cliente:** um bloco só, **deitado** (paisagem; no iPhone o bloco gira): nome e estrelas obrigatórios, matrícula opcional, campos ao lado do quadro. O **link do cliente** (`?validar=código`) continua pedindo matrícula (regra `osValidations`).
+- **Preventivas:** botões Pendentes e Execução; Iniciar ≠ ver; funciona sem internet (rascunho no aparelho).
+
+**Regras técnicas que não podem ser esquecidas**
+1. **Arquivos no celular (P39):** nunca baixar por link no celular/tablet. Sempre `deliverFile`/`deliverBytes` (`src/lib/fileDelivery.ts`) → aviso **"PDF pronto"** (`PdfReadySheet.tsx`) → "Abrir / compartilhar". Motivo: no iPhone a página "sai" (`pagehide`) e o Firestore entra em modo restrito — **nenhuma operação do banco termina** até recarregar. Proteção extra no `main.tsx`: voltou depois de um `pagehide` → recarrega. Nome de arquivo sempre por `safeFileName` (o iPhone recusa "/").
+2. **Disjuntor:** arquivo novo em `src/db` importa o Firestore de `./guard`; operação grande usa `runBulk`.
+3. **Tempo real com economia:** escutas pequenas e por campo de controle esparso (`techOpen`, `cliSigned`, `signQueue`, `nextSigner`); a lista do computador escuta só o que mudou depois de abrir a tela (`subscribeWorkOrderChanges`: `unit` + `updatedAt`), recontagem dos cards juntada em 3 s e guarda de páginas apagada a cada mudança.
+4. **Custos do banco:** Enterprise cobra leitura, gravação e entrada de índice; preferir índice esparso. Grátis por dia: 50 mil leituras, 40 mil gravações, 50 mil leituras em tempo real. Alerta de orçamento "Hexon - alerta mensal" (R$ 30). Estimativa para ~225 usuários (200 técnicos, 3 gerentes, ~20 administrativos, 2 Super Admins): **cabe com folga; ~US$ 1 a 10/mês no 1º ano** (estimativa, não medida — confirmar num piloto).
+5. **Sem `alert/confirm`** em telas novas; mensagens na própria tela.
+6. **Entrega:** partes de até ~2.000 caracteres, um arquivo por parte, conferidas sobre o `main`; regras publicadas à mão (texto completo no chat); índices criados à mão (escopo Coleta, esparso quando indicado, "Índice único" desmarcado).
+7. **Diferenças inofensivas** entre `main` e o ramo: `NewModelModal.tsx`, `core.ts`, `serviceOrders.ts` (linhas em branco/comentário) e `dbGetClientSignedOrders` sobrando no `workOrderSign.ts` do main (sem uso).
+
+**Banco:** coleções da Preventiva na seção 3; as do 2.0 (sem tabela própria ainda): `workOrders` (chamados GLPI), `workOrderSignatures`, `osTemplates` (modelos de OS), `osValidations` (link do cliente), `osPdfLayouts`/`osPdfFiles` (PDF mapeado), `companies`, `overtimeRules`, `materialRequests`, `supplies`, `supplyRequests`, `orderSupplies`, `counters`, `syncDeletions`. **Índices: 62** (lista na seção 9). O `unit + updatedAt` (6º ajuste) está na lista, mas **não tenho confirmação do usuário de que foi criado** — conferir no Console.
+
+**Pendências e próximos assuntos (10/10/2026)**
+- **Próximo assunto pedido pelo usuário:** transformar o site em algo parecido com um **app** (Android e iOS) — vantagens e desvantagens. Levantamento de 08/10 (PWA adiado) está na seção 11.
+- Oferecido e aguardando o usuário: **bateria de testes completa, aba por aba**, no emulador; **piloto com uma gerência** antes de abrir para todos.
+- Adiados: 8D (hora extra e pernoite), Fase 7, Relatórios, Quadro de Avisos/Histórico GLPI, Ponto/Contratos, celular do técnico (Fase 12), botão "zerar sistema" (o banco será zerado antes da produção).
+- Observação da revisão de permissões (2º ajuste): algumas permissões são só de tela (o banco não bloqueia); apertar regras quando houver tempo (ver P26).
+- Pendências antigas ainda abertas: tabela "Pendências" da seção 5 (P3, P5, P6, P8, P10–P15, P26, P27, P34).
 
 ---
 
@@ -90,7 +145,7 @@
 
 ---
 
-## 2. Situação atual (03/10/2026)
+## 2. Situação atual da Preventiva (03/10/2026 — para o app todo, ver seção 0.1)
 
 Legenda: ✅ feito · 🟡 parcial · 🔴 não existe
 
@@ -267,7 +322,7 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 47. **Regras de prazo mantidas (02/10/2026):** prazo do planejador expirado = planejador bloqueado (Super Admin nunca); OS não planejada fica "Aguardando" até o fim do período e então vira Não Executada; planejada não feita no dia vira Atrasada (técnico ainda executa até o fim do período). Sem registro de pedido/autorização para mudar o prazo.
 48. **Custo estimado em produção (02/10/2026):** 2 Super Admins, 6–9 planejadores, 180–200 técnicos, 10 mil ativos, ~1.000 materiais, 9.500 OS no disparo mensal, 500 rondas diárias (dias úteis) e 250 semanais (~21.600 OS/mês). Estimativa: **~US$ 0,50 a 2 por mês no 1º ano** (cresce com o armazenamento: ~0,2–0,4 GB/mês). Hosting, Functions e Scheduler não medidos (devem ficar no grátis).
 
-### Pendências (atualizado 03/10/2026)
+### Pendências (atualizado 03/10/2026; P39 em 09/10/2026)
 | # | Item | Situação | O que fazer |
 |---|---|---|---|
 | P1 | Rotina de prazos lê todas as OS abertas | ✅ resolvido (decisão 38/39: `openEnd`, `plannedEnd`) | — |
@@ -308,7 +363,7 @@ Situação (03/10/2026): **1 a 8 e 10 feitas**; **9 (Relatórios) adiada**.
 | P37 | ✅ (feito 03/10/2026, pacote 3: nome fixo na edição; exclusão bloqueada se usada por usuários, ativos ou perfis) Renomear ou excluir gerência quebra os dados ligados a ela (OS, usuários, ativos e regras guardam o nome) | MÉDIA | Bloquear troca de nome e exclusão de gerência em uso (só descrição) |
 | P38 | ✅ parcial (03/10/2026, pacote 3: erros mostrados na tela; conta de login continua — preferir "Inativo") Excluir usuário apaga o cadastro, mas a conta de login fica (recriar com a mesma matrícula exige apagar no Console); erros ao salvar/excluir gerência só no console | BAIXA | Preferir "Inativo"; mostrar erros |
 | P30 | ✅ Segunda rodada (03/10/2026): Controle de Usuários, perfis (troca de tipo atualiza os usuários: ok), importação de ativos (baixa os ausentes com confirmação e %: ok), etiquetas QR, PDF mapeado, Dashboard (só leituras locais e resumos: ok), versões dos modelos (sobem a cada edição: ok) | — | Achados em P35–P38 |
-| P39 | aberto (09/10/2026) | **Site publicado lento e travando:** "Iniciar" da preventiva fica em "Iniciando..." (às vezes depois de baixar o PDF) e a OS trava depois da assinatura do técnico; sair e entrar melhora. **Conferido:** código do main `882977a` + regras publicadas no emulador — OS 34/34, preventiva/PDF 19/19, aviso 14/15 (falha só de dados do teste); sem acúmulo de escutas/memória em 5 voltas por todas as telas; PDF + Iniciar, "pagehide" simulado e 2 abas com a 1ª congelada: inicia em 1 s. Os dois sintomas são o app **esperando o banco sem limite de tempo** (`dbStartOrder`: `getDocs` de `orderStarts`; `dbConcludeWorkOrder`: `batch.commit`). **Incidente do Google:** Firebase Hosting com "Bandwidth Quota Exceeded" (509) intermitente e deploys falhando por cota (429) desde 07/10 09:30 PDT; rollback em 08/10 13:21 PDT; contorno: ativar a Firebase Hosting API no projeto `hexonpreventiva`. Hosting só entrega os arquivos na abertura (nenhum clique busca arquivo do site; `version.json` trata erro) → explica lentidão ao abrir, **não** o "Iniciando...". Pedido ao usuário: ativar a API, conferir se o último deploy entrou (histórico do Hosting), ver Firestore em Cloud Service Health. **Proposta aguardando aprovação:** limite de ~10 s no Iniciar, na assinatura/conclusão da OS e no PDF (aviso claro; Iniciar cai no modo sem internet). Usuário instalou o conector do Firebase (09/10/2026): numa sessão nova, usar para ver histórico do Hosting, erros e latência do banco. **CAUSA ENCONTRADA (09/10/2026):** o usuário relatou "inicio pelo celular e vai normal; se abro a preventiva, aperto PDF e volto, o sistema trava todo". O Firestore (`IndexedDbPersistence`, aviso "pagehide") entra em **modo restrito** e se desliga quando a página "sai" em navegador Safari cujo identificador tem `Version/14-16` ou `Mobile/14-16` — e **todo iPhone** traz `Mobile/15E148` (Safari e Chrome do iPhone). No iPhone, baixar o PDF por link abre o arquivo na mesma tela → "pagehide" → ao voltar, o app parece normal mas **nenhuma operação do banco termina** (Iniciar, assinar, salvar). Reproduzido no emulador com identificador de iPhone: "Iniciando..." para sempre e nada no banco; com identificador de Android: inicia em 1 s. Antes desta etapa o técnico quase não baixava PDF no celular (só o mapeado da preventiva) → por isso apareceu agora. **Correção aprovada e programada (09/10/2026, commit `77040e1`; sem regra nem índice):** (1) `src/lib/fileDelivery.ts` — no celular/tablet (`isPhoneOrTablet`) o arquivo não é baixado por link: vai para o aviso **"PDF pronto"** (`src/components/PdfReadySheet.tsx`, montado uma vez no `main.tsx`) e o toque em **"Abrir / compartilhar"** abre o menu de compartilhar do celular (`navigator.share` com o arquivo; sem ele, abre em outra aba); no computador baixa como antes. `downloadBytes`/`downloadBlob` (`osPdf.ts`) e o PDF da preventiva (`OrderDetailsDrawer`) usam esse caminho → vale para todos os PDFs do celular (preventiva, OS, "Baixar PDF com a assinatura do cliente", "Assinadas pelo cliente"). Dois toques porque o iPhone só abre o menu logo após um toque e montar o PDF leva segundos. (2) **Proteção** no `main.tsx`: se a página "saiu" (`pagehide`) e o app volta a aparecer (`pageshow`/tela visível/foco), recarrega sozinho (o rascunho da preventiva fica no aparelho). Testes 12/12 (iPhone: PDF pronto e compartilhar na preventiva e na OS, Iniciar depois do PDF, recarregar ao voltar, celular sem compartilhar abre em outra aba, computador baixa direto); regressão: OS 5B 34/34, aviso 15/15, permissões/PDF e 8C-3 sem falha. Entregue em 9 partes (`p39/p39-parte-01..09-de-9.md`, ≤ ~1.600 caracteres), conferidas sobre o main `882977a` (resultado = ramo; tsc e build ok). **Aplicada no main `a0968a5` (09/10/2026), tudo entrou na 1ª vez; igual ao ramo; tsc e build ok.** **Teste do usuário no iPhone (09/10/2026):** travamento resolvido e PDF da OS ok; **PDF da preventiva dava erro ao enviar** — o nome do arquivo levava o nº real da preventiva com "/" (`formatOrderNumber`: "123 · MEN 10/26" → `Preventiva_123 · MEN 10/26.pdf`) e o compartilhar do iPhone recusa. Correção (commit `029f1b3`): `safeFileName` em `fileDelivery.ts` (troca `/ \ : * ? " < > |` por "-", " · " por "_" e espaços por "_" → `Preventiva_123_MEN_10-26.pdf`, vale também no computador); o aviso mostra o erro real do compartilhar. Testes: 2/2 (simulação do iPhone que recusa "/"), P39 12/12, permissões/PDF 19/19. Entregue em 1 parte (`p39b/p39b-parte-1-de-1.md`, 4 trocas), conferida sobre o main `a0968a5`. |
+| P39 | ✅ resolvido (09/10/2026; aplicado no main `a0968a5` + nome do arquivo) | **Site publicado lento e travando:** "Iniciar" da preventiva fica em "Iniciando..." (às vezes depois de baixar o PDF) e a OS trava depois da assinatura do técnico; sair e entrar melhora. **Conferido:** código do main `882977a` + regras publicadas no emulador — OS 34/34, preventiva/PDF 19/19, aviso 14/15 (falha só de dados do teste); sem acúmulo de escutas/memória em 5 voltas por todas as telas; PDF + Iniciar, "pagehide" simulado e 2 abas com a 1ª congelada: inicia em 1 s. Os dois sintomas são o app **esperando o banco sem limite de tempo** (`dbStartOrder`: `getDocs` de `orderStarts`; `dbConcludeWorkOrder`: `batch.commit`). **Incidente do Google:** Firebase Hosting com "Bandwidth Quota Exceeded" (509) intermitente e deploys falhando por cota (429) desde 07/10 09:30 PDT; rollback em 08/10 13:21 PDT; contorno: ativar a Firebase Hosting API no projeto `hexonpreventiva`. Hosting só entrega os arquivos na abertura (nenhum clique busca arquivo do site; `version.json` trata erro) → explica lentidão ao abrir, **não** o "Iniciando...". Pedido ao usuário: ativar a API, conferir se o último deploy entrou (histórico do Hosting), ver Firestore em Cloud Service Health. **Proposta aguardando aprovação:** limite de ~10 s no Iniciar, na assinatura/conclusão da OS e no PDF (aviso claro; Iniciar cai no modo sem internet). Usuário instalou o conector do Firebase (09/10/2026): numa sessão nova, usar para ver histórico do Hosting, erros e latência do banco. **CAUSA ENCONTRADA (09/10/2026):** o usuário relatou "inicio pelo celular e vai normal; se abro a preventiva, aperto PDF e volto, o sistema trava todo". O Firestore (`IndexedDbPersistence`, aviso "pagehide") entra em **modo restrito** e se desliga quando a página "sai" em navegador Safari cujo identificador tem `Version/14-16` ou `Mobile/14-16` — e **todo iPhone** traz `Mobile/15E148` (Safari e Chrome do iPhone). No iPhone, baixar o PDF por link abre o arquivo na mesma tela → "pagehide" → ao voltar, o app parece normal mas **nenhuma operação do banco termina** (Iniciar, assinar, salvar). Reproduzido no emulador com identificador de iPhone: "Iniciando..." para sempre e nada no banco; com identificador de Android: inicia em 1 s. Antes desta etapa o técnico quase não baixava PDF no celular (só o mapeado da preventiva) → por isso apareceu agora. **Correção aprovada e programada (09/10/2026, commit `77040e1`; sem regra nem índice):** (1) `src/lib/fileDelivery.ts` — no celular/tablet (`isPhoneOrTablet`) o arquivo não é baixado por link: vai para o aviso **"PDF pronto"** (`src/components/PdfReadySheet.tsx`, montado uma vez no `main.tsx`) e o toque em **"Abrir / compartilhar"** abre o menu de compartilhar do celular (`navigator.share` com o arquivo; sem ele, abre em outra aba); no computador baixa como antes. `downloadBytes`/`downloadBlob` (`osPdf.ts`) e o PDF da preventiva (`OrderDetailsDrawer`) usam esse caminho → vale para todos os PDFs do celular (preventiva, OS, "Baixar PDF com a assinatura do cliente", "Assinadas pelo cliente"). Dois toques porque o iPhone só abre o menu logo após um toque e montar o PDF leva segundos. (2) **Proteção** no `main.tsx`: se a página "saiu" (`pagehide`) e o app volta a aparecer (`pageshow`/tela visível/foco), recarrega sozinho (o rascunho da preventiva fica no aparelho). Testes 12/12 (iPhone: PDF pronto e compartilhar na preventiva e na OS, Iniciar depois do PDF, recarregar ao voltar, celular sem compartilhar abre em outra aba, computador baixa direto); regressão: OS 5B 34/34, aviso 15/15, permissões/PDF e 8C-3 sem falha. Entregue em 9 partes (`p39/p39-parte-01..09-de-9.md`, ≤ ~1.600 caracteres), conferidas sobre o main `882977a` (resultado = ramo; tsc e build ok). **Aplicada no main `a0968a5` (09/10/2026), tudo entrou na 1ª vez; igual ao ramo; tsc e build ok.** **Teste do usuário no iPhone (09/10/2026):** travamento resolvido e PDF da OS ok; **PDF da preventiva dava erro ao enviar** — o nome do arquivo levava o nº real da preventiva com "/" (`formatOrderNumber`: "123 · MEN 10/26" → `Preventiva_123 · MEN 10/26.pdf`) e o compartilhar do iPhone recusa. Correção (commit `029f1b3`): `safeFileName` em `fileDelivery.ts` (troca `/ \ : * ? " < > |` por "-", " · " por "_" e espaços por "_" → `Preventiva_123_MEN_10-26.pdf`, vale também no computador); o aviso mostra o erro real do compartilhar. Testes: 2/2 (simulação do iPhone que recusa "/"), P39 12/12, permissões/PDF 19/19. Entregue em 1 parte (`p39b/p39b-parte-1-de-1.md`, 4 trocas), conferida sobre o main `a0968a5`. |
 
 ## 6. Perguntas em aberto
 
@@ -356,7 +411,7 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 
 ---
 
-## 9. Índices do banco (58, conferidos pelos prints em 09/10/2026, depois da 8C-2)
+## 9. Índices do banco (62 em 10/10/2026: 58 conferidos pelos prints em 09/10/2026 + `cliSigned`, 2 de `nextSigner` e `unit + updatedAt`)
 
 Lista completa como está no Console (escopo **Coleta**, salvo onde diz "Grupo de coleção"). ↓ = decrescente; sem seta = crescente.
 
@@ -454,6 +509,17 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 | `src/components/assets/HistoryPager.tsx` | Paginação do histórico |
 | `cloud-functions/functions/index.js` | `resetUserPassword` (chamada, só Super Admin), `dailyDeadlines` (00:00, Brasília), `monthlyClosing` (00:10 do dia 1º) |
 | `firestore.rules` | Regras (publicar no Console) |
+| `src/lib/fileDelivery.ts`, `src/components/PdfReadySheet.tsx` | Entrega de PDF/planilha/ZIP: no celular, aviso "PDF pronto" + compartilhar (P39); no computador, baixa |
+| `src/main.tsx` | Recarrega ao voltar depois de `pagehide` (P39); clique abre o calendário dos campos de data; monta o `PdfReadySheet` |
+| `src/db/localSync.ts` | Cadastros guardados no aparelho (materiais, insumos, efetivo, usuários, modelos, endereços) com atualização em tempo real |
+| `src/db/workOrders.ts` | Chamados GLPI: criar, atribuir, executar, Pendente, Acompanhamento (`dbAddWorkOrderNote`), escuta do técnico (`subscribeMyWorkOrders`) |
+| `src/db/workOrderList.ts` | Lista do computador: filtros, cards (`dbGetOsCounters`), escuta de mudanças (`subscribeWorkOrderChanges`), `osMatchesMode` |
+| `src/db/workOrderSign.ts` | Assinaturas em ordem, `osStatusLabel`, link do cliente, "Assinadas pelo cliente" (`subscribeClientSignedOrders`) |
+| `src/db/workOrderCost.ts`, `overtime.ts`, `companies.ts` | Custo/homem-hora dos chamados, regras de hora extra, empresas |
+| `src/db/materialRequests.ts`, `supplies.ts`, `supplyRequests.ts`, `warehouses.ts` | Pedidos de material (PM-), insumos e pedidos de insumo (PI-), almoxarifados |
+| `src/lib/osPdf.ts`, `osXlsx.ts`, `preventivePdf.ts` | PDF mapeado/padrão e ficha XLSX dos chamados; PDF padrão da preventiva |
+| `src/components/os/*` | Emitir OS, modelos de OS, lista (`WorkOrdersList`), ficha (`WorkOrderSheet`), execução no celular (`OsExecutionForm`), assinatura (`OsSignaturePad`) |
+| `src/components/mobile/TechnicianOsTab.tsx` | Aba "Minhas OS" do celular (Em aberto, Pendentes, Contestadas, Assinadas pelo cliente) |
 
 ---
 
