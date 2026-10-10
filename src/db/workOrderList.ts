@@ -86,23 +86,15 @@ export async function dbCountWorkOrders(unit: string, mode: OsListMode, cos: str
 
 export interface OsCounters {
   byStatus: Partial<Record<OsStatusFilter, number>>;
-  late: number;
-  closedMonth: number;
-  total: number;
 }
-// Painel: por situação (abertas e em assinatura), atrasadas e concluídas no mês
+// Painel: um contador por situação (as concluídas só pelos filtros; atrasada já aparece na lista)
+export const OS_PANEL_STATUSES: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada', 'Cancelada'];
 export async function dbGetOsCounters(unit: string, cos: string[] | null = null): Promise<OsCounters> {
-  const shown: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada'];
   try {
-    const [counts, late, closedMonth, total] = await Promise.all([
-      Promise.all(shown.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }, cos))),
-      dbCountWorkOrders(unit, { kind: 'late' }, cos),
-      dbCountWorkOrders(unit, { kind: 'closed', from: monthStartStr(), to: todayStr() }, cos),
-      dbCountWorkOrders(unit, { kind: 'filter' }, cos)
-    ]);
+    const counts = await Promise.all(OS_PANEL_STATUSES.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }, cos)));
     const byStatus: Partial<Record<OsStatusFilter, number>> = {};
-    shown.forEach((s, i) => (byStatus[s] = counts[i]));
-    return { byStatus, late, closedMonth, total };
+    OS_PANEL_STATUSES.forEach((s, i) => (byStatus[s] = counts[i]));
+    return { byStatus };
   } catch (err: any) {
     checkQuotaException(err);
     throw err;

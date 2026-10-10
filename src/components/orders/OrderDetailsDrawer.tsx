@@ -604,13 +604,67 @@ export default function OrderDetailsDrawer({
                   #{formatOrderNumber(selectedOrder.id)} • {selectedOrder.status}
                 </p>
               </div>
-              
-              <button 
-                onClick={onClose}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {/* PDF DA PREVENTIVA (no topo, como na OS): o mapeado do modelo (se tiver) ou o padrão; só com "Baixar PDF da preventiva" */}
+                {(!userHasActionPermission || userHasActionPermission('preventive_pdf')) && (() => {
+                  const assetObj = assets.find(a => a.id === selectedOrder.assetId);
+                  const matchingTpl = templates.find(t => {
+                    if (selectedOrder.templateId && t.id === selectedOrder.templateId) return true;
+                    if (assetObj) {
+                      const type = assetObj.specs?.TIPO || assetObj.specs?.tipo;
+                      if (t.targetAssetType && type && t.targetAssetType.toLowerCase() === type.toLowerCase()) return true;
+                      if (t.targetSectorOrType && assetObj.sector && t.targetSectorOrType.toLowerCase() === assetObj.sector.toLowerCase()) return true;
+                    }
+                    return false;
+                  });
+                  const mapped = !!matchingTpl?.pdfTemplate?.pdfBase64;
+
+                  return (
+                    <button
+                      type="button"
+                      disabled={pdfBusy || !!selectedOrder.checklistPending}
+                      onClick={async () => {
+                        setPdfBusy(true);
+                        try {
+                          // A assinatura fica gravada à parte: busca antes de montar o PDF
+                          const signature = selectedOrder.signature || (selectedOrder.hasSignature ? await dbGetOrderSignature(selectedOrder.id) : null);
+                          const orderForPdf = { ...selectedOrder, signature };
+                          const fileBase = `Preventiva_${formatOrderNumber(selectedOrder.id)}`;
+                          if (mapped) {
+                            // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
+                            const supplies = pdfUsesSupplies(matchingTpl!.pdfTemplate!.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
+                            const { pdfBytes, blobUrl } = await generateFilledPdf(matchingTpl!.pdfTemplate!, orderForPdf, assetObj, matchingTpl, supplies);
+                            URL.revokeObjectURL(blobUrl);
+                            deliverBytes(pdfBytes, `${fileBase}.pdf`);
+                          } else {
+                            // Modelo sem PDF mapeado: PDF padrão (checklist, execução, insumos e assinatura)
+                            const supplies = await dbGetOrderSupplies(selectedOrder.id, false, true);
+                            const companyName = selectedOrder.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === selectedOrder.company)?.name || selectedOrder.company : '';
+                            const bytes = await generatePreventiveStandardPdf({ order: orderForPdf, templateName: matchingTpl?.name, companyName, signature, supplies });
+                            deliverBytes(bytes, `${fileBase}.pdf`);
+                          }
+                        } catch (err: any) {
+                          setExecMsg({ type: 'error', text: `Não foi possível gerar o PDF: ${err?.message || err}` });
+                        } finally {
+                          setPdfBusy(false);
+                        }
+                      }}
+                      className="h-9 px-3 flex items-center justify-center gap-1 rounded-xl border border-white/30 text-white text-xs font-black hover:bg-white/10 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                      title={mapped ? 'Baixar o PDF mapeado do modelo, preenchido' : 'Baixar o PDF padrão da preventiva (o modelo não tem PDF mapeado)'}
+                    >
+                      <Download className="w-4 h-4" />
+                      {pdfBusy ? '...' : 'PDF'}
+                    </button>
+                  );
+                })()}
+                <button 
+                  onClick={onClose}
+                  className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Scrollable execution items */}
@@ -1466,59 +1520,6 @@ export default function OrderDetailsDrawer({
                 </button>
               )}
 
-              {/* PDF DA PREVENTIVA: o mapeado do modelo (se tiver) ou o padrão; só com "Baixar PDF da preventiva" */}
-              {(!userHasActionPermission || userHasActionPermission('preventive_pdf')) && (() => {
-                const assetObj = assets.find(a => a.id === selectedOrder.assetId);
-                const matchingTpl = templates.find(t => {
-                  if (selectedOrder.templateId && t.id === selectedOrder.templateId) return true;
-                  if (assetObj) {
-                    const type = assetObj.specs?.TIPO || assetObj.specs?.tipo;
-                    if (t.targetAssetType && type && t.targetAssetType.toLowerCase() === type.toLowerCase()) return true;
-                    if (t.targetSectorOrType && assetObj.sector && t.targetSectorOrType.toLowerCase() === assetObj.sector.toLowerCase()) return true;
-                  }
-                  return false;
-                });
-                const mapped = !!matchingTpl?.pdfTemplate?.pdfBase64;
-
-                return (
-                  <button
-                    type="button"
-                    disabled={pdfBusy || !!selectedOrder.checklistPending}
-                    onClick={async () => {
-                      setPdfBusy(true);
-                      try {
-                        // A assinatura fica gravada à parte: busca antes de montar o PDF
-                        const signature = selectedOrder.signature || (selectedOrder.hasSignature ? await dbGetOrderSignature(selectedOrder.id) : null);
-                        const orderForPdf = { ...selectedOrder, signature };
-                        const fileBase = `Preventiva_${formatOrderNumber(selectedOrder.id)}`;
-                        if (mapped) {
-                          // Insumos recebidos (Fase 8C-3): 1 leitura, só se o PDF do modelo tiver caixa de insumos
-                          const supplies = pdfUsesSupplies(matchingTpl!.pdfTemplate!.pins) ? await dbGetOrderSupplies(selectedOrder.id, false, true) : null;
-                          const { pdfBytes, blobUrl } = await generateFilledPdf(matchingTpl!.pdfTemplate!, orderForPdf, assetObj, matchingTpl, supplies);
-                          URL.revokeObjectURL(blobUrl);
-                          deliverBytes(pdfBytes, `${fileBase}.pdf`);
-                        } else {
-                          // Modelo sem PDF mapeado: PDF padrão (checklist, execução, insumos e assinatura)
-                          const supplies = await dbGetOrderSupplies(selectedOrder.id, false, true);
-                          const companyName = selectedOrder.company ? (await dbGetCompanies().catch(() => [])).find((c) => c.id === selectedOrder.company)?.name || selectedOrder.company : '';
-                          const bytes = await generatePreventiveStandardPdf({ order: orderForPdf, templateName: matchingTpl?.name, companyName, signature, supplies });
-                          deliverBytes(bytes, `${fileBase}.pdf`);
-                        }
-                      } catch (err: any) {
-                        setExecMsg({ type: 'error', text: `Não foi possível gerar o PDF: ${err?.message || err}` });
-                      } finally {
-                        setPdfBusy(false);
-                      }
-                    }}
-                    className="px-3 h-11 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black transition-all shadow-sm cursor-pointer shrink-0 disabled:opacity-50"
-                    title={mapped ? 'Baixar o PDF mapeado do modelo, preenchido' : 'Baixar o PDF padrão da preventiva (o modelo não tem PDF mapeado)'}
-                  >
-                    <Download className="w-4 h-4" />
-                    <span className="sm:hidden">{pdfBusy ? '...' : 'PDF'}</span>
-                    <span className="hidden sm:inline">{pdfBusy ? 'Gerando...' : 'Baixar PDF'}</span>
-                  </button>
-                );
-              })()}
             </div>
 
             {/* FLOATING SIGNATURE PAD INNER DRAWER POPUP */}

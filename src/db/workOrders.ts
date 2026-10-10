@@ -500,6 +500,15 @@ export async function dbPauseWorkOrder(order: WorkOrder, reason: string, by: str
   return pauses;
 }
 
+// ACOMPANHAMENTO (ajustes da etapa 8): o técnico registra uma observação na linha do tempo da OS, exatamente como
+// escreveu; não muda a situação nem a contagem do custo
+export async function dbAddWorkOrderNote(order: WorkOrder, text: string, by: string): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const note = text.trim();
+  if (!note) throw new Error('Escreva o acompanhamento.');
+  await updateDoc(doc(dbInstance, 'workOrders', order.id), { updatedAt: new Date().toISOString(), timeline: arrayUnion(event(by, 'Acompanhamento', note)) });
+}
+
 export async function dbResumeWorkOrder(order: WorkOrder, by: string): Promise<WorkOrderPause[]> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   if (order.status !== 'Pendente') throw new Error('Só uma OS pendente pode ser retomada.');

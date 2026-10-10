@@ -99,6 +99,18 @@ window.addEventListener('pageshow', (e) => (e.persisted ? window.location.reload
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reloadIfLeft());
 window.addEventListener('focus', reloadIfLeft);
 
+// Campos de data (app todo): tocar em qualquer parte do campo abre o calendário, não só no ícone do canto
+document.addEventListener('click', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.disabled || el.readOnly) return;
+  if (!['date', 'datetime-local', 'month', 'week', 'time'].includes(el.type)) return;
+  try {
+    el.showPicker?.();
+  } catch {
+    /* navegador sem suporte ou calendário já aberto */
+  }
+});
+
 const root = createRoot(document.getElementById('root')!);
 const params = new URLSearchParams(window.location.search);
 const publicAssetParam = params.get('public_asset') || params.get('asset_id') || params.get('patrimonio');

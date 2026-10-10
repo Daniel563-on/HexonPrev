@@ -5,7 +5,7 @@ import {
   companiesOfUnit,
   dbGetCompanies,
   OS_FILTER_STATUSES,
-  OS_SIGN_FILTERS,
+  OS_PANEL_STATUSES,
   OsStatusFilter,
   osFilterLabel,
   osStatusLabel,
@@ -71,11 +71,12 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     return unitOptions[0] || '';
   });
   // Filtros do banco
-  const [status, setStatus] = useState<OsStatusFilter | ''>('');
+  // Abre em Novas para todo mundo (ajustes da etapa 8); as concluídas só aparecem pelos filtros
+  const [status, setStatus] = useState<OsStatusFilter | ''>('Nova');
   const [tech, setTech] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [mode, setMode] = useState<OsListMode>({ kind: 'filter' });
+  const [mode, setMode] = useState<OsListMode>({ kind: 'filter', status: 'Nova' });
   // Filtros do que já veio
   const [interv, setInterv] = useState('');
   const [onlyLate, setOnlyLate] = useState(false);
@@ -145,14 +146,14 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     } catch {
       /* ignora */
     }
-    setStatus('');
+    setStatus('Nova');
     setTech('');
     setFrom('');
     setTo('');
     setInterv('');
     setOnlyLate(false);
     setCompanyFilter('');
-    const m: OsListMode = { kind: 'filter' };
+    const m: OsListMode = { kind: 'filter', status: 'Nova' };
     setMode(m);
     loadFirst(m);
     loadCounters();
@@ -178,14 +179,14 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     loadFirst(m);
   };
   const clearFilters = () => {
-    setStatus('');
+    setStatus('Nova');
     setTech('');
     setFrom('');
     setTo('');
     setInterv('');
     setOnlyLate(false);
     setTerm('');
-    const m: OsListMode = { kind: 'filter' };
+    const m: OsListMode = { kind: 'filter', status: 'Nova' };
     setMode(m);
     loadFirst(m);
   };
@@ -403,12 +404,9 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
         <>
           {/* Painel de acompanhamento */}
           <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Painel de acompanhamento">
-            {chip('Todas', counters?.total, isMode('filter', '') && !tech && !from && !to, () => pickCounter({ kind: 'filter' }))}
-            {(['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada'] as OsStatusFilter[]).map((s) =>
-              chip(s === 'Nova' ? 'Novas' : s === 'Pendente' ? 'Pendentes' : s === 'Contestada' ? 'Contestadas' : osFilterLabel(s), counters?.byStatus[s], isMode('filter', s), () => pickCounter({ kind: 'filter', status: s }, s), s === 'Contestada' ? 'text-rose-700' : 'text-slate-800')
+            {OS_PANEL_STATUSES.map((s) =>
+              chip(s === 'Nova' ? 'Novas' : s === 'Pendente' ? 'Pendentes' : s === 'Contestada' ? 'Contestadas' : s === 'Cancelada' ? 'Canceladas' : osFilterLabel(s), counters?.byStatus[s], isMode('filter', s), () => pickCounter({ kind: 'filter', status: s }, s), s === 'Contestada' ? 'text-rose-700' : s === 'Cancelada' ? 'text-slate-500' : 'text-slate-800')
             )}
-            {chip('Atrasadas', counters?.late, isMode('late'), () => pickCounter({ kind: 'late' }), 'text-rose-600')}
-            {chip('Concluídas no mês', counters?.closedMonth, isMode('closed'), () => pickCounter({ kind: 'closed', from: monthStartStr(), to: todayStr() }), 'text-emerald-700')}
           </div>
 
           {/* Busca e filtros */}
