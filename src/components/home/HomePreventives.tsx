@@ -204,7 +204,9 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
           </div>
         )}
       </div>
-      <div className={`${homeCard} p-4 space-y-5`}>
+      {/* Em tela larga: cumprimento à esquerda, cartões à direita */}
+      <div className="grid grid-cols-1 2xl:grid-cols-5 gap-3 items-start">
+      <div className={`${homeCard} p-4 space-y-5 2xl:col-span-3`}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-black text-slate-900 dark:text-white">Cumprimento de {monthName(month)}</p>
           {isCurrent && (
@@ -236,7 +238,7 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
           </p>
         )}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 2xl:col-span-2">
         {openCards.map((c) => (
           <button
             key={c.label}
@@ -255,6 +257,7 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
             </span>
           </button>
         ))}
+      </div>
       </div>
       <p className="text-[11px] text-slate-500">Abertas = deste mês e de antes, ainda não encerradas (as de meses futuros já disparados ficam no PMOC).</p>
     </section>
