@@ -132,6 +132,12 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       onNavigate('service-orders');
     } else onNavigate('pmoc-preventivas');
   };
+  // Ordens de Serviço › Preventivas já buscando pelo nome do técnico
+  const openTechPreventives = (name: string) => {
+    setHomeLink('preventives-search', name);
+    saveLocal('hexon_orders_section', 'preventivas');
+    onNavigate('service-orders');
+  };
   const openSolicitations = (tab: string) => {
     setHomeLink('solicitations', tab);
     onNavigate('solicitations');
@@ -234,7 +240,9 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} onOpen={openPreventives} />}
 
       {/* 6. EQUIPE AGORA (quem atribui chamados ou planeja preventivas) */}
-      {(perms.assign || perms.plan) && <HomeTeam units={units} cos={cos} orders={myOrders} companies={companies} onOpenTech={(m) => openOs({ tech: m })} />}
+      {(perms.assign || perms.plan) && (
+        <HomeTeam units={units} cos={cos} orders={myOrders} companies={companies} onOpenOs={(m) => openOs({ tech: m })} onOpenPreventives={openTechPreventives} />
+      )}
     </div>
   );
 }

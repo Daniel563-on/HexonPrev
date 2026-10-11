@@ -1,24 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { Company, ServiceOrder, WorkOrder } from '../../types';
 import { onSyncChange, syncedList } from '../../db/localSync';
 import { subscribeTeamWorkOrders } from '../../db/homeTeam';
-import { formatOrderNumber } from '../../utils/orderNumber';
 import { homeCard, homeTitle } from './HomeNeeds';
 
-// INÍCIO › EQUIPE AGORA: técnicos da gerência e o que cada um tem aberto.
-// "Em preventiva agora" é real (horário do "Iniciar"); chamado não tem "Iniciar" (fica "Em andamento" desde a
-// atribuição), então para chamados mostra quantos estão com o técnico. Técnicos: cópia guardada no aparelho (0 leitura);
-// preventivas iniciadas: o que o app já carrega; chamados: escuta só dos "Em andamento" e "Pendente".
+// INÍCIO › EQUIPE AGORA: o que cada técnico da gerência tem com ele — preventivas para executar (atribuídas e ainda
+// não feitas: Planejada, Atrasada ou Em Execução, deste mês e de antes), chamados em andamento e pendentes.
+// Não mostra "em preventiva agora" (a preventiva dura minutos; o número mudaria o tempo todo). Técnicos: cópia guardada
+// no aparelho (0 leitura); preventivas: o que o app já carrega; chamados: escuta só dos "Em andamento" e "Pendente".
 
-type Group = 'prev' | 'os' | 'pend' | 'free';
-const GROUPS: { key: Group; label: string; color: string }[] = [
-  { key: 'prev', label: 'Em preventiva agora', color: '#10b981' },
-  { key: 'os', label: 'Com chamados em andamento', color: '#1d4ed8' },
-  { key: 'pend', label: 'Só com pendentes', color: '#f59e0b' },
-  { key: 'free', label: 'Sem nada aberto', color: '#94a3b8' }
-];
 const SHOW = 12;
+const TO_DO = ['Planejada', 'Atrasada', 'Em Execução'];
 
 interface Tech {
   matricula: string;
@@ -26,21 +18,16 @@ interface Tech {
   companies: string[];
 }
 
-const toDate = (v: any): Date | null => {
-  if (!v) return null;
-  if (typeof v.toDate === 'function') return v.toDate();
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
-};
-const since = (v: any) => {
-  const d = toDate(v);
-  if (!d) return '';
-  const hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hm}`;
-};
 const pl = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export default function HomeTeam(props: { units: string[]; cos: string[] | null; orders: ServiceOrder[]; companies: Company[]; onOpenTech: (matricula: string) => void }) {
+export default function HomeTeam(props: {
+  units: string[];
+  cos: string[] | null;
+  orders: ServiceOrder[];
+  companies: Company[];
+  onOpenOs: (matricula: string) => void;
+  onOpenPreventives: (name: string) => void;
+}) {
   const { units, cos, orders, companies } = props;
   const unitsKey = units.join('|');
   const cosKey = cos === null ? '*' : cos.join(',');
@@ -78,51 +65,49 @@ export default function HomeTeam(props: { units: string[]; cos: string[] | null;
 
   const rows = useMemo(() => {
     if (!techs) return null;
-    const order = (g: Group) => GROUPS.findIndex((x) => x.key === g);
+    const d = new Date();
+    const end = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-31`;
+    const toDo = orders.filter((o) => TO_DO.includes(o.status) && (o.startDate || o.scheduledDate || o.endDate || '') <= end);
     return techs
       .map((t) => {
-        const prev = orders.find((o) => o.inExecution?.matricula === t.matricula) || null;
+        const prevs = toDo.filter((o) => o.assignedTechnicianMatricula === t.matricula || (!o.assignedTechnicianMatricula && o.assignedTechnician === t.name));
+        const late = prevs.filter((o) => o.status === 'Atrasada').length;
         const mine = calls.filter((o) => o.assignedTechnicianMatricula === t.matricula);
-        const andamento = mine.filter((o) => o.status === 'Em andamento');
-        const pend = mine.filter((o) => o.status === 'Pendente');
-        const group: Group = prev ? 'prev' : andamento.length ? 'os' : pend.length ? 'pend' : 'free';
-        return { t, prev, andamento, pend, group };
+        const andamento = mine.filter((o) => o.status === 'Em andamento').length;
+        const pend = mine.filter((o) => o.status === 'Pendente').length;
+        return { t, prevs: prevs.length, late, andamento, pend, load: prevs.length + andamento + pend };
       })
-      .sort((a, b) => order(a.group) - order(b.group) || a.t.name.localeCompare(b.t.name));
+      .sort((a, b) => b.load - a.load || a.t.name.localeCompare(b.t.name));
   }, [techs, calls, orders]);
 
   const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '');
-  const color = (g: Group) => GROUPS.find((x) => x.key === g)!.color;
-  const busy = rows ? rows.filter((r) => r.group !== 'free') : [];
-  const free = rows ? rows.filter((r) => r.group === 'free') : [];
+  const busy = rows ? rows.filter((r) => r.load > 0) : [];
+  const free = rows ? rows.filter((r) => r.load === 0) : [];
   const shown = all ? busy : busy.slice(0, SHOW);
-
-  const detail = (r: NonNullable<typeof rows>[number]) => {
-    if (r.andamento.length === 1) {
-      const o = r.andamento[0];
-      return ` · ${o.number} · ${o.execAddressText || ''}${o.assignedAt ? ` · desde ${since(o.assignedAt)}` : ''}`;
-    }
-    if (!r.andamento.length && r.pend.length === 1) {
-      const p = r.pend[0].pauses?.[r.pend[0].pauses.length - 1];
-      return ` · ${r.pend[0].number}${p?.reason ? ` · ${p.reason}` : ''}`;
-    }
-    return '';
-  };
+  const sum = (k: 'prevs' | 'late' | 'andamento' | 'pend') => (rows ? rows.reduce((s, r) => s + r[k], 0) : null);
+  const cards = [
+    { label: 'Preventivas para executar', n: sum('prevs'), color: '#10b981', note: rows ? pl(sum('late') || 0, 'atrasada', 'atrasadas') : '' },
+    { label: 'Chamados em andamento', n: sum('andamento'), color: '#1d4ed8', note: '' },
+    { label: 'Chamados pendentes', n: sum('pend'), color: '#f59e0b', note: '' },
+    { label: 'Técnicos sem nada aberto', n: rows ? free.length : null, color: '#94a3b8', note: '' }
+  ];
+  const link = 'px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:border-indigo-300 cursor-pointer';
 
   return (
     <section className="space-y-3" aria-label="Equipe agora">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className={homeTitle}>Equipe agora</h3>
-        <span className="text-[11px] text-slate-500">Técnicos da gerência · atualiza sozinho · toque no técnico para ver os chamados dele</span>
+        <span className="text-[11px] text-slate-500">Técnicos da gerência · o que está com cada um · atualiza sozinho</span>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {GROUPS.map((g) => (
-          <div key={g.key} className={`${homeCard} p-3.5`}>
+        {cards.map((c) => (
+          <div key={c.label} className={`${homeCard} p-3.5`}>
             <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-              <i className="w-2 h-2 rounded-full inline-block" style={{ background: g.color }} />
-              {g.label}
+              <i className="w-2 h-2 rounded-full inline-block" style={{ background: c.color }} />
+              {c.label}
             </span>
-            <span className="block text-2xl font-black tabular-nums text-slate-900 dark:text-white mt-1">{rows ? rows.filter((r) => r.group === g.key).length : '…'}</span>
+            <span className="block text-2xl font-black tabular-nums text-slate-900 dark:text-white mt-1">{c.n ?? '…'}</span>
+            {c.note && <span className="block text-[11px] font-bold text-rose-600 dark:text-rose-400">{c.note}</span>}
           </div>
         ))}
       </div>
@@ -130,16 +115,8 @@ export default function HomeTeam(props: { units: string[]; cos: string[] | null;
       {busy.length > 0 && (
         <div className={`${homeCard} grid grid-cols-1 2xl:grid-cols-2 divide-y 2xl:divide-y-0 divide-slate-100 dark:divide-slate-800`}>
           {shown.map((r, i) => (
-            <button
-              key={r.t.matricula}
-              type="button"
-              onClick={() => props.onOpenTech(r.t.matricula)}
-              className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer ${i >= 2 ? '2xl:border-t 2xl:border-slate-100 2xl:dark:border-slate-800' : ''}`}
-            >
-              <span className="relative w-9 h-9 shrink-0 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm font-black">
-                {r.t.name.charAt(0)}
-                <i className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-[#0b1220]" style={{ background: color(r.group) }} />
-              </span>
+            <div key={r.t.matricula} className={`px-4 py-3 flex items-center gap-3 ${i >= 2 ? '2xl:border-t 2xl:border-slate-100 2xl:dark:border-slate-800' : ''}`}>
+              <span className="w-9 h-9 shrink-0 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm font-black">{r.t.name.charAt(0)}</span>
               <span className="flex-1 min-w-0">
                 <span className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-sm font-bold text-slate-900 dark:text-white">{r.t.name}</span>
@@ -147,23 +124,32 @@ export default function HomeTeam(props: { units: string[]; cos: string[] | null;
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300">{companyName(r.t.companies[0])}</span>
                   )}
                 </span>
-                {r.prev && (
-                  <span className="block text-xs text-slate-600 dark:text-slate-300 truncate">
-                    <b className="text-emerald-700 dark:text-emerald-300">Preventiva {formatOrderNumber(r.prev.id)}</b> · {r.prev.assetName || r.prev.title}
-                    {r.prev.inExecution ? ` · desde ${since(r.prev.inExecution.deviceStartedAt)}` : ''}
-                  </span>
+                <span className="block text-xs text-slate-600 dark:text-slate-300">
+                  {r.prevs > 0 && (
+                    <b className="text-emerald-700 dark:text-emerald-300">
+                      {pl(r.prevs, 'preventiva para executar', 'preventivas para executar')}
+                      {r.late > 0 && <span className="text-rose-600 dark:text-rose-400"> ({pl(r.late, 'atrasada', 'atrasadas')})</span>}
+                    </b>
+                  )}
+                  {r.prevs > 0 && r.andamento + r.pend > 0 && ' · '}
+                  {r.andamento > 0 && <b className="text-blue-700 dark:text-blue-300">{pl(r.andamento, 'chamado em andamento', 'chamados em andamento')}</b>}
+                  {r.andamento > 0 && r.pend > 0 && ' · '}
+                  {r.pend > 0 && <b className="text-amber-700 dark:text-amber-300">{pl(r.pend, 'pendente', 'pendentes')}</b>}
+                </span>
+              </span>
+              <span className="shrink-0 flex flex-wrap justify-end gap-1.5">
+                {r.prevs > 0 && (
+                  <button type="button" className={link} onClick={() => props.onOpenPreventives(r.t.name)}>
+                    Preventivas
+                  </button>
                 )}
-                {(r.andamento.length > 0 || r.pend.length > 0) && (
-                  <span className="block text-xs text-slate-600 dark:text-slate-300 truncate">
-                    {r.andamento.length > 0 && <b className="text-blue-700 dark:text-blue-300">{pl(r.andamento.length, 'chamado em andamento', 'chamados em andamento')}</b>}
-                    {r.andamento.length > 0 && r.pend.length > 0 && ' · '}
-                    {r.pend.length > 0 && <b className="text-amber-700 dark:text-amber-300">{pl(r.pend.length, 'pendente', 'pendentes')}</b>}
-                    {detail(r)}
-                  </span>
+                {r.andamento + r.pend > 0 && (
+                  <button type="button" className={link} onClick={() => props.onOpenOs(r.t.matricula)}>
+                    Chamados
+                  </button>
                 )}
               </span>
-              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-            </button>
+            </div>
           ))}
         </div>
       )}
