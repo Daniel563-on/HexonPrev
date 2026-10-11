@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Construction } from 'lucide-react';
 import { HexonUser, MaterialRequest, ServiceOrder, SupplyRequest } from '../../types';
 import SolicitationsView from '../SolicitationsView';
 import MaterialRequestsTab from './MaterialRequestsTab';
 import SupplyRequestsBoard from '../supplies/SupplyRequestsBoard';
+import { clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 
 // TELA SOLICITAÇÕES (Fase 8): abas "De corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
 // e "Insumos" (pedidos de insumos, 8C-2). Material: quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
@@ -26,7 +27,9 @@ export default function SolicitationsHub(props: {
   const canConfirmSupplies = userHasActionPermission('supply_requests_confirm');
   const canSeeSupplies = canConfirmSupplies || userHasActionPermission('supply_requests_view');
   type Tab = 'corretiva' | 'material' | 'insumos' | 'horaExtra' | 'pernoite';
-  const [tab, setTab] = useState<Tab>('corretiva');
+  // Atalho do Início: abre na aba pedida (corretiva, material ou insumos)
+  const [tab, setTab] = useState<Tab>(() => peekHomeLink<Tab>('solicitations') || 'corretiva');
+  useEffect(() => clearHomeLink('solicitations'), []);
 
   const tabBtn = (key: Tab, label: string, n: number) => (
     <button
