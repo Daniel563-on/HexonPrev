@@ -1194,10 +1194,10 @@ export default function App() {
                     })()
               }
               pending={{
-                solicitations: pendingSolicitationOrders.length,
-                material: pendingMaterialRequests.length,
-                supplyConfirm: pendingSupplyConfirm.length,
-                supplyStore: pendingSupplyStore.length,
+                solicitations: pendingSolicitationOrders.filter((o) => dataUnits.includes(o.unit || o.sector)).length,
+                material: pendingMaterialRequests.filter((r) => dataUnits.includes(r.unit)).length,
+                supplyConfirm: pendingSupplyConfirm.filter((r) => dataUnits.includes(r.unit)).length,
+                supplyStore: pendingSupplyStore.filter((r) => dataUnits.includes(r.unit)).length
               }}
               onNavigate={setCurrentTab}
               onViewedMonthChange={setOrdersMonth}
