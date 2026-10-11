@@ -1169,6 +1169,7 @@ export default function App() {
           {currentTab === 'home' && (
             <HomeView
               userProfile={userProfile}
+              profileName={resolveUserProfile(userProfile, accessProfiles)?.name || userProfile.perfil}
               orders={filteredOrders}
               pendingSolicitationsCount={solicitationsBadge}
               canSeeOrders={userHasActionPermission('view_service_orders')}
