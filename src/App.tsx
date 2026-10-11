@@ -1169,12 +1169,38 @@ export default function App() {
           {currentTab === 'home' && (
             <HomeView
               userProfile={userProfile}
+              profileName={resolveUserProfile(userProfile, accessProfiles)?.name || userProfile.perfil}
               orders={filteredOrders}
-              pendingSolicitationsCount={solicitationsBadge}
-              canSeeOrders={userHasActionPermission('view_service_orders')}
-              canSeeSolicitations={userHasTabPermission('solicitations')}
-              activeUnit={visibleUnits === null ? adminUnit : undefined}
+              units={dataUnits}
+              visibleCompanies={visibleCompanies}
+              perms={{
+                emit: userHasTabPermission('os-emit'),
+                seeOs: userHasActionPermission('os_view'),
+                assign: userHasActionPermission('os_assign'),
+                contest: userHasActionPermission('os_contest_reply'),
+                seePreventives: userHasActionPermission('view_service_orders'),
+                plan: userHasActionPermission('plan_orders'),
+                decideSolicitations: userHasActionPermission('manage_solicitations'),
+                decideMaterial: userHasActionPermission('material_requests_decide'),
+                confirmSupply: userHasActionPermission('supply_requests_confirm'),
+                supplyStore: canSupplyStore
+              }}
+              mySignRole={
+                userProfile.perfil === 'Super Administrador'
+                  ? 'all'
+                  : (() => {
+                      const r = resolveUserProfile(userProfile, accessProfiles)?.osSignAs;
+                      return r === 'engenheiro' || r === 'gerente' ? r : null;
+                    })()
+              }
+              pending={{
+                solicitations: pendingSolicitationOrders.filter((o) => dataUnits.includes(o.unit || o.sector)).length,
+                material: pendingMaterialRequests.filter((r) => dataUnits.includes(r.unit)).length,
+                supplyConfirm: pendingSupplyConfirm.filter((r) => dataUnits.includes(r.unit)).length,
+                supplyStore: pendingSupplyStore.filter((r) => dataUnits.includes(r.unit)).length
+              }}
               onNavigate={setCurrentTab}
+              onViewedMonthChange={setOrdersMonth}
             />
           )}
 

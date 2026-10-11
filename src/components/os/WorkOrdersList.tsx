@@ -32,6 +32,7 @@ import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
 import { ZipBuilder } from '../../lib/zip';
+import { HomeOsLink, clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 
 // ORDENS DE SERVIÇO › CORRETIVAS (Fase 6): painel de acompanhamento (contadores), busca por nº da OS ou GLPI,
 // filtros (gerência + situação OU técnico + período; intervenção e "só atrasadas" filtram o que já veio),
@@ -62,7 +63,10 @@ const field = 'h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white';
 const label = 'block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5';
 
 export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole }: Props) {
-  const [signView, setSignView] = useState(false); // "Precisam da minha assinatura"
+  // Atalho do Início: a lista abre já filtrada (situação, atrasadas ou "Precisam da minha assinatura")
+  const [homeLink] = useState(() => peekHomeLink<HomeOsLink>('os-list'));
+  useEffect(() => clearHomeLink('os-list'), []);
+  const [signView, setSignView] = useState(() => !!homeLink?.sign); // "Precisam da minha assinatura"
   const [unit, setUnit] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('hexon_os_unit');
@@ -72,13 +76,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     }
     return unitOptions[0] || '';
   });
+  const linkUnit = useRef<string | null>(unit); // o atalho do Início vale só para a gerência com que a tela abriu
+  const linkStatus = (homeLink?.late ? '' : homeLink?.status || 'Nova') as OsStatusFilter | '';
   // Filtros do banco
   // Abre em Novas para todo mundo (ajustes da etapa 8); as concluídas só aparecem pelos filtros
-  const [status, setStatus] = useState<OsStatusFilter | ''>('Nova');
+  const [status, setStatus] = useState<OsStatusFilter | ''>(linkStatus);
   const [tech, setTech] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [mode, setMode] = useState<OsListMode>({ kind: 'filter', status: 'Nova' });
+  const [mode, setMode] = useState<OsListMode>(homeLink?.late ? { kind: 'late' } : { kind: 'filter', status: linkStatus || 'Nova' });
   // Filtros do que já veio
   const [interv, setInterv] = useState('');
   const [onlyLate, setOnlyLate] = useState(false);
@@ -220,14 +226,17 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     } catch {
       /* ignora */
     }
-    setStatus('Nova');
+    const l = homeLink && unit === linkUnit.current ? homeLink : undefined;
+    if (unit !== linkUnit.current) linkUnit.current = null;
+    const st = (l?.late ? '' : l?.status || 'Nova') as OsStatusFilter | '';
+    setStatus(st);
     setTech('');
     setFrom('');
     setTo('');
     setInterv('');
     setOnlyLate(false);
     setCompanyFilter('');
-    const m: OsListMode = { kind: 'filter', status: 'Nova' };
+    const m: OsListMode = l?.late ? { kind: 'late' } : { kind: 'filter', status: st || 'Nova' };
     setMode(m);
     loadFirst(m);
     loadCounters();
