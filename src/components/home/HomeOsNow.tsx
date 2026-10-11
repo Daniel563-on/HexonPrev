@@ -25,7 +25,7 @@ export default function HomeOsNow({ counts, onOpen }: { counts: HomeOsCounts | n
         <h3 className={homeTitle}>Chamados GLPI agora</h3>
         <span className="text-[11px] text-slate-500">Atualiza sozinho · toque para abrir a lista já filtrada</span>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-2 gap-3">
         {CARDS.map((c) => (
           <button
             key={c.key}

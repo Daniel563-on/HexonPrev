@@ -183,7 +183,7 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
   const chip = 'px-2 py-0.5 rounded text-[11px] font-bold';
 
   return (
-    <div className="space-y-7 font-sans max-w-6xl">
+    <div className="space-y-7 font-sans">
       {/* 1. TOPO */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-5 border-slate-200 dark:border-slate-800">
         <div>
@@ -206,11 +206,19 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
         )}
       </div>
 
-      {/* 2. PRECISA DE VOCÊ */}
-      <HomeNeeds items={needs} />
-
-      {/* 3. CHAMADOS GLPI AGORA */}
-      {perms.seeOs && <HomeOsNow counts={osCounts} onOpen={(k) => openOs(k === 'late' ? { late: true } : { status: k })} />}
+      {/* 2 e 3 lado a lado em tela larga */}
+      <div className={`grid grid-cols-1 gap-7 items-start ${perms.seeOs ? '2xl:grid-cols-5' : ''}`}>
+        {/* 2. PRECISA DE VOCÊ */}
+        <div className={perms.seeOs ? '2xl:col-span-3' : ''}>
+          <HomeNeeds items={needs} />
+        </div>
+        {/* 3. CHAMADOS GLPI AGORA */}
+        {perms.seeOs && (
+          <div className="2xl:col-span-2">
+            <HomeOsNow counts={osCounts} onOpen={(k) => openOs(k === 'late' ? { late: true } : { status: k })} />
+          </div>
+        )}
+      </div>
 
       {/* 4. PREVENTIVAS E VISTORIAS */}
       {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} onOpen={openPreventives} />}
