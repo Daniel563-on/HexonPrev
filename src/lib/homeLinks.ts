@@ -16,9 +16,10 @@ export function clearHomeLink(screen: string): void {
   links.delete(screen);
 }
 
-// Lista de OS (Chamados GLPI): situação do painel, "atrasadas" ou a fila "Precisam da minha assinatura"
+// Lista de OS (Chamados GLPI): situação do painel, "atrasadas", a fila "Precisam da minha assinatura" ou um técnico
 export interface HomeOsLink {
   status?: string;
   late?: boolean;
   sign?: boolean;
+  tech?: string; // matrícula
 }
