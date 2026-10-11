@@ -76,7 +76,9 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
   useEffect(() => {
     dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
-  const companyLabel = cos === null ? 'Todas as empresas' : companies.filter((c) => cos.includes(c.id)).map((c) => c.name).join(', ') || 'Minhas empresas';
+  const companyLabel = cos === null ? 'todas as empresas' : companies.filter((c) => cos.includes(c.id)).map((c) => c.name).join(', ') || 'as empresas do perfil';
+  // Empresa do cadastro do usuário (igual à tela Usuários)
+  const myCompanies = companies.filter((c) => (userProfile.companies || []).includes(c.id)).map((c) => c.name).join(', ');
 
   // Só as preventivas das empresas que a pessoa vê
   const myOrders = useMemo(() => orders.filter((o) => isCompanyVisible(o.company, cos)), [orders, cosKey]);
@@ -178,7 +180,6 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
     needs.push({ key: 'supS', n, text: pl(n, 'pedido de insumo para fornecer', 'pedidos de insumo para fornecer'), hint: 'Almoxarifado', icon: <Warehouse className={ico} />, tone: TONE.slate, onOpen: () => onNavigate('almoxarifado') });
   }
 
-  const firstName = (userProfile.name || '').split(' ')[0];
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const chip = 'px-2 py-0.5 rounded text-[11px] font-bold';
 
@@ -187,13 +188,21 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       {/* 1. TOPO */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-5 border-slate-200 dark:border-slate-800">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Olá, {firstName}</h2>
+          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Olá, {userProfile.name}</h2>
+          {/* Dados do cadastro (os mesmos da tela Usuários) */}
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            {userProfile.cargo && <span className={`${chip} bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300`}>{userProfile.cargo}</span>}
             <span className={`${chip} bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300`}>{profileName}</span>
-            {units.length > 0 && <span className={`${chip} bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300`}>{units.join(' · ')}</span>}
-            <span className={`${chip} bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300`}>{companyLabel}</span>
+            <span className={`${chip} bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300`}>Gerência: {userProfile.gerencia || '—'}</span>
+            <span className={`${chip} bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300`}>Empresa: {myCompanies || '—'}</span>
             <span className="text-xs text-slate-500 ml-1">{today}</span>
           </div>
+          {/* De onde vêm os números abaixo */}
+          {units.length > 0 && (
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              Resumo de: <b className="text-slate-700 dark:text-slate-300">{units.join(' · ')}</b> · {companyLabel}
+            </p>
+          )}
         </div>
         {perms.emit && (
           <button
