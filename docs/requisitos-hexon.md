@@ -54,7 +54,7 @@
 | 4. Emitir OS (GLPI) + Modelos de OS (4b, 4c) | ✅ |
 | 5. Execução dos chamados: 5A execução e homem-hora, 5B assinaturas em ordem + link do cliente + contestação, 5C PDF mapeado e ficha XLSX | ✅ |
 | 6. Ordens de Serviço › Chamados GLPI: lista, filtros, planilha, ZIP | ✅ |
-| 7. Equipes e Programação Semanal | ⏸ pulada por decisão do usuário (08/10) |
+| 7. Equipes e Programação Semanal | 🟡 retomada em 12/10/2026: **7A (Equipes) programada e testada**; 7B grade da semana, 7C blocos, 7D publicar (PDF + aviso), 7E Preventivas nova + pernoite pelo planejador |
 | 8. Solicitações: 8A aba do técnico, 8B pedido de material (PM-AAAA-NNNN), 8C insumos (PI-AAAA-NNNN) | ✅ — **8D hora extra e pernoite adiada** |
 | 9. Quadro de Avisos e Histórico GLPI | 🟡 programada e testada (12/10/2026); entrega em 2 grupos (A avisos, B GLPI) |
 | 10. Ponto e Contratos | 🔴 não começou |
@@ -118,6 +118,8 @@ Feitos fora das fases: **Empresas contratadas** (E1–E5: tudo separado por ger�
   - **Plano proposto (aguardando aprovação):** **7A** Equipes (cadastro = equipe habitual; técnico deixa de editar; permissões "Ver Programação"/"Programar"); **7B** grade da semana só para ver e organizar (equipe da semana, ausentes, marcar dia, prazo de planejamento; mostra o que já está programado/atribuído, inclusive lotes do PMOC, tracejado); **7C** blocos (preventivas e chamados, regra do prazo até o último dia, fim de semana com confirmação, pernoite por viagem, "A programar", histórico; chamado ganha dia programado); **7D** publicar (PDF no formato da PSS, revisões, aviso fixado com PDF — Quadro de Avisos passa a aceitar PDF); **7E** Ordens de Serviço › Preventivas nova + Atribuir técnico com dia e pernoite + pernoite fora da tela do técnico + **só então** sai o Planejamento & Calendário do PMOC. Pergunta aberta: o que entra nos dias da **Engenharia**.
   - **Resposta (12/10/2026):** **todas as equipes (inclusive Engenharia) podem ter dias com OS/preventiva e dias vazios**; dia sem nada fica vazio. Obs.: hoje só perfil **Profissional** aparece em "Atribuir técnico" e no planejamento (`WorkOrdersList`, `PlanningBoard`) e executa pelo celular — engenheiro receber OS fica para decidir na 7C.
   - **Desenho da 7A enviado (12/10/2026; prévia só no app de teste, `fotos5`):** menu **Programação** com sub-abas "Semana" (7B) e **"Equipes"**; equipes por gerência + empresa, em ordem (▲▼ = ordem na grade e no PDF); cada equipe = nome, tipo de serviço (sugestões), **responsável com login** e membros (usuários + Efetivo da empresa; uma pessoa em uma equipe só; "trazer" tira da outra); painel "Pessoas sem equipe"; equipe habitual que o técnico já montou aparece como "Equipe sem nome". **Gravação = o mesmo `usualTeams/{matrícula do responsável}`** (+ nome, tipo, empresa, ordem), então a execução continua igual; regra muda: só quem tem "Programar" grava, técnico só lê; Meu Perfil vira só leitura. Permissões novas: "Ver Programação" e "Programar". Aguardando aprovação do plano e da 7A.
+  - **Aprovado (12/10/2026):** plano 7A→7E e desenho da 7A ("o técnico continua podendo tirar ou pôr gente dentro da OS ou da preventiva").
+  - **7A programada e testada (12/10/2026, commit `ee7f8ea`; 34 partes `7a-parte-NN-de-34.md`, conferidas byte a byte sobre o main `1348600`, tsc e build ok):** `src/db/teams.ts` (novo: `dbListTeams(unit)` = `usualTeams where unit ==`; `dbSaveTeams(save, remove)` num `writeBatch` — trocar responsável apaga o id antigo; trazer alguém tira da outra equipe na mesma gravação); `src/components/programacao/` (novos: `ProgramacaoView` com sub-abas Semana — aviso "próxima etapa" — e Equipes; `TeamsView` — gerência, empresa, ▲▼ ordem, cartões, "Pessoas sem equipe" só técnicos com login e Efetivo, "Pôr na equipe..."; `TeamForm` — nome, tipo com sugestões `TEAM_TYPES`, responsável = qualquer usuário com login da empresa (técnico primeiro; responsável de outra equipe fica bloqueado), membros por busca, "trazer (sai da X)", excluir com confirmação na tela); `UsualTeamEditor.tsx` virou **só leitura** (Meu Perfil "Minha equipe — nome" e o botão Equipe do Planejamento do PMOC); `dbSaveUsualTeam` removido; `executionTeam.ts` ganhou `dbGetUnitPeopleInfo` (pessoas com empresas, login e perfil); `UsualTeam` + `name`, `type`, `company`, `order`, `respName`; permissões `prog_view` ("Ver Programação", Abas) e `prog_edit` ("Programar", Ações), área `programacao`, só pelo perfil (fallback false, como avisos/GLPI); menu **Programação** (ícone CalendarDays) logo depois de Ordens de Serviço. **Regra `usualTeams`** (seção 4e): todos leem; criar/alterar/apagar só `prog_edit` nas gerências do perfil (`tmUnitOk`/`tmWriteOk`/`tmDeleteOk`, padrão u/p), chaves permitidas `matricula, unit, members, updatedAt, updatedBy, name (≤60), type (≤80), company, order, respName`, até 60 membros; **o técnico não grava mais**. **Índice novo:** `usualTeams | unit` (Coleta, não esparso). Testes: regras 20/20; telas 24/24 (planejador, quem só vê, sem permissão, técnico no celular, Super Admin) + perfis mostram a área; regressão Avisos 34/34, GLPI 18/18, perfis Fase 9 ok.
 - Oferecido e aguardando o usuário: **bateria de testes completa, aba por aba**, no emulador; **piloto com uma gerência** antes de abrir para todos.
 - Adiados: 8D (hora extra e pernoite), Fase 7, Relatórios, Quadro de Avisos/Histórico GLPI, Ponto/Contratos, celular do técnico (Fase 12), botão "zerar sistema" (o banco será zerado antes da produção).
 - Observação da revisão de permissões (2º ajuste): algumas permissões são só de tela (o banco não bloqueia); apertar regras quando houver tempo (ver P26).
@@ -466,6 +468,7 @@ Lista completa como está no Console (escopo **Coleta**, salvo onde diz "Grupo d
 | materials | unit + syncAt | ✓ |
 | materials | unit + company + syncAt | ✓ |
 | orderDeletions | syncAt | — |
+| usualTeams | unit | — (Fase 7A, a criar) |
 | planningLots | unit + periodStart | — |
 | serviceOrders | unitOpen | ✓ |
 | serviceOrders | plannedEnd | ✓ |
@@ -532,6 +535,7 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 | `src/db/orderStarts.ts` | Iniciar/desfazer/concluir (offline) |
 | `src/db/dispatch.ts`, `dispatchIndex.ts` | Disparo das OS |
 | `src/db/historyPages.ts` | Histórico em páginas de 12 |
+| `src/db/teams.ts`, `src/components/programacao/*` | Programação (Fase 7): equipes = equipe habitual do responsável (`usualTeams`); `ProgramacaoView` (Semana/Equipes), `TeamsView`, `TeamForm` |
 | `src/db/appControl.ts` | Forçar atualização e manutenção (fora do disjuntor de propósito) |
 | `src/db/branding.ts`, `src/components/BrandLogo.tsx`, `src/components/users/BrandingCard.tsx` | Logo do sistema (identidade visual) |
 | `src/db/manHours.ts` | Tempo, homem-hora e custo da OS |
