@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ClipboardList, Search, SlidersHorizontal, ShieldAlert, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, ShieldAlert, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { ServiceOrder, HexonUser, ChecklistItem, formatDateBR, Company } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
 import {
   dbGetHandledSolicitationsPage, dbCountSolicitations, dbDecideCorrective, dbFixCorrective,
-  requestedItems, isItemPending, CorrectiveDecision, dbGetCompanies, isCompanyVisible
+  requestedItems, isItemPending, CorrectiveDecision, dbGetCompanies, dbGetManagements, isCompanyVisible
 } from '../db/firebase';
 import CorrectiveDecisionNote from './orders/execution/CorrectiveDecisionNote';
 
@@ -12,6 +12,7 @@ import CorrectiveDecisionNote from './orders/execution/CorrectiveDecisionNote';
 // Cada "Não conforme" de pergunta marcada no modelo vira um item de solicitação. O planejador decide item por item:
 // "Abrir corretiva" (nº do chamado GLPI obrigatório) ou "Não abrir" (justificativa obrigatória).
 // A decisão não muda depois; quem tem a permissão só corrige o nº do GLPI ou o texto da justificativa.
+// Layout igual ao de Material e Insumos: busca + gerência + empresa e as situações em botões (com os números).
 
 type SolicitationFilter = 'Pendente' | 'Com Acao' | 'Resolvido' | 'Cancelado';
 const HANDLED_PAGE_SIZE = 20;
@@ -33,8 +34,15 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   const [searchTerm, setSearchTerm] = useState('');
   const [company, setCompany] = useState('Todas');
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [units, setUnits] = useState<string[]>(scopeUnits || []);
+  const [unit, setUnit] = useState(''); // '' = todas as gerências que vê
   useEffect(() => {
     dbGetCompanies().then(setCompanies).catch(() => {});
+    if (scopeUnits === null) {
+      dbGetManagements()
+        .then((l) => setUnits(l.map((m) => m.name).filter((n) => n && n !== 'Todas')))
+        .catch(() => {});
+    }
   }, []);
   const [statusFilter, setStatusFilter] = useState<SolicitationFilter>('Pendente');
   const [handledOrders, setHandledOrders] = useState<ServiceOrder[]>([]);
@@ -47,7 +55,9 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ orderId: string; ok: boolean; text: string } | null>(null);
 
-  const scopeUnitsKey = scopeUnits === null ? '*' : scopeUnits.join('|');
+  // Gerência escolhida: só ela; senão, todas as que a pessoa vê
+  const queryUnits = unit ? [unit] : scopeUnits;
+  const scopeUnitsKey = `${scopeUnits === null ? '*' : scopeUnits.join('|')}#${unit}`;
   const userName = userProfile?.name || 'Usuário';
 
   const canManage = (): boolean => {
@@ -63,7 +73,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
     if (filter === 'Pendente') return;
     setLoadingHandled(true);
     try {
-      const page = await dbGetHandledSolicitationsPage({ units: scopeUnits }, handledStatuses(filter), HANDLED_PAGE_SIZE, reset ? undefined : handledCursor);
+      const page = await dbGetHandledSolicitationsPage({ units: queryUnits }, handledStatuses(filter), HANDLED_PAGE_SIZE, reset ? undefined : handledCursor);
       setHandledOrders((prev) => (reset ? page.orders : [...prev, ...page.orders]));
       setHandledCursor(page.cursor);
       setHandledHasMore(page.hasMore);
@@ -73,7 +83,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   };
 
   const refreshCounts = () => {
-    dbCountSolicitations({ units: scopeUnits }).then(setCounts).catch(() => {});
+    dbCountSolicitations({ units: queryUnits }).then(setCounts).catch(() => {});
   };
 
   useEffect(() => {
@@ -93,6 +103,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   const orders = source
     .map((o) => local[o.id] || o)
     .filter((o) => o.checklistPending || requestedItems(o).length > 0)
+    .filter((o) => !unit || o.unit === unit)
     .filter((o) => isCompanyVisible(o.company, visibleCompanies) && (company === 'Todas' || o.company === company))
     .filter((o) => {
       const q = searchTerm.trim().toLowerCase();
@@ -174,12 +185,12 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
     );
   };
 
-  const card = (label: string, value: number, cls: string) => (
-    <div className={`bg-white rounded-xl p-4 border ${cls}`}>
-      <p className="text-[9px] font-black uppercase tracking-widest mb-1">{label}</p>
-      <h3 className="text-2xl font-black">{value}</h3>
-    </div>
-  );
+  const FILTERS: { key: SolicitationFilter; label: string; n: number }[] = [
+    { key: 'Pendente', label: 'Aguardando decisão', n: counts.pendente },
+    { key: 'Resolvido', label: 'Com corretiva aberta', n: counts.resolvido },
+    { key: 'Cancelado', label: 'Todos "não abrir"', n: counts.cancelado },
+    { key: 'Com Acao', label: 'Decididas (todas)', n: counts.resolvido + counts.cancelado }
+  ];
 
   return (
     <div className="space-y-5 font-sans">
