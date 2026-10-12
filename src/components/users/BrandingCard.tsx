@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Image } from 'lucide-react';
 import { dbClearBranding, dbSaveBranding, prepareBrandingImages, useBranding } from '../../db/branding';
 
 // IDENTIDADE VISUAL (só Super Administrador): trocar o logo do sistema sem precisar mexer no código.
@@ -54,8 +55,11 @@ export default function BrandingCard({ darkMode, userName }: { darkMode: boolean
   };
 
   const preview = (src: string | undefined, dark: boolean) => (
-    <div className={`w-24 h-24 rounded-xl border flex items-center justify-center ${dark ? 'bg-[#08122b] border-slate-700' : 'bg-white border-slate-200'}`}>
-      {src ? <img src={src} alt="" className="w-16 h-16 object-contain" /> : <span className="text-[10px] text-slate-400 text-center px-2">Logo padrão ("H")</span>}
+    <div className="space-y-1 text-center">
+      <div className={`w-24 h-24 rounded-xl border flex items-center justify-center ${dark ? 'bg-[#08122b] border-slate-700' : 'bg-white border-slate-200'}`}>
+        {src ? <img src={src} alt="" className="w-16 h-16 object-contain" /> : <span className="text-[10px] text-slate-400 text-center px-2">Logo padrão ("H")</span>}
+      </div>
+      <p className="text-[10px] text-slate-400">{dark ? 'Fundo escuro' : 'Fundo claro'}</p>
     </div>
   );
 
@@ -64,7 +68,12 @@ export default function BrandingCard({ darkMode, userName }: { darkMode: boolean
   return (
     <div className={`p-5 rounded-xl border space-y-3 ${box}`}>
       <div>
-        <h3 className={`text-sm font-black uppercase tracking-wider ${strong}`}>Logo do sistema</h3>
+        <h3 className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider ${strong}`}>
+          <span className="w-7 h-7 shrink-0 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <Image className="w-4 h-4" />
+          </span>
+          Logo do sistema
+        </h3>
         <p className="text-xs text-slate-500 mt-1">
           Aparece no login, no menu lateral, no topo do celular do técnico, na página pública de validação da OS, no ícone da aba do navegador
           e, se ligado no editor de etiquetas, nas etiquetas de QR Code. Use PNG com fundo transparente (quadrado é o ideal; a imagem não é cortada).
