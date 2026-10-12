@@ -18,13 +18,17 @@ import MaterialsView from './components/materials/MaterialsView';
 import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
+import NoticesView from './components/notices/NoticesView';
+import GlpiPanelView from './components/GlpiPanelView';
+import { useNoticeState } from './components/notices/useNoticeState';
+import { NoticeViewer, noticeActive, noticeCompaniesOf, noticeTargets, subscribeNotices } from './db/notices';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import BrandLogo from './components/BrandLogo';
 import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { onSyncChange } from './db/localSync';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, SupplyRequest, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, SupplyRequest, Notice, isSectorInGerencia } from './types';
 import { 
   subscribeTechnicianOrders,
   subscribeUnitOrders,
@@ -528,6 +532,9 @@ export default function App() {
     if (tab === 'user-control' || tab === 'qr-codes' || tab === 'addresses') return false;
     // Almoxarifado (Fase 8C-2): quem fornece insumos
     if (tab === 'almoxarifado') return userHasActionPermission('supply_requests_supply');
+    // Fase 9: Quadro de Avisos para todos; Histórico GLPI para quem vê ou atualiza
+    if (tab === 'notices') return true;
+    if (tab === 'glpi') return userHasActionPermission('glpi_view') || userHasActionPermission('glpi_manage');
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
@@ -567,6 +574,8 @@ export default function App() {
     if (fromProfile !== undefined) return fromProfile;
     // Pedidos de material (Fase 8B) e de insumos (Fase 8C-2): só quem tem no perfil
     if (actionId.startsWith('material_requests_') || actionId.startsWith('supply_requests_')) return false;
+    // Avisos e Histórico GLPI (Fase 9): também só pelo perfil (as regras do banco conferem o perfil)
+    if (actionId === 'notices_publish' || actionId.startsWith('glpi_')) return false;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -627,6 +636,20 @@ export default function App() {
     return subscribeSupplyAwaitingStore(units, (list) => setPendingSupplyStore(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))));
   }, [userProfile?.id, canSupplyStore, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
   const solicitationsBadge = pendingSolicitationOrders.length + pendingMaterialRequests.length + pendingSupplyConfirm.length;
+
+  // Quadro de Avisos (Fase 9A, tempo real): avisos que valem nas gerências da pessoa — número no menu e sino do celular
+  const [notices, setNotices] = useState<Notice[]>([]);
+  useEffect(() => {
+    if (!userProfile) return;
+    return subscribeNotices(visibleUnits, setNotices);
+  }, [userProfile?.id, visibleUnitsKey, currentUser?.uid]);
+  const noticeViewer: NoticeViewer = {
+    perfil: userProfile?.perfil || 'Profissional',
+    units: visibleUnits,
+    companies: userProfile ? noticeCompaniesOf(userProfile, visibleCompanies) : []
+  };
+  const myNotices = notices.filter((n) => noticeActive(n) && noticeTargets(n, noticeViewer));
+  const noticeState = useNoticeState(userProfile?.matricula || '', userProfile?.name || '', myNotices);
 
   // Check state bypasses manually (Security Guard)
   useEffect(() => {
@@ -867,6 +890,10 @@ export default function App() {
         return 'Gestão de Insumos';
       case 'almoxarifado':
         return 'Almoxarifado';
+      case 'notices':
+        return 'Quadro de Avisos';
+      case 'glpi':
+        return 'Histórico GLPI';
       case 'user-control':
         return 'Usuários';
       case 'addresses':
@@ -1093,6 +1120,7 @@ export default function App() {
         canViewCosts={userHasActionPermission('view_costs')}
         canPreventivePdf={userHasActionPermission('preventive_pdf')}
         canOsPdf={userHasActionPermission('os_pdf')}
+        notices={myNotices}
       />
     );
   }
@@ -1108,6 +1136,7 @@ export default function App() {
         onClose={() => setIsSidebarOpen(false)} 
         pendingSolicitationsCount={solicitationsBadge}
         pendingStoreCount={pendingSupplyStore.length}
+        noticesCount={noticeState.pending}
         userProfile={userProfile}
         userHasTabPermission={userHasTabPermission}
       />
@@ -1348,6 +1377,12 @@ export default function App() {
               canManage={userHasActionPermission('manage_supplies')}
             />
           )}
+
+          {/* Fase 9: Quadro de Avisos e Histórico GLPI */}
+          {currentTab === 'notices' && userProfile && (
+            <NoticesView notices={notices} user={userProfile} viewer={noticeViewer} unitOptions={osUnitOptions} canPublish={userHasActionPermission('notices_publish')} />
+          )}
+          {currentTab === 'glpi' && userProfile && userHasTabPermission('glpi') && <GlpiPanelView user={userProfile} canManage={userHasActionPermission('glpi_manage')} />}
 
           {currentTab === 'settings' && userProfile && userHasTabPermission('settings') && (
             <SettingsView userProfile={userProfile} darkMode={darkMode} canEditOsTemplates={userHasActionPermission('os_templates')} />

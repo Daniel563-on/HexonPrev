@@ -29,7 +29,7 @@ import {
   AlertTriangle,
   BellRing
 } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, SupplyRequest, formatDateBR } from '../../types';
+import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, SupplyRequest, Notice, formatDateBR } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
@@ -50,6 +50,7 @@ import { parseScannedQrCode } from '../../utils/qrUtils';
 import BrandLogo from '../BrandLogo';
 import LoadTimesCard from './LoadTimesCard';
 import InstallAppButton from '../InstallAppButton';
+import MobileNotices from './MobileNotices';
 
 export interface TechnicianMobileViewProps {
   orders: ServiceOrder[];
@@ -71,6 +72,7 @@ export interface TechnicianMobileViewProps {
   canViewCosts?: boolean;  // "Ver valores em R$": custo da preventiva
   canPreventivePdf?: boolean; // "Baixar PDF da preventiva"
   canOsPdf?: boolean;      // "Baixar PDF da OS"
+  notices?: Notice[];      // Quadro de Avisos (Fase 9A): avisos para ele, em tempo real
 }
 
 type MobileTab = 'orders' | 'os' | 'solicitations' | 'scanner' | 'profile';
@@ -95,7 +97,8 @@ export default function TechnicianMobileView({
   canClientLink = false,
   canViewCosts = false,
   canPreventivePdf = false,
-  canOsPdf = false
+  canOsPdf = false,
+  notices = []
 }: TechnicianMobileViewProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('orders');
   // Empresa do técnico (etapa especial E1): nome para o Meu Perfil
@@ -599,6 +602,7 @@ export default function TechnicianMobileView({
 
         {/* Atualizar (relê preventivas e OS); o modo escuro fica em Meu Perfil */}
         <div className="flex items-center gap-1.5">
+          <MobileNotices notices={notices} user={userProfile} />
           <button
             onClick={handleRefreshTechnicianOrders}
             disabled={isRefreshingOrders}

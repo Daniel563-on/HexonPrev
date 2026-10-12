@@ -749,6 +749,76 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 16. QUADRO DE AVISOS (Fase 9A): todo usuário ativo lê (o app mostra só os da pessoa: gerência, empresa e público).
+    // Publica quem tem "Publicar avisos", só para as gerências do perfil ("*" = todas as gerências: só quem vê todas).
+    // Usuário (u) e perfil (p) lidos uma vez só, como nas OS (o banco limita 1.000 contas por verificação).
+    function ntUnitsOk(u, p, units) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || (!('*' in units) && units.hasOnly(scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]));
+    }
+    function ntWriteOk(u, p) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'notices_publish')
+        && d.keys().hasOnly(['title', 'text', 'kind', 'pinned', 'units', 'companies', 'audience', 'until', 'hasImage', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 150
+        && d.text is string && d.text.size() > 0 && d.text.size() <= 5000
+        && d.kind in ['urgente', 'atencao', 'info']
+        && d.audience in ['todos', 'tecnicos', 'escritorio']
+        && d.pinned is bool
+        && d.units is list && d.units.size() > 0 && d.units.size() <= 50
+        && d.companies is list && d.companies.size() <= 50
+        && d.until is string && d.until.size() == 10
+        && ntUnitsOk(u, p, d.units)
+        && (resource == null || ntUnitsOk(u, p, resource.data.units));
+    }
+    function ntDeleteOk(u, p) {
+      return osPerm(u, p, 'notices_publish') && ntUnitsOk(u, p, resource.data.units);
+    }
+    match /notices/{noticeId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && ntWriteOk(me(), osProfileOf(me()));
+      allow delete: if isStaff() && ntDeleteOk(me(), osProfileOf(me()));
+      // "Li e estou ciente" (urgentes): cada um grava o seu, uma vez; quem publica vê a lista (e apaga junto com o aviso)
+      match /reads/{matricula} {
+        allow get: if isStaff() && (matricula == me().matricula || hasPermission('notices_publish'));
+        allow list: if isStaff() && hasPermission('notices_publish');
+        allow create: if isStaff() && matricula == me().matricula
+          && request.resource.data.keys().hasOnly(['matricula', 'name', 'at'])
+          && request.resource.data.matricula == matricula
+          && exists(/databases/$(database)/documents/notices/$(noticeId));
+        allow update: if false;
+        allow delete: if isStaff() && hasPermission('notices_publish');
+      }
+    }
+    // Foto do aviso (id = id do aviso), comprimida no aparelho
+    match /noticeImages/{noticeId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('notices_publish')
+        && request.resource.data.keys().hasOnly(['data', 'mime', 'at'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000
+        && request.resource.data.mime in ['image/jpeg', 'image/png', 'image/webp'];
+      allow delete: if isStaff() && hasPermission('notices_publish');
+    }
+
+    // 17. HISTÓRICO GLPI (Fase 9B): o painel em HTML, compactado e em pedaços. Vê quem tem "Ver Histórico GLPI";
+    // troca quem tem "Atualizar Histórico GLPI" (o painel novo substitui o anterior para todos).
+    function glpiReader() {
+      return isStaff() && (hasPermission('glpi_view') || hasPermission('glpi_manage'));
+    }
+    match /glpiPanel/{docId} {
+      allow read: if glpiReader();
+      allow write: if isStaff() && hasPermission('glpi_manage');
+    }
+    match /glpiPanelChunks/{chunkId} {
+      allow read: if glpiReader();
+      allow create: if isStaff() && hasPermission('glpi_manage')
+        && request.resource.data.keys().hasOnly(['data', 'version', 'n'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000;
+      allow update: if false;
+      allow delete: if isStaff() && hasPermission('glpi_manage');
+    }
+
     // 11. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA
     match /{document=**} {
       allow read, write: if false;
