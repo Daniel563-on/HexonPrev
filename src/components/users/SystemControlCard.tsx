@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { RefreshCw, Wrench } from 'lucide-react';
 import { AppControl, APP_VERSION, dbForceReloadAll, dbSetMaintenance, subscribeAppControl } from '../../db/appControl';
 
 // SISTEMA (só Super Administrador): forçar atualização em todos os aparelhos e modo manutenção
@@ -39,11 +40,16 @@ export default function SystemControlCard({ darkMode, userName }: { darkMode: bo
   const btn = 'px-4 py-2 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50';
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
+    <div className="space-y-4">
       {/* FORÇAR ATUALIZAÇÃO */}
       <div className={`p-5 rounded-xl border space-y-3 ${box}`}>
         <div>
-          <h3 className={`text-sm font-black uppercase tracking-wider ${strong}`}>Forçar atualização</h3>
+          <h3 className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider ${strong}`}>
+            <span className="w-7 h-7 shrink-0 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <RefreshCw className="w-4 h-4" />
+            </span>
+            Forçar atualização
+          </h3>
           <p className="text-xs text-slate-500 mt-1">
             Todos os celulares e computadores com o sistema aberto veem o aviso "Nova versão do sistema" e recarregam sozinhos em 1 minuto
             (o que foi salvo sem internet é enviado antes). Use depois de publicar uma versão nova. O app também confere sozinho a cada 30 minutos.
@@ -70,7 +76,10 @@ export default function SystemControlCard({ darkMode, userName }: { darkMode: bo
       {/* MODO MANUTENÇÃO */}
       <div className={`p-5 rounded-xl border space-y-3 ${on ? 'border-amber-400 bg-amber-50/60' : box}`}>
         <div>
-          <h3 className={`text-sm font-black uppercase tracking-wider ${on ? 'text-amber-900' : strong}`}>
+          <h3 className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider ${on ? 'text-amber-900' : strong}`}>
+            <span className="w-7 h-7 shrink-0 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Wrench className="w-4 h-4" />
+            </span>
             Modo manutenção {on ? '— LIGADO' : '— desligado'}
           </h3>
           <p className="text-xs text-slate-500 mt-1">

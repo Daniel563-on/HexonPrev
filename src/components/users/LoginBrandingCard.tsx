@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { MonitorSmartphone } from 'lucide-react';
 import {
   brandTagline,
   brandTopText,
@@ -50,7 +51,12 @@ export default function LoginBrandingCard({ darkMode, userName }: { darkMode: bo
   return (
     <div className={`p-5 rounded-xl border space-y-4 ${box}`}>
       <div>
-        <h3 className={`text-sm font-black uppercase tracking-wider ${strong}`}>Tela de login</h3>
+        <h3 className={`flex items-center gap-2 text-sm font-black uppercase tracking-wider ${strong}`}>
+          <span className="w-7 h-7 shrink-0 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <MonitorSmartphone className="w-4 h-4" />
+          </span>
+          Tela de login
+        </h3>
         <p className="text-xs text-slate-500 mt-1">
           Frases e imagens de fundo da tela de entrada (computador e celular). Sem imagem enviada, a tela usa o fundo desenhado da marca.
         </p>
@@ -59,12 +65,14 @@ export default function LoginBrandingCard({ darkMode, userName }: { darkMode: bo
       {/* FRASES */}
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="space-y-1">
-          <span className="text-[10px] font-bold uppercase text-slate-400">Frase abaixo do nome (Enter = nova linha; vazio = sem frase)</span>
+          <span className={`block text-xs font-bold ${strong}`}>Frase abaixo do nome</span>
           <textarea rows={2} value={tagline} onChange={(e) => setTagline(e.target.value)} className={input} />
+          <span className="block text-[10px] text-slate-400">Enter = nova linha · vazio = sem frase</span>
         </label>
         <label className="space-y-1">
-          <span className="text-[10px] font-bold uppercase text-slate-400">Texto do canto superior (só no computador; vazio = sem texto)</span>
+          <span className={`block text-xs font-bold ${strong}`}>Texto do canto superior</span>
           <textarea rows={2} value={topText} onChange={(e) => setTopText(e.target.value)} className={input} />
+          <span className="block text-[10px] text-slate-400">Só no computador · vazio = sem texto</span>
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -88,7 +96,8 @@ export default function LoginBrandingCard({ darkMode, userName }: { darkMode: bo
       </div>
 
       {/* FUNDOS */}
-      <div className="grid sm:grid-cols-2 gap-4">
+      {/* Fundos lado a lado com a mesma altura e a proporção de verdade (computador 16:9, celular 9:16) */}
+      <div className="grid sm:grid-cols-[auto_auto] sm:justify-start gap-5">
         <BackgroundSlot kind="desktop" label="Fundo do computador" hint="Imagem deitada (ex.: 1920×1080)" busy={busy} run={run} userName={userName} strong={strong} btn={btn} />
         <BackgroundSlot kind="mobile" label="Fundo do celular" hint="Imagem em pé (ex.: 1080×1920)" busy={busy} run={run} userName={userName} strong={strong} btn={btn} />
       </div>
@@ -158,7 +167,9 @@ function BackgroundSlot({
   return (
     <div className="space-y-2">
       <p className={`text-xs font-bold ${strong}`}>{label}</p>
-      <div className={`rounded-lg border border-slate-700 bg-[#050b1f] overflow-hidden flex items-center justify-center ${kind === 'desktop' ? 'aspect-video' : 'aspect-[9/16] max-h-56'}`}>
+      <div
+        className={`rounded-lg border border-slate-700 bg-[#050b1f] overflow-hidden flex items-center justify-center sm:w-auto sm:h-52 2xl:h-64 ${kind === 'desktop' ? 'aspect-video w-full' : 'aspect-[9/16] w-32'}`}
+      >
         {shown ? (
           <img src={shown} alt="" className="w-full h-full object-cover" />
         ) : (

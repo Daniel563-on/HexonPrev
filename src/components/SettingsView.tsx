@@ -52,10 +52,15 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
       </div>
 
       {tab === 'system' && isSuper && (
-        <div className="max-w-3xl mx-auto space-y-4">
-          <BrandingCard darkMode={darkMode} userName={userProfile.name} />
-          <LoginBrandingCard darkMode={darkMode} userName={userProfile.name} />
-          <SystemControlCard darkMode={darkMode} userName={userProfile.name} />
+        // Tela larga: tela de login à esquerda (a maior, com as imagens); logo, atualização e manutenção à direita
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+          <div className="xl:col-span-7">
+            <LoginBrandingCard darkMode={darkMode} userName={userProfile.name} />
+          </div>
+          <div className="xl:col-span-5 space-y-4 order-first xl:order-none">
+            <BrandingCard darkMode={darkMode} userName={userProfile.name} />
+            <SystemControlCard darkMode={darkMode} userName={userProfile.name} />
+          </div>
         </div>
       )}
       {tab === 'audit' && isSuper && <AuditLogsTab darkMode={darkMode} />}
