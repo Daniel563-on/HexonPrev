@@ -164,6 +164,44 @@ service cloud.firestore {
       allow delete: if isStaff() && tmDeleteOk(me(), osProfileOf(me()));
     }
 
+    // 4e-2. PROGRAMAÇÃO › SEMANA (Fase 7B): 1 registro por gerência + empresa + semana (id = "GERÊNCIA__empresa__segunda"),
+    // com os dias marcados e a equipe da semana. Todos leem; grava quem tem "Programar" nas gerências do perfil; não se apaga.
+    function wpWriteOk(u, p, planId) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['unit', 'company', 'weekStart', 'days', 'teams', 'updatedAt', 'updatedBy'])
+        && d.unit is string && d.company is string && d.weekStart is string && d.weekStart.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && planId == d.unit + '__' + d.company + '__' + d.weekStart
+        && (!('days' in d) || (d.days is map && d.days.size() <= 7))
+        && (!('teams' in d) || (d.teams is map && d.teams.size() <= 100))
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    match /weekPlans/{planId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && wpWriteOk(me(), osProfileOf(me()), planId);
+      allow delete: if false;
+    }
+
+    // 4e-3. AUSÊNCIAS (Fase 7B): férias, atestado, licença ou outro, por pessoa e datas (vale em todas as semanas do período).
+    // Todos leem; grava e apaga quem tem "Programar" nas gerências do perfil.
+    function abWriteOk(u, p) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['unit', 'company', 'matricula', 'name', 'cargo', 'kind', 'from', 'to', 'note', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.kind in ['Férias', 'Atestado', 'Licença', 'Outro']
+        && d.matricula is string && d.matricula.size() > 0
+        && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
+        && d.get('note', '').size() <= 300
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    match /absences/{absenceId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && abWriteOk(me(), osProfileOf(me()));
+      allow delete: if isStaff() && tmDeleteOk(me(), osProfileOf(me()));
+    }
+
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local
     match /orderDeletions/{orderId} {
       allow read: if isStaff();
