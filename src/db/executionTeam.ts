@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from './guard';
+import { doc, getDoc } from './guard';
 import { OrderParticipant, OrderTimelineEvent, UsualTeam } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { onSyncChange, syncedList } from './localSync';
@@ -14,6 +14,8 @@ export const timelineEvent = (event: string, by?: string, detail?: string): Orde
 interface UnitPerson {
   p: OrderParticipant;
   companies: string[];
+  login: boolean;   // usuário com login (efetivo importado não tem)
+  perfil?: string;  // perfil do usuário (Profissional = técnico)
 }
 const peopleCache = new Map<string, Promise<UnitPerson[]>>();
 // Usuário ou efetivo mudou (tempo real): a próxima leitura monta de novo a partir da cópia já atualizada
@@ -31,11 +33,16 @@ function unitPeople(unit: string): Promise<UnitPerson[]> {
       const byMat = new Map<string, UnitPerson>();
       workforce.forEach((w) => {
         if (w.status === 'Ativo' && w.matricula)
-          byMat.set(String(w.matricula), { p: { matricula: String(w.matricula), name: w.name, cargo: w.cargo || '' }, companies: w.company ? [w.company] : [] });
+          byMat.set(String(w.matricula), { p: { matricula: String(w.matricula), name: w.name, cargo: w.cargo || '' }, companies: w.company ? [w.company] : [], login: false });
       });
       users.forEach((u) => {
         if (u.status === 'Ativo' && u.matricula)
-          byMat.set(String(u.matricula), { p: { matricula: String(u.matricula), name: u.name, cargo: u.cargo || '' }, companies: Array.isArray(u.companies) ? u.companies : [] });
+          byMat.set(String(u.matricula), {
+            p: { matricula: String(u.matricula), name: u.name, cargo: u.cargo || '' },
+            companies: Array.isArray(u.companies) ? u.companies : [],
+            login: true,
+            perfil: u.perfil
+          });
       });
       return Array.from(byMat.values()).sort((a, b) => a.p.name.localeCompare(b.p.name));
     })().catch((err) => {
@@ -51,6 +58,16 @@ function unitPeople(unit: string): Promise<UnitPerson[]> {
 
 export async function dbGetUnitPeople(unit: string): Promise<OrderParticipant[]> {
   return (await unitPeople(unit)).map((x) => x.p);
+}
+
+// Pessoas da gerência com empresas, login e perfil (Programação › Equipes, Fase 7A)
+export interface UnitPersonInfo extends OrderParticipant {
+  companies: string[];
+  login: boolean;
+  perfil?: string;
+}
+export async function dbGetUnitPeopleInfo(unit: string): Promise<UnitPersonInfo[]> {
+  return (await unitPeople(unit)).map((x) => ({ ...x.p, companies: x.companies, login: x.login, perfil: x.perfil }));
 }
 
 // Empresas de uma pessoa da gerência (técnico = 1 empresa)
@@ -78,10 +95,4 @@ export async function dbGetUsualTeam(matricula: string): Promise<UsualTeam | nul
     checkQuotaException(err);
     return null;
   }
-}
-
-// Salva a equipe habitual (o técnico ou o planejador; 1 gravação)
-export async function dbSaveUsualTeam(team: UsualTeam): Promise<void> {
-  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  await setDoc(doc(dbInstance, 'usualTeams', team.matricula), cleanUndefined(team));
 }

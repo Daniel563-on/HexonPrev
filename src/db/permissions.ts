@@ -333,6 +333,23 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Ações',
     area: 'comunicacao',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  // Fase 7: também só pelo perfil (as regras do banco conferem o perfil)
+  prog_view: {
+    id: 'prog_view',
+    name: 'Ver Programação',
+    description: 'Aba Programação: ver as equipes (e, nas próximas etapas, a semana) das gerências do perfil.',
+    category: 'Abas',
+    area: 'programacao',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  prog_edit: {
+    id: 'prog_edit',
+    name: 'Programar',
+    description: 'Aba Programação: montar as equipes (nome, tipo, responsável e membros). A equipe vira a equipe habitual do responsável; o técnico não muda mais a dele.',
+    category: 'Ações',
+    area: 'programacao',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   }
 };
 
@@ -343,7 +360,8 @@ export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: strin
   { id: 'solicitacoes', label: 'Solicitações' },
   { id: 'cadastros', label: 'Cadastros' },
   { id: 'valores', label: 'Valores' },
-  { id: 'comunicacao', label: 'Avisos e Histórico GLPI' }
+  { id: 'comunicacao', label: 'Avisos e Histórico GLPI' },
+  { id: 'programacao', label: 'Programação' }
 ];
 
 // Permissões novas que nasceram de uma antiga: perfis que ainda não as têm gravadas herdam o valor da antiga

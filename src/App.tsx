@@ -20,6 +20,7 @@ import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import NoticesView from './components/notices/NoticesView';
 import GlpiPanelView from './components/GlpiPanelView';
+import ProgramacaoView from './components/programacao/ProgramacaoView';
 import { useNoticeState } from './components/notices/useNoticeState';
 import { NoticeViewer, noticeActive, noticeCompaniesOf, noticeTargets, subscribeNotices } from './db/notices';
 import MaintenanceScreen from './components/MaintenanceScreen';
@@ -535,6 +536,8 @@ export default function App() {
     // Fase 9: Quadro de Avisos para todos; Histórico GLPI para quem vê ou atualiza
     if (tab === 'notices') return true;
     if (tab === 'glpi') return userHasActionPermission('glpi_view') || userHasActionPermission('glpi_manage');
+    // Fase 7: Programação para quem vê ou programa
+    if (tab === 'programacao') return userHasActionPermission('prog_view') || userHasActionPermission('prog_edit');
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
@@ -574,8 +577,8 @@ export default function App() {
     if (fromProfile !== undefined) return fromProfile;
     // Pedidos de material (Fase 8B) e de insumos (Fase 8C-2): só quem tem no perfil
     if (actionId.startsWith('material_requests_') || actionId.startsWith('supply_requests_')) return false;
-    // Avisos e Histórico GLPI (Fase 9): também só pelo perfil (as regras do banco conferem o perfil)
-    if (actionId === 'notices_publish' || actionId.startsWith('glpi_')) return false;
+    // Avisos e Histórico GLPI (Fase 9) e Programação (Fase 7): também só pelo perfil (as regras do banco conferem o perfil)
+    if (actionId === 'notices_publish' || actionId.startsWith('glpi_') || actionId.startsWith('prog_')) return false;
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
@@ -894,6 +897,8 @@ export default function App() {
         return 'Quadro de Avisos';
       case 'glpi':
         return 'Histórico GLPI';
+      case 'programacao':
+        return 'Programação';
       case 'user-control':
         return 'Usuários';
       case 'addresses':
@@ -1383,6 +1388,11 @@ export default function App() {
             <NoticesView notices={notices} user={userProfile} viewer={noticeViewer} unitOptions={osUnitOptions} canPublish={userHasActionPermission('notices_publish')} />
           )}
           {currentTab === 'glpi' && userProfile && userHasTabPermission('glpi') && <GlpiPanelView user={userProfile} canManage={userHasActionPermission('glpi_manage')} />}
+
+          {/* Fase 7: Programação (7A = Equipes) */}
+          {currentTab === 'programacao' && userProfile && userHasTabPermission('programacao') && (
+            <ProgramacaoView user={userProfile} unitOptions={osUnitOptions} visibleCompanies={visibleCompanies} canEdit={userHasActionPermission('prog_edit')} />
+          )}
 
           {currentTab === 'settings' && userProfile && userHasTabPermission('settings') && (
             <SettingsView userProfile={userProfile} darkMode={darkMode} canEditOsTemplates={userHasActionPermission('os_templates')} />

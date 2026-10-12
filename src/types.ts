@@ -251,13 +251,19 @@ export interface OrderTimelineEvent {
   by?: string;          // quem fez
   detail?: string;
 }
-// Equipe habitual do técnico (coleção "usualTeams", id = matrícula): o técnico e o planejador editam
+// Equipe habitual do técnico (coleção "usualTeams", id = matrícula do responsável).
+// Fase 7A: é a equipe da Programação; só quem tem "Programar" edita (o técnico só vê).
 export interface UsualTeam {
-  matricula: string;    // técnico dono da equipe
+  matricula: string;    // responsável da equipe (recebe as OS e as preventivas)
   unit: string;
   members: OrderParticipant[];
   updatedAt: string;
   updatedBy: string;
+  name?: string;        // ex.: "PREVENTIVA 02" (sem nome = equipe que o técnico montou antes da Fase 7A)
+  type?: string;        // tipo de serviço (sai no PDF da Programação)
+  company?: string;     // empresa (id)
+  order?: number;       // ordem das linhas na Programação e no PDF
+  respName?: string;    // nome do responsável quando a equipe foi salva
 }
 
 // Resposta de um item (formato enxuto). Campos curtos para a OS ficar pequena no banco.
@@ -731,7 +737,7 @@ export interface AuditLog {
 
 // Áreas da tela de perfis (Hexon 2.0): "OS" = corretiva, layout e acompanhamento (vindo do principal);
 // "Preventiva / PMOC" = o sistema de preventivas
-export type PermissionArea = 'preventiva' | 'os' | 'solicitacoes' | 'cadastros' | 'valores' | 'comunicacao';
+export type PermissionArea = 'preventiva' | 'os' | 'solicitacoes' | 'cadastros' | 'valores' | 'comunicacao' | 'programacao';
 
 export interface SystemPermission {
   id: string;
