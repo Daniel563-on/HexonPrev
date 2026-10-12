@@ -20,6 +20,7 @@ import BulkRevertModal from './orders/BulkRevertModal';
 import PreventiveScanModal from './orders/PreventiveScanModal';
 import PlanningBoard from './orders/planning/PlanningBoard';
 import OrdersSearchPanel from './orders/OrdersSearchPanel';
+import { clearHomeLink, peekHomeLink } from '../lib/homeLinks';
 
 interface ServiceOrdersViewProps {
   orders: ServiceOrder[];
@@ -160,7 +161,11 @@ export default function ServiceOrdersView({
   const [initialOpenSignature, setInitialOpenSignature] = useState(false);
 
   // Smart Filter States
-  const [smartSearch, setSmartSearch] = useState('');
+  // Atalho do Início (Equipe agora): abre a Realização já buscando pelo técnico
+  const [smartSearch, setSmartSearch] = useState(() => (section === 'execucao' ? peekHomeLink<string>('preventives-search') || '' : ''));
+  useEffect(() => {
+    if (section === 'execucao') clearHomeLink('preventives-search');
+  }, []);
   const [selectedExecutionDate, setSelectedExecutionDate] = useState<string>('');
   const [showPreventiveScanSimulator, setShowPreventiveScanSimulator] = useState(false);
   const [selectedComarca, setSelectedComarca] = useState('Todas');

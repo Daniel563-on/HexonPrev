@@ -77,14 +77,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     return unitOptions[0] || '';
   });
   const linkUnit = useRef<string | null>(unit); // o atalho do Início vale só para a gerência com que a tela abriu
-  const linkStatus = (homeLink?.late ? '' : homeLink?.status || 'Nova') as OsStatusFilter | '';
+  const linkStatus = (homeLink?.late || homeLink?.tech ? '' : homeLink?.status || 'Nova') as OsStatusFilter | '';
+  const linkMode: OsListMode = homeLink?.late ? { kind: 'late' } : homeLink?.tech ? { kind: 'filter', tech: homeLink.tech } : { kind: 'filter', status: linkStatus || 'Nova' };
   // Filtros do banco
   // Abre em Novas para todo mundo (ajustes da etapa 8); as concluídas só aparecem pelos filtros
   const [status, setStatus] = useState<OsStatusFilter | ''>(linkStatus);
-  const [tech, setTech] = useState('');
+  const [tech, setTech] = useState(homeLink?.tech || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [mode, setMode] = useState<OsListMode>(homeLink?.late ? { kind: 'late' } : { kind: 'filter', status: linkStatus || 'Nova' });
+  const [mode, setMode] = useState<OsListMode>(linkMode);
   // Filtros do que já veio
   const [interv, setInterv] = useState('');
   const [onlyLate, setOnlyLate] = useState(false);
@@ -228,15 +229,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     }
     const l = homeLink && unit === linkUnit.current ? homeLink : undefined;
     if (unit !== linkUnit.current) linkUnit.current = null;
-    const st = (l?.late ? '' : l?.status || 'Nova') as OsStatusFilter | '';
+    const st = (l?.late || l?.tech ? '' : l?.status || 'Nova') as OsStatusFilter | '';
     setStatus(st);
-    setTech('');
+    setTech(l?.tech || '');
     setFrom('');
     setTo('');
     setInterv('');
     setOnlyLate(false);
     setCompanyFilter('');
-    const m: OsListMode = l?.late ? { kind: 'late' } : { kind: 'filter', status: st || 'Nova' };
+    const m: OsListMode = l ? linkMode : { kind: 'filter', status: 'Nova' };
     setMode(m);
     loadFirst(m);
     loadCounters();

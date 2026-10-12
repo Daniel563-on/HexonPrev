@@ -7,6 +7,7 @@ import { HomeOsLink, setHomeLink } from '../lib/homeLinks';
 import HomeNeeds, { HomeNeed } from './home/HomeNeeds';
 import HomeOsNow from './home/HomeOsNow';
 import HomePreventives from './home/HomePreventives';
+import HomeTeam from './home/HomeTeam';
 
 // INÍCIO (Hexon 2.0): resumo de acordo com o perfil — cada bloco só para quem tem acesso à tela, e cada número
 // leva à tela já filtrada. 1 Topo · 2 Precisa de você · 3 Chamados GLPI agora · 4 Preventivas e vistorias.
@@ -131,6 +132,12 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       onNavigate('service-orders');
     } else onNavigate('pmoc-preventivas');
   };
+  // Ordens de Serviço › Preventivas já buscando pelo nome do técnico
+  const openTechPreventives = (name: string) => {
+    setHomeLink('preventives-search', name);
+    saveLocal('hexon_orders_section', 'preventivas');
+    onNavigate('service-orders');
+  };
   const openSolicitations = (tab: string) => {
     setHomeLink('solicitations', tab);
     onNavigate('solicitations');
@@ -230,6 +237,11 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       </div>
       {/* 4. PREVENTIVAS E VISTORIAS */}
       {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} onOpen={openPreventives} />}
+
+      {/* 6. EQUIPE AGORA (quem atribui chamados ou planeja preventivas) */}
+      {(perms.assign || perms.plan) && (
+        <HomeTeam units={units} cos={cos} orders={myOrders} companies={companies} onOpenOs={(m) => openOs({ tech: m })} onOpenPreventives={openTechPreventives} />
+      )}
     </div>
   );
 }
