@@ -731,7 +731,7 @@ export interface AuditLog {
 
 // Áreas da tela de perfis (Hexon 2.0): "OS" = corretiva, layout e acompanhamento (vindo do principal);
 // "Preventiva / PMOC" = o sistema de preventivas
-export type PermissionArea = 'preventiva' | 'os' | 'solicitacoes' | 'cadastros' | 'valores';
+export type PermissionArea = 'preventiva' | 'os' | 'solicitacoes' | 'cadastros' | 'valores' | 'comunicacao';
 
 export interface SystemPermission {
   id: string;
@@ -1114,4 +1114,31 @@ export interface WorkOrder {
   createdByMatricula: string;
   updatedAt: string;
   timeline: WorkOrderEvent[];
+}
+
+// QUADRO DE AVISOS (Fase 9A): comunicado para gerências, empresas e público (todos, só técnicos ou só escritório).
+// "until" = último dia em que aparece ("9999-12-31" = até alguém encerrar). Foto à parte, em noticeImages/{id}.
+export type NoticeKind = 'urgente' | 'atencao' | 'info';
+export type NoticeAudience = 'todos' | 'tecnicos' | 'escritorio';
+export interface Notice {
+  id: string;
+  title: string;
+  text: string;
+  kind: NoticeKind;
+  pinned: boolean;
+  units: string[];          // gerências ("*" = todas)
+  companies: string[];      // empresas (ids); vazio = todas
+  audience: NoticeAudience;
+  until: string;            // AAAA-MM-DD
+  hasImage?: boolean;
+  createdAt: string;
+  createdBy: { matricula: string; name: string };
+  updatedAt: string;
+  updatedBy?: { matricula: string; name: string };
+}
+// "Li e estou ciente" (avisos urgentes): notices/{id}/reads/{matrícula}
+export interface NoticeRead {
+  matricula: string;
+  name: string;
+  at: string;
 }

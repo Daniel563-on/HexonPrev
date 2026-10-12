@@ -308,6 +308,31 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     category: 'Ações',
     area: 'valores',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  // Fase 9: só quem tem marcado no perfil (as regras do banco conferem o perfil)
+  notices_publish: {
+    id: 'notices_publish',
+    name: 'Publicar avisos',
+    description: 'Quadro de Avisos: publicar, editar, fixar, encerrar e excluir avisos das gerências do perfil e ver quem marcou "Li e estou ciente".',
+    category: 'Ações',
+    area: 'comunicacao',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  glpi_view: {
+    id: 'glpi_view',
+    name: 'Ver Histórico GLPI',
+    description: 'Aba Histórico GLPI: ver o painel do mês.',
+    category: 'Abas',
+    area: 'comunicacao',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  glpi_manage: {
+    id: 'glpi_manage',
+    name: 'Atualizar Histórico GLPI',
+    description: 'Enviar o painel novo (arquivo HTML), que substitui o anterior para todos.',
+    category: 'Ações',
+    area: 'comunicacao',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   }
 };
 
@@ -317,7 +342,8 @@ export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: strin
   { id: 'os', label: 'OS (corretiva, layout e acompanhamento)', hint: 'As marcadas "em construção" passam a valer quando o módulo ficar pronto.' },
   { id: 'solicitacoes', label: 'Solicitações' },
   { id: 'cadastros', label: 'Cadastros' },
-  { id: 'valores', label: 'Valores' }
+  { id: 'valores', label: 'Valores' },
+  { id: 'comunicacao', label: 'Avisos e Histórico GLPI' }
 ];
 
 // Permissões novas que nasceram de uma antiga: perfis que ainda não as têm gravadas herdam o valor da antiga

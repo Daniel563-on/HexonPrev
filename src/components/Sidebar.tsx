@@ -17,6 +17,7 @@ import {
   Settings,
   ArrowLeft,
   FilePlus2,
+  Megaphone,
   X
 } from 'lucide-react';
 import { HexonUser } from '../types';
@@ -32,6 +33,7 @@ interface SidebarProps {
   onClose?: () => void;
   pendingSolicitationsCount?: number; // solicitações de corretiva pendentes de ação (já filtradas pela gerência)
   pendingStoreCount?: number;         // pedidos de insumos aguardando o almoxarifado (Fase 8C-2)
+  noticesCount?: number;              // avisos novos ou urgentes sem "Li e estou ciente" (Fase 9A)
   userProfile: HexonUser | null;
   userHasTabPermission: (tab: string) => boolean;
 }
@@ -52,6 +54,7 @@ export default function Sidebar({
   onClose,
   pendingSolicitationsCount = 0,
   pendingStoreCount = 0,
+  noticesCount = 0,
   userProfile,
   userHasTabPermission
 }: SidebarProps) {
@@ -76,6 +79,7 @@ export default function Sidebar({
     ...(userHasTabPermission('materials') ? [{ tab: 'materials', label: 'Gestão de Materiais', icon: Package }] : []),
     ...(userHasTabPermission('supplies') ? [{ tab: 'supplies', label: 'Gestão de Insumos', icon: PackageOpen }] : []),
     ...(userHasTabPermission('almoxarifado') ? [{ tab: 'almoxarifado', label: 'Almoxarifado', icon: Warehouse, badge: pendingStoreCount }] : []),
+    { tab: 'notices', label: 'Quadro de Avisos', icon: Megaphone, badge: noticesCount },
     ...(isSuperAdmin
       ? [
           { tab: 'user-control', label: 'Usuários', icon: ShieldCheck },
