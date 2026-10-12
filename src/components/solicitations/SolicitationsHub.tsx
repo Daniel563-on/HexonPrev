@@ -6,7 +6,7 @@ import MaterialRequestsTab from './MaterialRequestsTab';
 import SupplyRequestsBoard from '../supplies/SupplyRequestsBoard';
 import { clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 
-// TELA SOLICITAÇÕES (Fase 8): abas "De corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
+// TELA SOLICITAÇÕES (Fase 8): abas "Corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
 // e "Insumos" (pedidos de insumos, 8C-2). Material: quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
 // Insumos: quem tem "Ver pedidos de insumos" ou "Confirmar pedidos de insumos".
 // "Hora extra" e "Pernoite" (Fase 8D): só as abas, em construção (pedido do usuário); aparecem para todos.
@@ -47,7 +47,7 @@ export default function SolicitationsHub(props: {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap border-b border-slate-200 gap-1">
-        {tabBtn('corretiva', 'De corretiva', props.pendingOrders.length)}
+        {tabBtn('corretiva', 'Corretiva', props.pendingOrders.length)}
         {canSeeMaterial && tabBtn('material', 'Material', props.pendingMaterialRequests.length)}
         {canSeeSupplies && tabBtn('insumos', 'Insumos', props.pendingSupplyRequests.length)}
         {tabBtn('horaExtra', 'Hora extra', 0)}

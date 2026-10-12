@@ -172,7 +172,7 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
   }
   if (perms.decideSolicitations) {
     const n = pending.solicitations;
-    needs.push({ key: 'corr', n, text: pl(n, 'preventiva com corretiva para decidir', 'preventivas com corretiva para decidir'), hint: 'Solicitações › De corretiva', icon: <BellRing className={ico} />, tone: TONE.orange, onOpen: () => openSolicitations('corretiva') });
+    needs.push({ key: 'corr', n, text: pl(n, 'preventiva com corretiva para decidir', 'preventivas com corretiva para decidir'), hint: 'Solicitações › Corretiva', icon: <BellRing className={ico} />, tone: TONE.orange, onOpen: () => openSolicitations('corretiva') });
   }
   if (perms.decideMaterial) {
     const n = pending.material;
