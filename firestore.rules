@@ -135,13 +135,33 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // 4e. EQUIPE HABITUAL DO TÉCNICO (id = matrícula) — o próprio técnico ou o planejador/admin da gerência editam
+    // 4e. EQUIPES (Fase 7A) — a equipe da Programação é a equipe habitual do responsável (id = matrícula do responsável).
+    // Todos leem (a execução usa a equipe); grava e apaga só quem tem "Programar", nas gerências do perfil.
+    // O técnico não muda mais a equipe dele. Usuário (u) e perfil (p) lidos uma vez só, como nas OS.
+    function tmUnitOk(u, p, unit) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || unit in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]);
+    }
+    function tmWriteOk(u, p, matricula) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['matricula', 'unit', 'members', 'updatedAt', 'updatedBy', 'name', 'type', 'company', 'order', 'respName'])
+        && d.matricula == matricula
+        && d.unit is string && d.unit.size() > 0
+        && d.members is list && d.members.size() <= 60
+        && (!('name' in d) || (d.name is string && d.name.size() <= 60))
+        && (!('type' in d) || (d.type is string && d.type.size() <= 80))
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    function tmDeleteOk(u, p) {
+      return osPerm(u, p, 'prog_edit') && tmUnitOk(u, p, resource.data.unit);
+    }
     match /usualTeams/{matricula} {
       allow read: if isStaff();
-      allow create, update: if isStaff() && request.resource.data.matricula == matricula
-        && (matricula == me().matricula || me().perfil in ['Super Administrador', 'Administrador'])
-        && (seesAllUnits() || request.resource.data.unit in myUnits());
-      allow delete: if isSuperAdmin();
+      allow create, update: if isStaff() && tmWriteOk(me(), osProfileOf(me()), matricula);
+      allow delete: if isStaff() && tmDeleteOk(me(), osProfileOf(me()));
     }
 
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local

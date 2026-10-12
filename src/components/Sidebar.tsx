@@ -14,6 +14,7 @@ import {
   PackageOpen,
   Warehouse,
   CalendarRange,
+  CalendarDays,
   Settings,
   ArrowLeft,
   FilePlus2,
@@ -72,6 +73,7 @@ export default function Sidebar({
     { tab: 'home', label: 'Início', icon: Home },
     ...(userHasTabPermission('os-emit') ? [{ tab: 'os-emit', label: 'Emitir OS (GLPI)', icon: FilePlus2 }] : []),
     ...(userHasTabPermission('service-orders') ? [{ tab: 'service-orders', label: 'Ordens de Serviço', icon: ClipboardCheck }] : []),
+    ...(userHasTabPermission('programacao') ? [{ tab: 'programacao', label: 'Programação', icon: CalendarDays }] : []),
     ...(userHasTabPermission('solicitations') ? [{ tab: 'solicitations', label: 'Solicitações', icon: BellRing, badge: pendingSolicitationsCount }] : []),
     ...(userHasTabPermission('assets') ? [{ tab: 'assets', label: 'Gestão de Ativos', icon: Boxes }] : []),
     ...(pmocTabs.length > 0
