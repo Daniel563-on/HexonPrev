@@ -191,11 +191,12 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
     { key: 'Cancelado', label: 'Todos "não abrir"', n: counts.cancelado },
     { key: 'Com Acao', label: 'Decididas (todas)', n: counts.resolvido + counts.cancelado }
   ];
+  const selectCls = 'text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700 shrink-0';
 
   return (
     <div className="space-y-5 font-sans">
       <section className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-        <div className="border-l-4 border-rose-500 pl-4">
+        <div className="border-l-4 border-indigo-500 pl-4">
           <h1 className="text-xl font-black text-slate-800 tracking-tight">Solicitações de corretiva</h1>
           <p className="text-xs text-slate-500 mt-1">
             Itens que o técnico marcou "Não conforme" em perguntas que geram solicitação. Decida cada item: "Abrir corretiva" (informe o nº do
@@ -204,41 +205,44 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
         </div>
       </section>
 
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {card('Aguardando decisão', counts.pendente, 'border-amber-200 text-amber-700')}
-        {card('Com corretiva aberta', counts.resolvido, 'border-emerald-200 text-emerald-700')}
-        {card('Todos "não abrir"', counts.cancelado, 'border-slate-300 text-slate-600')}
-      </section>
-
-      <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row gap-3">
+      <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar por nº da OS, ativo, técnico, comarca..." className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800" />
         </div>
+        {units.length > 1 && (
+          <select value={unit} onChange={(e) => { setUnit(e.target.value); setCompany('Todas'); }} aria-label="Gerência" className={selectCls}>
+            <option value="">Todas as gerências</option>
+            {units.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        )}
         {companies.some((c) => isCompanyVisible(c.id, visibleCompanies)) && (
-          <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Filtrar por empresa" className="text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700 shrink-0">
+          <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Empresa" className={selectCls}>
             <option value="Todas">Todas as empresas</option>
             {companies
-              .filter((c) => isCompanyVisible(c.id, visibleCompanies) && (scopeUnits === null || c.units.some((u) => scopeUnits.includes(u))))
+              .filter((c) => isCompanyVisible(c.id, visibleCompanies) && (unit ? c.units.includes(unit) : scopeUnits === null || c.units.some((u) => scopeUnits.includes(u))))
               .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <div className="flex items-center gap-2 shrink-0">
-          <SlidersHorizontal className="w-4 h-4 text-slate-400" />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SolicitationFilter)} className="text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700">
-            <option value="Pendente">Aguardando decisão</option>
-            <option value="Com Acao">Decididas (todas)</option>
-            <option value="Resolvido">Com corretiva aberta</option>
-            <option value="Cancelado">Todos os itens "não abrir"</option>
-          </select>
-        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setStatusFilter(f.key)}
+            className={`px-4 py-2 rounded-lg text-xs font-black cursor-pointer border ${statusFilter === f.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}
+          >
+            {f.label} ({f.n})
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-6">
         {orders.length === 0 ? (
-          <div className="xl:col-span-2 bg-white border rounded-xl p-12 text-center text-slate-400 text-xs font-bold flex flex-col items-center gap-2">
-            <ClipboardList className="w-8 h-8 text-slate-300" />
-            {loadingHandled ? 'Carregando...' : 'Nenhuma solicitação encontrada para este filtro.'}
+          <div className="xl:col-span-2 bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">
+            {loadingHandled ? 'Carregando...' : 'Nenhuma solicitação nesta situação.'}
           </div>
         ) : (
           orders.map((o) => {
