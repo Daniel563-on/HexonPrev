@@ -1142,3 +1142,14 @@ export interface NoticeRead {
   name: string;
   at: string;
 }
+
+// HISTÓRICO GLPI (Fase 9B): o painel em HTML feito por fora; quem tem permissão envia e todos veem.
+// Fica compactado em pedaços (glpiPanelChunks/{versão}_{n}); glpiPanel/current aponta para a versão em uso.
+export interface GlpiPanelHead {
+  version: string;
+  fileName: string;
+  size: number;             // tamanho original (bytes)
+  chunks: number;
+  uploadedAt: string;
+  uploadedBy: { matricula: string; name: string };
+}

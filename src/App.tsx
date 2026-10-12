@@ -19,6 +19,7 @@ import AccessibilityPanel from './components/AccessibilityPanel';
 import PublicAssetView from './components/PublicAssetView';
 import TechnicianMobileView from './components/mobile/TechnicianMobileView';
 import NoticesView from './components/notices/NoticesView';
+import GlpiPanelView from './components/GlpiPanelView';
 import { useNoticeState } from './components/notices/useNoticeState';
 import { NoticeViewer, noticeActive, noticeCompaniesOf, noticeTargets, subscribeNotices } from './db/notices';
 import MaintenanceScreen from './components/MaintenanceScreen';
@@ -1381,6 +1382,7 @@ export default function App() {
           {currentTab === 'notices' && userProfile && (
             <NoticesView notices={notices} user={userProfile} viewer={noticeViewer} unitOptions={osUnitOptions} canPublish={userHasActionPermission('notices_publish')} />
           )}
+          {currentTab === 'glpi' && userProfile && userHasTabPermission('glpi') && <GlpiPanelView user={userProfile} canManage={userHasActionPermission('glpi_manage')} />}
 
           {currentTab === 'settings' && userProfile && userHasTabPermission('settings') && (
             <SettingsView userProfile={userProfile} darkMode={darkMode} canEditOsTemplates={userHasActionPermission('os_templates')} />

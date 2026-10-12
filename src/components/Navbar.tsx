@@ -65,7 +65,7 @@ export default function Navbar({
   const displayInitials = getInitials(displayName);
 
   return (
-    <header className="h-20 px-4 sm:px-6 w-full bg-white/95 dark:bg-[#08122b]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 flex justify-between items-center sticky top-0 z-40 shadow-xs font-sans transition-colors duration-150 print:hidden">
+    <header className="h-20 px-4 sm:px-6 gap-2 w-full bg-white/95 dark:bg-[#08122b]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 flex justify-between items-center sticky top-0 z-40 shadow-xs font-sans transition-colors duration-150 print:hidden">
       {/* Linha neon da marca (identidade visual 2.0) */}
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-violet-500/0 via-cyan-400/70 to-violet-500/0 pointer-events-none" />
       {/* Tab Context and Title */}
@@ -79,23 +79,26 @@ export default function Navbar({
             <Menu className="w-5 h-5 animate-pulse" />
           </button>
         )}
-        <h2 className="text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
+        {/* Título e gerência: no celular um embaixo do outro (lado a lado, encostavam nos botões da direita) */}
+        <div className="flex flex-col items-start gap-0.5 min-w-0 sm:flex-row sm:items-center sm:gap-4">
+        <h2 className="max-w-full text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
         {unitOptions && unitOptions.length > 0 && onActiveUnitChange && (
           <select
             value={activeUnit || ''}
             onChange={(e) => onActiveUnitChange(e.target.value)}
             title="Gerência exibida"
-            className="h-8 px-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 cursor-pointer"
+            className="h-7 sm:h-8 max-w-[9rem] sm:max-w-none px-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 cursor-pointer"
           >
             {unitOptions.map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
         )}
+        </div>
       </div>
 
       {/* Actionable Controls matching the attached mockup */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* 1. Integrated Accessibility Pill Button and Flyout dropdown */}
         <AccessibilityPanel
           fontScale={fontScale}
@@ -122,7 +125,7 @@ export default function Navbar({
         </button>
 
         {/* 3. Divider Line */}
-        <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0"></div>
+        <div className="hidden sm:block h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0"></div>
 
         {/* 4. User Profile (Avatar Circle on Left + Name in Uppercase on Right) */}
         <div className="flex items-center gap-2 min-w-0">
@@ -133,7 +136,7 @@ export default function Navbar({
             {displayInitials}
           </div>
           <span 
-            className="font-bold text-xs text-slate-800 dark:text-white uppercase tracking-tight truncate max-w-[110px] sm:max-w-[160px] lg:max-w-[220px]"
+            className="hidden sm:block font-bold text-xs text-slate-800 dark:text-white uppercase tracking-tight truncate max-w-[110px] sm:max-w-[160px] lg:max-w-[220px]"
             title={displayName}
           >
             {displayName}

@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   FilePlus2,
   Megaphone,
+  History,
   X
 } from 'lucide-react';
 import { HexonUser } from '../types';
@@ -80,6 +81,7 @@ export default function Sidebar({
     ...(userHasTabPermission('supplies') ? [{ tab: 'supplies', label: 'Gestão de Insumos', icon: PackageOpen }] : []),
     ...(userHasTabPermission('almoxarifado') ? [{ tab: 'almoxarifado', label: 'Almoxarifado', icon: Warehouse, badge: pendingStoreCount }] : []),
     { tab: 'notices', label: 'Quadro de Avisos', icon: Megaphone, badge: noticesCount },
+    ...(userHasTabPermission('glpi') ? [{ tab: 'glpi', label: 'Histórico GLPI', icon: History }] : []),
     ...(isSuperAdmin
       ? [
           { tab: 'user-control', label: 'Usuários', icon: ShieldCheck },
