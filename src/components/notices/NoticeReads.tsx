@@ -40,9 +40,9 @@ export default function NoticeReads({ notice, allUnits, onClose }: { notice: Not
 
   const total = reads && missing ? reads.length + missing.length : null;
   return (
-    <div className="fixed inset-0 z-[1500] bg-slate-900/70 overflow-y-auto flex items-start md:items-center justify-center p-2 md:p-4">
-      <div className="w-full max-w-xl bg-white dark:bg-[#0b1220] rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+    <div className="fixed inset-0 z-[1500] bg-slate-900/70 flex items-start md:items-center justify-center p-2 md:p-4">
+      <div className="w-full max-w-xl max-h-full flex flex-col bg-white dark:bg-[#0b1220] rounded-2xl shadow-2xl overflow-hidden">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-900 dark:text-white truncate">Quem leu — {notice.title}</p>
             <p className="text-[11px] text-slate-500">{total === null ? 'Carregando…' : `${reads!.length} de ${total} marcaram "Li e estou ciente"`}</p>
@@ -51,7 +51,7 @@ export default function NoticeReads({ notice, allUnits, onClose }: { notice: Not
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           {msg && <p className="text-rose-600 font-bold sm:col-span-2">{msg}</p>}
           <div>
             <p className="font-black text-emerald-700 dark:text-emerald-400 mb-1.5">Confirmaram ({reads?.length ?? '…'})</p>

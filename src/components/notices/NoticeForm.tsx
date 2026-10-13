@@ -114,10 +114,10 @@ export default function NoticeForm(props: {
   const hasPhoto = image ? true : image === null ? false : !!notice?.hasImage;
 
   return (
-    <div className="fixed inset-0 z-[1500] bg-slate-900/70 overflow-y-auto flex items-start md:items-center justify-center p-2 md:p-4">
-      <div className="w-full max-w-2xl bg-slate-50 dark:bg-[#08122b] rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[1500] bg-slate-900/70 flex items-start md:items-center justify-center p-2 md:p-4">
+      <div className="w-full max-w-2xl max-h-full flex flex-col bg-slate-50 dark:bg-[#08122b] rounded-2xl shadow-2xl overflow-hidden">
         <div
-          className="px-4 py-3 bg-white dark:bg-[#0b1220] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
+          className="shrink-0 px-4 py-3 bg-white dark:bg-[#0b1220] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
           style={{ borderTop: `4px solid ${NOTICE_KINDS[kind].color}` }}
         >
           <p className="text-sm font-black text-slate-900 dark:text-white">{notice ? 'Editar aviso' : 'Novo aviso'}</p>
@@ -125,7 +125,7 @@ export default function NoticeForm(props: {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-4 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           <div>
             <span className={label}>Tipo</span>
             <div className="flex flex-wrap gap-2">
@@ -221,15 +221,15 @@ export default function NoticeForm(props: {
               </label>
             )}
           </div>
-          {msg && <p className="text-xs font-bold text-rose-600">{msg}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={props.onClose} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold cursor-pointer">
-              Cancelar
-            </button>
-            <button type="button" onClick={save} disabled={busy} className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black cursor-pointer disabled:opacity-60">
-              {busy ? 'Gravando…' : notice ? 'Gravar alterações' : 'Publicar aviso'}
-            </button>
-          </div>
+        </div>
+        <div className="shrink-0 px-4 py-3 bg-white dark:bg-[#0b1220] border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-end gap-2">
+          {msg && <p className="flex-1 min-w-[160px] text-xs font-bold text-rose-600">{msg}</p>}
+          <button type="button" onClick={props.onClose} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold cursor-pointer">
+            Cancelar
+          </button>
+          <button type="button" onClick={save} disabled={busy} className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black cursor-pointer disabled:opacity-60">
+            {busy ? 'Gravando…' : notice ? 'Gravar alterações' : 'Publicar aviso'}
+          </button>
         </div>
       </div>
     </div>

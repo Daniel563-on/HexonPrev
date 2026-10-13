@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, Info, Lock, MapPin, Moon, Plus, Search, Star, Trash2, Users, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, Lock, MapPin, Moon, Plus, Search, Star, Trash2, Users, Wrench } from 'lucide-react';
 import { BlockStop, DayMarkKind, HexonUser, PlanningLot, ServiceOrder, WorkOrder } from '../../types';
 import { dbRemoveBlock, dbSaveBlock, WeekKey } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
@@ -478,433 +478,393 @@ export default function BlockEditor(props: Props) {
         )
       }
     >
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4">
-        <div className="space-y-3">
-          <div className="grid sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3">
-            <label className="block">
-              <span className={`block mb-1 ${h}`}>1. Equipe</span>
-              <select value={team} onChange={(ev) => setTeam(ev.target.value)} disabled={!!readOnly || teamLocked} className={input}>
-                <option value="">Escolha a equipe...</option>
-                {teams.map((t) => (
-                  <option key={t.matricula} value={t.matricula}>
-                    {t.label} — {t.name}
-                  </option>
-                ))}
-                {lot && !teams.some((t) => t.matricula === lot.technicianMatricula) && <option value={lot.technicianMatricula}>{lot.technicianName}</option>}
-              </select>
-              {teamLocked && <span className="text-[10px] text-slate-500">Há preventiva em execução ou concluída, ou chamado já começado: a equipe não muda.</span>}
-            </label>
-            <div>
-              <p className={`mb-1.5 ${h}`}>
-                2. Dias seguidos <span className="font-medium text-slate-500">(a viagem: clique no 1º e no último dia; sábado e domingo pedem confirmação)</span>
-              </p>
-              {inWeek ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {days.map((d, i) => {
-                    const on = !!s && d >= s && d <= e;
-                    const blocked = (!started && d < today) || (started && d < today);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => pickDay(d)}
-                        disabled={!!readOnly || (blocked && !on)}
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed ${
-                          on ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : blocked ? 'border-slate-200 bg-slate-100 text-slate-300 dark:bg-slate-800' : i >= 5 ? 'border-slate-200 bg-slate-50 text-slate-500 dark:bg-slate-900' : 'border-slate-200 bg-white text-slate-500 dark:bg-slate-900'
-                        }`}
-                      >
-                        {on && <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {DAY_LABEL[i]} {br(d)}
-                        {dayMarks[d] && <span className="text-rose-600">· {MARK_LABEL[dayMarks[d].kind].toLowerCase()}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-600">
-                  Período do lote: <b>{br(s)} a {br(e)}</b> (passa desta semana; os dias não mudam por aqui).
-                </p>
-              )}
-              {anchor && <p className="mt-1 text-[10px] font-bold text-indigo-600">Agora clique no último dia (ou no mesmo dia para um dia só).</p>}
-              {started && !readOnly && <p className="mt-1 text-[10px] text-slate-500">O bloco já começou: só dá para mudar o último dia.</p>}
-              {marksIn.length > 0 && (
-                <p className="mt-1 text-[10px] font-bold text-rose-600">
-                  {marksIn.map((d) => `${br(d)}: ${MARK_LABEL[dayMarks[d].kind].toLowerCase()}${dayMarks[d].text ? ` (${dayMarks[d].text})` : ''}`).join(' · ')} — não bloqueia.
-                </p>
-              )}
-              {weekendIn.length > 0 && !readOnly && (
-                <label className="mt-2 flex items-start gap-2 p-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-[11px] text-amber-900 dark:text-amber-200 cursor-pointer">
-                  <input type="checkbox" checked={weekendOk} onChange={(ev) => setWeekendOk(ev.target.checked)} className="w-4 h-4 mt-px" />
-                  <span>
-                    <AlertTriangle className="inline w-3.5 h-3.5 mr-1" />O bloco tem <b>{weekendIn.map((d) => DAY_LABEL[days.indexOf(d)].toLowerCase()).join(' e ')}</b>. Confirmo que a equipe vai trabalhar no fim de semana
-                    (preventiva no fim de semana é caso especial).
-                  </span>
-                </label>
-              )}
-            </div>
-          </div>
-
-          <div className={`${box} space-y-2`}>
-            <p className={`${h} flex items-center gap-1`}>
-              <MapPin className="w-4 h-4 text-indigo-600" />
-              3. Locais do bloco {stops.length > 0 ? `— ${stops.length} ${stops.length > 1 ? 'locais' : 'local'}` : ''}
-            </p>
-            <p className="text-[10px] text-slate-500 leading-snug">
-              Um bloco pode ter vários locais (roteiro). Cada local tem os <b>seus dias seguidos</b> dentro do bloco (clique no 1º e no último): as preventivas dele e os chamados da comarca ficam programados nesses dias.
-            </p>
-            {stops.map((st) => {
-              const r = effOf(st);
-              const l = rawLocal(st.key);
-              const nPrev = checkedPlan.filter((o) => localKey(o) === st.key).length + fixedOrders.filter((o) => localKey(o) === st.key).length;
-              const firstOfComarca = stops.find((x) => comarcaOf(x.key) === l.comarca)?.key === st.key;
-              const nCh = firstOfComarca ? woPlan.filter((w) => (w.comarca || '') === l.comarca).length : 0;
-              const locked = stopLocked(st.key);
-              return (
-                <div key={st.key} className="flex flex-wrap items-center gap-2 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
-                  <span className="flex-1 min-w-[160px] text-[11px] font-black text-slate-800 dark:text-slate-100 flex items-start gap-1">
-                    <MapPin className="w-3 h-3 mt-px shrink-0 text-indigo-600" />
-                    {localLabel(l)}
-                  </span>
-                  {inWeek && r ? (
-                    <span className="flex gap-0.5" title="Dias deste local">
-                      {range.map((d) => {
-                        const i = days.indexOf(d);
-                        const on = d >= r[0] && d <= r[1];
-                        const past = d < today;
-                        return (
-                          <button
-                            key={d}
-                            type="button"
-                            onClick={() => pickStopDay(st.key, d)}
-                            disabled={!!readOnly || past}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-black border cursor-pointer disabled:cursor-not-allowed ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-700'}`}
-                          >
-                            {DAY_LABEL[i]?.toLowerCase()}
-                          </button>
-                        );
-                      })}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-500">{r ? dayTxt(days, r[0], r[1]) : 'escolha os dias do bloco'}</span>
-                  )}
-                  <input
-                    value={st.pdfText}
-                    onChange={(ev) => setStopText(st.key, ev.target.value)}
-                    maxLength={80}
-                    disabled={!!readOnly}
-                    title="Texto deste local no PDF"
-                    placeholder={localLabel(l).toUpperCase()}
-                    className="w-48 h-7 px-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-bold"
-                  />
-                  <span className="w-24 text-[10px] font-bold text-emerald-700">
-                    {nPrev} prev.{nCh ? ` · ${nCh} ch.` : ''}
-                  </span>
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => removeStop(st.key)}
-                      disabled={locked}
-                      title={locked ? 'Há preventiva em execução ou concluída, ou chamado começado, neste local' : 'Tirar este local do bloco'}
-                      className="text-rose-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {stopAnchor && <p className="text-[10px] font-bold text-indigo-600">Agora clique no último dia deste local (ou no mesmo dia para um dia só).</p>}
-            {!readOnly &&
-              (adding || stops.length === 0 ? (
-                <div className="space-y-1 p-2 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20">
-                  <label className="relative block">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                    <input value={findLocal} onChange={(ev) => setFindLocal(ev.target.value)} placeholder="Buscar comarca ou endereço..." className={`${input} pl-8`} />
-                  </label>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
-                    {foundLocals.map((l) => (
-                      <button
-                        key={l.key}
-                        type="button"
-                        onClick={() => addStop(l.key)}
-                        className="w-full text-left px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-400 text-[11px] font-bold cursor-pointer"
-                      >
-                        {localLabel(rawLocal(l.key))} <span className="text-emerald-700">· {l.count} a programar</span>
-                      </button>
-                    ))}
-                    {foundLocals.length === 0 && <p className="text-[11px] text-slate-500">Nenhum outro local com preventiva ou chamado a programar nesta semana.</p>}
-                  </div>
-                  {stops.length > 0 && (
-                    <button type="button" onClick={() => setAdding(false)} className="text-[10px] font-black text-slate-500 cursor-pointer">
-                      fechar a busca
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  disabled={stops.length >= MAX_STOPS}
-                  className="h-8 px-3 rounded-lg border border-dashed border-indigo-400 text-indigo-700 dark:text-indigo-300 text-[11px] font-black flex items-center gap-1 cursor-pointer disabled:opacity-40"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {stops.length >= MAX_STOPS ? `Máximo de ${MAX_STOPS} locais` : 'Adicionar local'}
-                </button>
+      <div className="space-y-3">
+        <div className="grid sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3">
+          <label className="block">
+            <span className={`block mb-1 ${h}`}>1. Equipe</span>
+            <select value={team} onChange={(ev) => setTeam(ev.target.value)} disabled={!!readOnly || teamLocked} className={input}>
+              <option value="">Escolha a equipe...</option>
+              {teams.map((t) => (
+                <option key={t.matricula} value={t.matricula}>
+                  {t.label} — {t.name}
+                </option>
               ))}
-          </div>
-
-          <div className={`${box} space-y-2`}>
-            <p className={`${h} flex items-center gap-1`}>
-              <ClipboardCheck className="w-4 h-4 text-emerald-600" />
-              4. Preventivas {stops.length > 1 ? 'dos locais' : 'deste local'} — {checkedPlan.length + fixedIds.length} no bloco
+              {lot && !teams.some((t) => t.matricula === lot.technicianMatricula) && <option value={lot.technicianMatricula}>{lot.technicianName}</option>}
+            </select>
+            {teamLocked && <span className="text-[10px] text-slate-500">Há preventiva em execução ou concluída, ou chamado já começado: a equipe não muda.</span>}
+          </label>
+          <div>
+            <p className={`mb-1.5 ${h}`}>
+              2. Dias seguidos <span className="font-medium text-slate-500">(a viagem: clique no 1º e no último dia; sábado e domingo pedem confirmação)</span>
             </p>
-            {stops.length === 0 && <p className="text-[11px] text-slate-500">Escolha o local para ver as preventivas.</p>}
-            {stops.map((st) => {
-              const list = items.filter((o) => localKey(o) === st.key);
-              const r = effOf(st);
-              const isOpenStop = fold[st.key] ?? stops.length <= 2;
-              const nOn = list.filter(isChecked).length + list.filter((o) => !editable(o)).length;
-              return (
-                <div key={st.key} className={stops.length > 1 ? 'rounded-lg border border-slate-200 dark:border-slate-700' : ''}>
-                  {stops.length > 1 && (
+            {inWeek ? (
+              <div className="flex flex-wrap gap-1.5">
+                {days.map((d, i) => {
+                  const on = !!s && d >= s && d <= e;
+                  const blocked = (!started && d < today) || (started && d < today);
+                  return (
                     <button
+                      key={d}
                       type="button"
-                      onClick={() => setFold((p) => ({ ...p, [st.key]: !isOpenStop }))}
-                      className="w-full px-2 py-1.5 flex items-center gap-1 text-[11px] font-black text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 rounded-lg cursor-pointer"
+                      onClick={() => pickDay(d)}
+                      disabled={!!readOnly || (blocked && !on)}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed ${
+                        on ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : blocked ? 'border-slate-200 bg-slate-100 text-slate-300 dark:bg-slate-800' : i >= 5 ? 'border-slate-200 bg-slate-50 text-slate-500 dark:bg-slate-900' : 'border-slate-200 bg-white text-slate-500 dark:bg-slate-900'
+                      }`}
                     >
-                      {isOpenStop ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                      <span className="truncate">{localLabel(rawLocal(st.key))}</span>
-                      <span className="font-bold text-slate-500">· {r ? dayTxt(days, r[0], r[1]) : '—'}</span>
-                      <span className="ml-auto text-emerald-700">
-                        {nOn} de {list.length}
-                      </span>
+                      {on && <CheckCircle2 className="w-3.5 h-3.5" />}
+                      {DAY_LABEL[i]} {br(d)}
+                      {dayMarks[d] && <span className="text-rose-600">· {MARK_LABEL[dayMarks[d].kind].toLowerCase()}</span>}
                     </button>
-                  )}
-                  {isOpenStop && (
-                    <div className={stops.length > 1 ? 'p-2 space-y-2' : 'space-y-2'}>
-                      {list.length === 0 && <p className="text-[11px] text-slate-500">Nenhuma preventiva aguardando programação neste local.</p>}
-                      {groupsOf(list).map(([k, glist]) => groupBox(k, glist, r))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className={`${box} space-y-2`}>
-            <p className={`${h} flex items-center gap-1`}>
-              <Wrench className="w-4 h-4 text-indigo-600" />
-              Chamados GLPI {comarcas.length === 1 ? `de ${comarcas[0] || 'Sem comarca'}` : comarcas.length > 1 ? 'das comarcas do bloco' : 'da comarca'} — {woPlan.length + woFixedIds.length} no bloco
-            </p>
-            {stops.length === 0 && <p className="text-[11px] text-slate-500">Escolha o local para ver os chamados abertos da comarca.</p>}
-            {stops.length > 0 && woItems.length === 0 && <p className="text-[11px] text-slate-500">Nenhum chamado aberto {comarcas.length > 1 ? 'nestas comarcas' : 'nesta comarca'}.</p>}
-            {woFixedIds.length > 0 && <p className="text-[10px] text-slate-500">{woFixedIds.length} chamado(s) do bloco já concluído(s): continuam no bloco.</p>}
-            {woItems.map((w) => {
-              const blocked = woBlocked(w);
-              const checked = woChecked(w);
-              const mine = !!team && w.assignedTechnicianMatricula === team;
-              const lateDeadline = !!w.deadline && !!e && w.deadline.slice(0, 10) < (woRange(w)?.[1] || e);
-              const wr = woRange(w);
-              const gone = !comarcas.includes(w.comarca || '');
-              const state = gone
-                ? 'a comarca saiu do bloco: perde o dia e continua com o técnico'
-                : !team
-                ? 'escolha a equipe'
-                : w.status === 'Nova' || !w.assignedTechnicianMatricula
-                  ? `sem técnico → passa a ser do ${teamObj?.name || ''}`
-                  : blocked
-                    ? `já começou com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}: não muda de técnico aqui`
-                    : !mine
-                      ? `está com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}; se marcar, sai dele e passa para ${teamObj?.name || ''}`
-                      : lot && w.lotId === lot.id
-                        ? 'neste bloco'
-                        : w.lotId
-                          ? `já tem dia em outro bloco (${br(w.scheduledDate)}): se marcar, muda para este`
-                          : `já com ele${w.status === 'Pendente' ? ' (pendente)' : ''}, sem dia → ganha o dia`;
-              const tone = blocked ? 'border-rose-200 bg-rose-50/60 dark:bg-rose-950/20' : team && !mine && w.assignedTechnicianMatricula ? 'border-amber-200 bg-amber-50/60 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700';
-              return (
-                <div key={w.id} className={`p-2 rounded-lg border flex items-start gap-2 text-[11px] ${tone}`}>
-                  <button type="button" disabled={!!readOnly || blocked || !team || gone} onClick={() => toggleWo(w.id, !checked)} className="mt-px cursor-pointer disabled:cursor-not-allowed">
-                    {check(checked, !!readOnly || blocked || !team || gone)}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-slate-800 dark:text-slate-100">
-                      <span className="font-mono font-black text-indigo-700 dark:text-indigo-300">{w.number || w.id}</span>
-                      {w.intervencao ? ` · ${w.intervencao}` : ''}
-                      {w.glpi ? ` · GLPI ${w.glpi}` : ''}
-                      {w.deadline ? (
-                        <span className={lateDeadline ? 'text-rose-600 font-bold' : ''}>
-                          {' '}
-                          · prazo {br(w.deadline)}
-                        </span>
-                      ) : (
-                        ' · sem prazo'
-                      )}
-                    </p>
-                    <p className="text-[10px] text-slate-500 truncate">
-                      <MapPin className="inline w-3 h-3 mr-0.5" />
-                      {w.execAddressText || w.comarca || '—'}
-                    </p>
-                    <p className={`text-[10px] ${blocked ? 'text-rose-700' : team && !mine && w.assignedTechnicianMatricula ? 'text-amber-800' : 'text-slate-600 dark:text-slate-400'}`}>
-                      {state}
-                      {checked && wr && stops.length > 1 ? ` · dia: ${dayTxt(days, wr[0], wr[1])}` : ''}
-                    </p>
-                    {lateDeadline && checked && <p className="text-[10px] font-bold text-rose-600">O prazo do chamado acaba antes do último dia do bloco (não bloqueia).</p>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className={box}>
-              <p className={`${h} flex items-center gap-1`}>
-                <Users className="w-4 h-4 text-indigo-600" />
-                5. Equipe nestes dias
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-600">
+                Período do lote: <b>{br(s)} a {br(e)}</b> (passa desta semana; os dias não mudam por aqui).
               </p>
-              {crew.length ? (
-                <p className="mt-1 text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {crew.map((c, i) => (
-                    <span key={c.matricula} className={c.absent ? 'line-through text-rose-500' : ''}>
-                      {i === 0 && <Star className="inline w-3 h-3 text-amber-500 fill-amber-400 mr-0.5" />}
-                      {c.name}
-                      {c.absent ? ' (ausente)' : ''}
-                      {i < crew.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p className="mt-1 text-[11px] text-slate-500">Escolha a equipe e os dias.</p>
-              )}
-              <p className="text-[10px] text-slate-500 mt-1">Vem da equipe desta semana (✎ na linha), sem os ausentes. Ao começar cada preventiva, o técnico já recebe essa equipe e ainda pode tirar ou pôr gente.</p>
-            </div>
-            <div className={`${box} space-y-2`}>
-              <p className={`${h} flex items-center gap-1`}>
-                <Moon className="w-4 h-4 text-sky-600" />
-                6. Pernoite (viagem)
+            )}
+            {anchor && <p className="mt-1 text-[10px] font-bold text-indigo-600">Agora clique no último dia (ou no mesmo dia para um dia só).</p>}
+            {started && !readOnly && <p className="mt-1 text-[10px] text-slate-500">O bloco já começou: só dá para mudar o último dia.</p>}
+            {marksIn.length > 0 && (
+              <p className="mt-1 text-[10px] font-bold text-rose-600">
+                {marksIn.map((d) => `${br(d)}: ${MARK_LABEL[dayMarks[d].kind].toLowerCase()}${dayMarks[d].text ? ` (${dayMarks[d].text})` : ''}`).join(' · ')} — não bloqueia.
               </p>
-              {!costTracking ? (
-                <p className="text-[11px] text-slate-500">A empresa não contabiliza pernoite.</p>
-              ) : possibleNights.length === 0 ? (
-                <p className="text-[11px] text-slate-500">Bloco de 1 dia: sem pernoite.</p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-1.5">
-                    {possibleNights.map((d) => {
-                      const on = nights.includes(d);
+            )}
+            {weekendIn.length > 0 && !readOnly && (
+              <label className="mt-2 flex items-start gap-2 p-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-[11px] text-amber-900 dark:text-amber-200 cursor-pointer">
+                <input type="checkbox" checked={weekendOk} onChange={(ev) => setWeekendOk(ev.target.checked)} className="w-4 h-4 mt-px" />
+                <span>
+                  <AlertTriangle className="inline w-3.5 h-3.5 mr-1" />O bloco tem <b>{weekendIn.map((d) => DAY_LABEL[days.indexOf(d)].toLowerCase()).join(' e ')}</b>. Confirmo que a equipe vai trabalhar no fim de semana
+                  (preventiva no fim de semana é caso especial).
+                </span>
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className={`${box} space-y-2`}>
+          <p className={`${h} flex items-center gap-1`}>
+            <MapPin className="w-4 h-4 text-indigo-600" />
+            3. Locais do bloco {stops.length > 0 ? `— ${stops.length} ${stops.length > 1 ? 'locais' : 'local'}` : ''}
+          </p>
+          <p className="text-[10px] text-slate-500 leading-snug">
+            Um bloco pode ter vários locais (roteiro). Cada local tem os <b>seus dias seguidos</b> dentro do bloco (clique no 1º e no último): as preventivas dele e os chamados da comarca ficam programados nesses dias.
+          </p>
+          {stops.map((st) => {
+            const r = effOf(st);
+            const l = rawLocal(st.key);
+            const nPrev = checkedPlan.filter((o) => localKey(o) === st.key).length + fixedOrders.filter((o) => localKey(o) === st.key).length;
+            const firstOfComarca = stops.find((x) => comarcaOf(x.key) === l.comarca)?.key === st.key;
+            const nCh = firstOfComarca ? woPlan.filter((w) => (w.comarca || '') === l.comarca).length : 0;
+            const locked = stopLocked(st.key);
+            return (
+              <div key={st.key} className="flex flex-wrap items-center gap-2 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <span className="flex-1 min-w-[160px] text-[11px] font-black text-slate-800 dark:text-slate-100 flex items-start gap-1">
+                  <MapPin className="w-3 h-3 mt-px shrink-0 text-indigo-600" />
+                  {localLabel(l)}
+                </span>
+                {inWeek && r ? (
+                  <span className="flex gap-0.5" title="Dias deste local">
+                    {range.map((d) => {
                       const i = days.indexOf(d);
+                      const on = d >= r[0] && d <= r[1];
+                      const past = d < today;
                       return (
                         <button
                           key={d}
                           type="button"
-                          disabled={!!readOnly}
-                          onClick={() => setNights((p) => (on ? p.filter((x) => x !== d) : [...p, d]))}
-                          className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer ${on ? 'border-sky-400 bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200' : 'border-slate-200 text-slate-500'}`}
+                          onClick={() => pickStopDay(st.key, d)}
+                          disabled={!!readOnly || past}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-black border cursor-pointer disabled:cursor-not-allowed ${on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-700'}`}
                         >
-                          <Moon className="w-3.5 h-3.5" />
-                          {DAY_LABEL[i]?.toLowerCase()}→{DAY_LABEL[i + 1]?.toLowerCase() || ''}: {on ? 'dormem fora' : 'voltam'}
+                          {DAY_LABEL[i]?.toLowerCase()}
                         </button>
                       );
                     })}
-                  </div>
-                  {usedNights.length > 0 && (
-                    <>
-                      <label className="flex items-center gap-2 text-[11px]">
-                        <span className="font-bold text-slate-600">Pessoas:</span>
-                        <input value={people} onChange={(ev) => setPeople(ev.target.value.replace(/\D/g, '').slice(0, 2))} placeholder={String(crew.filter((c) => !c.absent).length)} disabled={!!readOnly} className="w-14 h-7 px-2 rounded-md border border-slate-200 font-black bg-white dark:bg-slate-900" />
-                        <span className="text-slate-500">(da equipe; pode ajustar)</span>
-                      </label>
-                      <p className="text-[11px] text-slate-700 dark:text-slate-300">
-                        <b>
-                          {usedNights.length} noite{usedNights.length > 1 ? 's' : ''} × {peopleN} pessoa{peopleN > 1 ? 's' : ''} = {usedNights.length * peopleN} pernoites
-                        </b>
-                        , divididos entre as {checkedPlan.length + fixedIds.length + woPlan.length + woFixedIds.length} OS do bloco (preventivas e chamados).
-                      </p>
-                    </>
-                  )}
-                  <p className="text-[10px] text-slate-500">Valor em R$ só para quem tem "Visualizar Valores".</p>
-                </>
-              )}
-            </div>
-          </div>
-
-          <label className="block">
-            <span className={`block mb-1 ${h}`}>Observação</span>
-            <input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={300} disabled={!!readOnly} placeholder="Ex.: hotel reservado" className={input} />
-          </label>
-          {error && (
-            <p ref={errorRef} className="text-xs font-bold text-rose-600">
-              {error}
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-3 self-start">
-          {!readOnly && (
-            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-[11px] text-emerald-900 dark:text-emerald-200 flex gap-2">
-              <Info className="w-4 h-4 shrink-0" />
-              <span>
-                <b>Ao salvar:</b> {checkedPlan.length} preventiva(s) ficam <b>Programadas</b>
-                {teamObj ? ` para ${teamObj.name}` : ''}
-                {stops.length > 1 ? (
-                  <>
-                    , <b>cada uma nos dias do seu local</b>
-                  </>
-                ) : s ? (
-                  `, ${dayTxt(days, s, e)}`
+                  </span>
                 ) : (
-                  ''
-                )}{' '}
-                (o mesmo que o PMOC faz). Entram no celular do técnico <b>como hoje</b>.
-                {woPlan.length > 0 && (
-                  <>
-                    {' '}
-                    <b>{woPlan.length}</b> chamado(s) ficam com ele, com o dia programado{stops.length > 1 ? ' (o do local da comarca)' : ''}.
-                  </>
+                  <span className="text-[10px] text-slate-500">{r ? dayTxt(days, r[0], r[1]) : 'escolha os dias do bloco'}</span>
                 )}
-                {drop.length > 0 && (
-                  <>
-                    {' '}
-                    <b>{drop.length}</b> preventiva(s) desmarcada(s) voltam para "Novo".
-                  </>
+                <input
+                  value={st.pdfText}
+                  onChange={(ev) => setStopText(st.key, ev.target.value)}
+                  maxLength={80}
+                  disabled={!!readOnly}
+                  title="Texto deste local no PDF"
+                  placeholder={localLabel(l).toUpperCase()}
+                  className="w-48 h-7 px-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-bold"
+                />
+                <span className="w-24 text-[10px] font-bold text-emerald-700">
+                  {nPrev} prev.{nCh ? ` · ${nCh} ch.` : ''}
+                </span>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => removeStop(st.key)}
+                    disabled={locked}
+                    title={locked ? 'Há preventiva em execução ou concluída, ou chamado começado, neste local' : 'Tirar este local do bloco'}
+                    className="text-rose-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 )}
-                {woDrop.length > 0 && (
-                  <>
-                    {' '}
-                    <b>{woDrop.length}</b> chamado(s) desmarcado(s) perdem o dia e continuam com o técnico.
-                  </>
-                )}
-              </span>
-            </div>
-          )}
-          {sameComarca.length > 0 && (
-            <div className={`${box} space-y-1.5`}>
-              <p className="text-xs font-black text-slate-900 dark:text-white">Na mesma comarca, ainda a programar</p>
+              </div>
+            );
+          })}
+          {stopAnchor && <p className="text-[10px] font-bold text-indigo-600">Agora clique no último dia deste local (ou no mesmo dia para um dia só).</p>}
+          {!readOnly && sameComarca.length > 0 && (
+            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Na mesma comarca, ainda a programar</p>
               {sameComarca.map((l) => (
                 <p key={l.key} className="text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                   <MapPin className="w-3 h-3 text-indigo-600 shrink-0" />
                   <span className="flex-1">
                     {localLabel(rawLocal(l.key))} · <b className="text-emerald-700">{l.count}</b>
                   </span>
-                  {!readOnly && stops.length < MAX_STOPS && (
+                  {stops.length < MAX_STOPS && (
                     <button type="button" onClick={() => addStop(l.key)} className="text-[10px] font-black text-indigo-600 cursor-pointer shrink-0">
                       + adicionar
                     </button>
                   )}
                 </p>
               ))}
-              <p className="text-[10px] text-slate-500">Outros endereços das comarcas que já estão no bloco.</p>
             </div>
           )}
-          <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-400 space-y-1">
-            <p>
-              <b>Prazo:</b> a preventiva só entra se o prazo dado pelo Super Admin cobre todos os dias do seu local no bloco (vale até o último dia do prazo).
+          {!readOnly &&
+            (adding || stops.length === 0 ? (
+              <div className="space-y-1 p-2 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20">
+                <label className="relative block">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input value={findLocal} onChange={(ev) => setFindLocal(ev.target.value)} placeholder="Buscar comarca ou endereço..." className={`${input} pl-8`} />
+                </label>
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {foundLocals.map((l) => (
+                    <button
+                      key={l.key}
+                      type="button"
+                      onClick={() => addStop(l.key)}
+                      className="w-full text-left px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-400 text-[11px] font-bold cursor-pointer"
+                    >
+                      {localLabel(rawLocal(l.key))} <span className="text-emerald-700">· {l.count} a programar</span>
+                    </button>
+                  ))}
+                  {foundLocals.length === 0 && <p className="text-[11px] text-slate-500">Nenhum outro local com preventiva ou chamado a programar nesta semana.</p>}
+                </div>
+                {stops.length > 0 && (
+                  <button type="button" onClick={() => setAdding(false)} className="text-[10px] font-black text-slate-500 cursor-pointer">
+                    fechar a busca
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                disabled={stops.length >= MAX_STOPS}
+                className="h-8 px-3 rounded-lg border border-dashed border-indigo-400 text-indigo-700 dark:text-indigo-300 text-[11px] font-black flex items-center gap-1 cursor-pointer disabled:opacity-40"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {stops.length >= MAX_STOPS ? `Máximo de ${MAX_STOPS} locais` : 'Adicionar local'}
+              </button>
+            ))}
+        </div>
+
+        <div className={`${box} space-y-2`}>
+          <p className={`${h} flex items-center gap-1`}>
+            <ClipboardCheck className="w-4 h-4 text-emerald-600" />
+            4. Preventivas {stops.length > 1 ? 'dos locais' : 'deste local'} — {checkedPlan.length + fixedIds.length} no bloco
+          </p>
+          {stops.length === 0 && <p className="text-[11px] text-slate-500">Escolha o local para ver as preventivas.</p>}
+          {stops.map((st) => {
+            const list = items.filter((o) => localKey(o) === st.key);
+            const r = effOf(st);
+            const isOpenStop = fold[st.key] ?? stops.length <= 2;
+            const nOn = list.filter(isChecked).length + list.filter((o) => !editable(o)).length;
+            return (
+              <div key={st.key} className={stops.length > 1 ? 'rounded-lg border border-slate-200 dark:border-slate-700' : ''}>
+                {stops.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setFold((p) => ({ ...p, [st.key]: !isOpenStop }))}
+                    className="w-full px-2 py-1.5 flex items-center gap-1 text-[11px] font-black text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 rounded-lg cursor-pointer"
+                  >
+                    {isOpenStop ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    <span className="truncate">{localLabel(rawLocal(st.key))}</span>
+                    <span className="font-bold text-slate-500">· {r ? dayTxt(days, r[0], r[1]) : '—'}</span>
+                    <span className="ml-auto text-emerald-700">
+                      {nOn} de {list.length}
+                    </span>
+                  </button>
+                )}
+                {isOpenStop && (
+                  <div className={stops.length > 1 ? 'p-2 space-y-2' : 'space-y-2'}>
+                    {list.length === 0 && <p className="text-[11px] text-slate-500">Nenhuma preventiva aguardando programação neste local.</p>}
+                    {groupsOf(list).map(([k, glist]) => groupBox(k, glist, r))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className={`${box} space-y-2`}>
+          <p className={`${h} flex items-center gap-1`}>
+            <Wrench className="w-4 h-4 text-indigo-600" />
+            Chamados GLPI {comarcas.length === 1 ? `de ${comarcas[0] || 'Sem comarca'}` : comarcas.length > 1 ? 'das comarcas do bloco' : 'da comarca'} — {woPlan.length + woFixedIds.length} no bloco
+          </p>
+          {stops.length === 0 && <p className="text-[11px] text-slate-500">Escolha o local para ver os chamados abertos da comarca.</p>}
+          {stops.length > 0 && woItems.length === 0 && <p className="text-[11px] text-slate-500">Nenhum chamado aberto {comarcas.length > 1 ? 'nestas comarcas' : 'nesta comarca'}.</p>}
+          {woFixedIds.length > 0 && <p className="text-[10px] text-slate-500">{woFixedIds.length} chamado(s) do bloco já concluído(s): continuam no bloco.</p>}
+          {woItems.map((w) => {
+            const blocked = woBlocked(w);
+            const checked = woChecked(w);
+            const mine = !!team && w.assignedTechnicianMatricula === team;
+            const lateDeadline = !!w.deadline && !!e && w.deadline.slice(0, 10) < (woRange(w)?.[1] || e);
+            const wr = woRange(w);
+            const gone = !comarcas.includes(w.comarca || '');
+            const state = gone
+              ? 'a comarca saiu do bloco: perde o dia e continua com o técnico'
+              : !team
+              ? 'escolha a equipe'
+              : w.status === 'Nova' || !w.assignedTechnicianMatricula
+                ? `sem técnico → passa a ser do ${teamObj?.name || ''}`
+                : blocked
+                  ? `já começou com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}: não muda de técnico aqui`
+                  : !mine
+                    ? `está com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}; se marcar, sai dele e passa para ${teamObj?.name || ''}`
+                    : lot && w.lotId === lot.id
+                      ? 'neste bloco'
+                      : w.lotId
+                        ? `já tem dia em outro bloco (${br(w.scheduledDate)}): se marcar, muda para este`
+                        : `já com ele${w.status === 'Pendente' ? ' (pendente)' : ''}, sem dia → ganha o dia`;
+            const tone = blocked ? 'border-rose-200 bg-rose-50/60 dark:bg-rose-950/20' : team && !mine && w.assignedTechnicianMatricula ? 'border-amber-200 bg-amber-50/60 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700';
+            return (
+              <div key={w.id} className={`p-2 rounded-lg border flex items-start gap-2 text-[11px] ${tone}`}>
+                <button type="button" disabled={!!readOnly || blocked || !team || gone} onClick={() => toggleWo(w.id, !checked)} className="mt-px cursor-pointer disabled:cursor-not-allowed">
+                  {check(checked, !!readOnly || blocked || !team || gone)}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-800 dark:text-slate-100">
+                    <span className="font-mono font-black text-indigo-700 dark:text-indigo-300">{w.number || w.id}</span>
+                    {w.intervencao ? ` · ${w.intervencao}` : ''}
+                    {w.glpi ? ` · GLPI ${w.glpi}` : ''}
+                    {w.deadline ? (
+                      <span className={lateDeadline ? 'text-rose-600 font-bold' : ''}>
+                        {' '}
+                        · prazo {br(w.deadline)}
+                      </span>
+                    ) : (
+                      ' · sem prazo'
+                    )}
+                  </p>
+                  <p className="text-[10px] text-slate-500 truncate">
+                    <MapPin className="inline w-3 h-3 mr-0.5" />
+                    {w.execAddressText || w.comarca || '—'}
+                  </p>
+                  <p className={`text-[10px] ${blocked ? 'text-rose-700' : team && !mine && w.assignedTechnicianMatricula ? 'text-amber-800' : 'text-slate-600 dark:text-slate-400'}`}>
+                    {state}
+                    {checked && wr && stops.length > 1 ? ` · dia: ${dayTxt(days, wr[0], wr[1])}` : ''}
+                  </p>
+                  {lateDeadline && checked && <p className="text-[10px] font-bold text-rose-600">O prazo do chamado acaba antes do último dia do bloco (não bloqueia).</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className={box}>
+            <p className={`${h} flex items-center gap-1`}>
+              <Users className="w-4 h-4 text-indigo-600" />
+              5. Equipe nestes dias
             </p>
-            <p>
-              <b>Desmarcar</b> uma preventiva: ela volta para "Novo". <b>Tirar um local</b>: as preventivas dele voltam para "Novo" e os chamados da comarca perdem o dia. <b>Tirar o bloco</b>: faz isso com todas.
+            {crew.length ? (
+              <p className="mt-1 text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                {crew.map((c, i) => (
+                  <span key={c.matricula} className={c.absent ? 'line-through text-rose-500' : ''}>
+                    {i === 0 && <Star className="inline w-3 h-3 text-amber-500 fill-amber-400 mr-0.5" />}
+                    {c.name}
+                    {c.absent ? ' (ausente)' : ''}
+                    {i < crew.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-slate-500">Escolha a equipe e os dias.</p>
+            )}
+            <p className="text-[10px] text-slate-500 mt-1">Vem da equipe desta semana (✎ na linha), sem os ausentes. Ao começar cada preventiva, o técnico já recebe essa equipe e ainda pode tirar ou pôr gente.</p>
+          </div>
+          <div className={`${box} space-y-2`}>
+            <p className={`${h} flex items-center gap-1`}>
+              <Moon className="w-4 h-4 text-sky-600" />
+              6. Pernoite (viagem)
             </p>
+            {!costTracking ? (
+              <p className="text-[11px] text-slate-500">A empresa não contabiliza pernoite.</p>
+            ) : possibleNights.length === 0 ? (
+              <p className="text-[11px] text-slate-500">Bloco de 1 dia: sem pernoite.</p>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {possibleNights.map((d) => {
+                    const on = nights.includes(d);
+                    const i = days.indexOf(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        disabled={!!readOnly}
+                        onClick={() => setNights((p) => (on ? p.filter((x) => x !== d) : [...p, d]))}
+                        className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer ${on ? 'border-sky-400 bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200' : 'border-slate-200 text-slate-500'}`}
+                      >
+                        <Moon className="w-3.5 h-3.5" />
+                        {DAY_LABEL[i]?.toLowerCase()}→{DAY_LABEL[i + 1]?.toLowerCase() || ''}: {on ? 'dormem fora' : 'voltam'}
+                      </button>
+                    );
+                  })}
+                </div>
+                {usedNights.length > 0 && (
+                  <>
+                    <label className="flex items-center gap-2 text-[11px]">
+                      <span className="font-bold text-slate-600">Pessoas:</span>
+                      <input value={people} onChange={(ev) => setPeople(ev.target.value.replace(/\D/g, '').slice(0, 2))} placeholder={String(crew.filter((c) => !c.absent).length)} disabled={!!readOnly} className="w-14 h-7 px-2 rounded-md border border-slate-200 font-black bg-white dark:bg-slate-900" />
+                      <span className="text-slate-500">(da equipe; pode ajustar)</span>
+                    </label>
+                    <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                      <b>
+                        {usedNights.length} noite{usedNights.length > 1 ? 's' : ''} × {peopleN} pessoa{peopleN > 1 ? 's' : ''} = {usedNights.length * peopleN} pernoites
+                      </b>
+                      , divididos entre as {checkedPlan.length + fixedIds.length + woPlan.length + woFixedIds.length} OS do bloco (preventivas e chamados).
+                    </p>
+                  </>
+                )}
+                <p className="text-[10px] text-slate-500">Valor em R$ só para quem tem "Visualizar Valores".</p>
+              </>
+            )}
           </div>
         </div>
+
+        <label className="block">
+          <span className={`block mb-1 ${h}`}>Observação</span>
+          <input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={300} disabled={!!readOnly} placeholder="Ex.: hotel reservado" className={input} />
+        </label>
+        {!readOnly && (drop.length > 0 || woDrop.length > 0) && (
+          <p className="p-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-[11px] font-bold text-amber-900 dark:text-amber-200 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
+            <span>
+              Ao salvar:
+              {drop.length > 0 && ` ${drop.length} preventiva(s) voltam para "Novo"`}
+              {drop.length > 0 && woDrop.length > 0 && ' e'}
+              {woDrop.length > 0 && ` ${woDrop.length} chamado(s) perdem o dia (continuam com o técnico)`}.
+            </span>
+          </p>
+        )}
+        {error && (
+          <p ref={errorRef} className="text-xs font-bold text-rose-600">
+            {error}
+          </p>
+        )}
       </div>
     </Shell>
   );

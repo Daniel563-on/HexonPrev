@@ -809,9 +809,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
       {/* MODAL 1: COLLABORATOR USER DETAIL */}
       {isUserModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-101 flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-fade-in ${darkMode ? 'bg-[#0a1122] border border-slate-800 text-white' : 'bg-white text-slate-900'}`}>
-            <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex justify-between items-center bg-slate-50/40 dark:bg-slate-900/30">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-101 flex items-center justify-center p-4">
+          <div className={`w-full max-w-lg max-h-full flex flex-col rounded-2xl shadow-xl overflow-hidden animate-fade-in ${darkMode ? 'bg-[#0a1122] border border-slate-800 text-white' : 'bg-white text-slate-900'}`}>
+            <div className="shrink-0 px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex justify-between items-center bg-slate-50/40 dark:bg-slate-900/30">
               <h4 className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
                 <span className="material-symbols-outlined text-lg text-blue-500">account_circle</span>
                 {editingUser ? 'Editar Conta de Colaborador' : 'Registrar Novo Colaborador'}
@@ -824,14 +824,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
               </button>
             </div>
             
-            <form onSubmit={handleSaveUser} className="p-6 space-y-4">
-              {/* Error Message Alert */}
-              {userModalError && (
-                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 dark:text-rose-300 text-xs rounded-xl flex items-start gap-2 animate-in fade-in">
-                  <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
-                  <div className="flex-1 font-medium leading-relaxed">{userModalError}</div>
-                </div>
-              )}
+            <form onSubmit={handleSaveUser} className="flex-1 min-h-0 flex flex-col">
+              {/* Só o meio rola: título e botões ficam sempre na tela */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
 
               <div className="grid grid-cols-2 gap-4">
                 {/* Full name */}
@@ -1071,8 +1066,17 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
               </div>
 
+              </div>
+
               {/* Action submits */}
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-850">
+              <div className="shrink-0 flex flex-wrap items-center justify-end gap-2 px-6 py-3 border-t border-slate-100 dark:border-slate-850">
+                {/* Error Message Alert */}
+                {userModalError && (
+                  <div className="flex-1 min-w-[180px] text-rose-500 dark:text-rose-300 text-xs flex items-start gap-1.5 animate-in fade-in">
+                    <span className="material-symbols-outlined text-base shrink-0">error</span>
+                    <div className="flex-1 font-medium leading-relaxed">{userModalError}</div>
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={isSavingUser}

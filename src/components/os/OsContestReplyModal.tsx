@@ -81,9 +81,9 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
 
   const section = 'p-3 rounded-xl border border-slate-200 bg-white space-y-2';
   return (
-    <div className="fixed inset-0 z-[1500] bg-slate-900/70 overflow-y-auto flex items-start md:items-center justify-center p-2 md:p-4">
-      <div className="w-full max-w-2xl bg-slate-50 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between gap-2" style={{ borderTop: '4px solid #e11d48' }}>
+    <div className="fixed inset-0 z-[1500] bg-slate-900/70 flex items-start md:items-center justify-center p-2 md:p-4">
+      <div className="w-full max-w-2xl max-h-full flex flex-col bg-slate-50 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="shrink-0 px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between gap-2" style={{ borderTop: '4px solid #e11d48' }}>
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-900">Responder contestação — {order.number}</p>
             <p className="text-[11px] text-slate-500">O que já está na OS não muda; aqui só se acrescenta.</p>
@@ -93,7 +93,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
           </button>
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
             <p className="font-black">Contestação do cliente{last?.clientName ? ` (${last.clientName})` : ''}:</p>
             <p className="whitespace-pre-wrap">{order.contestReason || last?.reason || '—'}</p>
@@ -161,14 +161,14 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
             </div>
           )}
 
-          {msg && <p className="text-xs font-bold text-rose-600">{msg}</p>}
           <p className="text-[11px] text-slate-500">Ao confirmar, a OS volta para o cliente: assinar no celular ou receber um novo link.</p>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold cursor-pointer">Cancelar</button>
-            <button type="button" onClick={confirm} disabled={busy} className="h-10 px-5 rounded-xl bg-rose-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-              <MessageSquareReply className="w-4 h-4" /> {busy ? 'Gravando...' : 'Confirmar resposta'}
-            </button>
-          </div>
+        </div>
+        <div className="shrink-0 px-4 py-3 bg-white border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+          {msg && <p className="flex-1 min-w-[160px] text-xs font-bold text-rose-600">{msg}</p>}
+          <button type="button" onClick={onClose} className="h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold cursor-pointer">Cancelar</button>
+          <button type="button" onClick={confirm} disabled={busy} className="h-10 px-5 rounded-xl bg-rose-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+            <MessageSquareReply className="w-4 h-4" /> {busy ? 'Gravando...' : 'Confirmar resposta'}
+          </button>
         </div>
       </div>
     </div>
