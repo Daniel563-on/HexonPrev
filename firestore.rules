@@ -165,15 +165,18 @@ service cloud.firestore {
     }
 
     // 4e-2. PROGRAMAÇÃO › SEMANA (Fase 7B): 1 registro por gerência + empresa + semana (id = "GERÊNCIA__empresa__segunda"),
-    // com os dias marcados e a equipe da semana. Todos leem; grava quem tem "Programar" nas gerências do perfil; não se apaga.
+    // com os dias marcados e a equipe da semana. Fase 7C: quem acompanha blocos (visits) e o histórico da semana (log).
+    // Todos leem; grava quem tem "Programar" nas gerências do perfil; não se apaga.
     function wpWriteOk(u, p, planId) {
       let d = request.resource.data;
       return osPerm(u, p, 'prog_edit')
-        && d.keys().hasOnly(['unit', 'company', 'weekStart', 'days', 'teams', 'updatedAt', 'updatedBy'])
+        && d.keys().hasOnly(['unit', 'company', 'weekStart', 'days', 'teams', 'visits', 'log', 'updatedAt', 'updatedBy'])
         && d.unit is string && d.company is string && d.weekStart is string && d.weekStart.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
         && planId == d.unit + '__' + d.company + '__' + d.weekStart
         && (!('days' in d) || (d.days is map && d.days.size() <= 7))
         && (!('teams' in d) || (d.teams is map && d.teams.size() <= 100))
+        && (!('visits' in d) || (d.visits is map && d.visits.size() <= 100))
+        && (!('log' in d) || (d.log is list && d.log.size() <= 1000))
         && tmUnitOk(u, p, d.unit)
         && (resource == null || tmUnitOk(u, p, resource.data.unit));
     }

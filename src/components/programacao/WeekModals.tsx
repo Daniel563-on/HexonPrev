@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowRightLeft, Search, Star, X } from 'lucide-react';
-import { Absence, AbsenceKind, DayMarkKind, HexonUser, OrderParticipant, ServiceOrder } from '../../types';
+import { Absence, AbsenceKind, DayMarkKind, HexonUser, OrderParticipant, ServiceOrder, WeekLogEntry } from '../../types';
 import { dbSaveAbsence, UnitPersonInfo } from '../../db/firebase';
 import { DAY_LONG, brFull } from './weekDates';
 
@@ -9,7 +9,7 @@ import { DAY_LONG, brFull } from './weekDates';
 export const MARK_LABEL: Record<DayMarkKind, string> = { feriado: 'Feriado', ponto: 'Ponto facultativo', municipal: 'Feriado municipal', outro: 'Outro' };
 export const ABSENCE_KINDS: AbsenceKind[] = ['Férias', 'Atestado', 'Licença', 'Outro'];
 
-function Shell({
+export function Shell({
   title,
   sub,
   onClose,
@@ -42,9 +42,9 @@ function Shell({
     </div>
   );
 }
-const btn = 'px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold cursor-pointer disabled:opacity-50';
-const btnMain = 'px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black cursor-pointer disabled:opacity-50';
-const input = 'w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold';
+export const btn = 'px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold cursor-pointer disabled:opacity-50';
+export const btnMain = 'px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black cursor-pointer disabled:opacity-50';
+export const input = 'w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold';
 const chipOpt = (on: boolean) =>
   `px-3 py-2 rounded-lg border text-xs font-bold cursor-pointer ${on ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`;
 
@@ -386,6 +386,87 @@ export function DayListModal(props: { title: string; sub: string; orders: Servic
         </table>
       </div>
       <p className="text-[11px] text-slate-500">Abrir leva a Ordens de Serviço › Preventivas já buscando pelo número. Trocar técnico ou dia continua no PMOC por enquanto.</p>
+    </Shell>
+  );
+}
+
+// Histórico da semana (Fase 7C): quem mudou o quê, do mais novo para o mais antigo
+export function WeekHistoryModal(props: { title: string; log: WeekLogEntry[]; onClose: () => void }) {
+  const { title, log, onClose } = props;
+  const rows = [...log].sort((a, b) => b.at.localeCompare(a.at));
+  return (
+    <Shell
+      title={title}
+      sub="Quem mudou o quê na programação desta semana. Cada preventiva também guarda na própria linha do tempo quando foi programada, para quem e por quem."
+      onClose={onClose}
+      width="max-w-3xl"
+      footer={
+        <>
+          <span />
+          <button type="button" className={btn} onClick={onClose}>
+            Fechar
+          </button>
+        </>
+      }
+    >
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[60vh] overflow-y-auto">
+        {rows.length === 0 && <p className="p-4 text-center text-slate-500">Nenhuma mudança registrada nesta semana.</p>}
+        {rows.map((r, i) => (
+          <div key={`${r.at}${i}`} className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex gap-3">
+            <span className="font-mono text-[11px] text-slate-500 shrink-0">{new Date(r.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200 shrink-0 w-32 truncate">{r.by}</span>
+            <span className="text-slate-700 dark:text-slate-300">{r.text}</span>
+          </div>
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+// Acompanhar (Fase 7C): equipe cujo responsável não é técnico (ex.: Engenharia) acompanha um bloco de outra equipe.
+// Aparece na linha dela e (na 7D) no PDF; não muda nenhuma OS.
+export function VisitModal(props: {
+  teamLabel: string;
+  options: { lotId: string; text: string }[];
+  current: string[];
+  onSave: (lotId: string, on: boolean) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const { teamLabel, options, current, onSave, onClose } = props;
+  const [busy, setBusy] = useState('');
+  const act = async (lotId: string, on: boolean) => {
+    setBusy(lotId);
+    await onSave(lotId, on);
+    setBusy('');
+  };
+  return (
+    <Shell
+      title={`${teamLabel} — acompanhar um bloco`}
+      sub="Escolha o bloco de outra equipe que esta equipe vai acompanhar nesta semana. Não muda nenhuma OS."
+      onClose={onClose}
+      footer={
+        <>
+          <span />
+          <button type="button" className={btn} onClick={onClose}>
+            Fechar
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+        {options.length === 0 && <p className="text-slate-500">Nenhum bloco de outra equipe nesta semana.</p>}
+        {options.map((o) => {
+          const on = current.includes(o.lotId);
+          return (
+            <div key={o.lotId} className={`p-2 rounded-lg border flex items-center gap-2 ${on ? 'border-slate-500 bg-slate-100 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-700'}`}>
+              <span className="flex-1 text-[11px] font-bold text-slate-800 dark:text-slate-200">{o.text}</span>
+              <button type="button" disabled={!!busy} onClick={() => act(o.lotId, !on)} className={`px-3 py-1.5 rounded-lg text-[11px] font-black cursor-pointer disabled:opacity-50 ${on ? 'border border-rose-200 text-rose-600' : 'bg-indigo-600 text-white'}`}>
+                {busy === o.lotId ? '...' : on ? 'Deixar de acompanhar' : 'Acompanhar'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </Shell>
   );
 }

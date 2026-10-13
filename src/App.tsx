@@ -1389,7 +1389,7 @@ export default function App() {
           )}
           {currentTab === 'glpi' && userProfile && userHasTabPermission('glpi') && <GlpiPanelView user={userProfile} canManage={userHasActionPermission('glpi_manage')} />}
 
-          {/* Fase 7: Programação (7A Equipes, 7B Semana) */}
+          {/* Fase 7: Programação (7A Equipes, 7B Semana, 7C blocos) */}
           {currentTab === 'programacao' && userProfile && userHasTabPermission('programacao') && (
             <ProgramacaoView
               user={userProfile}
@@ -1399,6 +1399,7 @@ export default function App() {
               orders={orders}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
               onActiveUnitChange={visibleUnits === null ? changeAdminUnit : undefined}
+              limitedUnits={visibleUnits !== null}
               onViewedMonthChange={setOrdersMonth}
               onNavigate={setCurrentTab}
             />

@@ -274,8 +274,19 @@ export interface WeekPlan {
   weekStart: string; // segunda-feira "AAAA-MM-DD"
   days?: Record<string, { kind: DayMarkKind; text: string }>; // dias marcados (feriado etc.; não bloqueia)
   teams?: Record<string, OrderParticipant[]>; // equipe desta semana, por matrícula do responsável (sem = a cadastrada)
+  visits?: Record<string, WeekVisit>; // Fase 7C: equipe sem técnico (ex.: Engenharia) acompanhando um bloco de outra equipe
+  log?: WeekLogEntry[]; // Fase 7C: histórico da semana (quem mudou o quê)
   updatedAt: string;
   updatedBy: string;
+}
+export interface WeekVisit {
+  resp: string; // matrícula do responsável da equipe que acompanha
+  lotId: string; // bloco acompanhado
+}
+export interface WeekLogEntry {
+  at: string;
+  by: string;
+  text: string;
 }
 // Férias, atestado, licença... (coleção "absences"): vale pelas datas, em todas as semanas do período
 export type AbsenceKind = 'Férias' | 'Atestado' | 'Licença' | 'Outro';
@@ -687,6 +698,15 @@ export interface PlanningLot {
   createdAt: string;     // data do agendamento (define o valor do pernoite usado)
   createdBy: string;
   updatedAt: string;
+  // Fase 7C — bloco da Programação (lote montado na grade da semana; os do PMOC não têm estes campos)
+  source?: 'programacao';
+  weekStart?: string;    // segunda-feira da semana do bloco
+  local?: { comarca: string; address: string };
+  pdfText?: string;      // texto do local no PDF
+  note?: string;
+  nights?: string[];     // noites fora ("AAAA-MM-DD" do dia em que dormem fora)
+  updatedBy?: string;
+  removedAt?: string;    // bloco tirado da grade (as OS voltaram para "Novo")
 }
 
 // VALOR DO PERNOITE (único, por pessoa por noite), com histórico e vigência

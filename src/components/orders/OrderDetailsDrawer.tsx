@@ -15,7 +15,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbRevertOrderToNew, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
   OrderStart, subscribeMyActiveStart, dbStartOrder, dbUndoStart, dbCompleteOrder,
-  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetUsualTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes,
+  applyExecutionDraft, saveExecutionDraft, clearExecutionDraft, dbGetDayTeam, looksOffline, SUSPICIOUS_MIN, fmtMinutes,
   supplyBlockMessage,
   dbGetOrderSupplies,
   dbGetCompanies
@@ -196,12 +196,13 @@ export default function OrderDetailsDrawer({
     setExecMsg(null);
     try {
       const { result } = await dbStartOrder(selectedOrder, userProfile, isOffline());
-      // Participantes já vêm com a equipe habitual do técnico (dá para mudar na OS)
-      const team = await dbGetUsualTeam(myMatricula);
+      // Participantes já vêm com a equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está
+      // de férias/atestado hoje (Fase 7C). Dá para mudar na OS.
+      const team = await dbGetDayTeam(selectedOrder.unit, selectedOrder.company, localTodayStr(), myMatricula);
       const me = { matricula: myMatricula, name: userProfile.name, cargo: userProfile.cargo || '' };
       const prefilled: ServiceOrder = {
         ...selectedOrder,
-        participants: [me, ...(team?.members || []).filter((m) => m.matricula !== myMatricula)],
+        participants: [me, ...team],
         materialsUsed: selectedOrder.materialsUsed || []
       };
       setSelectedOrderState(prefilled);

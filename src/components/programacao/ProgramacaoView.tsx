@@ -4,7 +4,7 @@ import TeamsView from './TeamsView';
 import WeekView from './WeekView';
 
 // PROGRAMAÇÃO (Fase 7, etapa de junção: planilha semanal da gerência + programação do Hexon principal + planejamento das
-// preventivas e chamados GLPI). 7A = Equipes; 7B = Semana (ver e organizar).
+// preventivas e chamados GLPI). 7A = Equipes; 7B = Semana (ver e organizar); 7C-1 = blocos de preventivas.
 
 interface Props {
   user: HexonUser;
@@ -14,13 +14,14 @@ interface Props {
   orders: ServiceOrder[]; // preventivas da cópia local (a Semana mostra as já programadas)
   activeUnit?: string;
   onActiveUnitChange?: (unit: string) => void;
+  limitedUnits?: boolean; // perfil limitado a gerências: o prazo de planejamento vencido trava a programação
   onViewedMonthChange?: (month: string) => void;
   onNavigate: (tab: string) => void;
 }
 
 type Tab = 'semana' | 'equipes';
 
-export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, orders, activeUnit, onActiveUnitChange, onViewedMonthChange, onNavigate }: Props) {
+export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
   const [tab, setTab] = useState<Tab>('semana');
   const btn = (t: Tab, label: string) => (
     <button
@@ -50,6 +51,7 @@ export default function ProgramacaoView({ user, unitOptions, visibleCompanies, c
           orders={orders}
           activeUnit={activeUnit}
           onActiveUnitChange={onActiveUnitChange}
+          limitedUnits={limitedUnits}
           onViewedMonthChange={onViewedMonthChange}
           onNavigate={onNavigate}
         />
