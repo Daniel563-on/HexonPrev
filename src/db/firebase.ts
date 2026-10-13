@@ -47,6 +47,7 @@ export * from './materialRequests';
 export * from './teams';
 export * from './weekPlans';
 export * from './blocks';
+export * from './weekPublish';
 // Disjuntor do banco (proteção contra loops): só o que as telas usam
 export { runBulk, onGuardTrip, guardTripped, GuardError } from './guard';
 export type { GuardTrip } from './guard';

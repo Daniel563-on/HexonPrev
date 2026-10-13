@@ -470,3 +470,73 @@ export function VisitModal(props: {
     </Shell>
   );
 }
+
+// PUBLICAR (Fase 7D): o PDF da semana vai para o Quadro de Avisos; o aviso da revisão anterior é apagado
+export function PublishModal(props: {
+  rev: number;
+  prevRev: number | null;
+  week: number;
+  unit: string;
+  companyName: string;
+  until: string; // domingo da semana
+  changes: number; // mudanças depois da última publicação
+  onPreview: () => void;
+  previewBusy: boolean;
+  onPublish: () => Promise<string>; // '' = publicou; senão, o erro
+  onClose: () => void;
+}) {
+  const { rev, prevRev, week, unit, companyName, until, changes, onPreview, previewBusy, onPublish, onClose } = props;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const run = async () => {
+    setBusy(true);
+    setError('');
+    const err = await onPublish().catch((e: any) => `Não foi possível publicar: ${e?.message || e}`);
+    if (err) {
+      setError(err);
+      setBusy(false);
+    }
+  };
+  return (
+    <Shell
+      title={`Publicar a Rev. ${rev} — Semana ${week} · ${companyName} · ${unit}`}
+      sub="As OS e preventivas já foram atribuídas ao salvar cada bloco. Publicar é o PDF e o aviso para os técnicos."
+      onClose={onClose}
+      width="max-w-2xl"
+      footer={
+        <>
+          <button type="button" className={btn} onClick={onPreview} disabled={previewBusy || busy}>
+            {previewBusy ? 'Montando…' : 'Ver o PDF antes'}
+          </button>
+          <span className="flex gap-2">
+            <button type="button" className={btn} onClick={onClose} disabled={busy}>
+              Cancelar
+            </button>
+            <button type="button" className={btnMain} onClick={run} disabled={busy}>
+              {busy ? 'Publicando…' : 'Publicar e avisar'}
+            </button>
+          </span>
+        </>
+      }
+    >
+      <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-indigo-900 dark:text-indigo-200 space-y-1">
+        <p className="font-black">Vai para o Quadro de Avisos</p>
+        <p>
+          <b>Atenção</b> · fixado · <b>só técnicos</b> · {unit} · {companyName} · fica até <b>domingo {brFull(until)}</b>
+        </p>
+        <p>Com o PDF da programação no formato da PSS (Rev. {rev}).</p>
+        {prevRev !== null ? (
+          <p>
+            O aviso da <b>Rev. {prevRev}</b> é apagado do quadro e o da Rev. {rev} aparece como <b>novo</b> no sino dos técnicos.
+            {changes > 0 ? ` Mudanças depois da Rev. ${prevRev}: ${changes}.` : ' Não houve mudança depois da última publicação.'}
+          </p>
+        ) : (
+          <p>
+            Primeira publicação desta semana: aparece como <b>novo</b> no sino dos técnicos.
+          </p>
+        )}
+      </div>
+      {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+    </Shell>
+  );
+}

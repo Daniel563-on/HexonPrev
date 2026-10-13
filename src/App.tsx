@@ -1396,6 +1396,7 @@ export default function App() {
               unitOptions={osUnitOptions}
               visibleCompanies={visibleCompanies}
               canEdit={userHasActionPermission('prog_edit')}
+              canPublish={userHasActionPermission('prog_edit') && userHasActionPermission('notices_publish')}
               orders={orders}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
               onActiveUnitChange={visibleUnits === null ? changeAdminUnit : undefined}

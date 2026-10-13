@@ -276,8 +276,16 @@ export interface WeekPlan {
   teams?: Record<string, OrderParticipant[]>; // equipe desta semana, por matrícula do responsável (sem = a cadastrada)
   visits?: Record<string, WeekVisit>; // Fase 7C: equipe sem técnico (ex.: Engenharia) acompanhando um bloco de outra equipe
   log?: WeekLogEntry[]; // Fase 7C: histórico da semana (quem mudou o quê)
+  pubs?: WeekPub[]; // Fase 7D: publicações do PDF (a última é a que está no Quadro de Avisos)
   updatedAt: string;
   updatedBy: string;
+}
+// Publicação da programação (Fase 7D): revisão, quando, quem e o aviso criado (o anterior é apagado)
+export interface WeekPub {
+  rev: number;
+  at: string;
+  by: string;
+  noticeId: string;
 }
 export interface WeekVisit {
   resp: string; // matrícula do responsável da equipe que acompanha
@@ -1201,6 +1209,8 @@ export interface Notice {
   audience: NoticeAudience;
   until: string;            // AAAA-MM-DD
   hasImage?: boolean;
+  hasFile?: boolean;        // Fase 7D: PDF à parte (noticeFiles/{id}), lido só ao apertar "Abrir PDF"
+  fileName?: string;
   createdAt: string;
   createdBy: { matricula: string; name: string };
   updatedAt: string;

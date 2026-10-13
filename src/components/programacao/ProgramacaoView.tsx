@@ -11,6 +11,7 @@ interface Props {
   unitOptions: string[];
   visibleCompanies: string[] | null;
   canEdit: boolean; // "Programar"
+  canPublish?: boolean; // Fase 7D: "Programar" + "Publicar avisos"
   orders: ServiceOrder[]; // preventivas da cópia local (a Semana mostra as já programadas)
   activeUnit?: string;
   onActiveUnitChange?: (unit: string) => void;
@@ -21,7 +22,7 @@ interface Props {
 
 type Tab = 'semana' | 'equipes';
 
-export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
+export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
   const [tab, setTab] = useState<Tab>('semana');
   const btn = (t: Tab, label: string) => (
     <button
@@ -48,6 +49,7 @@ export default function ProgramacaoView({ user, unitOptions, visibleCompanies, c
           unitOptions={unitOptions}
           visibleCompanies={visibleCompanies}
           canEdit={canEdit}
+          canPublish={canPublish}
           orders={orders}
           activeUnit={activeUnit}
           onActiveUnitChange={onActiveUnitChange}

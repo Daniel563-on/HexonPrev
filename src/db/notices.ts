@@ -6,9 +6,14 @@ import { localTodayStr } from './serviceOrders';
 // QUADRO DE AVISOS (Fase 9A). Escuta só os avisos que ainda valem (until >= hoje) das gerências da pessoa
 // (+ os de "todas as gerências"); empresa e público (técnicos/escritório) são filtrados na tela.
 // Foto à parte (noticeImages/{id}, comprimida no aparelho): só é lida quando o aviso aparece, 1 vez por aparelho.
+// Fase 7D: PDF à parte (noticeFiles/{id}, até 900 KB): só é lido quando alguém aperta "Abrir PDF".
 
 export const NOTICE_FOREVER = '9999-12-31';
 export const NOTICE_ALL_UNITS = '*';
+export const NOTICE_FILE_MAX = 900 * 1024;
+export type NoticeFile = { bytes: Uint8Array; name: string };
+// Documento do PDF do aviso (o mesmo formato vale para a publicação da Programação)
+export const noticeFileData = (f: NoticeFile) => ({ data: Bytes.fromUint8Array(f.bytes), mime: 'application/pdf', name: f.name.slice(0, 150), at: new Date().toISOString() });
 
 const dayShift = (days: number) => {
   const d = new Date();
@@ -93,15 +98,20 @@ export async function dbGetEndedNotices(units: string[] | null): Promise<Notice[
   }
 }
 
-// Publicar ou editar. image: foto nova (bytes já comprimidos), null = tirar a foto, undefined = não mexe
-export async function dbSaveNotice(n: Notice, image?: { bytes: Uint8Array; mime: string } | null): Promise<Notice> {
+export const newNoticeId = () => `av_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+// Publicar ou editar. image: foto nova (bytes já comprimidos), null = tirar a foto, undefined = não mexe; file: o mesmo para o PDF
+export async function dbSaveNotice(n: Notice, image?: { bytes: Uint8Array; mime: string } | null, file?: NoticeFile | null): Promise<Notice> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  const id = n.id || `av_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const id = n.id || newNoticeId();
   const saved: Notice = {
     ...n,
     id,
-    hasImage: image === undefined ? !!n.hasImage : !!image
+    hasImage: image === undefined ? !!n.hasImage : !!image,
+    hasFile: file === undefined ? !!n.hasFile : !!file,
+    fileName: file === undefined ? n.fileName : file ? file.name.slice(0, 150) : undefined
   };
+  if (!saved.hasFile) delete saved.fileName;
   const batch = writeBatch(dbInstance);
   if (image)
     batch.set(doc(dbInstance, 'noticeImages', id), {
@@ -110,6 +120,8 @@ export async function dbSaveNotice(n: Notice, image?: { bytes: Uint8Array; mime:
       at: new Date().toISOString()
     });
   else if (image === null && n.hasImage) batch.delete(doc(dbInstance, 'noticeImages', id));
+  if (file) batch.set(doc(dbInstance, 'noticeFiles', id), noticeFileData(file));
+  else if (file === null && n.hasFile) batch.delete(doc(dbInstance, 'noticeFiles', id));
   const { id: _omit, ...data } = saved;
   batch.set(doc(dbInstance, 'notices', id), JSON.parse(JSON.stringify(data)));
   await batch.commit();
@@ -128,13 +140,14 @@ export async function dbEndNotice(n: Notice, by: { matricula: string; name: stri
   });
 }
 
-// Excluir de vez: o aviso, a foto e os "Li e estou ciente"
+// Excluir de vez: o aviso, a foto, o PDF e os "Li e estou ciente"
 export async function dbDeleteNotice(n: Notice): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const reads = n.kind === 'urgente' ? await getDocs(collection(dbInstance, 'notices', n.id, 'reads')) : null;
   const batch = writeBatch(dbInstance);
   reads?.docs.forEach((d) => batch.delete(d.ref));
   if (n.hasImage) batch.delete(doc(dbInstance, 'noticeImages', n.id));
+  if (n.hasFile) batch.delete(doc(dbInstance, 'noticeFiles', n.id));
   batch.delete(doc(dbInstance, 'notices', n.id));
   await batch.commit();
 }
@@ -160,6 +173,22 @@ export function dbGetNoticeImageUrl(id: string): Promise<string | null> {
     imageCache.set(id, p);
   }
   return p;
+}
+
+// PDF do aviso (Fase 7D): primeiro a cópia do aparelho; senão, 1 leitura
+export async function dbGetNoticeFile(id: string): Promise<NoticeFile | null> {
+  if (!firebaseActive || !dbInstance) return null;
+  try {
+    const ref = doc(dbInstance, 'noticeFiles', id);
+    let snap = await getDocFromCache(ref).catch(() => null);
+    if (!snap?.exists()) snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    const d = snap.data() as { data: Bytes; name: string };
+    return { bytes: d.data.toUint8Array(), name: d.name || 'aviso.pdf' };
+  } catch (err: any) {
+    checkQuotaException(err);
+    throw err;
+  }
 }
 
 // "Li e estou ciente" (avisos urgentes)

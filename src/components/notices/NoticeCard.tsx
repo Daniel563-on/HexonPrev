@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AlertOctagon, AlertTriangle, CheckCircle2, Info, Pin, X } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle2, FileText, Info, Pin, X } from 'lucide-react';
 import { Company, Notice } from '../../types';
-import { NOTICE_ALL_UNITS, NOTICE_FOREVER, dbGetNoticeImageUrl } from '../../db/notices';
+import { NOTICE_ALL_UNITS, NOTICE_FOREVER, dbGetNoticeFile, dbGetNoticeImageUrl } from '../../db/notices';
+import { deliverBytes } from '../../lib/fileDelivery';
 
 // QUADRO DE AVISOS: cartão de um aviso (computador e celular). Cor pelo tipo; foto só carrega quando o cartão aparece.
+// PDF (Fase 7D): só é lido ao apertar "Abrir PDF"; no celular vai para o aviso "PDF pronto" (sem link de download).
 
 export const NOTICE_KINDS = {
   urgente: {
@@ -67,6 +69,34 @@ function NoticeImage({ id }: { id: string }) {
   );
 }
 
+function NoticePdf({ id, name }: { id: string; name: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const open = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const f = await dbGetNoticeFile(id);
+      if (!f) setErr('O PDF não foi encontrado.');
+      else deliverBytes(f.bytes, f.name || name);
+    } catch (e: any) {
+      setErr(`Não foi possível abrir: ${e?.message || e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+      <FileText className="w-5 h-5 text-red-600 shrink-0" />
+      <span className="flex-1 min-w-0 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{name}</span>
+      <button type="button" onClick={open} disabled={busy} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black cursor-pointer disabled:opacity-60 shrink-0">
+        {busy ? 'Abrindo…' : 'Abrir PDF'}
+      </button>
+      {err && <span className="text-[11px] font-bold text-rose-600">{err}</span>}
+    </div>
+  );
+}
+
 export interface NoticeCardProps {
   key?: string; // o projeto não tem os tipos do React: a lista precisa declarar a chave
   notice: Notice;
@@ -101,6 +131,7 @@ export default function NoticeCard({ notice: n, companies, isNew, showTarget, co
         <h3 className="text-base font-black text-slate-900 dark:text-white leading-snug">{n.title}</h3>
         <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap break-words">{n.text}</p>
         {n.hasImage && <NoticeImage id={n.id} />}
+        {n.hasFile && <NoticePdf id={n.id} name={n.fileName || 'aviso.pdf'} />}
         <p className="text-[11px] text-slate-500">
           {showTarget && <>Para: {noticeTargetText(n, companies)} · </>}
           Publicado por {n.createdBy.name}

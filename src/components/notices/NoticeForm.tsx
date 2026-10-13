@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { ImagePlus, Trash2, X } from 'lucide-react';
+import { FileText, ImagePlus, Paperclip, Trash2, X } from 'lucide-react';
 import { Company, HexonUser, Notice, NoticeAudience, NoticeKind } from '../../types';
-import { NOTICE_ALL_UNITS, NOTICE_FOREVER, dbSaveNotice } from '../../db/notices';
+import { NOTICE_ALL_UNITS, NOTICE_FILE_MAX, NOTICE_FOREVER, NoticeFile, dbSaveNotice } from '../../db/notices';
 import { NOTICE_KINDS } from './NoticeCard';
 
 // QUADRO DE AVISOS: publicar ou editar um aviso. A foto é reduzida no aparelho (lado maior até 1600 px, JPEG)
-// para caber num documento do banco (até ~900 KB).
+// para caber num documento do banco (até ~900 KB). Fase 7D: também um PDF (até 900 KB), guardado à parte.
 
 const MAX_IMG = 900 * 1024;
 async function compressImage(file: File): Promise<{ bytes: Uint8Array; mime: string; url: string }> {
@@ -53,6 +53,7 @@ export default function NoticeForm(props: {
   // Reabrir um encerrado: a data antiga já passou, começa sem data
   const [until, setUntil] = useState(notice && notice.until !== NOTICE_FOREVER && notice.until >= today ? notice.until : '');
   const [image, setImage] = useState<{ bytes: Uint8Array; mime: string; url: string } | null | undefined>(undefined);
+  const [pdf, setPdf] = useState<NoticeFile | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -71,6 +72,14 @@ export default function NoticeForm(props: {
     } catch (err: any) {
       setMsg(`Não foi possível usar a foto: ${err?.message || err}`);
     }
+  };
+
+  const pickPdf = async (file?: File) => {
+    if (!file) return;
+    setMsg('');
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) return setMsg('Escolha um arquivo PDF.');
+    if (file.size > NOTICE_FILE_MAX) return setMsg(`O PDF tem ${Math.round(file.size / 1024)} KB: o limite é 900 KB.`);
+    setPdf({ bytes: new Uint8Array(await file.arrayBuffer()), name: file.name });
   };
 
   const save = async () => {
@@ -93,13 +102,15 @@ export default function NoticeForm(props: {
       audience,
       until: until || NOTICE_FOREVER,
       hasImage: notice?.hasImage,
+      hasFile: notice?.hasFile,
+      fileName: notice?.fileName,
       createdAt: notice?.createdAt || now,
       createdBy: notice?.createdBy || by,
       updatedAt: now,
       ...(notice ? { updatedBy: by } : {})
     };
     try {
-      await dbSaveNotice(data, image === undefined ? undefined : image ? { bytes: image.bytes, mime: image.mime } : null);
+      await dbSaveNotice(data, image === undefined ? undefined : image ? { bytes: image.bytes, mime: image.mime } : null, pdf);
       props.onSaved();
     } catch (err: any) {
       setMsg(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não publica avisos para essas gerências.' : `Não foi possível gravar: ${err?.message || err}`);
@@ -112,6 +123,7 @@ export default function NoticeForm(props: {
   const chip = (on: boolean) =>
     `px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${on ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`;
   const hasPhoto = image ? true : image === null ? false : !!notice?.hasImage;
+  const pdfName = pdf ? pdf.name : pdf === null ? '' : notice?.hasFile ? notice.fileName || 'PDF atual' : '';
 
   return (
     <div className="fixed inset-0 z-[1500] bg-slate-900/70 flex items-start md:items-center justify-center p-2 md:p-4">
@@ -218,6 +230,31 @@ export default function NoticeForm(props: {
                 <ImagePlus className="w-4 h-4" />
                 Escolher foto (JPG ou PNG)
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => pickImage(e.target.files?.[0])} />
+              </label>
+            )}
+          </div>
+          <div>
+            <span className={label}>PDF (opcional, até 900 KB)</span>
+            {pdfName ? (
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 min-w-0">
+                  <FileText className="w-4 h-4 text-red-600 shrink-0" />
+                  <span className="truncate">{pdfName}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPdf(null)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold cursor-pointer shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Tirar o PDF
+                </button>
+              </div>
+            ) : (
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+                <Paperclip className="w-4 h-4" />
+                Anexar PDF
+                <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => pickPdf(e.target.files?.[0])} />
               </label>
             )}
           </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock, Eye, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Star, Trash2, Wrench } from 'lucide-react';
-import { Absence, Company, DayMarkKind, HexonUser, OrderParticipant, PlanningLot, ServiceOrder, UsualTeam, WeekPlan, WeekVisit, WorkOrder } from '../../types';
+import { CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock, Eye, FileDown, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Star, Trash2, Wrench } from 'lucide-react';
+import { Absence, BlockStop, Company, DayMarkKind, HexonUser, Notice, OrderParticipant, PlanningLot, ServiceOrder, UsualTeam, WeekPlan, WeekPub, WeekVisit, WorkOrder } from '../../types';
 import {
   companiesOfUnit,
   dbDeleteAbsence,
@@ -13,16 +13,20 @@ import {
   dbListTeams,
   dbListWeekLots,
   dbPatchWeekPlan,
+  dbPublishWeek,
   dbSetWeekVisit,
   isCompanyVisible,
   localTodayStr,
   UnitPersonInfo
 } from '../../db/firebase';
 import { setHomeLink } from '../../lib/homeLinks';
+import { NOTICE_FILE_MAX, newNoticeId } from '../../db/notices';
+import { deliverBytes, safeFileName } from '../../lib/fileDelivery';
+import { WeekPdfData, WeekPdfItem, WeekPdfTeam, generateWeekPdf } from '../../lib/weekPdf';
 import { isOrderOfTechnician } from '../orders/planning/planningUtils';
 import { teamLabel } from './TeamForm';
 import { DAY_LABEL, addDays, isoWeek, mondayOf, weekDays } from './weekDates';
-import { AbsenceForm, DayListModal, DayMarkModal, MARK_LABEL, TeamWeekModal, VisitModal, WeekHistoryModal } from './WeekModals';
+import { AbsenceForm, DayListModal, DayMarkModal, MARK_LABEL, PublishModal, TeamWeekModal, VisitModal, WeekHistoryModal } from './WeekModals';
 import BlockEditor from './BlockEditor';
 import ToPlanPanel, { ToPlanGroup } from './ToPlanPanel';
 import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseItems, lotPlace, lotStops, placeLanes, stopKey } from './blockLayout';
@@ -30,12 +34,14 @@ import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseIte
 // PROGRAMAÇÃO › SEMANA (Fase 7B ver e organizar; 7C-1 blocos de preventivas; 7C-2 chamados nos blocos). Etapa de junção:
 // planilha semanal (PSS) + lote do PMOC + atribuição de chamados do Hexon principal. Linhas = equipes; cada bloco = local em
 // dias seguidos com as preventivas, os chamados e o pernoite. "A programar" ao lado; histórico da semana.
+// Fase 7D: "Ver PDF" (formato da PSS) e "Publicar Rev. N" (PDF no Quadro de Avisos; a revisão anterior sai do quadro).
 
 interface Props {
   user: HexonUser;
   unitOptions: string[];
   visibleCompanies: string[] | null;
   canEdit: boolean; // "Programar"
+  canPublish?: boolean; // Fase 7D: "Programar" + "Publicar avisos"
   orders: ServiceOrder[]; // preventivas da cópia local deste aparelho
   activeUnit?: string; // quem vê todas as gerências: a gerência cuja cópia está no aparelho
   onActiveUnitChange?: (unit: string) => void;
@@ -52,6 +58,7 @@ type Modal =
   | { kind: 'block'; lot: PlanningLot | null; team?: string; local?: string; days?: [string, string]; wos?: string[] }
   | { kind: 'visit'; team: UsualTeam }
   | { kind: 'history' }
+  | { kind: 'publish' }
   | null;
 
 const SHOWN = ['Planejada', 'Em Execução', 'Atrasada', 'Concluída', 'Não Executada'];
@@ -71,7 +78,7 @@ const saveLocal = (k: string, v: string) => {
   }
 };
 
-export default function WeekView({ user, unitOptions, visibleCompanies, canEdit, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
+export default function WeekView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
   const [unit, setUnit] = useState(() => (activeUnit && unitOptions.includes(activeUnit) ? activeUnit : unitOptions.includes(user.gerencia) ? user.gerencia : unitOptions[0] || ''));
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState('');
@@ -87,6 +94,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [askDel, setAskDel] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     dbGetCompanies()
@@ -261,6 +269,140 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const absentCount = new Set(myAbs.map((a) => a.matricula)).size;
   const openCount = wosNew.length + wosNoDay.length;
   const pernoites = weekLots.reduce((n, l) => n + (l.nights || []).filter((d) => d >= weekStart && d <= weekEnd).length * (l.overnight?.people || 0), 0);
+
+  // Dias (índices) de um local do bloco dentro de um trecho da grade; null = fora dele
+  const stopSpan = (st: BlockStop, from: number, to: number): [number, number] | null => {
+    const a = Math.max(from, days.findIndex((d) => d >= st.from));
+    const b = Math.min(to, days.length - 1 - [...days].reverse().findIndex((d) => d <= st.to));
+    if (a < 0 || b < a || days[a] > st.to || days[b] < st.from) return null;
+    return [a, b];
+  };
+
+  // PDF da semana (Fase 7D): o que está na grade, no formato da PSS
+  const pdfQty = (prev: number, ch: number) => [prev ? `${prev} PREV.` : '', ch ? `${ch} CH.` : ''].filter(Boolean).join(' · ');
+  const pdfItems = (list: GridItem[]): { items: WeekPdfItem[]; lanes: number } => {
+    const { placed, lanes } = placeLanes(list);
+    const items = placed.map((it): WeekPdfItem => {
+      const base = { from: it.from, to: it.to, lane: it.lane };
+      if (it.kind === 'visit') return { ...base, gray: true, stops: [{ ...base, text: `ACOMPANHA A ${it.of}`.toUpperCase(), qty: lotPlace(it.lot).toUpperCase() }] };
+      if (it.kind === 'loose') return { ...base, stops: [{ ...base, text: `${it.comarca}${it.address ? ` — ${it.address}` : ''}`.toUpperCase(), qty: pdfQty(it.orders.length, 0) }] };
+      const lot = it.lot;
+      const stops = lotStops(lot);
+      const n = (lot.nights || []).filter((d) => d >= days[it.from] && d <= days[it.to]).length;
+      const trip = n > 0 && lot.overnight ? `PERNOITE: ${n} NOITE${n > 1 ? 'S' : ''} × ${lot.overnight.people}` : undefined;
+      const extra = { trip, note: lot.note || undefined };
+      if (stops.length > 1)
+        return {
+          ...base,
+          ...extra,
+          stops: stops.flatMap((st) => {
+            const span = stopSpan(st, it.from, it.to);
+            if (!span) return [];
+            const first = stops.find((x) => x.comarca === st.comarca) === st;
+            const nCh = first ? companyWos.filter((w) => w.lotId === lot.id && (w.comarca || '') === st.comarca).length : 0;
+            return [{ from: span[0], to: span[1], text: (st.pdfText || localLabel(st)).toUpperCase(), qty: pdfQty(it.orders.filter((o) => localKey(o) === stopKey(st)).length, nCh) }];
+          })
+        };
+      const label = stops[0] ? stops[0].pdfText || localLabel(stops[0]) : it.orders[0] ? localLabel({ comarca: it.orders[0].comarca || '', address: it.orders[0].addressText || '' }) : 'Lote do PMOC';
+      return { ...base, ...extra, stops: [{ ...base, text: label.toUpperCase(), qty: pdfQty(lot.orderIds.length, lot.woIds?.length || 0) }] };
+    });
+    return { items, lanes };
+  };
+  const buildPdf = (rev: number, draft: boolean, at: string, by: string, pubs: WeekPub[]): WeekPdfData => {
+    const teamOf = (mat: string) => here.find((t) => t.matricula === mat || weekMembers(t).some((m) => m.matricula === mat));
+    const pdfTeams: WeekPdfTeam[] = [
+      ...here.map((t) => {
+        const { items, lanes } = pdfItems(isTech(t) ? itemsOf(t.matricula) : [...visitsOf(t), ...itemsOf(t.matricula)]);
+        return {
+          name: teamLabel(t),
+          type: t.type || '',
+          resp: { name: respNameOf(t.matricula), matricula: t.matricula, cargo: personOf(t.matricula)?.cargo || '' },
+          members: weekMembers(t)
+            .filter((m) => m.matricula !== t.matricula)
+            .map((m) => ({ name: m.name, matricula: m.matricula, cargo: m.cargo || personOf(m.matricula)?.cargo || '' })),
+          items,
+          lanes
+        };
+      }),
+      ...Array.from(outside.entries()).map(([k, name]) => ({ name: 'Fora das equipes', type: '', resp: { name, matricula: k, cargo: personOf(k)?.cargo || '' }, members: [], ...pdfItems(itemsOf(k)) }))
+    ];
+    const marks: WeekPdfData['marks'] = {};
+    Object.entries((plan?.days || {}) as Record<string, { kind: DayMarkKind; text: string }>).forEach(([d, m]) => {
+      if (days.includes(d)) marks[days.indexOf(d)] = { label: MARK_LABEL[m.kind], text: m.text };
+    });
+    return {
+      unit,
+      company: companyName,
+      week: isoWeek(weekStart),
+      days,
+      rev,
+      draft,
+      at,
+      by,
+      counters: { efetivo, disponivel: efetivo - absentInTeams, equipes: here.length, pernoites },
+      marks,
+      teams: pdfTeams,
+      absent: myAbs.map((a) => {
+        const t = teamOf(a.matricula);
+        return { name: a.name, cargo: a.cargo || personOf(a.matricula)?.cargo || '', team: t ? teamLabel(t) : '', kind: a.kind, from: a.from, to: a.to };
+      }),
+      pubs: [...pubs].sort((a, b) => a.rev - b.rev).map((p) => ({ rev: p.rev, at: p.at, by: p.by }))
+    };
+  };
+  // Publicações: a última é a que está no Quadro de Avisos
+  const pubs = [...(plan?.pubs || [])].sort((a, b) => a.rev - b.rev);
+  const lastPub = pubs.length ? pubs[pubs.length - 1] : null;
+  const nextRev = lastPub ? lastPub.rev + 1 : 0;
+  const changesAfter = lastPub ? (plan?.log || []).filter((l) => l.at > lastPub.at && !/^Publicou a Rev\./.test(l.text)).length : 0;
+  const publishOk = !!canPublish && canEdit && !pastWeek;
+  const pdfName = (rev: number) => safeFileName(`PSS_${unit}_${companyName}_Sem${isoWeek(weekStart)}_Rev${rev}.pdf`);
+  // Ver PDF: sem mudança depois da última publicação = o publicado; senão, prévia da próxima revisão
+  const viewPdf = async () => {
+    setPdfBusy(true);
+    setMsg(null);
+    try {
+      const same = !!lastPub && changesAfter === 0;
+      const data = same ? buildPdf(lastPub!.rev, false, lastPub!.at, lastPub!.by, pubs) : buildPdf(nextRev, true, new Date().toISOString(), user.name, pubs);
+      deliverBytes(await generateWeekPdf(data), pdfName(data.rev));
+    } catch (err: any) {
+      setMsg({ ok: false, text: `Não foi possível montar o PDF: ${err?.message || err}` });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+  const publish = async (): Promise<string> => {
+    const at = new Date().toISOString();
+    const pub: WeekPub = { rev: nextRev, at, by: user.name, noticeId: newNoticeId() };
+    const bytes = await generateWeekPdf(buildPdf(nextRev, false, at, user.name, [...pubs, pub]));
+    if (bytes.length > NOTICE_FILE_MAX) return `O PDF ficou com ${Math.round(bytes.length / 1024)} KB (limite 900 KB).`;
+    const name = pdfName(nextRev);
+    const notice: Notice = {
+      id: pub.noticeId,
+      title: `Programação Semanal — Semana ${isoWeek(weekStart)} (${br(weekStart)} a ${br(weekEnd)}) · Rev. ${nextRev}`,
+      text: `${unit} · ${companyName}: programação da semana ${isoWeek(weekStart)}, revisão ${nextRev}. Abra o PDF.`,
+      kind: 'atencao',
+      pinned: true,
+      units: [unit],
+      companies: [company],
+      audience: 'tecnicos',
+      until: weekEnd,
+      hasFile: true,
+      fileName: name,
+      createdAt: at,
+      createdBy: { matricula: user.matricula, name: user.name },
+      updatedAt: at
+    };
+    try {
+      await dbPublishWeek({ key: { unit, company, weekStart }, notice, file: { bytes, name }, pub, prev: lastPub, by: user.name });
+    } catch (err: any) {
+      return err?.code === 'permission-denied' ? 'O banco recusou: seu perfil precisa de "Programar" e "Publicar avisos" nesta gerência.' : `Não foi possível publicar: ${err?.message || err}`;
+    }
+    const text = `Publicou a Rev. ${nextRev} (PDF no Quadro de Avisos)${lastPub ? `; o aviso da Rev. ${lastPub.rev} saiu do quadro` : ''}`;
+    setPlan((prev) => ({ ...(prev || { unit, company, weekStart, updatedAt: at, updatedBy: user.name }), pubs: [...pubs, pub], log: [...(prev?.log || []), { at, by: user.name, text }] }));
+    setModal(null);
+    setMsg({ ok: true, text: `Rev. ${nextRev} publicada no Quadro de Avisos${lastPub ? `; o aviso da Rev. ${lastPub.rev} saiu do quadro` : ''}.` });
+    return '';
+  };
 
   // Gravação da semana: só o que mudou; a tela já mostra a mudança
   const patch = async (change: { days?: Record<string, { kind: DayMarkKind; text: string } | null>; teams?: Record<string, OrderParticipant[] | null> }, logText?: string): Promise<boolean> => {
@@ -461,9 +603,9 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
           // Fase 7C-3: vários locais — cada dia mostra os locais daquele dia (como a planilha PSS)
           <div className="grid gap-1 items-start" style={{ gridTemplateColumns: `repeat(${it.to - it.from + 1}, minmax(0, 1fr))`, gridAutoFlow: 'row dense' }}>
             {stops.map((st) => {
-              const a = Math.max(it.from, days.findIndex((d) => d >= st.from));
-              const b = Math.min(it.to, days.length - 1 - [...days].reverse().findIndex((d) => d <= st.to));
-              if (a < 0 || b < a || days[a] > st.to || days[b] < st.from) return null;
+              const span = stopSpan(st, it.from, it.to);
+              if (!span) return null;
+              const [a, b] = span;
               const k = stopKey(st);
               const nPrev = it.orders.filter((o) => localKey(o) === k).length;
               const firstOfComarca = stops.find((x) => x.comarca === st.comarca) === st;
@@ -615,10 +757,44 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
         </div>
         {company && (
           <div className="flex flex-wrap gap-2">
+            <span
+              className={`h-9 px-2.5 rounded-lg border text-[11px] font-bold flex items-center ${lastPub && changesAfter > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
+            >
+              {lastPub ? (
+                <span>
+                  Publicada: <b>Rev. {lastPub.rev}</b> em {new Date(lastPub.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} por {lastPub.by}
+                  {changesAfter > 0 ? (
+                    <>
+                      {' '}
+                      · <b>{changesAfter}</b> mudança{changesAfter > 1 ? 's' : ''} depois disso
+                    </>
+                  ) : (
+                    ' · sem mudança depois disso'
+                  )}
+                </span>
+              ) : (
+                'Ainda não publicada'
+              )}
+            </span>
             <button type="button" onClick={() => setModal({ kind: 'history' })} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer`}>
               <History className="w-4 h-4" />
               Histórico
             </button>
+            <button type="button" onClick={viewPdf} disabled={pdfBusy || loading} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer disabled:opacity-50`}>
+              <FileDown className="w-4 h-4" />
+              {pdfBusy ? 'Montando…' : 'Ver PDF'}
+            </button>
+            {publishOk && (
+              <button
+                type="button"
+                onClick={() => setModal({ kind: 'publish' })}
+                disabled={loading}
+                className="h-9 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+                Publicar Rev. {nextRev}
+              </button>
+            )}
             {!readOnly && (
               <button
                 type="button"
@@ -956,6 +1132,21 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             .filter((v) => v.resp === modal.team.matricula)
             .map((v) => v.lotId)}
           onSave={(lotId, on) => saveVisit(modal.team, lotId, on)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'publish' && (
+        <PublishModal
+          rev={nextRev}
+          prevRev={lastPub ? lastPub.rev : null}
+          week={isoWeek(weekStart)}
+          unit={unit}
+          companyName={companyName}
+          until={weekEnd}
+          changes={changesAfter}
+          onPreview={viewPdf}
+          previewBusy={pdfBusy}
+          onPublish={publish}
           onClose={() => setModal(null)}
         />
       )}

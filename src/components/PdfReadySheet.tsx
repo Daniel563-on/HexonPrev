@@ -4,6 +4,7 @@ import { ReadyFile, onReadyFile, openReadyFile } from '../lib/fileDelivery';
 
 // Aviso "PDF pronto" (celular, P39): "Abrir / compartilhar" abre o menu do celular (Salvar em Arquivos, WhatsApp,
 // e-mail, imprimir) sem o app sair da tela — no iPhone, sair da tela desliga o banco até recarregar.
+// Fica por cima de tudo (Fase 7D: o PDF do aviso é aberto de dentro da tela de avisos do celular).
 export default function PdfReadySheet() {
   const [ready, setReady] = useState<ReadyFile | null>(null);
   const [err, setErr] = useState('');
@@ -30,7 +31,7 @@ export default function PdfReadySheet() {
       .catch((e) => setErr(`Não foi possível abrir: ${e?.message || e}`));
   };
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[200] p-3">
+    <div className="fixed inset-x-0 bottom-0 z-[1700] p-3">
       <div className="max-w-md mx-auto rounded-2xl bg-white border border-slate-200 shadow-2xl p-4 space-y-3">
         <div className="flex items-start gap-2">
           <p className="flex-1 text-sm font-black text-slate-900">
