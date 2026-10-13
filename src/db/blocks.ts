@@ -1,5 +1,5 @@
 import { arrayRemove, arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from './guard';
-import { PlanningLot, ServiceOrder, WeekLogEntry, WeekVisit, WorkOrder } from '../types';
+import { BlockStop, PlanningLot, ServiceOrder, WeekLogEntry, WeekVisit, WorkOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined } from './core';
 import { timelineEvent } from './executionTeam';
 import { orderControlUpdate } from './orderControl';
@@ -11,6 +11,8 @@ import { weekPlanId } from './weekPlans';
 // com uma linha no histórico da semana (weekPlans.log).
 // Fase 7C-2: chamados GLPI no bloco — ganham o técnico (Nova → Em andamento) e o dia programado; tirado do bloco,
 // o chamado perde o dia e continua com o técnico (resposta do usuário em 13/10/2026).
+// Fase 7C-3: bloco com vários locais (roteiro) — cada local tem os seus dias seguidos dentro do bloco; a preventiva
+// fica programada nos dias do seu local e o chamado nos dias do local da sua comarca. Pernoite continua por viagem.
 
 export type WeekKey = { unit: string; company: string; weekStart: string };
 
@@ -23,6 +25,9 @@ const addDays = (day: string, n: number) => {
 const logEntry = (by: string, text: string): WeekLogEntry => ({ at: new Date().toISOString(), by, text: text.slice(0, 300) });
 const weekRef = (key: WeekKey) => doc(dbInstance!, 'weekPlans', weekPlanId(key.unit, key.company, key.weekStart));
 const logData = (key: WeekKey, by: string, text: string, now: string) => ({ ...key, updatedAt: now, updatedBy: by, log: arrayUnion(logEntry(by, text)) });
+const stopLabel = (st: { comarca: string; address: string }) => `${st.comarca}${st.address ? ` · ${st.address}` : ''}`;
+const blockLabel = (stops: { comarca: string; address: string }[]) =>
+  stops.length === 0 ? 'bloco' : stops.length === 1 ? stopLabel(stops[0]) : `${stopLabel(stops[0])} e mais ${stops.length - 1} local(is)`;
 
 // Blocos e lotes que cruzam a semana (os lotes começam no máximo 5 semanas antes): 1 busca
 export async function dbListWeekLots(unit: string, weekStart: string): Promise<PlanningLot[]> {
@@ -95,21 +100,28 @@ export async function dbGetLot(id: string): Promise<PlanningLot | null> {
   return snap.exists() ? ({ ...(snap.data() as PlanningLot), id: snap.id }) : null;
 }
 
+// Preventiva ou chamado marcado no bloco, com os dias do seu local
+export interface BlockPlanItem<T> {
+  item: T;
+  s: string;
+  e: string;
+  where: string;
+}
+
 export interface BlockSave {
   lot: PlanningLot | null; // bloco existente (null = novo)
   key: WeekKey;
   technician: { name: string; matricula: string };
   periodStart: string;
   periodEnd: string;
-  local: { comarca: string; address: string };
-  pdfText: string;
+  stops: BlockStop[]; // locais do bloco, com os dias de cada um (Fase 7C-3)
   note: string;
   nights: string[];
   people: number;
-  plan: ServiceOrder[]; // marcadas que podem mudar (novas ou já no bloco): ficam Planejadas com os dias do bloco
+  plan: BlockPlanItem<ServiceOrder>[]; // marcadas que podem mudar (novas ou já no bloco): ficam Planejadas nos dias do seu local
   fixedIds: string[]; // já no bloco e em execução/concluídas (ou fora da cópia do aparelho): continuam no bloco, sem mudar
-  drop: ServiceOrder[]; // estavam no bloco e foram desmarcadas: voltam para "Novo"
-  woPlan: WorkOrder[]; // chamados marcados: ficam com o técnico do bloco e com o dia
+  drop: ServiceOrder[]; // estavam no bloco e foram desmarcadas (ou o local saiu): voltam para "Novo"
+  woPlan: BlockPlanItem<WorkOrder>[]; // chamados marcados: ficam com o técnico do bloco e com os dias do local da comarca
   woFixedIds: string[]; // chamados do bloco já fora da lista de abertos (concluídos etc.): continuam no bloco
   woDrop: WorkOrder[]; // chamados desmarcados: perdem o dia e continuam com o técnico
   by: string;
@@ -123,18 +135,19 @@ export async function dbSaveBlock(input: BlockSave): Promise<PlanningLot> {
   const lotRef = input.lot ? doc(db, 'planningLots', input.lot.id) : doc(collection(db, 'planningLots'));
   const { periodStart: s, periodEnd: e, technician: tech } = input;
   const changed = input.plan.filter(
-    (o) =>
+    ({ item: o, s: os, e: oe }) =>
       o.lotId !== lotRef.id ||
       o.assignedTechnicianMatricula !== tech.matricula ||
-      (o.scheduledDate || '').slice(0, 10) !== s ||
-      (o.scheduledEndDate || o.scheduledDate || '').slice(0, 10) !== e ||
+      (o.scheduledDate || '').slice(0, 10) !== os ||
+      (o.scheduledEndDate || o.scheduledDate || '').slice(0, 10) !== oe ||
       !['Planejada', 'Atrasada'].includes(o.status)
   );
-  const moving = changed.filter((o) => o.lotId && o.lotId !== lotRef.id);
+  const moving = changed.map((p) => p.item).filter((o) => o.lotId && o.lotId !== lotRef.id);
   const woChanged = input.woPlan.filter(
-    (w) => w.lotId !== lotRef.id || w.assignedTechnicianMatricula !== tech.matricula || w.status === 'Nova' || (w.scheduledDate || '') !== s || (w.scheduledEndDate || w.scheduledDate || '') !== e
+    ({ item: w, s: ws, e: we }) =>
+      w.lotId !== lotRef.id || w.assignedTechnicianMatricula !== tech.matricula || w.status === 'Nova' || (w.scheduledDate || '') !== ws || (w.scheduledEndDate || w.scheduledDate || '') !== we
   );
-  const woMoving = woChanged.filter((w) => w.lotId && w.lotId !== lotRef.id);
+  const woMoving = woChanged.map((p) => p.item).filter((w) => w.lotId && w.lotId !== lotRef.id);
   const ops = 2 + changed.length + input.drop.length + moving.length + woChanged.length + woMoving.length + input.woDrop.length;
   if (ops > MAX_BATCH_OPS) throw new Error(`Muitas OS de uma vez (${changed.length + input.drop.length + woChanged.length + input.woDrop.length}). Divida em blocos menores.`);
 
@@ -148,27 +161,28 @@ export async function dbSaveBlock(input: BlockSave): Promise<PlanningLot> {
     periodEnd: e,
     technicianName: tech.name,
     technicianMatricula: tech.matricula,
-    orderIds: Array.from(new Set([...input.plan.map((o) => o.id), ...input.fixedIds])),
-    woIds: Array.from(new Set([...input.woPlan.map((w) => w.id), ...input.woFixedIds])),
+    orderIds: Array.from(new Set([...input.plan.map((p) => p.item.id), ...input.fixedIds])),
+    woIds: Array.from(new Set([...input.woPlan.map((p) => p.item.id), ...input.woFixedIds])),
     overnight,
     updatedAt: now,
     updatedBy: input.by,
     source: 'programacao',
     weekStart: input.key.weekStart,
-    local: input.local,
-    pdfText: input.pdfText.trim().slice(0, 80),
+    local: input.stops[0] ? { comarca: input.stops[0].comarca, address: input.stops[0].address } : undefined,
+    pdfText: (input.stops[0]?.pdfText || '').trim().slice(0, 80),
+    stops: input.stops.map((st) => ({ comarca: st.comarca, address: st.address, from: st.from, to: st.to, pdfText: (st.pdfText || '').trim().slice(0, 80) })),
     note: input.note.trim().slice(0, 300),
     nights: input.nights
   };
   const batch = writeBatch(db);
   batch.set(lotRef, cleanUndefined(lot));
-  const where_ = `${input.local.comarca}${input.local.address ? ` · ${input.local.address}` : ''}`;
-  const note = `${tech.name} • ${s}${e > s ? ` a ${e}` : ''} • ${where_} (Programação)`;
+  const where_ = blockLabel(input.stops);
   for (const o of moving) batch.set(doc(db, 'planningLots', o.lotId!), { orderIds: arrayRemove(o.id), updatedAt: now }, { merge: true });
-  for (const o of changed) batch.update(doc(db, 'serviceOrders', o.id), plannedFields(o, s, e, tech, lotRef.id, now, input.by, note));
+  for (const p of changed)
+    batch.update(doc(db, 'serviceOrders', p.item.id), plannedFields(p.item, p.s, p.e, tech, lotRef.id, now, input.by, `${tech.name} • ${p.s}${p.e > p.s ? ` a ${p.e}` : ''} • ${p.where} (Programação)`));
   for (const o of input.drop) batch.update(doc(db, 'serviceOrders', o.id), revertFields(o, now, input.by, `Saiu do bloco ${where_} (Programação)`));
   for (const w of woMoving) batch.set(doc(db, 'planningLots', w.lotId!), { woIds: arrayRemove(w.id), updatedAt: now }, { merge: true });
-  for (const w of woChanged) batch.update(doc(db, 'workOrders', w.id), woPlanFields(w, s, e, tech, lotRef.id, now, input.by, where_));
+  for (const p of woChanged) batch.update(doc(db, 'workOrders', p.item.id), woPlanFields(p.item, p.s, p.e, tech, lotRef.id, now, input.by, p.where));
   for (const w of input.woDrop) batch.update(doc(db, 'workOrders', w.id), woDropFields(now, input.by, where_));
   batch.set(weekRef(input.key), logData(input.key, input.by, input.logText, now), { merge: true });
   await batch.commit();
@@ -182,7 +196,7 @@ export async function dbRemoveBlock(lot: PlanningLot, drop: ServiceOrder[], key:
   if (drop.length + woDrop.length + 2 > MAX_BATCH_OPS) throw new Error('Muitas OS no bloco para tirar de uma vez.');
   const db = dbInstance;
   const now = new Date().toISOString();
-  const where_ = lot.local ? `${lot.local.comarca}${lot.local.address ? ` · ${lot.local.address}` : ''}` : 'bloco';
+  const where_ = blockLabel(lot.stops?.length ? lot.stops : lot.local ? [lot.local] : []);
   const batch = writeBatch(db);
   batch.set(doc(db, 'planningLots', lot.id), { orderIds: [], woIds: [], overnight: null, nights: [], removedAt: now, updatedAt: now, updatedBy: by }, { merge: true });
   for (const o of drop) batch.update(doc(db, 'serviceOrders', o.id), revertFields(o, now, by, `Bloco ${where_} tirado da Programação`));

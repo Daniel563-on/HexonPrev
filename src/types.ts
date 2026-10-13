@@ -685,6 +685,15 @@ export interface CycleSetting {
 // LOTE DE PLANEJAMENTO: OS agendadas juntas (mesmo período e técnico), com o pernoite da viagem.
 // O custo do pernoite NÃO fica na OS: é calculado para quem pode ver valores, assim:
 // valor do pernoite vigente na data do agendamento × pessoas × noites ÷ OS que continuam no lote.
+// Local do bloco da Programação (Fase 7C-3): as preventivas do local e os chamados da comarca ficam programados nesses dias
+export interface BlockStop {
+  comarca: string;
+  address: string;
+  from: string;          // "AAAA-MM-DD" (dentro do bloco)
+  to: string;
+  pdfText?: string;      // texto do local no PDF
+}
+
 export interface PlanningLot {
   id: string;
   unit: string;
@@ -702,8 +711,9 @@ export interface PlanningLot {
   // Fase 7C — bloco da Programação (lote montado na grade da semana; os do PMOC não têm estes campos)
   source?: 'programacao';
   weekStart?: string;    // segunda-feira da semana do bloco
-  local?: { comarca: string; address: string };
-  pdfText?: string;      // texto do local no PDF
+  local?: { comarca: string; address: string }; // 1º local do roteiro (blocos antigos: o único)
+  pdfText?: string;      // texto do 1º local no PDF
+  stops?: BlockStop[];   // Fase 7C-3: locais do bloco (roteiro), cada um com os seus dias seguidos dentro do bloco
   note?: string;
   nights?: string[];     // noites fora ("AAAA-MM-DD" do dia em que dormem fora)
   updatedBy?: string;

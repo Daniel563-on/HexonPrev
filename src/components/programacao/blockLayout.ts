@@ -1,4 +1,4 @@
-import { PlanningLot, ServiceOrder } from '../../types';
+import { BlockStop, PlanningLot, ServiceOrder } from '../../types';
 import { isWeekend, scheduledRange } from '../orders/planning/planningUtils';
 
 // PROGRAMAÇÃO › SEMANA (Fase 7C-1): o que aparece em cada linha da grade e em que faixa (blocos que se cruzam
@@ -10,6 +10,19 @@ export const splitKey = (k: string) => {
   return { comarca: k.slice(0, i) || 'Sem comarca', address: k.slice(i + 1) };
 };
 export const localLabel = (l: { comarca: string; address: string }) => `${l.comarca || 'Sem comarca'}${l.address ? ` · ${l.address}` : ''}`;
+
+// Locais do bloco (Fase 7C-3). Bloco salvo antes do roteiro: o único local, com todos os dias do bloco.
+export const lotStops = (lot: PlanningLot): BlockStop[] =>
+  lot.stops?.length ? lot.stops : lot.local ? [{ ...lot.local, from: lot.periodStart, to: lot.periodEnd, pdfText: lot.pdfText || '' }] : [];
+export const stopKey = (st: Pick<BlockStop, 'comarca' | 'address'>) => `${st.comarca}|${st.address}`;
+// Nome curto do bloco (histórico, acompanhar): 1 local = o local; vários = as comarcas
+export const lotPlace = (lot: PlanningLot) => {
+  const stops = lotStops(lot);
+  if (stops.length === 0) return 'bloco do PMOC';
+  if (stops.length === 1) return localLabel(stops[0]);
+  const comarcas = Array.from(new Set(stops.map((st) => st.comarca || 'Sem comarca')));
+  return `${stops.length} locais: ${comarcas.slice(0, 3).join(', ')}${comarcas.length > 3 ? ` e mais ${comarcas.length - 3}` : ''}`;
+};
 
 // A preventiva está programada neste dia? (fim de semana só se o período começa ou termina nele — regra do PMOC)
 export const coversDay = (o: ServiceOrder, day: string) => {

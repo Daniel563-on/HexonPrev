@@ -25,7 +25,7 @@ import { DAY_LABEL, addDays, isoWeek, mondayOf, weekDays } from './weekDates';
 import { AbsenceForm, DayListModal, DayMarkModal, MARK_LABEL, TeamWeekModal, VisitModal, WeekHistoryModal } from './WeekModals';
 import BlockEditor from './BlockEditor';
 import ToPlanPanel, { ToPlanGroup } from './ToPlanPanel';
-import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseItems, placeLanes } from './blockLayout';
+import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseItems, lotPlace, lotStops, placeLanes, stopKey } from './blockLayout';
 
 // PROGRAMAÇÃO › SEMANA (Fase 7B ver e organizar; 7C-1 blocos de preventivas; 7C-2 chamados nos blocos). Etapa de junção:
 // planilha semanal (PSS) + lote do PMOC + atribuição de chamados do Hexon principal. Linhas = equipes; cada bloco = local em
@@ -325,7 +325,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const saveVisit = async (t: UsualTeam, lotId: string, on: boolean): Promise<boolean> => {
     const lot = weekLots.find((l) => l.id === lotId);
     const id = `${t.matricula}_${lotId}`;
-    const text = `${on ? '' : 'Deixou de acompanhar: '}${teamLabel(t)}${on ? ' acompanha' : ' →'} ${lot ? `${teamLabelOf(lot.technicianMatricula)} · ${lot.local ? localLabel(lot.local) : 'bloco do PMOC'}` : 'bloco'}`;
+    const text = `${on ? '' : 'Deixou de acompanhar: '}${teamLabel(t)}${on ? ' acompanha' : ' →'} ${lot ? `${teamLabelOf(lot.technicianMatricula)} · ${lotPlace(lot)}` : 'bloco'}`;
     try {
       await dbSetWeekVisit({ unit, company, weekStart }, user.name, id, on ? { resp: t.matricula, lotId } : null, text);
       setPlan((prev) => {
@@ -422,7 +422,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
         >
           <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 leading-tight flex items-start gap-1">
             <Eye className="w-3 h-3 mt-px shrink-0" />
-            {it.lot.local ? localLabel(it.lot.local) : 'Bloco do PMOC'}
+            {lotStops(it.lot).length ? lotPlace(it.lot) : 'Bloco do PMOC'}
           </p>
           <p className="text-[9px] font-bold text-slate-500 mt-0.5">acompanha a {it.of}</p>
         </button>
@@ -444,7 +444,8 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
         </button>
       );
     const { lot } = it;
-    const local = lot.local ? localLabel(lot.local) : '';
+    const stops = lotStops(lot);
+    const local = stops.length === 1 ? localLabel(stops[0]) : '';
     const firstLocal = it.orders[0] ? localLabel({ comarca: it.orders[0].comarca || '', address: it.orders[0].addressText || '' }) : 'Lote do PMOC';
     const nightsHere = (lot.nights || []).filter((d) => d >= days[it.from] && d <= days[it.to]).length;
     return (
@@ -456,10 +457,38 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
         }`}
         style={it.mine ? { borderLeft: '4px solid #4f46e5' } : undefined}
       >
-        <p className="text-[10px] font-black text-slate-900 dark:text-slate-100 leading-tight flex items-start gap-1">
-          <MapPin className="w-3 h-3 mt-px shrink-0 text-indigo-600" />
-          {local || firstLocal}
-        </p>
+        {stops.length > 1 ? (
+          // Fase 7C-3: vários locais — cada dia mostra os locais daquele dia (como a planilha PSS)
+          <div className="grid gap-1 items-start" style={{ gridTemplateColumns: `repeat(${it.to - it.from + 1}, minmax(0, 1fr))`, gridAutoFlow: 'row dense' }}>
+            {stops.map((st) => {
+              const a = Math.max(it.from, days.findIndex((d) => d >= st.from));
+              const b = Math.min(it.to, days.length - 1 - [...days].reverse().findIndex((d) => d <= st.to));
+              if (a < 0 || b < a || days[a] > st.to || days[b] < st.from) return null;
+              const k = stopKey(st);
+              const nPrev = it.orders.filter((o) => localKey(o) === k).length;
+              const firstOfComarca = stops.find((x) => x.comarca === st.comarca) === st;
+              const nCh = firstOfComarca ? companyWos.filter((w) => w.lotId === lot.id && (w.comarca || '') === st.comarca).length : 0;
+              return (
+                <div key={k} className="rounded border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30 px-1 py-0.5" style={{ gridColumn: `${a - it.from + 1} / ${b - it.from + 2}` }}>
+                  <p className="text-[9px] font-black text-slate-900 dark:text-slate-100 leading-tight flex items-start gap-0.5">
+                    <MapPin className="w-2.5 h-2.5 mt-px shrink-0 text-indigo-600" />
+                    {(st.pdfText || localLabel(st)).toUpperCase()}
+                  </p>
+                  {(nPrev > 0 || nCh > 0) && (
+                    <p className="text-[9px] font-bold text-emerald-700">
+                      {[nPrev ? `${nPrev} prev.` : '', nCh ? `${nCh} ch.` : ''].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[10px] font-black text-slate-900 dark:text-slate-100 leading-tight flex items-start gap-1">
+            <MapPin className="w-3 h-3 mt-px shrink-0 text-indigo-600" />
+            {local || firstLocal}
+          </p>
+        )}
         {counts(it.orders, lot.orderIds.length, lot.woIds?.length || 0)}
         {nightsHere > 0 && lot.overnight && (
           <p className="mt-1 px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-900 text-[9px] font-black text-sky-800 dark:text-sky-200 flex items-center gap-1">
@@ -921,7 +950,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             .filter((l) => l.technicianMatricula !== modal.team.matricula)
             .map((l) => ({
               lotId: l.id,
-              text: `${teamLabelOf(l.technicianMatricula)} · ${l.local ? localLabel(l.local) : 'bloco do PMOC'} · ${br(l.periodStart)}${l.periodEnd > l.periodStart ? ` a ${br(l.periodEnd)}` : ''}`
+              text: `${teamLabelOf(l.technicianMatricula)} · ${lotPlace(l)} · ${br(l.periodStart)}${l.periodEnd > l.periodStart ? ` a ${br(l.periodEnd)}` : ''}`
             }))}
           current={Object.values((plan?.visits || {}) as Record<string, WeekVisit>)
             .filter((v) => v.resp === modal.team.matricula)
