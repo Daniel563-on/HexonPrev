@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock, Eye, FileDown, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Star, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock, Eye, FileDown, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Star, Trash2, Wrench } from 'lucide-react';
 import { Absence, BlockStop, Company, DayMarkKind, HexonUser, Notice, OrderParticipant, PlanningLot, ServiceOrder, UsualTeam, WeekPlan, WeekPub, WeekVisit, WorkOrder } from '../../types';
 import {
   companiesOfUnit,
@@ -12,11 +12,13 @@ import {
   dbListOpenWorkOrders,
   dbListTeams,
   dbListWeekLots,
+  dbFixOrdersWithoutCompany,
   dbPatchWeekPlan,
   dbPublishWeek,
   dbSetWeekVisit,
   isCompanyVisible,
   localTodayStr,
+  CompanyFixResult,
   UnitPersonInfo
 } from '../../db/firebase';
 import { setHomeLink } from '../../lib/homeLinks';
@@ -95,6 +97,9 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const [modal, setModal] = useState<Modal>(null);
   const [askDel, setAskDel] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [fixBusy, setFixBusy] = useState(false);
+  const [fixResult, setFixResult] = useState<CompanyFixResult | null>(null);
+  const [showMissing, setShowMissing] = useState(false);
 
   useEffect(() => {
     dbGetCompanies()
@@ -181,9 +186,14 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const absentDays = (mat: string) => days.filter((d) => absOn(mat, d));
 
   // Preventivas desta gerência e empresa; programadas nesta semana; lotes/blocos da semana
-  const unitOrders = useMemo(() => orders.filter((o) => o.unit === unit && (!o.company || o.company === company)), [orders, unit, company]);
+  // Só as da empresa escolhida (como no PMOC). As sem empresa gravada (geradas antes da separação por empresa, 07/10) não
+  // entram em nenhuma: aviso abaixo e "Corrigir as empresas" (Super Admin)
+  const unitOrders = useMemo(() => orders.filter((o) => o.unit === unit && !!company && o.company === company), [orders, unit, company]);
+  const OPEN = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
+  const noCompany = useMemo(() => orders.filter((o) => o.unit === unit && !o.company && OPEN.includes(o.status)).length, [orders, unit]);
   const prevs = unitOrders.filter((o) => SHOWN.includes(o.status) && days.some((d) => coversDay(o, d)));
-  const weekLots = lots.filter((l) => !l.company || l.company === company);
+  // Lote: a empresa dele; lote antigo sem empresa: a das preventivas dele
+  const weekLots = lots.filter((l) => (l.company ? l.company === company : orders.some((o) => o.lotId === l.id && o.unit === unit && o.company === company)));
   const lotIds = new Set(weekLots.map((l) => l.id));
   const ordersOfLot = (id: string) => unitOrders.filter((o) => o.lotId === id);
   const techOf = (mat: string) => ({ matricula: mat, name: respNameOf(mat) });
@@ -214,7 +224,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
     if (k && !inTeams.has(k) && !outside.has(k)) outside.set(k, o.assignedTechnician || respNameOf(k));
   });
   // Chamados abertos da empresa (Fase 7C-2): sem dia = ainda não estão num bloco
-  const companyWos = openWos.filter((w) => !w.company || w.company === company);
+  const companyWos = openWos.filter((w) => !!company && w.company === company);
   const woCount = (mat: string) => companyWos.filter((w) => w.assignedTechnicianMatricula === mat && !w.scheduledDate).length;
   const wosNew = companyWos.filter((w) => w.status === 'Nova' || !w.assignedTechnicianMatricula);
   const wosNoDay = companyWos.filter((w) => w.status !== 'Nova' && !!w.assignedTechnicianMatricula && !w.scheduledDate);
@@ -348,6 +358,21 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
       }),
       pubs: [...pubs].sort((a, b) => a.rev - b.rev).map((p) => ({ rev: p.rev, at: p.at, by: p.by }))
     };
+  };
+  // Corrigir as empresas (Super Admin): OS abertas da gerência sem empresa recebem a do ativo ou do endereço
+  const fixCompanies = async () => {
+    setFixBusy(true);
+    setMsg(null);
+    try {
+      const r = await dbFixOrdersWithoutCompany(unit, (id) => companies.find((c) => c.id === id)?.name || id, user.name);
+      setFixResult(r);
+      setShowMissing(false);
+      loadWeek();
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.code === 'permission-denied' ? 'O banco recusou a correção.' : `Não foi possível corrigir: ${err?.message || err}` });
+    } finally {
+      setFixBusy(false);
+    }
   };
   // Publicações: a última é a que está no Quadro de Avisos
   const pubs = [...(plan?.pubs || [])].sort((a, b) => a.rev - b.rev);
@@ -815,6 +840,50 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
         <p className="px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-[11px] font-bold text-rose-800">
           Prazo de planejamento da {unit} vencido: os blocos ficam só para consulta. Peça ao Super Administrador para estender o prazo.
         </p>
+      )}
+
+      {noCompany > 0 && (
+        <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs flex flex-wrap items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-[240px]">
+            <p className="font-black">
+              {noCompany} preventiva{noCompany > 1 ? 's' : ''} da {unit} {noCompany > 1 ? 'estão' : 'está'} sem empresa gravada e não {noCompany > 1 ? 'aparecem' : 'aparece'} na Programação.
+            </p>
+            <p className="text-[11px]">Foram geradas antes da separação por empresa (07/10). A correção dá a cada uma a empresa do ativo (preventiva) ou do endereço (vistoria).</p>
+            {user.perfil !== 'Super Administrador' && <p className="text-[11px] font-bold mt-1">Peça ao Super Administrador para corrigir.</p>}
+          </div>
+          {user.perfil === 'Super Administrador' && (
+            <button type="button" onClick={fixCompanies} disabled={fixBusy} className="h-8 px-3 rounded-lg bg-amber-600 text-white text-[11px] font-black cursor-pointer disabled:opacity-60 shrink-0">
+              {fixBusy ? 'Corrigindo…' : 'Corrigir as empresas'}
+            </button>
+          )}
+        </div>
+      )}
+      {fixResult && (
+        <div className="p-3 rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 text-xs space-y-1">
+          <p>
+            <b>{fixResult.fixed}</b> preventiva(s) receberam a empresa do ativo ou do endereço.
+            {fixResult.missing.length > 0 && (
+              <>
+                {' '}
+                <b>{fixResult.missing.length}</b> continuam sem empresa porque o ativo/endereço também não tem:{' '}
+                <button type="button" onClick={() => setShowMissing(!showMissing)} className="font-black underline cursor-pointer">
+                  {showMissing ? 'esconder a lista' : 'ver a lista'}
+                </button>{' '}
+                (corrija no cadastro do ativo ou do endereço).
+              </>
+            )}
+          </p>
+          {showMissing && (
+            <ul className="max-h-48 overflow-y-auto text-[11px] list-disc pl-5">
+              {fixResult.missing.map((m) => (
+                <li key={m.id}>
+                  #{m.id} — {m.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {company && (
