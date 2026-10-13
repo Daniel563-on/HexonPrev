@@ -1,0 +1,296 @@
+<title>Estrutura do Hexon 2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: planta do sistema — menu desenhado à esquerda, ficha de cada página à direita; uma coluna no celular */
+:root{
+  --bg:#f3f5f7; --paper:#ffffff; --ink:#15202b; --muted:#5b6876; --line:#d9dfe5;
+  --navy:#16263a; --navy-ink:#dfe7f0; --navy-muted:#8fa2b6;
+  --accent:#1f6fb2;
+  --keep:#5b6876; --keep-bg:#e8ecf0;
+  --up:#1f6fb2; --up-bg:#e1eefa;
+  --new:#1d7a4f; --new-bg:#dff3e8;
+  --ask:#9a6100; --ask-bg:#fbefd6;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Public Sans","Segoe UI",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --paper:#16202a; --ink:#e4eaf0; --muted:#97a5b3; --line:#2a3744;
+  --navy:#0a1118; --navy-ink:#dfe7f0; --navy-muted:#7f93a8;
+  --accent:#6aaee8;
+  --keep:#a9b6c3; --keep-bg:#243140;
+  --up:#8cc2f0; --up-bg:#16314a;
+  --new:#7fd3a6; --new-bg:#163a2a;
+  --ask:#f0c46a; --ask-bg:#3d2f12;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(26px,4vw,36px);font-weight:800}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:10px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.tag{font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap;line-height:1.5}
+.t-keep{color:var(--keep);background:var(--keep-bg)}
+.t-up{color:var(--up);background:var(--up-bg)}
+.t-new{color:var(--new);background:var(--new-bg)}
+.t-ask{color:var(--ask);background:var(--ask-bg)}
+section{display:flex;flex-direction:column;gap:14px}
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.principles div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.principles b{font-family:var(--f-display);font-size:15px}
+.principles p{font-size:14px;color:var(--muted)}
+
+.plan{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:760px){.plan{grid-template-columns:1fr}}
+nav.mock{background:var(--navy);color:var(--navy-ink);border-radius:10px;padding:16px 12px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:760px){nav.mock{position:static}}
+.mock .brand{font-family:var(--f-display);font-weight:800;letter-spacing:.22em;font-size:15px;padding:0 8px 12px}
+.mock .grp{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--navy-muted);padding:12px 8px 4px}
+.mock a{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--navy-ink);text-decoration:none;font-size:13.5px;padding:6px 8px;border-radius:6px}
+.mock a:hover,.mock a:focus-visible{background:rgba(255,255,255,.08);outline:none}
+.mock a i{width:8px;height:8px;border-radius:50%;flex:none}
+.dot-keep{background:#9aa8b6}.dot-up{background:#6aaee8}.dot-new{background:#5fcf93}.dot-ask{background:#f0c46a}
+
+.pages{display:flex;flex-direction:column;gap:14px;min-width:0}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.page-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between}
+.page-head small{color:var(--muted);font-size:13px}
+.tabs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.tabs li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tabs li:last-child{border-bottom:0}
+.tabs .nm{font-weight:600}
+.tabs .ds{grid-column:1 / -1;color:var(--muted);font-size:13.5px;max-width:75ch}
+.note{font-size:13.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+.q{font-size:13.5px;background:var(--ask-bg);color:var(--ink);border-radius:6px;padding:8px 10px}
+.q b{color:var(--ask)}
+
+.twocol{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;min-width:640px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.c{text-align:center}
+.yes{color:var(--new);font-weight:700}
+ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+ol.steps li{max-width:75ch}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+.mock .sub{padding-left:22px;font-size:12.5px;color:var(--navy-muted)}
+.mock .btn{margin:2px 8px 6px 22px;background:var(--accent);color:#fff;justify-content:center;font-weight:600;font-size:12.5px}
+.src{font-size:12px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Versão 2 · visão do usuário · 03/10/2026</span>
+  <h1>Estrutura do Hexon 2.0</h1>
+  <p class="lede">O menu principal segue o do Hexon principal, com tudo redesenhado. A Preventiva vira o módulo <b>PMOC</b> e cede para o menu principal as partes que servem ao sistema todo (ativos, materiais, usuários, QR-Codes, endereços, solicitações). Visão do Super Administrador. O celular do técnico vem depois.</p>
+  <div class="legend" aria-label="Legenda">
+    <span><b class="tag t-keep">Preventiva</b> vem da Hexon Preventiva</span>
+    <span><b class="tag t-up">Principal</b> vem do Hexon principal, redesenhado</span>
+    <span><b class="tag t-new">Novo</b> não existe em nenhum dos dois</span>
+    <span><b class="tag t-ask">Depois</b> entra no menu, mas só mexemos mais tarde</span>
+  </div>
+</header>
+
+<section>
+  <h2>Regras gerais</h2>
+  <div class="principles">
+    <div><b>Login igual ao da Preventiva</b><p>Mesmo layout. Muda o nome para Hexon e o ícone "H" pelo logo novo (hexágono roxo e azul), usado em todo o sistema.</p></div>
+    <div><b>Usuários, gerências e permissões da Preventiva valem para tudo</b><p>É a parte mais importante. As permissões ganham mais detalhe para cobrir todos os módulos.</p></div>
+    <div><b>O que vem do principal é redesenhado</b><p>Mesmas funções e visual parecido, mas com o nosso login, nossas permissões, nossas gerências e nossas proteções de custo. O código dele não é copiado.</p></div>
+    <div><b>Corretivas e preventivas separadas</b><p>Corretivas, layout e acompanhamentos têm programação própria (Programação Semanal). As preventivas continuam sendo programadas como hoje, dentro do PMOC.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Menu principal</h2>
+  <div class="plan">
+    <nav class="mock" aria-label="Menu proposto">
+      <div class="brand">HEXON</div>
+      <a href="#inicio">Início <i class="dot-new"></i></a>
+      <a href="#emitir" class="btn">+ Emitir OS (GLPI)</a>
+      <a href="#ponto">Bater ponto <i class="dot-ask"></i></a>
+      <a href="#ponto">Registros de ponto <i class="dot-ask"></i></a>
+      <a href="#os">Ordens de Serviço <i class="dot-up"></i></a>
+      <a href="#os" class="sub">Corretivas · Layout · Acomp.</a>
+      <a href="#os" class="sub">Preventivas (execução)</a>
+      <a href="#equipes">Equipes <i class="dot-up"></i></a>
+      <a href="#prog">Programação Semanal <i class="dot-up"></i></a>
+      <a href="#solic">Solicitações <i class="dot-up"></i></a>
+      <a href="#ativos">Gestão de Ativos <i class="dot-keep"></i></a>
+      <a href="#contr">Contratos e Fornecedores <i class="dot-ask"></i></a>
+      <a href="#pmoc">PMOC <i class="dot-keep"></i></a>
+      <a href="#mat">Gestão de Materiais <i class="dot-keep"></i></a>
+      <a href="#users">Usuários <i class="dot-keep"></i></a>
+      <a href="#qr">QR-Codes <i class="dot-keep"></i></a>
+      <a href="#ender">Endereços <i class="dot-keep"></i></a>
+      <a href="#glpi">Histórico GLPI <i class="dot-up"></i></a>
+      <a href="#avisos">Quadro de Avisos <i class="dot-up"></i></a>
+      <a href="#rel">Relatórios <i class="dot-ask"></i></a>
+      <a href="#config">Configurações <i class="dot-new"></i></a>
+    </nav>
+
+    <div class="pages">
+
+      <article class="page" id="inicio">
+        <div class="page-head"><h3>Início</h3><b class="tag t-new">Novo</b></div>
+        <p class="note">Primeira tela depois do login. Resumo geral de acordo com o perfil: cada pessoa vê só os números e atalhos do que ela tem acesso. O Dashboard e Auditoria da Preventiva <b>sai de vez</b>; os números voltam depois, juntos, em Relatórios.</p>
+      </article>
+
+      <article class="page" id="emitir">
+        <div class="page-head"><h3>Emitir OS (GLPI)</h3><b class="tag t-up">Principal</b></div>
+        <ul class="tabs">
+          <li><span class="nm">Emitir</span><b class="tag t-up">Principal</b><span class="ds">Botão logo abaixo de Início. Abre corretivas, layout e acompanhamentos, com o número do chamado GLPI digitado à mão (como hoje). Integração direta com o GLPI fica para quando houver API.</span></li>
+          <li><span class="nm">Novo modelo</span><b class="tag t-up">Principal</b><span class="ds">Fica dentro de Emitir OS: os modelos que definem o formulário de cada tipo de OS. Mantido e melhorado.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="ponto">
+        <div class="page-head"><h3>Bater ponto · Registros de ponto</h3><b class="tag t-ask">Depois</b></div>
+        <p class="note">Mantidos do principal. Não mexemos agora.</p>
+      </article>
+
+      <article class="page" id="os">
+        <div class="page-head"><h3>Ordens de Serviço</h3><small>2 botões</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Corretivas, Layout e Acompanhamento</span><b class="tag t-up">Principal</b><span class="ds">Lista e acompanhamento dessas OS. Execução, assinaturas e PDF mapeado serão detalhados quando chegarmos lá.</span></li>
+          <li><span class="nm">Preventivas</span><b class="tag t-keep">Preventiva</b><span class="ds">Só a aba Realização (execução das preventivas), que sai da tela de Preventivas de hoje. O planejamento continua no PMOC.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="equipes">
+        <div class="page-head"><h3>Equipes</h3><b class="tag t-up">Principal</b></div>
+        <p class="note">Só junta pessoas na mesma equipe. Cada equipe terá um destino: se for de preventiva, sai da Programação Semanal e aparece no painel das preventivas. Detalhes na etapa.</p>
+      </article>
+
+      <article class="page" id="prog">
+        <div class="page-head"><h3>Programação Semanal</h3><b class="tag t-up">Principal</b></div>
+        <p class="note">Mantida do principal, com muitas melhorias. Trata <b>só de corretivas, layout e acompanhamentos</b>.</p>
+      </article>
+
+      <article class="page" id="solic">
+        <div class="page-head"><h3>Solicitações</h3><small>principal + preventiva</small></div>
+        <ul class="tabs">
+          <li><span class="nm">Solicitações do principal</span><b class="tag t-up">Principal</b><span class="ds">Hora extra, pernoite e gerais, como hoje no principal.</span></li>
+          <li><span class="nm">Vindas das preventivas</span><b class="tag t-keep">Preventiva</b><span class="ds">Aba dedicada às solicitações de corretiva geradas na execução das preventivas (o painel de hoje). Outras funções podem entrar aqui.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="ativos">
+        <div class="page-head"><h3>Gestão de Ativos</h3><b class="tag t-keep">Preventiva</b></div>
+        <ul class="tabs">
+          <li><span class="nm">Tudo da Preventiva</span><b class="tag t-keep">Preventiva</b><span class="ds">Cadastro, importação, QR-Code, página externa do ativo, cópia local.</span></li>
+          <li><span class="nm">Histórico em 2 abas</span><b class="tag t-new">Novo</b><span class="ds">Aba Preventivas e aba Corretivas, cada uma com paginação, também na página externa.</span></li>
+          <li><span class="nm">Saúde do ativo</span><b class="tag t-up">Principal</b><span class="ds">Quanto já se gastou com o ativo comparado ao valor dele.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="contr">
+        <div class="page-head"><h3>Contratos e Fornecedores</h3><b class="tag t-ask">Depois</b></div>
+        <p class="note">Como está no principal. Muita coisa vai mudar aqui, mas não agora.</p>
+      </article>
+
+      <article class="page" id="pmoc">
+        <div class="page-head"><h3>PMOC</h3><b class="tag t-keep">Preventiva</b></div>
+        <p class="note">Abre uma página própria, com o seu menu. É onde fica a Preventiva. Vamos com muita calma nesta parte.</p>
+        <ul class="tabs">
+          <li><span class="nm">Preventivas</span><b class="tag t-keep">Preventiva</b><span class="ds">Primeiro item. Igual a hoje, com Planejamento e Consulta. A Realização vai para Ordens de Serviço.</span></li>
+          <li><span class="nm">Modelos e Protocolos</span><b class="tag t-keep">Preventiva</b><span class="ds">Tipos e ciclo, modelos e disparo das preventivas. Igual a hoje.</span></li>
+          <li><span class="nm">Saem do PMOC</span><b class="tag t-keep">—</b><span class="ds">Dashboard e Auditoria (sai de vez). Solicitações, Materiais, Ativos, QR-Codes, Endereços e Controle de Usuários vão para o menu principal.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="mat">
+        <div class="page-head"><h3>Gestão de Materiais</h3><b class="tag t-keep">Preventiva</b></div>
+        <p class="note">A da Preventiva, atendendo corretivas, layout, acompanhamentos e preventivas.</p>
+      </article>
+
+      <article class="page" id="users">
+        <div class="page-head"><h3>Usuários</h3><b class="tag t-keep">Preventiva</b></div>
+        <ul class="tabs">
+          <li><span class="nm">Usuários, Gerências, Permissões</span><b class="tag t-keep">Preventiva</b><span class="ds">Os da Preventiva, valendo para o sistema todo. Permissões com mais detalhe para os módulos novos.</span></li>
+          <li><span class="nm">Efetivo, Cargos e Homem-Hora</span><b class="tag t-keep">Preventiva</b><span class="ds">O Homem-Hora do principal fica junto daqui, com o valor da hora por cargo e vigência que já temos.</span></li>
+        </ul>
+      </article>
+
+      <article class="page" id="qr">
+        <div class="page-head"><h3>QR-Codes</h3><b class="tag t-keep">Preventiva</b></div>
+        <p class="note">Botão próprio no menu principal, como hoje.</p>
+      </article>
+
+      <article class="page" id="ender">
+        <div class="page-head"><h3>Endereços</h3><b class="tag t-keep">Preventiva</b></div>
+        <p class="note">Botão próprio no menu principal, para o sistema todo.</p>
+      </article>
+
+      <article class="page" id="glpi">
+        <div class="page-head"><h3>Histórico GLPI</h3><b class="tag t-up">Principal</b></div>
+        <p class="note">Como no principal: inserir um documento HTML exportado do GLPI para consulta.</p>
+      </article>
+
+      <article class="page" id="avisos">
+        <div class="page-head"><h3>Quadro de Avisos</h3><b class="tag t-up">Principal</b></div>
+        <p class="note">Mantido do principal.</p>
+      </article>
+
+      <article class="page" id="rel">
+        <div class="page-head"><h3>Relatórios</h3><b class="tag t-ask">Depois</b></div>
+        <p class="note">Por último. Junta tudo: preventivas, corretivas, layout, acompanhamentos e valores, com muitos cálculos.</p>
+      </article>
+
+      <article class="page" id="config">
+        <div class="page-head"><h3>Configurações</h3><b class="tag t-new">Novo</b></div>
+        <p class="note">Coisas do sistema: modo manutenção, forçar atualização (hoje na aba Sistema de Controle de Usuários), a <b>Auditoria</b> (ações e acessos, que sai de Controle de Usuários), o espaço para <b>trocar o logo</b> do sistema todo e o que mais formos decidindo.</p>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Plano de ação</h2>
+  <p class="lede">Cada fase segue o jeito de sempre: desenho, sua aprovação, programação, trechos, teste. Nenhuma fase começa sem a anterior aprovada.</p>
+  <div class="box">
+    <ol class="steps">
+      <li><b>Nova casca.</b> Nome e ícone, menu principal novo, PMOC como página própria, Realização em Ordens de Serviço, cadastros no menu principal, Configurações, primeira versão do Início. Não mexe no banco. Módulos novos só aparecem quando estiverem prontos.</li>
+      <li><b>Usuários, gerências e permissões</b> para o sistema todo, com mais detalhe.</li>
+      <li><b>Gestão de Ativos:</b> histórico em 2 abas e saúde do ativo.</li>
+      <li><b>Emitir OS (GLPI)</b> com Novo modelo.</li>
+      <li><b>Execução</b> das corretivas: assinaturas, PDF mapeado e custos.</li>
+      <li><b>Ordens de Serviço › Corretivas:</b> lista e acompanhamento.</li>
+      <li><b>Equipes</b> e <b>Programação Semanal</b>.</li>
+      <li><b>Solicitações</b> do principal com a aba das preventivas.</li>
+      <li><b>Quadro de Avisos</b> e <b>Histórico GLPI</b>.</li>
+      <li><b>Ponto</b> e <b>Contratos</b> como estão no principal.</li>
+      <li><b>Relatórios.</b></li>
+      <li><b>Celular do técnico</b>, quando você mostrar como quer.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>Detalhes completos no documento principal (docs/requisitos-hexon.md, seção 11). Nada foi programado.</footer>
+
+</div>

@@ -266,6 +266,36 @@ export interface UsualTeam {
   respName?: string;    // nome do responsável quando a equipe foi salva
 }
 
+// PROGRAMAÇÃO › SEMANA (Fase 7B): 1 registro por gerência + empresa + semana (id = "GERÊNCIA__empresa__segunda")
+export type DayMarkKind = 'feriado' | 'ponto' | 'municipal' | 'outro';
+export interface WeekPlan {
+  unit: string;
+  company: string;
+  weekStart: string; // segunda-feira "AAAA-MM-DD"
+  days?: Record<string, { kind: DayMarkKind; text: string }>; // dias marcados (feriado etc.; não bloqueia)
+  teams?: Record<string, OrderParticipant[]>; // equipe desta semana, por matrícula do responsável (sem = a cadastrada)
+  updatedAt: string;
+  updatedBy: string;
+}
+// Férias, atestado, licença... (coleção "absences"): vale pelas datas, em todas as semanas do período
+export type AbsenceKind = 'Férias' | 'Atestado' | 'Licença' | 'Outro';
+export interface Absence {
+  id: string;
+  unit: string;
+  company: string;
+  matricula: string;
+  name: string;
+  cargo: string;
+  kind: AbsenceKind;
+  from: string; // "AAAA-MM-DD"
+  to: string;
+  note?: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 // Resposta de um item (formato enxuto). Campos curtos para a OS ficar pequena no banco.
 export interface ChecklistAnswer {
   c?: boolean;                                  // checked

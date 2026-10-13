@@ -96,3 +96,4 @@ export async function dbGetUsualTeam(matricula: string): Promise<UsualTeam | nul
     return null;
   }
 }
+

@@ -54,24 +54,35 @@ service cloud.firestore {
       return profileScope() == 'selected' ? get(myProfilePath()).data.get('units', []) : [me().get('gerencia', '')];
     }
 
-    // 1. ATIVOS — leitura pública (QR Code); gravação só equipe
+    // 1. ATIVOS — QR Code: qualquer um abre 1 ativo (ou busca com no máximo 1 resultado); listar só a equipe
     match /assets/{assetId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff() || request.query.limit <= 1;
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['name', 'status']);
       allow delete: if isAdmin();
     }
 
-    // 2. HISTÓRICO — leitura pública (QR Code); permanente
+    // 2. HISTÓRICO — QR Code: quem não é da equipe busca no máximo 13 por vez (páginas de 12); permanente
     match /histories/{historyId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff() || request.query.limit <= 13;
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['assetId', 'date', 'status']);
       allow delete: if false;
     }
 
     // 3. LOGS DE ACESSO — imutáveis
+    // Gravar: também quem ainda não entrou (falha de login), mas só os campos do registro e textos curtos
     match /accessLogs/{logId} {
       allow read: if isSuperAdmin();
-      allow create: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['id', 'userId', 'userName', 'userMatricula', 'event', 'timestamp', 'ipAddress'])
+        && request.resource.data.get('id', '').size() <= 60
+        && request.resource.data.get('userId', '').size() <= 100
+        && request.resource.data.get('userName', '').size() <= 150
+        && request.resource.data.get('userMatricula', '').size() <= 60
+        && request.resource.data.get('event', '').size() <= 150
+        && request.resource.data.get('timestamp', '').size() <= 40
+        && request.resource.data.get('ipAddress', '').size() <= 60;
       allow update, delete: if false;
     }
 
@@ -89,7 +100,11 @@ service cloud.firestore {
     // Excluir: só o Super Administrador, e só OS "Novo".
     match /serviceOrders/{orderId} {
       allow get: if isStaff() && (resource == null || seesAllUnits() || resource.data.unit in myUnits());
-      allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits());
+      // Também pelos campos de controle (índices esparsos): abertas da gerência e OS/solicitações do próprio técnico
+      allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits()
+        || resource.data.unitOpen in myUnits()
+        || resource.data.techOpen == me().matricula
+        || resource.data.techSol == me().matricula);
       allow create: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && (seesAllUnits() || request.resource.data.unit in myUnits());
       // A data de criação nunca muda: um disparo que tente regravar uma OS existente é recusado
@@ -97,7 +112,7 @@ service cloud.firestore {
         && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
         && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
         && (resource.data.status != 'Concluída'
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd'])
             || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
       allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
     }
@@ -120,13 +135,71 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // 4e. EQUIPE HABITUAL DO TÉCNICO (id = matrícula) — o próprio técnico ou o planejador/admin da gerência editam
+    // 4e. EQUIPES (Fase 7A) — a equipe da Programação é a equipe habitual do responsável (id = matrícula do responsável).
+    // Todos leem (a execução usa a equipe); grava e apaga só quem tem "Programar", nas gerências do perfil.
+    // O técnico não muda mais a equipe dele. Usuário (u) e perfil (p) lidos uma vez só, como nas OS.
+    function tmUnitOk(u, p, unit) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || unit in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]);
+    }
+    function tmWriteOk(u, p, matricula) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['matricula', 'unit', 'members', 'updatedAt', 'updatedBy', 'name', 'type', 'company', 'order', 'respName'])
+        && d.matricula == matricula
+        && d.unit is string && d.unit.size() > 0
+        && d.members is list && d.members.size() <= 60
+        && (!('name' in d) || (d.name is string && d.name.size() <= 60))
+        && (!('type' in d) || (d.type is string && d.type.size() <= 80))
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    function tmDeleteOk(u, p) {
+      return osPerm(u, p, 'prog_edit') && tmUnitOk(u, p, resource.data.unit);
+    }
     match /usualTeams/{matricula} {
       allow read: if isStaff();
-      allow create, update: if isStaff() && request.resource.data.matricula == matricula
-        && (matricula == me().matricula || me().perfil in ['Super Administrador', 'Administrador'])
-        && (seesAllUnits() || request.resource.data.unit in myUnits());
-      allow delete: if isSuperAdmin();
+      allow create, update: if isStaff() && tmWriteOk(me(), osProfileOf(me()), matricula);
+      allow delete: if isStaff() && tmDeleteOk(me(), osProfileOf(me()));
+    }
+
+    // 4e-2. PROGRAMAÇÃO › SEMANA (Fase 7B): 1 registro por gerência + empresa + semana (id = "GERÊNCIA__empresa__segunda"),
+    // com os dias marcados e a equipe da semana. Todos leem; grava quem tem "Programar" nas gerências do perfil; não se apaga.
+    function wpWriteOk(u, p, planId) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['unit', 'company', 'weekStart', 'days', 'teams', 'updatedAt', 'updatedBy'])
+        && d.unit is string && d.company is string && d.weekStart is string && d.weekStart.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && planId == d.unit + '__' + d.company + '__' + d.weekStart
+        && (!('days' in d) || (d.days is map && d.days.size() <= 7))
+        && (!('teams' in d) || (d.teams is map && d.teams.size() <= 100))
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    match /weekPlans/{planId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && wpWriteOk(me(), osProfileOf(me()), planId);
+      allow delete: if false;
+    }
+
+    // 4e-3. AUSÊNCIAS (Fase 7B): férias, atestado, licença ou outro, por pessoa e datas (vale em todas as semanas do período).
+    // Todos leem; grava e apaga quem tem "Programar" nas gerências do perfil.
+    function abWriteOk(u, p) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'prog_edit')
+        && d.keys().hasOnly(['unit', 'company', 'matricula', 'name', 'cargo', 'kind', 'from', 'to', 'note', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.kind in ['Férias', 'Atestado', 'Licença', 'Outro']
+        && d.matricula is string && d.matricula.size() > 0
+        && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
+        && d.get('note', '').size() <= 300
+        && tmUnitOk(u, p, d.unit)
+        && (resource == null || tmUnitOk(u, p, resource.data.unit));
+    }
+    match /absences/{absenceId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && abWriteOk(me(), osProfileOf(me()));
+      allow delete: if isStaff() && tmDeleteOk(me(), osProfileOf(me()));
     }
 
     // 4a. EXCLUSÕES DE OS — registro para os outros aparelhos tirarem a OS da cópia local
@@ -140,8 +213,11 @@ service cloud.firestore {
     // 4b. ASSINATURAS DAS ORDENS — fora da OS para deixar as listas leves; só a equipe vê
     match /orderSignatures/{orderId} {
       allow read: if isStaff();
+      // Assinatura: imagem de no máximo 150 KB (a maior possível no quadro do app fica em ~124 KB)
       allow create, update: if isStaff() && request.resource.data.keys().hasAll(['orderId', 'signature'])
-        && request.resource.data.orderId == orderId;
+        && request.resource.data.orderId == orderId
+        && request.resource.data.signature is string
+        && request.resource.data.signature.size() <= 153600;
       allow delete: if isAdmin();
     }
 
@@ -154,7 +230,8 @@ service cloud.firestore {
     // 4d. ENDEREÇOS — cadastro das unidades que recebem ronda; só o Super Administrador altera
     // Leitura pública: o QR Code do imóvel abre a ficha do endereço sem login (só código, CRAAI, comarca e endereço)
     match /addresses/{addressId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isStaff();
       allow write: if isSuperAdmin();
     }
 
@@ -189,17 +266,68 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 4j. MATERIAIS — lista de cada gerência (sem estoque).
-    // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência dele, para informar o uso na OS).
-    // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências).
+    // 4i-2. REGRAS DE HORA EXTRA POR CARGO (id = id do cargo) — sem valores em R$: a equipe lê (aviso de máximo
+    // para o técnico); só o Super Administrador altera. As tarifas em R$ ficam no cargo (jobRoles).
+    match /overtimeRules/{roleId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
+    // 4j. MATERIAIS — lista de cada gerência + empresa (sem estoque; etapa especial E2).
+    // Lê: quem tem a permissão "Visualizar Materiais" (suas gerências) e o técnico (só a gerência E a empresa dele).
+    // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências); todo material tem empresa.
+    // O usuário e o perfil são lidos UMA vez e passados (o banco limita as contas por verificação: com perfil de acesso,
+    // a versão antiga passava do limite de 1000 e o técnico não conseguia ler a lista)
+    function matReadOk(u, p) {
+      return osSees(u, p)
+        && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs')
+            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
+    }
     match /materials/{materialId} {
-      allow read: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits())
-        && (hasPermission('view_materials') || hasPermission('view_costs') || me().perfil == 'Profissional');
+      allow read: if isStaff() && matReadOk(me(), osProfileOf(me()));
       allow create, update: if isStaff() && hasPermission('manage_materials')
+        && request.resource.data.company is string && request.resource.data.company.size() > 0
         && (seesAllUnits()
             || (request.resource.data.unit in myUnits() && (resource == null || resource.data.unit in myUnits())));
       // Excluir (correção de erro de cadastro): só o Super Administrador
       allow delete: if isSuperAdmin();
+    }
+
+    // 4j-1. INSUMOS (Fase 8C) — lista de cada gerência + empresa, igual à de materiais.
+    // Lê: quem tem "Ver insumos", "Cadastrar e importar insumos" ou "Visualizar Valores" (custo da OS) nas suas gerências
+    // e o técnico (só a gerência E a empresa dele).
+    // Altera: só quem tem "Cadastrar e importar insumos" (suas gerências); todo insumo tem empresa. Excluir: só o Super Administrador.
+    // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
+    function supReadOk(u, p) {
+      return osSees(u, p)
+        && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
+            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
+    }
+    function supWriteOk(u, p) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
+      return osPerm(u, p, 'manage_supplies')
+        && request.resource.data.company is string && request.resource.data.company.size() > 0
+        && (all || (request.resource.data.unit in mine && (resource == null || resource.data.unit in mine)));
+    }
+    match /supplies/{supplyId} {
+      allow read: if isStaff() && supReadOk(me(), osProfileOf(me()));
+      allow create, update: if isStaff() && supWriteOk(me(), osProfileOf(me()));
+      allow delete: if isSuperAdmin();
+    }
+
+    // 4j-2. EXCLUSÕES PARA AS CÓPIAS GUARDADAS NOS APARELHOS (materiais, insumos, efetivo, usuários da gerência, modelos de preventiva):
+    // só o id excluído (ou que mudou de gerência) e a gerência ('*' = modelos); quem exclui é o Super Administrador
+    // (modelos: também quem tem "Excluir Modelos")
+    match /syncDeletions/{deletionId} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['coll', 'unit', 'docId', 'syncAt'])
+        && request.resource.data.syncAt == request.time
+        && ((isSuperAdmin() && request.resource.data.coll in ['materials', 'supplies', 'workforce', 'users', 'templates'])
+            || (request.resource.data.coll == 'templates' && hasPermission('delete_templates')));
+      allow update, delete: if false;
     }
 
     // 4k. TIPOS DE ATIVO E PERIODICIDADES — por gerência; altera quem tem "Configurar Modelos de Cronograma"
@@ -262,9 +390,20 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 8. PRAZOS DE PLANEJAMENTO
+    // 8. PRAZOS DE PLANEJAMENTO — a equipe lê; só o Super Administrador define
     match /planningDeadlines/{deadlineId} {
-      allow read, write: if isStaff();
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
+    // 8b. EMPRESAS CONTRATADAS (etapa especial E1) — a equipe lê; só o Super Administrador cadastra e altera (não se exclui)
+    match /companies/{companyId} {
+      allow read: if isStaff();
+      allow create, update: if isSuperAdmin()
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.units is list && request.resource.data.units.size() > 0
+        && request.resource.data.costTracking is bool && request.resource.data.active is bool;
+      allow delete: if false;
     }
 
     // 9. GERÊNCIAS E UNIDADES
@@ -294,6 +433,448 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['userId'])
         && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.authUid == uid;
       allow delete: if false;
+    }
+
+    // 13. OS (Hexon 2.0): corretiva, layout e acompanhamento
+    // Modelos de OS: a equipe lê; só quem tem "Criar e editar modelos de OS" altera
+    match /osTemplates/{templateId} {
+      allow read: if isStaff();
+      allow write: if isStaff() && hasPermission('os_templates');
+    }
+    // PDF mapeado do modelo (Fase 5C): caixas ("osPdfLayouts") e o PDF oficial em base64 ("osPdfFiles", até ~1 MB).
+    // A equipe lê (gerar o PDF da OS); só quem edita modelos de OS altera.
+    match /osPdfLayouts/{templateId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('os_templates')
+        && request.resource.data.templateId == templateId
+        && request.resource.data.pins is list && request.resource.data.pins.size() <= 400;
+      allow delete: if isStaff() && hasPermission('os_templates');
+    }
+    match /osPdfFiles/{templateId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('os_templates')
+        && request.resource.data.templateId == templateId
+        && request.resource.data.keys().hasOnly(['templateId', 'pdfBase64', 'version'])
+        && request.resource.data.pdfBase64 is string && request.resource.data.pdfBase64.size() <= 1020000;
+      allow delete: if isStaff() && hasPermission('os_templates');
+    }
+    // Contador do número por ano: só sobe de 1 em 1 (o número nunca repete).
+    // OS: "workOrders_AAAA" (quem emite OS). Pedidos de material (Fase 8B): "materialRequests_AAAA" e de insumos (Fase 8C-2):
+    // "supplyRequests_AAAA" (o técnico que pede).
+    match /counters/{counterId} {
+      allow read: if isStaff() && (hasPermission('os_create') || counterId.matches('materialRequests_[0-9]+') || counterId.matches('supplyRequests_[0-9]+'));
+      allow create, update: if isStaff()
+        && request.resource.data.keys().hasOnly(['year', 'last'])
+        && request.resource.data.last == (resource == null ? 1 : resource.data.last + 1)
+        && ((hasPermission('os_create') && counterId == 'workOrders_' + string(request.resource.data.year))
+            || counterId == 'materialRequests_' + string(request.resource.data.year)
+            || counterId == 'supplyRequests_' + string(request.resource.data.year));
+      allow delete: if false;
+    }
+    // OS: cada um vê as das gerências do perfil (e o técnico, as que estão com ele); emitir pede "Emitir OS";
+    // atribuir pede "Atribuir técnico / equipe"; cancelar pede "Cancelar OS"; o técnico atribuído preenche a execução.
+    function osUnitOk() {
+      return seesAllUnits() || resource.data.unit in myUnits();
+    }
+    function osChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function osStatusFrom(from, to) {
+      return resource.data.status == from && request.resource.data.status == to;
+    }
+    function osSameStatus() {
+      return request.resource.data.status == resource.data.status;
+    }
+    // Versões "leves" (usuário e perfil já lidos) para a atualização da OS
+    function osProfileOf(u) {
+      return u.get('profileId', '') != '' && exists(/databases/$(database)/documents/profiles/$(u.get('profileId', '')))
+        ? get(/databases/$(database)/documents/profiles/$(u.get('profileId', ''))).data : {};
+    }
+    function osSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || resource.data.unit in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]);
+    }
+    function osPerm(u, p, id) {
+      return u.perfil == 'Super Administrador' || p.get('permissions', {}).get(id, false) == true;
+    }
+    function osTech(u) {
+      return resource.data.get('techOpen', '') == u.matricula && resource.data.assignedTechnicianMatricula == u.matricula;
+    }
+    function osUpdateOk(u, p) {
+      return
+        // EDITAR enquanto "Nova" ("Editar OS"): só os dados da abertura; gerência, modelo e número não mudam; empresa obrigatória
+        (resource.data.status == 'Nova' && osSameStatus()
+          && osChanged().hasOnly(['answers', 'execAddressId', 'execAddressText', 'execAddressManual', 'craai', 'comarca', 'reqAddressId', 'reqAddressText', 'intervencao', 'glpi', 'assetCode', 'assetId', 'assetName', 'deadline', 'company', 'updatedAt', 'timeline'])
+          && request.resource.data.get('company', '') != ''
+          && osPerm(u, p, 'os_edit') && osSees(u, p))
+        // DESATRIBUIR ("Atribuir técnico"): só se o técnico não começou (sem execução salva, nunca Pendente); volta para "Nova"
+        || (osStatusFrom('Em andamento', 'Nova') && !('exec' in resource.data) && resource.data.get('pauses', []).size() == 0
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data) && !('assignedTechnicianMatricula' in request.resource.data)
+          && osPerm(u, p, 'os_assign') && osSees(u, p))
+        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
+          && (osSameStatus() || osStatusFrom('Nova', 'Em andamento'))
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && 'assignedTechnicianMatricula' in osChanged()
+          && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
+          && osPerm(u, p, 'os_assign') && osSees(u, p))
+        // Técnico atribuído: salvar a execução, Pendente e Retomar; o escritório (quem atribui) só deixa pendente / retoma.
+        // Depois da assinatura do técnico a execução não muda (contestada sem assinatura guardada = formato antigo)
+        || ((resource.data.status in ['Em andamento', 'Pendente'] || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') == ''))
+          && osChanged().hasOnly(['exec', 'status', 'pauses', 'updatedAt', 'timeline'])
+          && ((osSameStatus() && resource.data.status in ['Em andamento', 'Contestada'])
+              || osStatusFrom('Em andamento', 'Pendente') || osStatusFrom('Pendente', 'Em andamento'))
+          && (osTech(u) || (!('exec' in osChanged()) && !osSameStatus() && osPerm(u, p, 'os_assign') && osSees(u, p))))
+        // Técnico atribuído: CONCLUIR (assinatura do técnico; o homem-hora para aqui)
+        || ((resource.data.status == 'Em andamento' || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') == ''))
+          && request.resource.data.status in ['Aguardando assinaturas', 'Concluída']
+          && osChanged().hasOnly(['exec', 'status', 'signatures', 'nextSigner', 'techSignedAt', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && request.resource.data.signatures.keys().hasOnly(['tecnico'])
+          && osTech(u))
+        // Vez do CLIENTE: gerar o link (só "Enviar link de validação ao cliente"), registrar a assinatura
+        // (celular ou link aprovado; o link aprovado deixa o aviso "Assinadas pelo cliente" para o técnico da OS)
+        // ou a contestação do link
+        || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests', 'cliSigned'])
+          && request.resource.data.get('cliSigned', resource.data.get('assignedTechnicianMatricula', '')) == resource.data.get('assignedTechnicianMatricula', '')
+          && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'updatedAt', 'timeline'])
+               && osPerm(u, p, 'os_client_link') && osSees(u, p))
+              || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
+              || (request.resource.data.status == 'Contestada' && !('signatures' in osChanged())
+                  && get(/databases/$(database)/documents/osValidations/$(resource.data.validationToken)).data.status == 'contestada'))
+          && (osTech(u) || ((osPerm(u, p, 'os_assign') || osPerm(u, p, 'os_contest_reply') || p.get('osSignAs', 'none') in ['engenheiro', 'gerente']) && osSees(u, p))))
+        // RESPONDER CONTESTAÇÃO (o que foi resolvido + acréscimos): volta para a vez do cliente.
+        // Técnico da OS ou "Responder contestação de OS"; a equipe e os materiais só crescem
+        || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') != ''
+          && request.resource.data.status == 'Aguardando assinaturas' && request.resource.data.nextSigner == 'cliente'
+          && osChanged().hasOnly(['exec', 'status', 'nextSigner', 'signQueue', 'contests', 'workEndAt', 'updatedAt', 'timeline'])
+          && (!('exec' in osChanged())
+              || (request.resource.data.exec.team.size() >= resource.data.exec.team.size()
+                  && request.resource.data.exec.materials.size() >= resource.data.exec.materials.size()))
+          && (osTech(u) || (osPerm(u, p, 'os_contest_reply') && osSees(u, p))))
+        // ENGENHEIRO / GERENTE: só quando é a vez dele, nas gerências que enxerga
+        || (resource.data.status == 'Aguardando assinaturas'
+          && resource.data.get('nextSigner', '') in ['engenheiro', 'gerente']
+          && request.resource.data.status in ['Aguardando assinaturas', 'Concluída']
+          && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'closedAt', 'techOpen', 'updatedAt', 'timeline'])
+          && resource.data.nextSigner in request.resource.data.signatures
+          && (u.perfil == 'Super Administrador' || p.get('osSignAs', 'none') == resource.data.nextSigner)
+          && osSees(u, p))
+        // TÉCNICO: "OK" no aviso "Assinadas pelo cliente" (só tira o aviso dele; qualquer situação da OS)
+        || (resource.data.get('cliSigned', '') == u.matricula && osChanged().hasOnly(['cliSigned']) && !('cliSigned' in request.resource.data))
+        // OS CONCLUÍDA: grava uma vez o resumo do custo (lista sem recalcular) — só quem vê valores
+        || (resource.data.status == 'Concluída' && !('costSnapshot' in resource.data)
+          && osChanged().hasOnly(['costSnapshot'])
+          && osPerm(u, p, 'view_costs') && osSees(u, p))
+        // Cancelar (motivo obrigatório; some do celular do técnico)
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && request.resource.data.status == 'Cancelada'
+          && request.resource.data.get('cancelReason', '').size() > 0
+          && osChanged().hasOnly(['status', 'cancelReason', 'cancelledAt', 'cancelledBy', 'pauses', 'techOpen', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data)
+          && osPerm(u, p, 'os_cancel') && osSees(u, p));
+    }
+    match /workOrders/{orderId} {
+      // Fila de assinatura ("GERÊNCIA|papel"): a gerência vem no próprio campo (a busca da fila não filtra por gerência)
+      allow get, list: if isStaff() && (osUnitOk() || resource.data.get('techOpen', '') == me().matricula
+        || resource.data.get('cliSigned', '') == me().matricula
+        || (resource.data.get('signQueue', '') != '' && resource.data.get('signQueue', '').split('[|]')[0] in myUnits()));
+      // Gerência da OS = a de quem abre; Super Administrador e gerência "Todas" escolhem (dentro do que enxergam)
+      allow create: if isStaff() && hasPermission('os_create')
+        && ((isSuperAdmin() || me().get('gerencia', '') == 'Todas')
+            ? (seesAllUnits() || request.resource.data.unit in myUnits())
+            : request.resource.data.unit == me().get('gerencia', ''))
+        && orderId == request.resource.data.number
+        && request.resource.data.get('company', '') is string && request.resource.data.get('company', '') != ''
+        && getAfter(/databases/$(database)/documents/counters/$('workOrders_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && (request.resource.data.status == 'Nova' || (request.resource.data.status == 'Em andamento' && hasPermission('os_assign')))
+        && (request.resource.data.status == 'Nova' || request.resource.data.get('techOpen', '') == request.resource.data.assignedTechnicianMatricula);
+      // O usuário e o perfil são lidos UMA vez e passados para os caminhos (o banco limita as contas por verificação).
+      // Cada caminho confere primeiro a situação da OS e os campos mudados e só depois o perfil.
+      allow update: if isStaff() && osUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // Imagens das assinaturas da OS (id = "OS_papel"); máx. 200 KB. O que vale (quem e quando) fica na OS, protegido acima.
+    match /workOrderSignatures/{sigId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff()
+        && sigId == request.resource.data.orderId + '_' + request.resource.data.role
+        && request.resource.data.role in ['tecnico', 'cliente', 'engenheiro', 'gerente']
+        && request.resource.data.image is string && request.resource.data.image.size() <= 204800
+        && (resource == null || request.resource.data.role in ['tecnico', 'cliente']);
+      allow delete: if false;
+    }
+
+    // Validação do cliente por link (id = código secreto). Leitura só de quem tem o código (sem login, sem listar).
+    // Criar o link: só quem tem "Enviar link de validação ao cliente".
+    // O cliente responde UMA vez (aprovada/contestada) e dentro do prazo do link.
+    match /osValidations/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isStaff() && hasPermission('os_client_link') && request.resource.data.status == 'pendente'
+        && request.resource.data.keys().hasOnly(['orderId', 'number', 'unit', 'intervencao', 'glpi', 'local', 'comarca', 'executedAt', 'team', 'summary', 'technician', 'status', 'expiresAt', 'createdAt', 'createdBy'])
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt < request.time + duration.value(61, 'd');
+      allow update: if resource.data.status == 'pendente' && request.time < resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'response'])
+        && request.resource.data.status in ['aprovada', 'contestada']
+        && request.resource.data.response.keys().hasOnly(['name', 'matricula', 'rating', 'reason', 'at', 'agent'])
+        && request.resource.data.response.name is string && request.resource.data.response.name.size() > 0 && request.resource.data.response.name.size() <= 120
+        && request.resource.data.response.matricula is string && request.resource.data.response.matricula.size() > 0 && request.resource.data.response.matricula.size() <= 40
+        && request.resource.data.response.get('reason', '').size() <= 2000
+        && request.resource.data.response.get('agent', '').size() <= 200
+        && (request.resource.data.status == 'contestada'
+            ? request.resource.data.response.get('reason', '').size() >= 5
+            : (request.resource.data.response.rating is int && request.resource.data.response.rating >= 1 && request.resource.data.response.rating <= 5));
+      allow delete: if false;
+    }
+
+    // 14. PEDIDOS DE MATERIAL DO MP (Fase 8B) — id = número "PM-AAAA-NNNN"; não se exclui.
+    // Técnico: pede para uma OS aberta dele (preventiva aberta; OS em andamento, pendente ou contestada), da empresa dele marcada com "Técnicos pedem
+    // material do MP"; vê os dele; marca "Retirei" (aprovado → atendido) e "Ciente" (reprovado).
+    // Quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material" vê os das suas gerências;
+    // "Aprovar / reprovar" decide os pendentes (aprovar: almoxarifado e nº da RM de cada item — a decisão guarda a lista das RMs
+    // e dos almoxarifados; o formato antigo, uma RM só, continua aceito; reprovar: motivo).
+    // Usuário e perfil lidos UMA vez e passados (com perfil de acesso, a versão antiga passava do limite de 1000 contas)
+    function mrStaffSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      return (osPerm(u, p, 'material_requests_view') || osPerm(u, p, 'material_requests_decide'))
+        && (osSees(u, p) || resource.data.get('mrPend', '') in (scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]));
+    }
+    function mrReadOk(u, p) {
+      return resource.data.get('techMr', '') == u.matricula || resource.data.techMatricula == u.matricula || mrStaffSees(u, p);
+    }
+    function mrUpdateOk(u, p) {
+      return
+        // APROVAR / REPROVAR (só pendente)
+        (resource.data.status == 'Pendente' && request.resource.data.status in ['Aprovado', 'Reprovado']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'items', 'decision', 'mrPend', 'updatedAt', 'timeline'])
+          && !('mrPend' in request.resource.data)
+          && request.resource.data.items.size() == resource.data.items.size()
+          && request.resource.data.decision.byMatricula == u.matricula
+          && (request.resource.data.status == 'Reprovado'
+              ? request.resource.data.decision.get('reason', '').size() >= 3
+              : ((request.resource.data.decision.get('warehouse', '') != '' && request.resource.data.decision.get('rm', '').matches('[0-9]+'))
+                || (request.resource.data.decision.get('rms', []).size() > 0
+                  && request.resource.data.decision.get('rms', []).size() <= request.resource.data.items.size()
+                  && request.resource.data.decision.rms.join(',').matches('[0-9]+(,[0-9]+)*')
+                  && request.resource.data.decision.get('warehouses', []).size() > 0)))
+          && osPerm(u, p, 'material_requests_decide') && osSees(u, p))
+        // TÉCNICO: "Retirei" (sai da tela dele)
+        || (resource.data.status == 'Aprovado' && request.resource.data.status == 'Atendido'
+          && resource.data.techMatricula == u.matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'pickedUpAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data))
+        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
+        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
+          && resource.data.techMatricula == u.matricula
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ackAt', 'techMr', 'updatedAt', 'timeline'])
+          && !('techMr' in request.resource.data));
+    }
+    function mrOrderOk(d) {
+      let o = d.orderKind == 'preventiva'
+        ? get(/databases/$(database)/documents/serviceOrders/$(d.orderId)).data
+        : get(/databases/$(database)/documents/workOrders/$(d.orderId)).data;
+      return d.orderKind in ['preventiva', 'os']
+        && o.get('techOpen', '') == me().matricula
+        && o.get('unit', '') == d.unit
+        && o.get('company', '') == d.company
+        && (d.orderKind == 'preventiva' || o.get('status', '') in ['Em andamento', 'Pendente', 'Contestada']);
+    }
+    match /materialRequests/{reqId} {
+      allow get, list: if isStaff() && mrReadOk(me(), osProfileOf(me()));
+      allow create: if isStaff()
+        && reqId == request.resource.data.number
+        && request.resource.data.status == 'Pendente'
+        && request.resource.data.techMatricula == me().matricula
+        && request.resource.data.techMr == me().matricula
+        && request.resource.data.mrPend == request.resource.data.unit
+        && !('decision' in request.resource.data)
+        && request.resource.data.company in me().get('companies', [])
+        && get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.get('requestsMpMaterial', false) == true
+        && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 60
+        && getAfter(/databases/$(database)/documents/counters/$('materialRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && mrOrderOk(request.resource.data);
+      allow update: if isStaff() && mrUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // 15. PEDIDOS DE INSUMOS (Fase 8C-2) — id = número "PI-AAAA-NNNN"; não se exclui.
+    // Técnico: pede para uma OS aberta dele (preventiva aberta; chamado em andamento, pendente ou contestado), da empresa dele
+    // marcada com "Técnicos pedem insumos", com o nº do GLPI (chamado: o da OS); vê os dele; "Recebi" (fornecido → recebido,
+    // só junto com a entrada dos insumos na OS) e "Ciente" (reprovado).
+    // Quem tem "Ver pedidos de insumos", "Confirmar pedidos de insumos" ou "Fornecer insumos" vê os das suas gerências;
+    // confirmar/reprovar (pendente) pede "Confirmar"; fornecer/recusar (confirmado) pede "Fornecer".
+    // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
+    function srStaffSees(u, p) {
+      let scope = p.get('unitScope', 'own');
+      let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
+      return (osPerm(u, p, 'supply_requests_view') || osPerm(u, p, 'supply_requests_confirm') || osPerm(u, p, 'supply_requests_supply'))
+        && (osSees(u, p) || resource.data.get('srConf', '') in mine || resource.data.get('srStore', '') in mine);
+    }
+    function srReadOk(u, p) {
+      return resource.data.get('techSr', '') == u.matricula || resource.data.techMatricula == u.matricula || srStaffSees(u, p);
+    }
+    function srChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function srUpdateOk(u, p) {
+      return
+        // CONFIRMAR (administrativo): vai para o almoxarifado
+        (resource.data.status == 'Pendente' && request.resource.data.status == 'Confirmado'
+          && srChanged().hasOnly(['status', 'confirmation', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && !('srConf' in request.resource.data) && request.resource.data.get('srStore', '') == resource.data.unit
+          && request.resource.data.confirmation.byMatricula == u.matricula
+          && osPerm(u, p, 'supply_requests_confirm') && osSees(u, p))
+        // REPROVAR (administrativo, pendente) ou RECUSAR (almoxarifado, confirmado): motivo obrigatório
+        || (resource.data.status in ['Pendente', 'Confirmado'] && request.resource.data.status == 'Reprovado'
+          && srChanged().hasOnly(['status', 'rejection', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && !('srConf' in request.resource.data) && !('srStore' in request.resource.data)
+          && request.resource.data.rejection.byMatricula == u.matricula
+          && request.resource.data.rejection.get('reason', '').size() >= 3
+          && osPerm(u, p, resource.data.status == 'Pendente' ? 'supply_requests_confirm' : 'supply_requests_supply') && osSees(u, p))
+        // FORNECER (almoxarifado): quantidade de cada item e o que entra na OS
+        || (resource.data.status == 'Confirmado' && request.resource.data.status == 'Fornecido'
+          && srChanged().hasOnly(['status', 'items', 'supply', 'osEntry', 'srStore', 'updatedAt', 'timeline'])
+          && !('srStore' in request.resource.data)
+          && request.resource.data.items.size() == resource.data.items.size()
+          && request.resource.data.supply.byMatricula == u.matricula
+          && request.resource.data.osEntry.number == resource.data.number
+          && request.resource.data.osEntry.glpi == resource.data.glpi
+          && request.resource.data.osEntry.items.size() > 0 && request.resource.data.osEntry.items.size() <= resource.data.items.size()
+          && osPerm(u, p, 'supply_requests_supply') && osSees(u, p))
+        // TÉCNICO: "Recebi" — só junto com a entrada dos insumos na OS (registro orderSupplies, mesmo pacote)
+        || (resource.data.status == 'Fornecido' && request.resource.data.status == 'Recebido'
+          && resource.data.techMatricula == u.matricula
+          && srChanged().hasOnly(['status', 'receivedAt', 'techSr', 'updatedAt', 'timeline'])
+          && !('techSr' in request.resource.data)
+          && getAfter(/databases/$(database)/documents/orderSupplies/$(resource.data.orderId)).data.entries.get(resource.data.number, null) == resource.data.osEntry)
+        // TÉCNICO: "Ciente" do reprovado (sai da tela dele)
+        || (resource.data.status == 'Reprovado' && request.resource.data.status == 'Reprovado'
+          && resource.data.techMatricula == u.matricula
+          && srChanged().hasOnly(['ackAt', 'techSr', 'updatedAt', 'timeline'])
+          && !('techSr' in request.resource.data));
+    }
+    function srOrderOk(d) {
+      let o = d.orderKind == 'preventiva'
+        ? get(/databases/$(database)/documents/serviceOrders/$(d.orderId)).data
+        : get(/databases/$(database)/documents/workOrders/$(d.orderId)).data;
+      return d.orderKind in ['preventiva', 'os']
+        && o.get('techOpen', '') == me().matricula
+        && o.get('unit', '') == d.unit
+        && o.get('company', '') == d.company
+        && (d.orderKind == 'preventiva'
+            || (o.get('status', '') in ['Em andamento', 'Pendente', 'Contestada'] && string(o.get('glpi', '')).replace('[^0-9]', '') == d.glpi));
+    }
+    match /supplyRequests/{reqId} {
+      allow get, list: if isStaff() && srReadOk(me(), osProfileOf(me()));
+      allow create: if isStaff()
+        && reqId == request.resource.data.number
+        && request.resource.data.status == 'Pendente'
+        && request.resource.data.techMatricula == me().matricula
+        && request.resource.data.techSr == me().matricula
+        && request.resource.data.srConf == request.resource.data.unit
+        && !('confirmation' in request.resource.data) && !('supply' in request.resource.data) && !('rejection' in request.resource.data)
+        && !('osEntry' in request.resource.data) && !('srStore' in request.resource.data)
+        && request.resource.data.glpi is string && request.resource.data.glpi.matches('[0-9]+') && request.resource.data.glpi.size() <= 30
+        && request.resource.data.company in me().get('companies', [])
+        && get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.get('requestsSupplies', false) == true
+        && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 60
+        && getAfter(/databases/$(database)/documents/counters/$('supplyRequests_' + string(request.resource.data.year))).data.last == request.resource.data.seq
+        && srOrderOk(request.resource.data);
+      allow update: if isStaff() && srUpdateOk(me(), osProfileOf(me()));
+      allow delete: if false;
+    }
+
+    // 15b. INSUMOS RECEBIDOS DA OS (id = id da OS; Fase 8C-2): a equipe lê (ficha, custo, PDF).
+    // Só cresce: o técnico acrescenta um pedido por vez, no "Recebi", exatamente o que o almoxarifado registrou.
+    function osupOk(orderId) {
+      let k = request.resource.data.last;
+      let r = getAfter(/databases/$(database)/documents/supplyRequests/$(k)).data;
+      return request.resource.data.keys().hasOnly(['orderId', 'entries', 'last', 'updatedAt'])
+        && request.resource.data.orderId == orderId
+        && (resource == null
+            ? request.resource.data.entries.keys().hasOnly([k])
+            : (!(k in resource.data.entries) && request.resource.data.entries.diff(resource.data.entries).affectedKeys().hasOnly([k])))
+        && r.status == 'Recebido' && r.orderId == orderId && r.techMatricula == me().matricula
+        && request.resource.data.entries[k] == r.osEntry;
+    }
+    match /orderSupplies/{orderId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && osupOk(orderId);
+      allow delete: if false;
+    }
+
+    // 16. QUADRO DE AVISOS (Fase 9A): todo usuário ativo lê (o app mostra só os da pessoa: gerência, empresa e público).
+    // Publica quem tem "Publicar avisos", só para as gerências do perfil ("*" = todas as gerências: só quem vê todas).
+    // Usuário (u) e perfil (p) lidos uma vez só, como nas OS (o banco limita 1.000 contas por verificação).
+    function ntUnitsOk(u, p, units) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      return all || (!('*' in units) && units.hasOnly(scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')]));
+    }
+    function ntWriteOk(u, p) {
+      let d = request.resource.data;
+      return osPerm(u, p, 'notices_publish')
+        && d.keys().hasOnly(['title', 'text', 'kind', 'pinned', 'units', 'companies', 'audience', 'until', 'hasImage', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 150
+        && d.text is string && d.text.size() > 0 && d.text.size() <= 5000
+        && d.kind in ['urgente', 'atencao', 'info']
+        && d.audience in ['todos', 'tecnicos', 'escritorio']
+        && d.pinned is bool
+        && d.units is list && d.units.size() > 0 && d.units.size() <= 50
+        && d.companies is list && d.companies.size() <= 50
+        && d.until is string && d.until.size() == 10
+        && ntUnitsOk(u, p, d.units)
+        && (resource == null || ntUnitsOk(u, p, resource.data.units));
+    }
+    function ntDeleteOk(u, p) {
+      return osPerm(u, p, 'notices_publish') && ntUnitsOk(u, p, resource.data.units);
+    }
+    match /notices/{noticeId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && ntWriteOk(me(), osProfileOf(me()));
+      allow delete: if isStaff() && ntDeleteOk(me(), osProfileOf(me()));
+      // "Li e estou ciente" (urgentes): cada um grava o seu, uma vez; quem publica vê a lista (e apaga junto com o aviso)
+      match /reads/{matricula} {
+        allow get: if isStaff() && (matricula == me().matricula || hasPermission('notices_publish'));
+        allow list: if isStaff() && hasPermission('notices_publish');
+        allow create: if isStaff() && matricula == me().matricula
+          && request.resource.data.keys().hasOnly(['matricula', 'name', 'at'])
+          && request.resource.data.matricula == matricula
+          && exists(/databases/$(database)/documents/notices/$(noticeId));
+        allow update: if false;
+        allow delete: if isStaff() && hasPermission('notices_publish');
+      }
+    }
+    // Foto do aviso (id = id do aviso), comprimida no aparelho
+    match /noticeImages/{noticeId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && hasPermission('notices_publish')
+        && request.resource.data.keys().hasOnly(['data', 'mime', 'at'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000
+        && request.resource.data.mime in ['image/jpeg', 'image/png', 'image/webp'];
+      allow delete: if isStaff() && hasPermission('notices_publish');
+    }
+
+    // 17. HISTÓRICO GLPI (Fase 9B): o painel em HTML, compactado e em pedaços. Vê quem tem "Ver Histórico GLPI";
+    // troca quem tem "Atualizar Histórico GLPI" (o painel novo substitui o anterior para todos).
+    function glpiReader() {
+      return isStaff() && (hasPermission('glpi_view') || hasPermission('glpi_manage'));
+    }
+    match /glpiPanel/{docId} {
+      allow read: if glpiReader();
+      allow write: if isStaff() && hasPermission('glpi_manage');
+    }
+    match /glpiPanelChunks/{chunkId} {
+      allow read: if glpiReader();
+      allow create: if isStaff() && hasPermission('glpi_manage')
+        && request.resource.data.keys().hasOnly(['data', 'version', 'n'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000;
+      allow update: if false;
+      allow delete: if isStaff() && hasPermission('glpi_manage');
     }
 
     // 11. BLOQUEIO DE QUALQUER COLEÇÃO NÃO MAPEADA

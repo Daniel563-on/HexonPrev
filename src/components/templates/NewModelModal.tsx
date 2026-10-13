@@ -187,3 +187,4 @@ export default function NewModelModal({ unit, isSurveyUnit, assetTypes, template
     </div>
   );
 }
+

@@ -259,18 +259,18 @@ export default function OsSignaturePad({ role, signer, title, client, onConfirm,
               </div>
             )}
             <div className="flex-1 min-w-0 flex items-center justify-center">
-              <canvas
-                ref={canvasRef}
-                width={W}
-                height={H}
-                onPointerDown={down}
-                onPointerMove={move}
-                onPointerUp={up}
-                onPointerCancel={up}
-                className="w-full max-h-full bg-white rounded-xl border-2 border-dashed touch-none cursor-crosshair"
-                style={{ aspectRatio: `${W} / ${H}`, borderColor: color }}
-                aria-label="Quadro de assinatura"
-              />
+            <canvas
+              ref={canvasRef}
+              width={W}
+              height={H}
+              onPointerDown={down}
+              onPointerMove={move}
+              onPointerUp={up}
+              onPointerCancel={up}
+              className="w-full max-h-full bg-white rounded-xl border-2 border-dashed touch-none cursor-crosshair"
+              style={{ aspectRatio: `${W} / ${H}`, borderColor: color }}
+              aria-label="Quadro de assinatura"
+            />
             </div>
           </div>
           {msg && <p className="px-4 text-xs font-bold text-rose-600">{msg}</p>}

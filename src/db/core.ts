@@ -371,6 +371,8 @@ export function getDatabaseMode(): {
   };
 }
 
+
+
 // GRAVAÇÃO SEM INTERNET (Etapa 7): o banco guarda a gravação no aparelho e envia sozinho quando a internet volta,
 // mas só avisa "gravado" depois que o servidor confirma. Para a tela não ficar presa, espera a confirmação por
 // poucos segundos; sem resposta, considera "salvo no aparelho" (a gravação continua na fila e sobe depois).
@@ -402,6 +404,3 @@ export async function awaitWrite(write: Promise<unknown>, ms = 4000): Promise<'s
     clearTimeout(timer);
   }
 }
-
-
-

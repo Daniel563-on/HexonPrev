@@ -34,6 +34,7 @@ export default function HomeTeam(props: {
   const [techs, setTechs] = useState<Tech[] | null>(null);
   const [calls, setCalls] = useState<WorkOrder[]>([]);
   const [all, setAll] = useState(false);
+
   // Técnicos ativos das gerências (cópia no aparelho; cadastro novo ou alterado chega sozinho)
   useEffect(() => {
     let alive = true;
@@ -78,6 +79,7 @@ export default function HomeTeam(props: {
       })
       .sort((a, b) => b.load - a.load || a.t.name.localeCompare(b.t.name));
   }, [techs, calls, orders]);
+
   const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '');
   const busy = rows ? rows.filter((r) => r.load > 0) : [];
   const free = rows ? rows.filter((r) => r.load === 0) : [];

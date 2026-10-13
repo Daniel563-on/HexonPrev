@@ -81,19 +81,19 @@ export default function Navbar({
         )}
         {/* Título e gerência: no celular um embaixo do outro (lado a lado, encostavam nos botões da direita) */}
         <div className="flex flex-col items-start gap-0.5 min-w-0 sm:flex-row sm:items-center sm:gap-4">
-        <h2 className="max-w-full text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
-        {unitOptions && unitOptions.length > 0 && onActiveUnitChange && (
-          <select
-            value={activeUnit || ''}
-            onChange={(e) => onActiveUnitChange(e.target.value)}
-            title="Gerência exibida"
-            className="h-7 sm:h-8 max-w-[9rem] sm:max-w-none px-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 cursor-pointer"
-          >
-            {unitOptions.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        )}
+          <h2 className="max-w-full text-sm xs:text-base sm:text-lg font-extrabold font-sans tracking-tight text-slate-900 dark:text-white truncate pr-1">{tabTitle}</h2>
+          {unitOptions && unitOptions.length > 0 && onActiveUnitChange && (
+            <select
+              value={activeUnit || ''}
+              onChange={(e) => onActiveUnitChange(e.target.value)}
+              title="Gerência exibida"
+              className="h-7 sm:h-8 max-w-[9rem] sm:max-w-none px-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 cursor-pointer"
+            >
+              {unitOptions.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

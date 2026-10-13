@@ -1,7 +1,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 initializeApp();
 const DB_ID = 'ai-studio-f520b7fc-edf5-4548-b2db-299670f2da9a';
@@ -106,32 +106,61 @@ function computeDeadlineStatus(o, todayStr) {
   return o.status;
 }
 
-// 1) ROTINA DE PRAZOS — todo dia às 02:00
+// 1) ROTINA DE PRAZOS — todo dia às 00:00 (logo que o dia vira: prazo vencido ontem já não pode ser executado)
 // Marca "Atrasada" (janela do técnico venceu) e "Não Executada" (período do Super Admin venceu).
-exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 2 * * *' }, async () => {
+exports.dailyDeadlines = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '0 0 * * *' }, async () => {
   const today = todayBR();
-  const snap = await db.collection('serviceOrders').where('status', 'in', OPEN_STATUSES).get();
+  // Lê só as OS que podem mudar hoje (não todas as abertas):
+  // a) abertas com o prazo do Super Admin vencido  -> "Não Executada"  (campo de controle openEnd, índice esparso)
+  // b) "Planejada" com o dia programado já passado -> "Atrasada"       (campo de controle plannedEnd, índice esparso)
+  // (Atrasada remarcada e Não Executada com prazo prorrogado são acertadas pelo app ao gravar a OS.)
+  const [expiredSnap, lateSnap] = await Promise.all([
+    db.collection('serviceOrders').where('openEnd', '<', today).get(),
+    db.collection('serviceOrders').where('plannedEnd', '<', today).get()
+  ]);
+  const seen = new Set();
+  const docs = [...expiredSnap.docs, ...lateSnap.docs].filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
+  const snap = { docs, size: docs.length };
+  // OS em execução agora (registro de início): não vira "Atrasada"; se o período venceu, vira
+  // "Não Executada" e o início é apagado (sai da execução do técnico)
+  const startsSnap = await db.collection('orderStarts').get();
+  const started = new Set(startsSnap.docs.map((d) => d.id));
   const updatedAt = new Date().toISOString();
   let batch = db.batch();
   let pending = 0;
   let changed = 0;
+  let closedStarts = 0;
   for (const d of snap.docs) {
     const o = d.data();
     const status = computeDeadlineStatus(o, today);
     if (status === o.status) continue;
-    const fields = { status, updatedAt };
+    if (status === 'Atrasada' && started.has(d.id)) continue;
+    const fields = { status, updatedAt, syncAt: FieldValue.serverTimestamp() };
+    // Campos de controle (mesma regra do app, src/db/orderControl.ts): fechada perde os de OS aberta;
+    // Atrasada deixa de ser "Planejada"
+    if (status === 'Não Executada') {
+      for (const k of ['unitOpen', 'openEnd', 'plannedEnd', 'techOpen']) fields[k] = FieldValue.delete();
+    } else if (status === 'Atrasada') {
+      fields.plannedEnd = FieldValue.delete();
+    }
     // Mês de encerramento: a OS "Não Executada" conta no mês em que terminou o período
     if (status === 'Não Executada') fields.closedMonth = (o.endDate || today).slice(0, 7);
     batch.update(d.ref, fields);
+    pending++;
     changed++;
-    if (++pending === 400) {
+    if (status === 'Não Executada' && started.has(d.id)) {
+      batch.delete(db.doc(`orderStarts/${d.id}`));
+      pending++;
+      closedStarts++;
+    }
+    if (pending >= 400) {
       await batch.commit();
       batch = db.batch();
       pending = 0;
     }
   }
   if (pending > 0) await batch.commit();
-  console.log(`[Prazos] ${today}: ${snap.size} OS abertas verificadas, ${changed} atualizadas.`);
+  console.log(`[Prazos] ${today}: ${snap.size} OS candidatas lidas, ${changed} atualizadas, ${closedStarts} em execução encerradas.`);
 });
 
 // Resultado da OS para os gráficos (mesma regra do Dashboard):
@@ -151,10 +180,10 @@ function sectorToken(value) {
     .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase() || 'SEM_GERENCIA';
 }
 
-// 2) FECHAMENTO DO MÊS — dia 1º às 03:30 (depois da rotina de prazos)
+// 2) FECHAMENTO DO MÊS — dia 1º às 00:10 (logo depois da rotina de prazos das 00:00)
 // Grava o resumo congelado do mês anterior. O mês da OS é o mês em que termina o período do
 // Super Admin (endDate). Um documento por gerência: monthlySummaries/{AAAA-MM}__{GERENCIA}.
-exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '30 3 1 * *' }, async () => {
+exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '10 0 1 * *' }, async () => {
   const [y, m] = todayBR().split('-').map(Number);
   const prev = new Date(Date.UTC(y, m - 2, 1));
   const month = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -168,7 +197,7 @@ exports.monthlyClosing = onSchedule({ ...SCHEDULE_OPTIONS, schedule: '30 3 1 * *
   for (const d of snap.docs) {
     const o = d.data();
     if (o.status === 'Cancelada') continue; // OS cancelada (ativo baixado) não entra nas estatísticas
-    const sector = o.sector || 'Sem gerência';
+    const sector = o.unit || o.sector || 'Sem gerência'; // gerência da OS (o mesmo que o Dashboard filtra)
     if (!bySector.has(sector)) bySector.set(sector, new Map());
     const rows = bySector.get(sector);
     const row = {

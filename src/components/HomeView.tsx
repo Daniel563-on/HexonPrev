@@ -235,6 +235,7 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
           </div>
         )}
       </div>
+
       {/* 4. PREVENTIVAS E VISTORIAS */}
       {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} onOpen={openPreventives} />}
 
@@ -245,4 +246,3 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
     </div>
   );
 }
-

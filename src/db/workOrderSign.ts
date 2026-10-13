@@ -385,16 +385,6 @@ export function subscribeClientSignedOrders(matricula: string, onChange: (list: 
     }
   );
 }
-export async function dbGetClientSignedOrders(matricula: string): Promise<WorkOrder[]> {
-  if (!firebaseActive || !dbInstance || !matricula) return [];
-  try {
-    const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('cliSigned', '==', matricula)));
-    return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id }));
-  } catch (err: any) {
-    checkQuotaException(err);
-    throw err;
-  }
-}
 export async function dbDismissClientSigned(o: WorkOrder): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await updateDoc(doc(dbInstance, 'workOrders', o.id), { cliSigned: deleteField() });
