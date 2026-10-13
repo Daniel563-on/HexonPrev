@@ -25,9 +25,9 @@ export function Shell({
   width?: string;
 }) {
   return (
-    <div className="fixed inset-0 z-[1400] bg-slate-900/60 flex items-start md:items-center justify-center p-3 overflow-y-auto">
-      <div className={`w-full ${width} rounded-2xl bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden`} style={{ borderTop: '4px solid #4f46e5' }}>
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-[1400] bg-slate-900/60 flex items-center justify-center p-3">
+      <div className={`w-full ${width} max-h-full flex flex-col rounded-2xl bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden`} style={{ borderTop: '4px solid #4f46e5' }}>
+        <div className="shrink-0 px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
             <p className="text-[11px] text-slate-500">{sub}</p>
@@ -36,8 +36,8 @@ export function Shell({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-5 space-y-3 text-xs">{children}</div>
-        <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap justify-between gap-2">{footer}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3 text-xs">{children}</div>
+        <div className="shrink-0 px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap justify-between gap-2">{footer}</div>
       </div>
     </div>
   );

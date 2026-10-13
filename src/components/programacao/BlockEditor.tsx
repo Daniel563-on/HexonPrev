@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, Lock, MapPin, Moon, Search, Star, Trash2, Users, Wrench } from 'lucide-react';
 import { DayMarkKind, HexonUser, PlanningLot, ServiceOrder, WorkOrder } from '../../types';
 import { dbRemoveBlock, dbSaveBlock, WeekKey } from '../../db/firebase';
@@ -81,6 +81,12 @@ export default function BlockEditor(props: Props) {
   const [askRemove, setAskRemove] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [tries, setTries] = useState(0);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // Só o meio da janela rola: ao salvar com erro, leva até a mensagem (fica no fim do formulário)
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [error, tries]);
 
   const candidates = useMemo(() => orders.filter((o) => o.status === 'Novo' && !!localK && localKey(o) === localK && (!lot || o.lotId !== lot.id)), [orders, localK, lot]);
   const items = useMemo(() => [...lotOrders, ...candidates], [lotOrders, candidates]);
@@ -190,6 +196,7 @@ export default function BlockEditor(props: Props) {
 
   const save = async () => {
     setError('');
+    setTries((n) => n + 1);
     if (!teamObj) return setError('Escolha a equipe.');
     if (!localK) return setError('Escolha o local.');
     if (!s || !e) return setError('Escolha os dias do bloco.');
@@ -243,6 +250,7 @@ export default function BlockEditor(props: Props) {
     if (!lot) return;
     setSaving(true);
     setError('');
+    setTries((n) => n + 1);
     try {
       const editableLot = lotOrders.filter(editable);
       const chs = lotWos.length ? `; ${lotWos.length} chamado(s) perderam o dia` : '';
@@ -633,7 +641,11 @@ export default function BlockEditor(props: Props) {
               <input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={300} disabled={!!readOnly} placeholder="Ex.: hotel reservado" className={input} />
             </label>
           </div>
-          {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+          {error && (
+            <p ref={errorRef} className="text-xs font-bold text-rose-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="space-y-3 self-start">

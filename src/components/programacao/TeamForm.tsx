@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Trash2, X } from 'lucide-react';
 import { OrderParticipant, UsualTeam } from '../../types';
 import { UnitPersonInfo } from '../../db/firebase';
@@ -28,6 +28,12 @@ export default function TeamForm({ team, teams, people, companyName, stamp, next
   const [members, setMembers] = useState<OrderParticipant[]>(team?.members || []);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [tries, setTries] = useState(0);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // Só o meio da janela rola: ao salvar com erro, leva até a mensagem (fica no fim do formulário)
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [error, tries]);
   const [askDelete, setAskDelete] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -51,6 +57,7 @@ export default function TeamForm({ team, teams, people, companyName, stamp, next
 
   const submit = async () => {
     setError('');
+    setTries((n) => n + 1);
     if (!name.trim()) return setError('Dê um nome para a equipe.');
     if (!resp) return setError('Escolha o responsável.');
     if (search.trim()) return setError('Escolha a pessoa na lista da busca (ou apague o texto) antes de salvar.');
@@ -88,9 +95,9 @@ export default function TeamForm({ team, teams, people, companyName, stamp, next
   const input = 'w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold';
   const respPlace = resp ? placeOf(resp) : null;
   return (
-    <div className="fixed inset-0 z-[1400] bg-slate-900/60 flex items-start md:items-center justify-center p-3 overflow-y-auto">
-      <div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden" style={{ borderTop: '4px solid #4f46e5' }}>
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-[1400] bg-slate-900/60 flex items-center justify-center p-3">
+      <div className="w-full max-w-3xl max-h-full flex flex-col rounded-2xl bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden" style={{ borderTop: '4px solid #4f46e5' }}>
+        <div className="shrink-0 px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-slate-900 dark:text-white">{team ? `Editar equipe — ${teamLabel(team)}` : 'Nova equipe'}</p>
             <p className="text-[11px] text-slate-500">{companyName} · é a equipe habitual do responsável: entra sozinha nas OS e preventivas dele.</p>
@@ -100,7 +107,7 @@ export default function TeamForm({ team, teams, people, companyName, stamp, next
           </button>
         </div>
 
-        <div className="p-5 space-y-4 text-xs">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4 text-xs">
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="block font-black text-slate-800 dark:text-slate-200 mb-1">Nome da equipe</span>
@@ -206,10 +213,14 @@ export default function TeamForm({ team, teams, people, companyName, stamp, next
           <p className="text-[11px] text-slate-500">
             Uma pessoa fica em <b>uma equipe só</b>. Trocar alguém aqui muda a equipe de agora em diante. Na OS ou na preventiva o técnico ainda pode tirar ou colocar gente.
           </p>
-          {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+          {error && (
+            <p ref={errorRef} className="text-xs font-bold text-rose-600">
+              {error}
+            </p>
+          )}
         </div>
 
-        <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap justify-between gap-2">
+        <div className="shrink-0 px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap justify-between gap-2">
           {team ? (
             askDelete ? (
               <span className="flex items-center gap-2">
