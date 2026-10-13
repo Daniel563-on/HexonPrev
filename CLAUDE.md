@@ -5,7 +5,7 @@
 Resumo do essencial (detalhes no documento):
 - Usuário não programa: conversa em português, respostas diretas, sem inventar; desenhar e pedir aprovação antes de programar.
 - Desenvolver no ramo `claude/analise-codigo-npm-dev-oqclzj`; rodar `npx tsc --noEmit` e `npm run build`; commit e push.
-- Entregar trechos (.md "Trocar / Por" ou arquivo inteiro) conferidos contra `origin/main`; o usuário aplica no Google AI Studio e faz commit no `main`. **Cada parte com no máximo ~2.000 caracteres e um arquivo do sistema por parte** (o AI Studio corta partes maiores). Conferir depois do commit: `git fetch -q origin main && git diff --stat -w origin/main HEAD -- src index.html`.
+- **Entrega direto no `main` (desde 13/10/2026; não se mandam mais trechos para o AI Studio):** depois de todos os testes, dizer ao usuário o resultado (números), o que muda, os índices novos e o texto das regras, e **pedir autorização para enviar ao `main`**. Só com o "autorizo" dele: conferir se o `main` mudou (`git fetch origin main`; se mudou, juntar e testar de novo), fazer o `main` andar até o ramo (`git push origin HEAD:main`, sem forçar) e manter o ramo igual ao `main`. O usuário puxa no Google AI Studio, confere no preview e faz o deploy.
 - Regras do banco são publicadas à mão no Console (aba Segurança): mandar o texto completo no chat.
 - Todo arquivo novo em `src/db` deve importar o Firestore de `./guard` (disjuntor); operação que grava/lê muito de uma vez deve usar `runBulk`.
 - Banco Firestore Enterprise: custo por unidades de leitura/gravação e por entrada de índice; preferir índices esparsos e campos de controle (`src/db/orderControl.ts`).
