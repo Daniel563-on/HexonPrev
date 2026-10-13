@@ -488,6 +488,11 @@ service cloud.firestore {
     function osSameStatus() {
       return request.resource.data.status == resource.data.status;
     }
+    // Dia programado / bloco (Fase 7C-2): ao atribuir, trocar ou desatribuir pela lista, ou não mexe, ou apaga os três
+    function osDayCleared() {
+      return !osChanged().hasAny(['scheduledDate', 'scheduledEndDate', 'lotId'])
+        || (!('scheduledDate' in request.resource.data) && !('scheduledEndDate' in request.resource.data) && !('lotId' in request.resource.data));
+    }
     // Versões "leves" (usuário e perfil já lidos) para a atualização da OS
     function osProfileOf(u) {
       return u.get('profileId', '') != '' && exists(/databases/$(database)/documents/profiles/$(u.get('profileId', '')))
@@ -513,16 +518,28 @@ service cloud.firestore {
           && osPerm(u, p, 'os_edit') && osSees(u, p))
         // DESATRIBUIR ("Atribuir técnico"): só se o técnico não começou (sem execução salva, nunca Pendente); volta para "Nova"
         || (osStatusFrom('Em andamento', 'Nova') && !('exec' in resource.data) && resource.data.get('pauses', []).size() == 0
-          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
-          && !('techOpen' in request.resource.data) && !('assignedTechnicianMatricula' in request.resource.data)
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'scheduledDate', 'scheduledEndDate', 'lotId', 'updatedAt', 'timeline'])
+          && !('techOpen' in request.resource.data) && !('assignedTechnicianMatricula' in request.resource.data) && osDayCleared()
           && osPerm(u, p, 'os_assign') && osSees(u, p))
-        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico)
+        // Atribuir / trocar técnico (a OS passa a aparecer só para o novo técnico; o dia do bloco do outro técnico sai junto)
         || (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
           && (osSameStatus() || osStatusFrom('Nova', 'Em andamento'))
-          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'updatedAt', 'timeline'])
-          && 'assignedTechnicianMatricula' in osChanged()
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'scheduledDate', 'scheduledEndDate', 'lotId', 'updatedAt', 'timeline'])
+          && 'assignedTechnicianMatricula' in osChanged() && osDayCleared()
           && request.resource.data.techOpen == request.resource.data.assignedTechnicianMatricula
           && osPerm(u, p, 'os_assign') && osSees(u, p))
+        // PROGRAMAR (Fase 7C-2, bloco da Programação): dia programado e bloco; atribui (Nova → Em andamento) ou traz de outro
+        // técnico que ainda não começou; tirado do bloco, perde o dia e continua com o técnico. "Programar" ou "Atribuir técnico"
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente']
+          && request.resource.data.status in ['Em andamento', 'Pendente']
+          && (osSameStatus() || osStatusFrom('Nova', 'Em andamento'))
+          && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'scheduledDate', 'scheduledEndDate', 'lotId', 'updatedAt', 'timeline'])
+          && osChanged().hasAny(['scheduledDate', 'scheduledEndDate', 'lotId'])
+          && request.resource.data.get('techOpen', '') == request.resource.data.get('assignedTechnicianMatricula', '-')
+          && request.resource.data.get('scheduledDate', '') is string && request.resource.data.get('lotId', '') is string
+          && (!('assignedTechnicianMatricula' in osChanged()) || resource.data.status == 'Nova'
+              || (!('exec' in resource.data) && resource.data.get('pauses', []).size() == 0))
+          && (osPerm(u, p, 'prog_edit') || osPerm(u, p, 'os_assign')) && osSees(u, p))
         // Técnico atribuído: salvar a execução, Pendente e Retomar; o escritório (quem atribui) só deixa pendente / retoma.
         // Depois da assinatura do técnico a execução não muda (contestada sem assinatura guardada = formato antigo)
         || ((resource.data.status in ['Em andamento', 'Pendente'] || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') == ''))

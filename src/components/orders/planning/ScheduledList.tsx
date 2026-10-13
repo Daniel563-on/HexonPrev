@@ -112,7 +112,7 @@ export default function ScheduledList({ orders, technicians, lots, overnightRate
             return (
               <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px]">
                 <span className="font-bold text-slate-700">
-                  {l.technicianName} • {dayBR(l.periodStart)}{l.periodEnd !== l.periodStart ? ` a ${dayBR(l.periodEnd)}` : ''} • {l.orderIds.length} OS
+                  {l.technicianName} • {dayBR(l.periodStart)}{l.periodEnd !== l.periodStart ? ` a ${dayBR(l.periodEnd)}` : ''} • {l.orderIds.length} OS{l.woIds?.length ? ` + ${l.woIds.length} chamado(s)` : ''}
                 </span>
                 <span className="text-slate-600">
                   {l.overnight ? `${l.overnight.people} pessoa(s) × ${l.overnight.nights} pernoite(s)` : 'Sem pernoite'}

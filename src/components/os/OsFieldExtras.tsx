@@ -15,6 +15,7 @@ interface Props {
   onChange: (next: { overtime?: WorkOrderOvertimeDay[] | null; overnightNights?: number | null }) => void;
   extra?: boolean; // resposta à contestação: lança só o que for A MAIS (soma ao que já está na OS)
   company?: string; // empresa da OS
+  plannedOvernight?: { nights: number; text: string } | null; // chamado em bloco da Programação: pernoite do planejador (Fase 7C-2)
 }
 
 const today = () => {
@@ -45,7 +46,7 @@ function YesNo({ value, onChange, disabled }: { value: boolean; onChange: (v: bo
   );
 }
 
-export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange, extra, company }: Props) {
+export default function OsFieldExtras({ editable, team, overtime, overnightNights, onChange, extra, company, plannedOvernight }: Props) {
   const [rules, setRules] = useState<OvertimeRules[]>([]);
   const [tracks, setTracks] = useState<boolean | null>(null);
   useEffect(() => {
@@ -151,7 +152,19 @@ export default function OsFieldExtras({ editable, team, overtime, overnightNight
         )}
       </div>
 
-      {/* PERNOITE */}
+      {/* PERNOITE: no chamado de um bloco da Programação, vem da viagem informada pelo planejador (só leitura) */}
+      {plannedOvernight ? (
+        <div className={`${card} bg-slate-50`}>
+          <div className="flex items-start gap-2">
+            <Hotel className="w-4 h-4 text-rose-500 mt-0.5" />
+            <div>
+              <p className="text-xs font-black text-slate-800">Pernoite</p>
+              <p className="text-sm font-black text-slate-900">{plannedOvernight.text}</p>
+              <p className="text-[10px] text-slate-500">Informado pelo planejador (bloco da Programação). Você não lança pernoite nesta OS.</p>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className={card}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
@@ -177,6 +190,7 @@ export default function OsFieldExtras({ editable, team, overtime, overnightNight
           </label>
         )}
       </div>
+      )}
     </div>
   );
 }

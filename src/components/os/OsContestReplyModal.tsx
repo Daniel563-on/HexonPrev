@@ -131,7 +131,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
               )}
               <div className={section}>
                 <p className="text-xs font-black text-slate-800">Equipe (quem já está não sai; pode acrescentar)</p>
-                <OsTeamPicker unit={order.unit} executor={executor} executorTag="(técnico)" team={team} editable locked={locked} onChange={setTeam} />
+                <OsTeamPicker unit={order.unit} company={order.company} executor={executor} executorTag="(técnico)" team={team} editable locked={locked} onChange={setTeam} />
               </div>
               <div className={section}>
                 <p className="text-xs font-black text-slate-800">Materiais a mais (mesmo material soma à quantidade já lançada)</p>
@@ -152,6 +152,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
                 team={team}
                 overtime={overtime}
                 overnightNights={overnight}
+                plannedOvernight={order.lotId ? { nights: 0, text: 'Pernoite da viagem (bloco da Programação)' } : null}
                 onChange={(next) => {
                   if ('overtime' in next) setOvertime(next.overtime ?? null);
                   if ('overnightNights' in next) setOvernight(next.overnightNights ?? null);

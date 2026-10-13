@@ -16,7 +16,9 @@ import {
   updateDoc,
   where,
   arrayUnion,
-  deleteField
+  arrayRemove,
+  deleteField,
+  writeBatch
 } from './guard';
 import { OsLocationAnswer, OsStage, OsSystemField, OsSystemKey, OsTemplate, OsTemplateField, WorkOrder, WorkOrderEvent, WorkOrderExec, WorkOrderPause } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
@@ -369,15 +371,21 @@ export async function dbAssignWorkOrder(order: WorkOrder, tech: { matricula: str
       ? `Técnico trocado: ${order.assignedTechnicianName} → ${tech.name} (${tech.matricula})`
       : `Atribuída a ${tech.name} (${tech.matricula})`
   };
-  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+  // Trocar o técnico de um chamado que estava num bloco da Programação: o dia era do bloco do outro técnico e sai junto (Fase 7C-2)
+  const leaveBlock = tech.matricula !== order.assignedTechnicianMatricula && (!!order.lotId || !!order.scheduledDate);
+  const batch = writeBatch(dbInstance);
+  batch.update(doc(dbInstance, 'workOrders', order.id), {
     status: order.status === 'Nova' ? 'Em andamento' : order.status,
     assignedTechnicianMatricula: tech.matricula,
     assignedTechnicianName: tech.name,
     techOpen: tech.matricula, // o técnico anterior deixa de ver a OS; o novo continua de onde parou
     ...(order.status === 'Nova' ? { assignedAt: serverTimestamp() } : {}),
+    ...(leaveBlock ? { scheduledDate: deleteField(), scheduledEndDate: deleteField(), lotId: deleteField() } : {}),
     updatedAt: now,
     timeline: arrayUnion(cleanUndefined(event))
   });
+  if (leaveBlock && order.lotId) batch.set(doc(dbInstance, 'planningLots', order.lotId), { woIds: arrayRemove(order.id), updatedAt: now }, { merge: true });
+  await batch.commit();
 }
 
 // ===== Editar enquanto "Nova" e desatribuir (etapa especial E4) =====
@@ -416,15 +424,20 @@ export async function dbUnassignWorkOrder(order: WorkOrder, by: string): Promise
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   if (order.status !== 'Em andamento' || osTechStarted(order)) throw new Error('O técnico já começou: não dá para desatribuir.');
   const now = new Date().toISOString();
-  await updateDoc(doc(dbInstance, 'workOrders', order.id), {
+  const batch = writeBatch(dbInstance);
+  batch.update(doc(dbInstance, 'workOrders', order.id), {
     status: 'Nova',
     assignedTechnicianMatricula: deleteField(),
     assignedTechnicianName: deleteField(),
     assignedAt: deleteField(),
     techOpen: deleteField(),
+    // Sem técnico, sem dia: sai do bloco da Programação (Fase 7C-2)
+    ...(order.lotId || order.scheduledDate ? { scheduledDate: deleteField(), scheduledEndDate: deleteField(), lotId: deleteField() } : {}),
     updatedAt: now,
     timeline: arrayUnion(cleanUndefined({ at: now, by, action: `Técnico desatribuído: ${order.assignedTechnicianName || order.assignedTechnicianMatricula} (a OS voltou para "Nova")` }))
   });
+  if (order.lotId) batch.set(doc(dbInstance, 'planningLots', order.lotId), { woIds: arrayRemove(order.id), updatedAt: now }, { merge: true });
+  await batch.commit();
 }
 
 // ===== Execução (Fase 5) =====

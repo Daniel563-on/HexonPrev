@@ -1,5 +1,5 @@
-import { arrayRemove, arrayUnion, collection, deleteField, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from './guard';
-import { PlanningLot, ServiceOrder, WeekLogEntry, WeekVisit } from '../types';
+import { arrayRemove, arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from './guard';
+import { PlanningLot, ServiceOrder, WeekLogEntry, WeekVisit, WorkOrder } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined } from './core';
 import { timelineEvent } from './executionTeam';
 import { orderControlUpdate } from './orderControl';
@@ -9,6 +9,8 @@ import { weekPlanId } from './weekPlans';
 // com equipe, local, dias, noites fora e observação. Salvar faz com as preventivas o mesmo que o lote do PMOC
 // (Planejada, técnico e dias); tirar uma preventiva do bloco a devolve para "Novo". Tudo num pacote só (tudo ou nada),
 // com uma linha no histórico da semana (weekPlans.log).
+// Fase 7C-2: chamados GLPI no bloco — ganham o técnico (Nova → Em andamento) e o dia programado; tirado do bloco,
+// o chamado perde o dia e continua com o técnico (resposta do usuário em 13/10/2026).
 
 export type WeekKey = { unit: string; company: string; weekStart: string };
 
@@ -62,6 +64,37 @@ function revertFields(o: ServiceOrder, now: string, by: string, note: string) {
   };
 }
 
+// Chamado no bloco: técnico do bloco (se ainda não for dele) + dia programado + bloco; ou só perde o dia
+function woPlanFields(w: WorkOrder, s: string, e: string, tech: { name: string; matricula: string }, lotId: string, now: string, by: string, where_: string) {
+  const newTech = w.assignedTechnicianMatricula !== tech.matricula;
+  const action = w.status === 'Nova' ? `Atribuída a ${tech.name} (${tech.matricula}) pela Programação` : newTech ? `Técnico trocado pela Programação: ${w.assignedTechnicianName || '—'} → ${tech.name} (${tech.matricula})` : 'Dia programado pela Programação';
+  return {
+    status: w.status === 'Nova' ? 'Em andamento' : w.status,
+    ...(newTech ? { assignedTechnicianMatricula: tech.matricula, assignedTechnicianName: tech.name, techOpen: tech.matricula } : {}),
+    ...(w.status === 'Nova' ? { assignedAt: serverTimestamp() } : {}),
+    scheduledDate: s,
+    scheduledEndDate: e > s ? e : deleteField(),
+    lotId,
+    updatedAt: now,
+    timeline: arrayUnion(cleanUndefined({ at: now, by, action, note: `${s}${e > s ? ` a ${e}` : ''} • ${where_}` }))
+  };
+}
+function woDropFields(now: string, by: string, note: string) {
+  return {
+    scheduledDate: deleteField(),
+    scheduledEndDate: deleteField(),
+    lotId: deleteField(),
+    updatedAt: now,
+    timeline: arrayUnion({ at: now, by, action: 'Saiu do bloco da Programação (perdeu o dia; continua com o técnico)', note })
+  };
+}
+
+export async function dbGetLot(id: string): Promise<PlanningLot | null> {
+  if (!firebaseActive || !dbInstance || !id) return null;
+  const snap = await getDoc(doc(dbInstance, 'planningLots', id));
+  return snap.exists() ? ({ ...(snap.data() as PlanningLot), id: snap.id }) : null;
+}
+
 export interface BlockSave {
   lot: PlanningLot | null; // bloco existente (null = novo)
   key: WeekKey;
@@ -76,6 +109,9 @@ export interface BlockSave {
   plan: ServiceOrder[]; // marcadas que podem mudar (novas ou já no bloco): ficam Planejadas com os dias do bloco
   fixedIds: string[]; // já no bloco e em execução/concluídas (ou fora da cópia do aparelho): continuam no bloco, sem mudar
   drop: ServiceOrder[]; // estavam no bloco e foram desmarcadas: voltam para "Novo"
+  woPlan: WorkOrder[]; // chamados marcados: ficam com o técnico do bloco e com o dia
+  woFixedIds: string[]; // chamados do bloco já fora da lista de abertos (concluídos etc.): continuam no bloco
+  woDrop: WorkOrder[]; // chamados desmarcados: perdem o dia e continuam com o técnico
   by: string;
   logText: string;
 }
@@ -95,8 +131,12 @@ export async function dbSaveBlock(input: BlockSave): Promise<PlanningLot> {
       !['Planejada', 'Atrasada'].includes(o.status)
   );
   const moving = changed.filter((o) => o.lotId && o.lotId !== lotRef.id);
-  const ops = 2 + changed.length + input.drop.length + moving.length;
-  if (ops > MAX_BATCH_OPS) throw new Error(`Muitas preventivas de uma vez (${changed.length + input.drop.length}). Divida em blocos menores.`);
+  const woChanged = input.woPlan.filter(
+    (w) => w.lotId !== lotRef.id || w.assignedTechnicianMatricula !== tech.matricula || w.status === 'Nova' || (w.scheduledDate || '') !== s || (w.scheduledEndDate || w.scheduledDate || '') !== e
+  );
+  const woMoving = woChanged.filter((w) => w.lotId && w.lotId !== lotRef.id);
+  const ops = 2 + changed.length + input.drop.length + moving.length + woChanged.length + woMoving.length + input.woDrop.length;
+  if (ops > MAX_BATCH_OPS) throw new Error(`Muitas OS de uma vez (${changed.length + input.drop.length + woChanged.length + input.woDrop.length}). Divida em blocos menores.`);
 
   const overnight = input.nights.length > 0 && input.people > 0 ? { people: input.people, nights: input.nights.length } : null;
   const lot: PlanningLot = {
@@ -109,6 +149,7 @@ export async function dbSaveBlock(input: BlockSave): Promise<PlanningLot> {
     technicianName: tech.name,
     technicianMatricula: tech.matricula,
     orderIds: Array.from(new Set([...input.plan.map((o) => o.id), ...input.fixedIds])),
+    woIds: Array.from(new Set([...input.woPlan.map((w) => w.id), ...input.woFixedIds])),
     overnight,
     updatedAt: now,
     updatedBy: input.by,
@@ -126,21 +167,26 @@ export async function dbSaveBlock(input: BlockSave): Promise<PlanningLot> {
   for (const o of moving) batch.set(doc(db, 'planningLots', o.lotId!), { orderIds: arrayRemove(o.id), updatedAt: now }, { merge: true });
   for (const o of changed) batch.update(doc(db, 'serviceOrders', o.id), plannedFields(o, s, e, tech, lotRef.id, now, input.by, note));
   for (const o of input.drop) batch.update(doc(db, 'serviceOrders', o.id), revertFields(o, now, input.by, `Saiu do bloco ${where_} (Programação)`));
+  for (const w of woMoving) batch.set(doc(db, 'planningLots', w.lotId!), { woIds: arrayRemove(w.id), updatedAt: now }, { merge: true });
+  for (const w of woChanged) batch.update(doc(db, 'workOrders', w.id), woPlanFields(w, s, e, tech, lotRef.id, now, input.by, where_));
+  for (const w of input.woDrop) batch.update(doc(db, 'workOrders', w.id), woDropFields(now, input.by, where_));
   batch.set(weekRef(input.key), logData(input.key, input.by, input.logText, now), { merge: true });
   await batch.commit();
   return lot;
 }
 
-// Tirar o bloco: as preventivas que ainda não começaram voltam para "Novo"; o lote fica marcado como tirado
-export async function dbRemoveBlock(lot: PlanningLot, drop: ServiceOrder[], key: WeekKey, by: string, logText: string): Promise<void> {
+// Tirar o bloco: as preventivas que ainda não começaram voltam para "Novo"; os chamados perdem o dia (continuam com
+// o técnico); o lote fica marcado como tirado
+export async function dbRemoveBlock(lot: PlanningLot, drop: ServiceOrder[], key: WeekKey, by: string, logText: string, woDrop: WorkOrder[] = []): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  if (drop.length + 2 > MAX_BATCH_OPS) throw new Error('Muitas preventivas no bloco para tirar de uma vez.');
+  if (drop.length + woDrop.length + 2 > MAX_BATCH_OPS) throw new Error('Muitas OS no bloco para tirar de uma vez.');
   const db = dbInstance;
   const now = new Date().toISOString();
   const where_ = lot.local ? `${lot.local.comarca}${lot.local.address ? ` · ${lot.local.address}` : ''}` : 'bloco';
   const batch = writeBatch(db);
-  batch.set(doc(db, 'planningLots', lot.id), { orderIds: [], overnight: null, nights: [], removedAt: now, updatedAt: now, updatedBy: by }, { merge: true });
+  batch.set(doc(db, 'planningLots', lot.id), { orderIds: [], woIds: [], overnight: null, nights: [], removedAt: now, updatedAt: now, updatedBy: by }, { merge: true });
   for (const o of drop) batch.update(doc(db, 'serviceOrders', o.id), revertFields(o, now, by, `Bloco ${where_} tirado da Programação`));
+  for (const w of woDrop) batch.update(doc(db, 'workOrders', w.id), woDropFields(now, by, where_));
   batch.set(weekRef(key), logData(key, by, logText, now), { merge: true });
   await batch.commit();
 }

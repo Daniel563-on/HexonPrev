@@ -56,12 +56,15 @@ export function overnightRateAt(setting: OvernightRateSetting | null, dateStr: s
   return value;
 }
 
+// OS que dividem o pernoite do lote/bloco: preventivas + chamados (Fase 7C-2)
+export const lotShareCount = (lot: PlanningLot) => lot.orderIds.length + (lot.woIds?.length || 0);
+
 // Custo do pernoite do lote e a parte de cada OS (redividido entre as OS que continuam no lote)
 export function lotOvernightCost(lot: PlanningLot, setting: OvernightRateSetting | null): { total: number; perOrder: number } {
   if (!lot.overnight) return { total: 0, perOrder: 0 };
   const rate = overnightRateAt(setting, lot.createdAt.slice(0, 10));
   const total = Math.round(lot.overnight.people * lot.overnight.nights * rate * 100) / 100;
-  const count = lot.orderIds.length;
+  const count = lotShareCount(lot);
   return { total, perOrder: count > 0 ? Math.round((total / count) * 100) / 100 : 0 };
 }
 

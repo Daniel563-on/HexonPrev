@@ -694,6 +694,7 @@ export interface PlanningLot {
   technicianName: string;
   technicianMatricula: string;
   orderIds: string[];    // OS que continuam no lote (quem sai é retirada daqui)
+  woIds?: string[];      // Fase 7C-2: chamados GLPI do bloco (o pernoite é dividido entre preventivas e chamados)
   overnight: { people: number; nights: number } | null;
   createdAt: string;     // data do agendamento (define o valor do pernoite usado)
   createdBy: string;
@@ -1139,6 +1140,9 @@ export interface WorkOrder {
   assetId?: string;              // quando o código existe na Gestão de Ativos
   assetName?: string;
   deadline?: string;             // prazo (AAAA-MM-DD)
+  scheduledDate?: string;        // Fase 7C-2: dia programado (bloco da Programação), "AAAA-MM-DD"
+  scheduledEndDate?: string;     // último dia do bloco, se mais de um
+  lotId?: string;                // bloco da Programação (planningLots) do qual o chamado faz parte
   status: WorkOrderStatus;
   assignedTechnicianMatricula?: string;
   assignedTechnicianName?: string;

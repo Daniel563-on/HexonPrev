@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, FileDown, MapPin } from 'lucide-react';
+import { CalendarRange, CheckCircle2, ClipboardCheck, FileDown, MapPin } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
 import { dbDismissClientSigned, dbSyncOsValidation, osStatusLabel } from '../../db/firebase';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
@@ -179,6 +179,14 @@ export default function TechnicianOsTab({
             <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {o.execAddressText} · {o.comarca}
           </p>
           <p className={`text-[11px] font-bold ${isOverdue(o) ? 'text-rose-600' : 'text-slate-500'}`}>Prazo {dayBR(o.deadline)}{isOverdue(o) ? ' · ATRASADA' : ''}</p>
+          {/* Dia programado pelo planejador (Programação, Fase 7C-2) */}
+          {o.scheduledDate && (
+            <p className="text-[11px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1 inline-flex items-center gap-1">
+              <CalendarRange className="w-3.5 h-3.5" />
+              Programada: {dayBR(o.scheduledDate)}
+              {o.scheduledEndDate && o.scheduledEndDate !== o.scheduledDate ? ` a ${dayBR(o.scheduledEndDate)}` : ''}
+            </p>
+          )}
         </button>
       ))}
       {open && (

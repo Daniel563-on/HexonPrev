@@ -592,7 +592,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                       {manualBadge(o)}
                       <span className="block text-[10px] text-slate-500">{o.comarca}{o.craai ? ` · CRAAI ${o.craai}` : ''}{o.assetCode ? ` · Ativo ${o.assetCode}` : ''}</span>
                     </td>
-                    <td className="p-2.5">{o.assignedTechnicianName || <span className="text-slate-400">Em aberto</span>}</td>
+                    <td className="p-2.5">
+                      {o.assignedTechnicianName || <span className="text-slate-400">Em aberto</span>}
+                      {o.scheduledDate && (
+                        <span className="block text-[10px] font-bold text-indigo-700">
+                          programada {dayBR(o.scheduledDate)}
+                          {o.scheduledEndDate && o.scheduledEndDate !== o.scheduledDate ? ` a ${dayBR(o.scheduledEndDate)}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td className="p-2.5 whitespace-nowrap">{dayBR(o.createdAt)}</td>
                     <td className="p-2.5 whitespace-nowrap">{dayBR(o.deadline)}</td>
                     <td className="p-2.5">{statusBadge(o)}</td>
@@ -632,7 +640,10 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 <p className="text-xs font-bold text-slate-800">{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
                 <p className="text-[10px] font-black uppercase tracking-wide text-blue-700">Empresa: {companyName(o.company)}</p>
                 <p className="text-[11px] text-slate-600">{o.execAddressText}{manualBadge(o)} · {o.comarca}</p>
-                <p className="text-[11px] text-slate-500">{o.assignedTechnicianName || 'Em aberto'} · aberta {dayBR(o.createdAt)} · prazo {dayBR(o.deadline)}</p>
+                <p className="text-[11px] text-slate-500">
+                  {o.assignedTechnicianName || 'Em aberto'} · aberta {dayBR(o.createdAt)} · prazo {dayBR(o.deadline)}
+                  {o.scheduledDate ? ` · programada ${dayBR(o.scheduledDate)}${o.scheduledEndDate && o.scheduledEndDate !== o.scheduledDate ? ` a ${dayBR(o.scheduledEndDate)}` : ''}` : ''}
+                </p>
                 <div className="flex items-center justify-between">
                   {canViewCosts ? <span className="text-xs">{costCell(o)}</span> : <span />}
                   {assignBtn(o)}

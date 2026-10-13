@@ -53,10 +53,11 @@ export async function dbDeleteAbsence(id: string): Promise<void> {
   await deleteDoc(doc(dbInstance, 'absences', id));
 }
 
-// Chamados em andamento ou pendentes da gerência (com quem está cada um): lidos 1 vez ao abrir a semana
+// Chamados abertos da gerência (sem técnico, em andamento ou pendentes; com quem está cada um e o dia programado):
+// lidos 1 vez ao abrir a semana
 export async function dbListOpenWorkOrders(unit: string): Promise<WorkOrder[]> {
   if (!firebaseActive || !dbInstance || !unit) return [];
-  const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('unit', '==', unit), where('status', 'in', ['Em andamento', 'Pendente'])));
+  const snap = await getDocs(query(collection(dbInstance, 'workOrders'), where('unit', '==', unit), where('status', 'in', ['Nova', 'Em andamento', 'Pendente'])));
   return snap.docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id }));
 }
 

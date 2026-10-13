@@ -7,6 +7,7 @@ import {
   dbAddWorkOrderNote,
   dbCreateOsValidation,
   dbGetAddresses,
+  dbGetLot,
   dbPauseWorkOrder,
   dbResumeWorkOrder,
   dbSignClient,
@@ -76,6 +77,23 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   // Contestada antes desta mudança (sem a assinatura do técnico guardada): ainda corrige e conclui de novo
   const oldContest = order.status === 'Contestada' && !order.techSignedAt;
   const editable = order.status === 'Em andamento' || oldContest;
+  // Chamado num bloco da Programação (Fase 7C-2): o pernoite é o da viagem, informado pelo planejador (só leitura)
+  const [trip, setTrip] = useState<{ nights: number; text: string } | null>(null);
+  useEffect(() => {
+    if (!order.lotId) return;
+    let alive = true;
+    dbGetLot(order.lotId)
+      .then((lot) => {
+        if (!alive || !lot || lot.removedAt || !(lot.woIds || []).includes(order.id)) return;
+        const n = lot.overnight ? (lot.nights || []).length || lot.overnight.nights : 0;
+        setTrip({ nights: n, text: n > 0 ? `Viagem ${dayBR(lot.periodStart)} a ${dayBR(lot.periodEnd)}: ${n} noite(s) fora` : 'Bloco sem pernoite' });
+        if (editable) setExec((prev) => (prev.overnightNights === (n > 0 ? n : null) ? prev : { ...prev, overnightNights: n > 0 ? n : null }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [order.lotId]);
   const [replying, setReplying] = useState(false);
   // Depois da resposta à contestação (acréscimos), mostra a execução atualizada
   useEffect(() => {
@@ -389,7 +407,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             ) : b.key === 'equipe' ? (
               <div key="equipe" className={section}>
                 <p className="text-xs font-black text-slate-800">Equipe</p>
-                <OsTeamPicker unit={order.unit} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
+                <OsTeamPicker unit={order.unit} company={order.company} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
               </div>
             ) : (
               <div key="materiais" className={section}>
@@ -415,6 +433,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             team={exec.team}
             overtime={exec.overtime}
             overnightNights={exec.overnightNights}
+            plannedOvernight={trip}
             onChange={(next) => patch(next)}
           />
 

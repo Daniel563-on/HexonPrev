@@ -1,10 +1,10 @@
-import { JobRole, Material, OrderParticipant, OvertimeRules, WorkOrder, WorkOrderOvertimeDay, WorkOrderPause } from '../types';
+import { JobRole, Material, OrderParticipant, OvertimeRules, PlanningLot, WorkOrder, WorkOrderOvertimeDay, WorkOrderPause } from '../types';
 import { brl, fmtMinutes, localDate, supplyCostLines, toMillis, valueAt } from './manHours';
 import type { OrderCostLine } from './manHours';
 import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { doc, getDoc, updateDoc } from './guard';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
-import { dbGetOvernightRate } from './planning';
+import { dbGetOvernightRate, lotOvernightCost, lotShareCount } from './planning';
 import { dbGetOvertimeRules, overtimeDayKey, overtimeHourValue, rulesOfCompany, splitOvertime, OVERTIME_DAYS } from './overtime';
 import { companyTracksCost, dbGetCompanies } from './companies';
 
@@ -200,11 +200,19 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   const companies = await dbGetCompanies().catch(() => []);
   const tracks = companyTracksCost(companies, o.company);
   const company = o.company || '';
+  // Chamado num bloco da Programação (Fase 7C-2): o pernoite é o da viagem, dividido entre as OS do bloco
+  const lot: PlanningLot | null =
+    tracks && o.lotId && firebaseActive && dbInstance
+      ? await getDoc(doc(dbInstance, 'planningLots', o.lotId))
+          .then((snap) => (snap.exists() ? ({ ...(snap.data() as PlanningLot), id: snap.id }) : null))
+          .catch(() => null)
+      : null;
+  const tripLot = lot && !lot.removedAt && (lot.woIds || []).includes(o.id) ? lot : null;
   const [roles, rules, mats, overnightRate, supplies] = await Promise.all([
     tracks ? dbGetJobRoles() : Promise.resolve([] as JobRole[]),
     tracks && exec?.overtime?.length ? dbGetOvertimeRules() : Promise.resolve([] as OvertimeRules[]),
     (exec?.materials || []).length ? materialsById(exec!.materials.map((m) => m.id)) : Promise.resolve([] as Material[]),
-    tracks && exec?.overnightNights ? overnightRateCached(company) : Promise.resolve(null),
+    tracks && (tripLot ? !!tripLot.overnight : exec?.overnightNights) ? overnightRateCached(company) : Promise.resolve(null),
     supplyCostLines(o.id, date)
   ]);
   const roleByKey = new Map<string, JobRole>(roles.map((r) => [cargoKey(r.name), roleForCompany(r, company)]));
@@ -251,7 +259,16 @@ export async function dbGetWorkOrderCost(o: WorkOrder, endIso?: string): Promise
   });
 
   let overnight: OrderCostLine | null = null;
-  if (tracks && exec?.overnightNights) {
+  if (tracks && tripLot) {
+    if (tripLot.overnight) {
+      const { total, perOrder } = lotOvernightCost(tripLot, overnightRate);
+      overnight = {
+        label: 'Pernoite (parte desta OS na viagem)',
+        detail: overnightRate ? `${tripLot.overnight.people} pessoa(s) × ${tripLot.overnight.nights} noite(s) = ${brl(total)} ÷ ${lotShareCount(tripLot)} OS` : 'valor do pernoite não informado',
+        value: overnightRate ? perOrder : null
+      };
+    }
+  } else if (tracks && exec?.overnightNights) {
     const rate = overnightRate ? valueAt(overnightRate.history, date) ?? overnightRate.value : null;
     overnight = {
       label: 'Pernoite',

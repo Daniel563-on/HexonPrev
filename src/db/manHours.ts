@@ -3,7 +3,7 @@ import { JobRole, Material, PlanningLot, ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { cargoKey, dbGetJobRoles, roleForCompany } from './workforce';
 import { dbGetMaterials } from './materials';
-import { dbGetOvernightRate, lotOvernightCost } from './planning';
+import { dbGetOvernightRate, lotOvernightCost, lotShareCount } from './planning';
 import { companyTracksCost, dbGetCompanies } from './companies';
 import { dbGetOrderSupplies, orderSupplyEntries } from './supplyRequests';
 
@@ -184,7 +184,7 @@ export async function dbGetOrderCost(o: ServiceOrder): Promise<OrderCost> {
     const { total, perOrder } = lotOvernightCost(lot, overnightRate);
     overnight = {
       label: 'Pernoite (parte desta OS no lote)',
-      detail: `${lot.overnight.people} pessoa(s) × ${lot.overnight.nights} noite(s) = ${brl(total)} ÷ ${lot.orderIds.length} OS`,
+      detail: `${lot.overnight.people} pessoa(s) × ${lot.overnight.nights} noite(s) = ${brl(total)} ÷ ${lotShareCount(lot)} OS`,
       value: total > 0 ? perOrder : null
     };
   }

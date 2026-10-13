@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, UserPlus, X } from 'lucide-react';
 import { OrderParticipant } from '../../types';
-import { dbGetTeamPeople, dbGetUsualTeam } from '../../db/firebase';
+import { dbGetDayTeam, dbGetTeamPeople, localTodayStr } from '../../db/firebase';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // EQUIPE DA OS (técnico em campo): o técnico atribuído entra sempre; a equipe que o Encarregado deixou pronta
@@ -10,6 +10,7 @@ import { useSyncVersion } from '../../utils/useSyncVersion';
 
 interface Props {
   unit: string;
+  company?: string; // empresa da OS: a equipe desta semana vem da Programação dela (Fase 7C-2)
   executor: OrderParticipant;
   team: OrderParticipant[]; // inclui o executor
   editable: boolean;
@@ -18,7 +19,7 @@ interface Props {
   executorTag?: string;
 }
 
-export default function OsTeamPicker({ unit, executor, team, editable, onChange, locked = [], executorTag = '(você)' }: Props) {
+export default function OsTeamPicker({ unit, company, executor, team, editable, onChange, locked = [], executorTag = '(você)' }: Props) {
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [usual, setUsual] = useState<OrderParticipant[]>([]);
   const [q, setQ] = useState('');
@@ -30,11 +31,14 @@ export default function OsTeamPicker({ unit, executor, team, editable, onChange,
   }, [editable, unit, executor.matricula, peopleVersion]);
   useEffect(() => {
     if (!editable) return;
-    dbGetUsualTeam(executor.matricula).then((t) => setUsual((t?.members || []).filter((m) => m.matricula !== executor.matricula)));
-  }, [editable, executor.matricula]);
+    // Equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está ausente hoje (Fase 7C-2)
+    dbGetDayTeam(unit, company, localTodayStr(), executor.matricula)
+      .then(setUsual)
+      .catch(() => setUsual([]));
+  }, [editable, unit, company, executor.matricula]);
 
   const taken = useMemo(() => new Set(team.map((p) => p.matricula)), [team]);
-  // Atalhos da equipe habitual: só quem ainda é da mesma empresa
+  // Atalhos da equipe do dia: só quem ainda é da mesma empresa
   const quick = usual.filter((p) => !taken.has(p.matricula) && people.some((x) => x.matricula === p.matricula));
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();

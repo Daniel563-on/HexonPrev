@@ -27,9 +27,9 @@ import BlockEditor from './BlockEditor';
 import ToPlanPanel, { ToPlanGroup } from './ToPlanPanel';
 import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseItems, placeLanes } from './blockLayout';
 
-// PROGRAMAÇÃO › SEMANA (Fase 7B ver e organizar; Fase 7C-1 blocos de preventivas). Etapa de junção: planilha semanal
-// (PSS) + lote do PMOC + programação do Hexon principal. Linhas = equipes; cada bloco = local em dias seguidos com as
-// preventivas e o pernoite. "A programar" ao lado; histórico da semana. Chamados nos blocos chegam na 7C-2.
+// PROGRAMAÇÃO › SEMANA (Fase 7B ver e organizar; 7C-1 blocos de preventivas; 7C-2 chamados nos blocos). Etapa de junção:
+// planilha semanal (PSS) + lote do PMOC + atribuição de chamados do Hexon principal. Linhas = equipes; cada bloco = local em
+// dias seguidos com as preventivas, os chamados e o pernoite. "A programar" ao lado; histórico da semana.
 
 interface Props {
   user: HexonUser;
@@ -49,7 +49,7 @@ type Modal =
   | { kind: 'team'; team: UsualTeam }
   | { kind: 'absence'; absence: Absence | null }
   | { kind: 'list'; title: string; sub: string; orders: ServiceOrder[] }
-  | { kind: 'block'; lot: PlanningLot | null; team?: string; local?: string; days?: [string, string] }
+  | { kind: 'block'; lot: PlanningLot | null; team?: string; local?: string; days?: [string, string]; wos?: string[] }
   | { kind: 'visit'; team: UsualTeam }
   | { kind: 'history' }
   | null;
@@ -205,7 +205,12 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
     const k = o.assignedTechnicianMatricula || '';
     if (k && !inTeams.has(k) && !outside.has(k)) outside.set(k, o.assignedTechnician || respNameOf(k));
   });
-  const woCount = (mat: string) => openWos.filter((w) => w.assignedTechnicianMatricula === mat && (!w.company || w.company === company)).length;
+  // Chamados abertos da empresa (Fase 7C-2): sem dia = ainda não estão num bloco
+  const companyWos = openWos.filter((w) => !w.company || w.company === company);
+  const woCount = (mat: string) => companyWos.filter((w) => w.assignedTechnicianMatricula === mat && !w.scheduledDate).length;
+  const wosNew = companyWos.filter((w) => w.status === 'Nova' || !w.assignedTechnicianMatricula);
+  const wosNoDay = companyWos.filter((w) => w.status !== 'Nova' && !!w.assignedTechnicianMatricula && !w.scheduledDate);
+  const woInWeek = weekLots.reduce((n, l) => n + (l.woIds?.length || 0), 0);
 
   // A programar: preventivas "Novo" cujo prazo cobre algum dia da semana a partir de hoje
   const fromDay = today && today > weekStart ? today : weekStart;
@@ -219,6 +224,18 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
       .sort((a, b) => (a.minEnd || '9999').localeCompare(b.minEnd || '9999') || a.key.localeCompare(b.key));
   }, [unitOrders, weekEnd, fromDay]);
   const notYet = unitOrders.filter((o) => o.status === 'Novo' && !!o.startDate && o.startDate.slice(0, 10) > weekEnd && o.startDate.slice(0, 10) <= addDays(weekEnd, 7)).length;
+  // Locais para um bloco novo: os das preventivas a programar e os dos chamados sem dia
+  const localOptions = (() => {
+    const m = new Map<string, number>();
+    toPlan.forEach((g) => m.set(g.key, g.orders.length));
+    [...wosNew, ...wosNoDay].forEach((w) => {
+      const k = `${w.comarca || ''}|${w.execAddressText || ''}`;
+      m.set(k, (m.get(k) || 0) + 1);
+    });
+    return Array.from(m.entries())
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  })();
 
   // Onde cada pessoa está nesta semana
   const placeInWeek = (mat: string, except: string): { label: string; resp: boolean } | null => {
@@ -242,7 +259,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const efetivo = teamPeopleSet.size;
   const absentInTeams = Array.from(teamPeopleSet).filter((m) => absentDays(m).length > 0).length;
   const absentCount = new Set(myAbs.map((a) => a.matricula)).size;
-  const openCount = here.reduce((n, t) => n + woCount(t.matricula), 0);
+  const openCount = wosNew.length + wosNoDay.length;
   const pernoites = weekLots.reduce((n, l) => n + (l.nights || []).filter((d) => d >= weekStart && d <= weekEnd).length * (l.overnight?.people || 0), 0);
 
   // Gravação da semana: só o que mudou; a tela já mostra a mudança
@@ -360,16 +377,24 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
       {text}
     </p>
   );
-  const counts = (list: ServiceOrder[], total: number) => {
+  const counts = (list: ServiceOrder[], total: number, chamados = 0) => {
     const done = list.filter((o) => o.status === 'Concluída').length;
     const late = list.filter((o) => o.status === 'Atrasada').length;
     const run = list.filter((o) => o.status === 'Em Execução').length;
     return (
       <>
-        <p className="text-[10px] font-bold text-emerald-700 flex items-center gap-1 mt-0.5">
-          <ClipboardCheck className="w-3 h-3" />
-          {total} preventiva{total > 1 ? 's' : ''}
-        </p>
+        {total > 0 && (
+          <p className="text-[10px] font-bold text-emerald-700 flex items-center gap-1 mt-0.5">
+            <ClipboardCheck className="w-3 h-3" />
+            {total} preventiva{total > 1 ? 's' : ''}
+          </p>
+        )}
+        {chamados > 0 && (
+          <p className="text-[10px] font-bold text-indigo-700 flex items-center gap-1 mt-0.5">
+            <Wrench className="w-3 h-3" />
+            {chamados} chamado{chamados > 1 ? 's' : ''}
+          </p>
+        )}
         {(done > 0 || run > 0 || late > 0) && (
           <p className="text-[9px] font-bold text-slate-500 flex flex-wrap gap-x-1.5">
             {done > 0 && (
@@ -435,7 +460,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
           <MapPin className="w-3 h-3 mt-px shrink-0 text-indigo-600" />
           {local || firstLocal}
         </p>
-        {counts(it.orders, lot.orderIds.length)}
+        {counts(it.orders, lot.orderIds.length, lot.woIds?.length || 0)}
         {nightsHere > 0 && lot.overnight && (
           <p className="mt-1 px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-900 text-[9px] font-black text-sky-800 dark:text-sky-200 flex items-center gap-1">
             <Moon className="w-3 h-3" />
@@ -596,7 +621,8 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             {stat('Ausentes', absentCount, absentCount > 0)}
             {stat('Preventivas programadas', prevs.length)}
             {stat('Pernoites (pessoa)', pernoites)}
-            {stat('Chamados em aberto', openCount)}
+            {stat('Chamados programados', woInWeek)}
+            {stat('Chamados sem dia', openCount, openCount > 0)}
             {stat(
               'Prazo de planejamento',
               <span className="flex items-center gap-1">
@@ -708,7 +734,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
                           className="mt-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 inline-flex items-center gap-1 cursor-pointer text-left"
                         >
                           <Wrench className="w-3 h-3 shrink-0" />
-                          {wo} chamado{wo > 1 ? 's' : ''} em aberto com ele (sem dia)
+                          {wo} chamado{wo > 1 ? 's' : ''} com ele sem dia
                         </button>
                       )}
                     </>
@@ -790,7 +816,25 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
               </div>
             </div>
             {!pastWeek && (
-              <ToPlanPanel groups={toPlan} weekEnd={weekEnd} notYet={notYet} canProgram={canProgram && techTeams.length > 0} onProgram={(key) => setModal({ kind: 'block', lot: null, local: key })} />
+              <ToPlanPanel
+                groups={toPlan}
+                weekEnd={weekEnd}
+                notYet={notYet}
+                canProgram={canProgram && techTeams.length > 0}
+                onProgram={(key) => setModal({ kind: 'block', lot: null, local: key })}
+                wosNew={wosNew}
+                wosNoDay={wosNoDay}
+                techName={(mat) => (mat ? respNameOf(mat) : '')}
+                onProgramWo={(w) =>
+                  setModal({
+                    kind: 'block',
+                    lot: null,
+                    local: `${w.comarca || ''}|${w.execAddressText || ''}`,
+                    wos: [w.id],
+                    team: techTeams.some((t) => t.matricula === w.assignedTechnicianMatricula) ? w.assignedTechnicianMatricula : undefined
+                  })
+                }
+              />
             )}
           </div>
 
@@ -798,7 +842,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             <Info className="w-4 h-4 shrink-0" />
             <span>
               <b>Bloco</b> = local em dias seguidos (clique para mudar; <b>+</b> no dia livre = novo bloco). Tracejado = programado no PMOC ou sem bloco (abrir e salvar transforma em bloco). Equipe cujo
-              responsável não é técnico (ex.: Engenharia) <b>acompanha</b> blocos de outras equipes. Chamados nos blocos chegam na próxima etapa.
+              responsável não é técnico (ex.: Engenharia) <b>acompanha</b> blocos de outras equipes. Chamado tirado do bloco perde o dia e continua com o técnico.
               {lockReason && (
                 <>
                   {' '}
@@ -851,7 +895,9 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
           initialLocal={modal.local}
           initialDays={modal.days}
           orders={unitOrders}
-          localOptions={toPlan.map((g) => ({ key: g.key, count: g.orders.length }))}
+          workOrders={companyWos}
+          initialWos={modal.wos}
+          localOptions={localOptions}
           dayMarks={plan?.days || {}}
           teamPeople={teamPeople}
           costTracking={!!companyObj?.costTracking}
@@ -859,6 +905,10 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             setModal(null);
             setMsg({ ok: true, text });
             loadWeek();
+            // Os chamados mudaram (técnico, dia, bloco): relê os abertos da gerência (Fase 7C-2)
+            dbListOpenWorkOrders(unit)
+              .then(setOpenWos)
+              .catch(() => {});
           }}
           onClose={() => setModal(null)}
           onOpen={openPreventive}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, Lock, MapPin, Moon, Search, Star, Trash2, Users } from 'lucide-react';
-import { DayMarkKind, HexonUser, PlanningLot, ServiceOrder } from '../../types';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, Lock, MapPin, Moon, Search, Star, Trash2, Users, Wrench } from 'lucide-react';
+import { DayMarkKind, HexonUser, PlanningLot, ServiceOrder, WorkOrder } from '../../types';
 import { dbRemoveBlock, dbSaveBlock, WeekKey } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { fitsWindow, localKey, localLabel } from './blockLayout';
@@ -10,6 +10,8 @@ import { MARK_LABEL, Shell, btn, btnMain, input } from './WeekModals';
 // PROGRAMAÇÃO › BLOCO (Fase 7C-1): equipe + local + dias seguidos + preventivas do local + pernoite + observação.
 // Só entram preventivas cujo prazo do Super Admin cobre todos os dias do bloco (vale até o último dia do prazo).
 // Salvar = o mesmo que o lote do PMOC (Planejada, técnico e dias); desmarcar = volta para "Novo".
+// Fase 7C-2: chamados GLPI da comarca do bloco — sem técnico passam para o responsável; com ele ganham o dia; de outro
+// técnico que ainda não começou podem ser trazidos; desmarcado perde o dia e continua com o técnico.
 
 export interface LocalOption {
   key: string;
@@ -27,6 +29,8 @@ interface Props {
   initialLocal?: string;
   initialDays?: [string, string];
   orders: ServiceOrder[]; // preventivas da gerência e empresa (cópia do aparelho)
+  workOrders: WorkOrder[]; // chamados abertos da gerência e empresa (Fase 7C-2)
+  initialWos?: string[]; // chamados já marcados ao abrir (veio do "A programar")
   localOptions: LocalOption[]; // locais com preventivas a programar nesta semana
   dayMarks: Record<string, { kind: DayMarkKind; text: string }>;
   teamPeople: (resp: string, s: string, e: string) => { matricula: string; name: string; absent: boolean }[];
@@ -48,7 +52,8 @@ const dayTxt = (days: string[], s: string, e: string) => {
 };
 
 export default function BlockEditor(props: Props) {
-  const { user, weekKey, days, today, lot, teams, orders, localOptions, dayMarks, teamPeople, costTracking, onSaved, onClose, onOpen } = props;
+  const { user, weekKey, days, today, lot, teams, orders, workOrders, localOptions, dayMarks, teamPeople, costTracking, onSaved, onClose, onOpen } = props;
+  const initialWos = props.initialWos || [];
   const lotOrders = useMemo(() => (lot ? orders.filter((o) => o.lotId === lot.id) : []), [lot, orders]);
   const lotLocal = useMemo(() => {
     if (lot?.local) return `${lot.local.comarca}|${lot.local.address}`;
@@ -92,6 +97,40 @@ export default function BlockEditor(props: Props) {
   };
   const fixedIds = lot ? lot.orderIds.filter((id) => !lotOrders.some((o) => o.id === id && editable(o))) : [];
   const fixedOrders = lotOrders.filter((o) => !editable(o));
+
+  // Chamados (Fase 7C-2): os do bloco + os abertos da mesma comarca (ou escolhidos no "A programar")
+  const [woOn, setWoOn] = useState<Set<string>>(new Set());
+  const [woOff, setWoOff] = useState<Set<string>>(new Set());
+  const lotWos = useMemo(() => (lot ? workOrders.filter((w) => w.lotId === lot.id) : []), [lot, workOrders]);
+  const comarca = localK ? rawLocal(localK).comarca : '';
+  const woCandidates = useMemo(
+    () => workOrders.filter((w) => (!lot || w.lotId !== lot.id) && (initialWos.includes(w.id) || (!!localK && (w.comarca || '') === comarca))),
+    [workOrders, lot, localK, comarca, initialWos.join('|')]
+  );
+  const woItems = [...lotWos, ...woCandidates];
+  const woStarted = (w: WorkOrder) => !!w.exec || (w.pauses || []).length > 0;
+  const woBlocked = (w: WorkOrder) => !!team && !!w.assignedTechnicianMatricula && w.assignedTechnicianMatricula !== team && woStarted(w);
+  const woChecked = (w: WorkOrder) => !woBlocked(w) && !woOff.has(w.id) && (woOn.has(w.id) || (!!lot && w.lotId === lot.id) || initialWos.includes(w.id));
+  const woPlan = woItems.filter(woChecked);
+  const woDrop = lotWos.filter((w) => !woChecked(w));
+  const woFixedIds = lot ? (lot.woIds || []).filter((id) => !workOrders.some((w) => w.id === id)) : [];
+  const teamLocked = fixedOrders.length > 0 || lotWos.some(woStarted);
+  const toggleWo = (id: string, value: boolean) => {
+    setWoOn((prev) => {
+      const next = new Set(prev);
+      value ? next.add(id) : next.delete(id);
+      return next;
+    });
+    setWoOff((prev) => {
+      const next = new Set(prev);
+      value ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const techLabel = (mat?: string, name?: string) => {
+    const t = teams.find((x) => x.matricula === mat);
+    return t ? `${t.name} (${t.label})` : name || mat || '';
+  };
 
   // Grupos: mesmo prazo e periodicidade
   const groups = useMemo(() => {
@@ -158,15 +197,18 @@ export default function BlockEditor(props: Props) {
     if (e < today) return setError('O último dia do bloco já passou.');
     if (weekendIn.length > 0 && !weekendOk) return setError('Confirme o trabalho no fim de semana.');
     if (misfit.length > 0) return setError(`${misfit.length} preventiva(s) marcada(s) não cabem no prazo com esses dias: desmarque ou mude os dias.`);
-    if (checkedPlan.length === 0 && fixedIds.length === 0) return setError(lot ? 'Nenhuma preventiva marcada: use "Tirar o bloco".' : 'Marque ao menos uma preventiva.');
+    if (checkedPlan.length === 0 && fixedIds.length === 0 && woPlan.length === 0 && woFixedIds.length === 0)
+      return setError(lot ? 'Nada marcado no bloco: use "Tirar o bloco".' : 'Marque ao menos uma preventiva ou um chamado.');
     if (usedNights.length > 0 && (!Number.isInteger(peopleN) || peopleN < 1)) return setError('Informe quantas pessoas dormem fora (número inteiro a partir de 1).');
     const local = rawLocal(localK);
     const added = checkedPlan.filter((o) => o.lotId !== lot?.id).length;
     const pern = usedNights.length ? `, ${usedNights.length} noite(s) × ${peopleN} pessoa(s)` : '';
     const what = `${teamObj.label} · ${localLabel(local)} (${dayTxt(days, s, e)})`;
+    const chs = woPlan.length + woFixedIds.length ? `, ${woPlan.length + woFixedIds.length} chamado(s)` : '';
+    const chDrop = woDrop.length ? `, ${woDrop.length} chamado(s) perderam o dia` : '';
     const logText = lot
-      ? `Mudou o bloco ${what}: ${checkedPlan.length + fixedIds.length} preventiva(s)${added ? `, +${added}` : ''}${drop.length ? `, −${drop.length} (voltaram para Novo)` : ''}${pern}`
-      : `Criou o bloco ${what}: ${checkedPlan.length} preventiva(s)${pern}`;
+      ? `Mudou o bloco ${what}: ${checkedPlan.length + fixedIds.length} preventiva(s)${added ? `, +${added}` : ''}${drop.length ? `, −${drop.length} (voltaram para Novo)` : ''}${chs}${chDrop}${pern}`
+      : `Criou o bloco ${what}: ${checkedPlan.length} preventiva(s)${chs}${pern}`;
     setSaving(true);
     try {
       await dbSaveBlock({
@@ -183,10 +225,15 @@ export default function BlockEditor(props: Props) {
         plan: checkedPlan,
         fixedIds,
         drop,
+        woPlan,
+        woFixedIds,
+        woDrop,
         by: user.name,
         logText
       });
-      onSaved(`Bloco salvo: ${checkedPlan.length} preventiva(s) programada(s) para ${teamObj.name}, ${dayTxt(days, s, e)}${drop.length ? `; ${drop.length} voltaram para "Novo"` : ''}.`);
+      onSaved(
+        `Bloco salvo: ${checkedPlan.length} preventiva(s)${woPlan.length ? ` e ${woPlan.length} chamado(s)` : ''} para ${teamObj.name}, ${dayTxt(days, s, e)}${drop.length ? `; ${drop.length} preventiva(s) voltaram para "Novo"` : ''}${woDrop.length ? `; ${woDrop.length} chamado(s) perderam o dia` : ''}.`
+      );
     } catch (err: any) {
       setSaving(false);
       setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode programar nesta gerência.' : `Não foi possível salvar: ${err?.message || err}`);
@@ -198,8 +245,9 @@ export default function BlockEditor(props: Props) {
     setError('');
     try {
       const editableLot = lotOrders.filter(editable);
-      await dbRemoveBlock(lot, editableLot, weekKey, user.name, `Tirou o bloco ${teamObj?.label || lot.technicianName} · ${localLabel(rawLocal(localK))} (${editableLot.length} preventiva(s) voltaram para Novo)`);
-      onSaved(`Bloco tirado: ${editableLot.length} preventiva(s) voltaram para "Novo".`);
+      const chs = lotWos.length ? `; ${lotWos.length} chamado(s) perderam o dia` : '';
+      await dbRemoveBlock(lot, editableLot, weekKey, user.name, `Tirou o bloco ${teamObj?.label || lot.technicianName} · ${localLabel(rawLocal(localK))} (${editableLot.length} preventiva(s) voltaram para Novo${chs})`, lotWos);
+      onSaved(`Bloco tirado: ${editableLot.length} preventiva(s) voltaram para "Novo"${chs}.`);
     } catch (err: any) {
       setSaving(false);
       setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode programar nesta gerência.' : `Não foi possível tirar o bloco: ${err?.message || err}`);
@@ -238,7 +286,7 @@ export default function BlockEditor(props: Props) {
             {lot ? (
               askRemove ? (
                 <span className="flex items-center gap-2 text-xs font-bold text-rose-700">
-                  Tirar o bloco? As preventivas voltam para "Novo".
+                  Tirar o bloco? As preventivas voltam para "Novo" e os chamados perdem o dia.
                   <button type="button" onClick={remove} disabled={saving} className="px-3 py-2 rounded-lg bg-rose-600 text-white cursor-pointer disabled:opacity-50">
                     Sim, tirar
                   </button>
@@ -250,8 +298,8 @@ export default function BlockEditor(props: Props) {
                 <button
                   type="button"
                   onClick={() => setAskRemove(true)}
-                  disabled={fixedIds.length > 0 || saving}
-                  title={fixedIds.length > 0 ? 'Há preventivas em execução ou concluídas neste bloco' : ''}
+                  disabled={fixedIds.length > 0 || woFixedIds.length > 0 || saving}
+                  title={fixedIds.length > 0 || woFixedIds.length > 0 ? 'Há preventiva em execução ou concluída, ou chamado já concluído, neste bloco' : ''}
                   className="px-4 py-2.5 rounded-xl border border-rose-200 text-rose-600 text-sm font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -278,7 +326,7 @@ export default function BlockEditor(props: Props) {
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="block">
               <span className={`block mb-1 ${h}`}>1. Equipe</span>
-              <select value={team} onChange={(ev) => setTeam(ev.target.value)} disabled={!!readOnly || fixedOrders.length > 0} className={input}>
+              <select value={team} onChange={(ev) => setTeam(ev.target.value)} disabled={!!readOnly || teamLocked} className={input}>
                 <option value="">Escolha a equipe...</option>
                 {teams.map((t) => (
                   <option key={t.matricula} value={t.matricula}>
@@ -287,7 +335,7 @@ export default function BlockEditor(props: Props) {
                 ))}
                 {lot && !teams.some((t) => t.matricula === lot.technicianMatricula) && <option value={lot.technicianMatricula}>{lot.technicianName}</option>}
               </select>
-              {fixedOrders.length > 0 && <span className="text-[10px] text-slate-500">Há preventiva em execução ou concluída: a equipe não muda.</span>}
+              {teamLocked && <span className="text-[10px] text-slate-500">Há preventiva em execução ou concluída, ou chamado já começado: a equipe não muda.</span>}
             </label>
             <div>
               <span className={`block mb-1 ${h}`}>2. Local</span>
@@ -445,6 +493,64 @@ export default function BlockEditor(props: Props) {
             })}
           </div>
 
+          <div className={`${box} space-y-2`}>
+            <p className={`${h} flex items-center gap-1`}>
+              <Wrench className="w-4 h-4 text-indigo-600" />
+              Chamados GLPI {comarca ? `de ${comarca}` : 'da comarca'} — {woPlan.length + woFixedIds.length} no bloco
+            </p>
+            {!localK && <p className="text-[11px] text-slate-500">Escolha o local para ver os chamados abertos da comarca.</p>}
+            {localK && woItems.length === 0 && <p className="text-[11px] text-slate-500">Nenhum chamado aberto nesta comarca.</p>}
+            {woFixedIds.length > 0 && <p className="text-[10px] text-slate-500">{woFixedIds.length} chamado(s) do bloco já concluído(s): continuam no bloco.</p>}
+            {woItems.map((w) => {
+              const blocked = woBlocked(w);
+              const checked = woChecked(w);
+              const mine = !!team && w.assignedTechnicianMatricula === team;
+              const lateDeadline = !!w.deadline && !!e && w.deadline.slice(0, 10) < e;
+              const state = !team
+                ? 'escolha a equipe'
+                : w.status === 'Nova' || !w.assignedTechnicianMatricula
+                  ? `sem técnico → passa a ser do ${teamObj?.name || ''}`
+                  : blocked
+                    ? `já começou com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}: não muda de técnico aqui`
+                    : !mine
+                      ? `está com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}; se marcar, sai dele e passa para ${teamObj?.name || ''}`
+                      : lot && w.lotId === lot.id
+                        ? 'neste bloco'
+                        : w.lotId
+                          ? `já tem dia em outro bloco (${br(w.scheduledDate)}): se marcar, muda para este`
+                          : `já com ele${w.status === 'Pendente' ? ' (pendente)' : ''}, sem dia → ganha o dia`;
+              const tone = blocked ? 'border-rose-200 bg-rose-50/60 dark:bg-rose-950/20' : team && !mine && w.assignedTechnicianMatricula ? 'border-amber-200 bg-amber-50/60 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700';
+              return (
+                <div key={w.id} className={`p-2 rounded-lg border flex items-start gap-2 text-[11px] ${tone}`}>
+                  <button type="button" disabled={!!readOnly || blocked || !team} onClick={() => toggleWo(w.id, !checked)} className="mt-px cursor-pointer disabled:cursor-not-allowed">
+                    {check(checked, !!readOnly || blocked || !team)}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-800 dark:text-slate-100">
+                      <span className="font-mono font-black text-indigo-700 dark:text-indigo-300">{w.number || w.id}</span>
+                      {w.intervencao ? ` · ${w.intervencao}` : ''}
+                      {w.glpi ? ` · GLPI ${w.glpi}` : ''}
+                      {w.deadline ? (
+                        <span className={lateDeadline ? 'text-rose-600 font-bold' : ''}>
+                          {' '}
+                          · prazo {br(w.deadline)}
+                        </span>
+                      ) : (
+                        ' · sem prazo'
+                      )}
+                    </p>
+                    <p className="text-[10px] text-slate-500 truncate">
+                      <MapPin className="inline w-3 h-3 mr-0.5" />
+                      {w.execAddressText || w.comarca || '—'}
+                    </p>
+                    <p className={`text-[10px] ${blocked ? 'text-rose-700' : team && !mine && w.assignedTechnicianMatricula ? 'text-amber-800' : 'text-slate-600 dark:text-slate-400'}`}>{state}</p>
+                    {lateDeadline && checked && <p className="text-[10px] font-bold text-rose-600">O prazo do chamado acaba antes do último dia do bloco (não bloqueia).</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           <div className="grid sm:grid-cols-2 gap-3">
             <div className={box}>
               <p className={`${h} flex items-center gap-1`}>
@@ -507,7 +613,7 @@ export default function BlockEditor(props: Props) {
                         <b>
                           {usedNights.length} noite{usedNights.length > 1 ? 's' : ''} × {peopleN} pessoa{peopleN > 1 ? 's' : ''} = {usedNights.length * peopleN} pernoites
                         </b>
-                        , divididos entre as {checkedPlan.length + fixedIds.length} preventivas do bloco.
+                        , divididos entre as {checkedPlan.length + fixedIds.length + woPlan.length + woFixedIds.length} OS do bloco (preventivas e chamados).
                       </p>
                     </>
                   )}
@@ -538,10 +644,22 @@ export default function BlockEditor(props: Props) {
                 <b>Ao salvar:</b> {checkedPlan.length} preventiva(s) ficam <b>Programadas</b>
                 {teamObj ? ` para ${teamObj.name}` : ''}
                 {s ? `, ${dayTxt(days, s, e)}` : ''} (o mesmo que o PMOC faz). Entram no celular do técnico <b>como hoje</b>.
+                {woPlan.length > 0 && (
+                  <>
+                    {' '}
+                    <b>{woPlan.length}</b> chamado(s) ficam com ele, com o dia programado.
+                  </>
+                )}
                 {drop.length > 0 && (
                   <>
                     {' '}
-                    <b>{drop.length}</b> desmarcada(s) voltam para "Novo".
+                    <b>{drop.length}</b> preventiva(s) desmarcada(s) voltam para "Novo".
+                  </>
+                )}
+                {woDrop.length > 0 && (
+                  <>
+                    {' '}
+                    <b>{woDrop.length}</b> chamado(s) desmarcado(s) perdem o dia e continuam com o técnico.
                   </>
                 )}
               </span>
