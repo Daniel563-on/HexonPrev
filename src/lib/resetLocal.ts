@@ -21,9 +21,10 @@ interface Pending extends Marks {
 const ORDER_IDB = ['hexon_orders_sync_v1_', 'hexon_orders_deletions_v1_'];
 const ORDER_LS = ['hexon_service_orders', 'hexon_histories', 'hexon_planning_deadlines', 'hexon_audit_logs', 'hexon_access_logs'];
 const ORDER_LS_PREFIX = ['hexon_exec_draft_v1_', 'hexon_notices_'];
-// Usuários (só no zerar para implantação)
+// Usuários (só no zerar para implantação). A sessão de quem está logado (hexon_cached_user) fica: ao abrir, o app confere
+// o cadastro no banco — quem foi apagado sai sozinho e o Super Administrador continua dentro.
 const isUsersIdb = (k: string) => k.startsWith('hexon_sync_v1|') && k.includes('|users|');
-const USERS_LS = ['hexon_users', 'hexon_cache_timestamps', 'hexon_cached_user'];
+const USERS_LS = ['hexon_users', 'hexon_cache_timestamps'];
 
 function read<T>(key: string): T | null {
   try {
