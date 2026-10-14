@@ -31,7 +31,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { AssetScannerModal, AssetDeleteModal, AssetSectorDeleteModal } from './assets/AssetActionModals';
-import { AssetImportWizardModal } from './assets/AssetImportWizardModal';
+import AssetImportWizard from './assets/AssetImportWizard';
 import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
 import { AddressDetailPanel } from './assets/AddressDetailPanel';
@@ -681,23 +681,17 @@ export default function AssetsView({
         }}
       />
 
-      {/* XLSX IMPORT MODAL (WIZARD - EXTRAÍDO NA ETAPA 2) */}
-      <AssetImportWizardModal
+      {/* IMPORTAR PLANILHA (A4-A): colunas, tipo por material, conferência antes de gravar */}
+      <AssetImportWizard
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         assets={assets}
-        managements={managements}
+        managements={managements.filter((m) => !visibleUnits || visibleUnits.includes(m.name))}
         companies={companies}
         userName={userProfile?.name || ''}
-        periodicityRules={periodicityRules}
-        onUpdatePeriodicityRules={setPeriodicityRules}
+        canManageTypes={userProfile?.perfil === 'Super Administrador' || !userHasActionPermission || userHasActionPermission('manage_templates')}
         onReloadAssets={loadAssetsData}
         setCustomDynamicFields={setCustomDynamicFields}
-        onImportSuccess={(firstAsset) => {
-          if (firstAsset) {
-            setSelectedAsset(firstAsset);
-          }
-        }}
       />
 
     </div>
