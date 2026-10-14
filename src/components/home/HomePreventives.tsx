@@ -107,7 +107,8 @@ function TypeBar(props: { label: string; sub: string; t: TypeStat; head: string;
   );
 }
 
-type Target = 'plan' | 'exec' | 'consulta';
+// Fase 7E-1: abre Ordens de Serviço › Preventivas já no contador certo (o planejamento saiu do PMOC)
+type Target = 'aprog' | 'prog' | 'exec' | 'atr' | 'consulta';
 
 export default function HomePreventives(props: { orders: ServiceOrder[]; units: string[]; canSeePast: boolean; onOpen: (t: Target) => void }) {
   const { orders, units, canSeePast } = props;
@@ -177,10 +178,10 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
   };
 
   const openCards = [
-    { label: 'Aguardando planejamento', n: open.novo, tone: 'text-indigo-600 dark:text-indigo-400', icon: <CalendarClock className="w-4 h-4" />, hint: 'PMOC › Preventivas', to: 'plan' as Target },
-    { label: 'Planejadas', n: open.planejada, tone: 'text-sky-600 dark:text-sky-400', icon: <ClipboardCheck className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
+    { label: 'Aguardando planejamento', n: open.novo, tone: 'text-indigo-600 dark:text-indigo-400', icon: <CalendarClock className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'aprog' as Target },
+    { label: 'Planejadas', n: open.planejada, tone: 'text-sky-600 dark:text-sky-400', icon: <ClipboardCheck className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'prog' as Target },
     { label: 'Em execução', n: open.execucao, tone: 'text-amber-600 dark:text-amber-400', icon: <Wrench className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
-    { label: 'Atrasadas', n: open.atrasada, tone: 'text-rose-600 dark:text-rose-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
+    { label: 'Atrasadas', n: open.atrasada, tone: 'text-rose-600 dark:text-rose-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'atr' as Target },
     { label: `Concluídas em ${monthName(month)}`, n: stats ? stats.ativos.done + stats.vistorias.done : null, tone: 'text-emerald-600 dark:text-emerald-400', icon: <CheckCircle2 className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target },
     { label: `Não executadas em ${monthName(month)}`, n: stats ? stats.ativos.notDone + stats.vistorias.notDone : null, tone: 'text-slate-500 dark:text-slate-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target }
   ];

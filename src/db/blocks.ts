@@ -100,6 +100,15 @@ export async function dbGetLot(id: string): Promise<PlanningLot | null> {
   return snap.exists() ? ({ ...(snap.data() as PlanningLot), id: snap.id }) : null;
 }
 
+// Blocos/lotes pelo número (Fase 7E-1: "Veio de" na lista de preventivas). 1 leitura por bloco, só os da página aberta
+// (a regra confere a gerência documento a documento; uma busca pelo número seria recusada para quem vê só algumas)
+export async function dbGetLotsByIds(ids: string[]): Promise<PlanningLot[]> {
+  if (!firebaseActive || !dbInstance) return [];
+  const list = Array.from(new Set(ids.filter(Boolean))).slice(0, 60);
+  const snaps = await Promise.all(list.map((id) => getDoc(doc(dbInstance!, 'planningLots', id)).catch(() => null)));
+  return snaps.filter((x) => !!x && x.exists()).map((x) => ({ ...(x!.data() as PlanningLot), id: x!.id }));
+}
+
 // Preventiva ou chamado marcado no bloco, com os dias do seu local
 export interface BlockPlanItem<T> {
   item: T;

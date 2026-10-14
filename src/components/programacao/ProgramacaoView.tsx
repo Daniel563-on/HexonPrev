@@ -15,14 +15,13 @@ interface Props {
   orders: ServiceOrder[]; // preventivas da cópia local (a Semana mostra as já programadas)
   activeUnit?: string;
   onActiveUnitChange?: (unit: string) => void;
-  limitedUnits?: boolean; // perfil limitado a gerências: o prazo de planejamento vencido trava a programação
   onViewedMonthChange?: (month: string) => void;
   onNavigate: (tab: string) => void;
 }
 
 type Tab = 'semana' | 'equipes';
 
-export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
+export default function ProgramacaoView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, onViewedMonthChange, onNavigate }: Props) {
   const [tab, setTab] = useState<Tab>('semana');
   const btn = (t: Tab, label: string) => (
     <button
@@ -53,7 +52,6 @@ export default function ProgramacaoView({ user, unitOptions, visibleCompanies, c
           orders={orders}
           activeUnit={activeUnit}
           onActiveUnitChange={onActiveUnitChange}
-          limitedUnits={limitedUnits}
           onViewedMonthChange={onViewedMonthChange}
           onNavigate={onNavigate}
         />

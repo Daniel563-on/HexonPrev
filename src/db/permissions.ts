@@ -16,24 +16,16 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_service_orders: {
     id: 'view_service_orders',
     name: 'Ver execução das preventivas',
-    description: 'Ordens de Serviço › Preventivas: lista para abrir, executar e assinar.',
+    description: 'Ordens de Serviço › Preventivas: lista para acompanhar, abrir, executar e assinar.',
     category: 'Abas',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
   },
   view_pmoc_planning: {
     id: 'view_pmoc_planning',
-    name: 'Ver planejamento das preventivas',
-    description: 'PMOC › Preventivas: calendário de planejamento e consulta (só olhar).',
+    name: 'Ver consulta das preventivas (PMOC)',
+    description: 'PMOC › Preventivas: Consulta de OS (só olhar). Programar é na Programação ou em Ordens de Serviço › Preventivas.',
     category: 'Abas',
-    area: 'preventiva',
-    roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
-  },
-  plan_orders: {
-    id: 'plan_orders',
-    name: 'Planejar preventivas',
-    description: 'Alterar o planejamento: programar lotes, escolher técnico, remarcar, pernoite, equipe habitual e voltar atrasadas para Novo.',
-    category: 'Ações',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
   },
@@ -346,7 +338,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   prog_edit: {
     id: 'prog_edit',
     name: 'Programar',
-    description: 'Aba Programação: montar as equipes (nome, tipo, responsável e membros). A equipe vira a equipe habitual do responsável; o técnico não muda mais a dele.',
+    description: 'Aba Programação: montar as equipes (a equipe vira a equipe habitual do responsável) e a semana (blocos). Ordens de Serviço › Preventivas: programar pela lista, trocar o técnico, remarcar e voltar para "Novo".',
     category: 'Ações',
     area: 'programacao',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -368,7 +360,6 @@ export const PERMISSION_AREAS: { id: PermissionArea; label: string; hint?: strin
 // (assim ninguém perde nem ganha acesso na troca)
 export const DERIVED_PERMISSIONS: Record<string, string> = {
   view_pmoc_planning: 'view_service_orders',
-  plan_orders: 'view_service_orders',
   preventive_pdf: 'execute_order', // ajustes da etapa 8: quem executa o checklist já vem podendo baixar o PDF
   os_pdf: 'os_export'               // o PDF da OS saiu de "Exportar OS": quem exportava continua baixando o PDF
 };

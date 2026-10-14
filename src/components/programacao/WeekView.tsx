@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock, Eye, FileDown, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Star, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Eye, FileDown, History, Info, Lock, MapPin, Moon, MoreHorizontal, Pencil, Plus, RefreshCw, Send, Star, Trash2, Wrench } from 'lucide-react';
 import { Absence, BlockStop, Company, DayMarkKind, HexonUser, Notice, OrderParticipant, PlanningLot, ServiceOrder, UsualTeam, WeekPlan, WeekPub, WeekVisit, WorkOrder } from '../../types';
 import {
   companiesOfUnit,
   dbDeleteAbsence,
   dbGetCompanies,
-  dbGetPlanningDeadlines,
   dbGetUnitPeopleInfo,
   dbGetWeekPlan,
   dbListAbsences,
@@ -21,7 +20,7 @@ import {
   CompanyFixResult,
   UnitPersonInfo
 } from '../../db/firebase';
-import { setHomeLink } from '../../lib/homeLinks';
+import { clearHomeLink, peekHomeLink, setHomeLink } from '../../lib/homeLinks';
 import { NOTICE_FILE_MAX, newNoticeId } from '../../db/notices';
 import { deliverBytes, safeFileName } from '../../lib/fileDelivery';
 import { WeekPdfData, WeekPdfItem, WeekPdfTeam, generateWeekPdf } from '../../lib/weekPdf';
@@ -47,7 +46,6 @@ interface Props {
   orders: ServiceOrder[]; // preventivas da cópia local deste aparelho
   activeUnit?: string; // quem vê todas as gerências: a gerência cuja cópia está no aparelho
   onActiveUnitChange?: (unit: string) => void;
-  limitedUnits?: boolean;
   onViewedMonthChange?: (month: string) => void;
   onNavigate: (tab: string) => void;
 }
@@ -80,15 +78,19 @@ const saveLocal = (k: string, v: string) => {
   }
 };
 
-export default function WeekView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, limitedUnits, onViewedMonthChange, onNavigate }: Props) {
-  const [unit, setUnit] = useState(() => (activeUnit && unitOptions.includes(activeUnit) ? activeUnit : unitOptions.includes(user.gerencia) ? user.gerencia : unitOptions[0] || ''));
+export default function WeekView({ user, unitOptions, visibleCompanies, canEdit, canPublish, orders, activeUnit, onActiveUnitChange, onViewedMonthChange, onNavigate }: Props) {
+  // "abrir na Programação" (Ordens de Serviço › Preventivas, Fase 7E-1): abre na gerência, empresa e semana do bloco
+  const [link] = useState(() => peekHomeLink<{ unit: string; company: string; weekStart: string }>('programacao-week'));
+  useEffect(() => clearHomeLink('programacao-week'), []);
+  const [unit, setUnit] = useState(() =>
+    link?.unit && unitOptions.includes(link.unit) ? link.unit : activeUnit && unitOptions.includes(activeUnit) ? activeUnit : unitOptions.includes(user.gerencia) ? user.gerencia : unitOptions[0] || ''
+  );
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [company, setCompany] = useState('');
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+  const [company, setCompany] = useState(link?.company || '');
+  const [weekStart, setWeekStart] = useState(() => link?.weekStart || mondayOf(new Date()));
   const [teams, setTeams] = useState<UsualTeam[]>([]);
   const [people, setPeople] = useState<UnitPersonInfo[]>([]);
   const [openWos, setOpenWos] = useState<WorkOrder[]>([]);
-  const [deadline, setDeadline] = useState<string | null>(null);
   const [plan, setPlan] = useState<WeekPlan | null>(null);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [lots, setLots] = useState<PlanningLot[]>([]);
@@ -108,7 +110,9 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   }, []);
   const unitCompanies = useMemo(() => companiesOfUnit(companies, unit).filter((c) => c.active && isCompanyVisible(c.id, visibleCompanies)), [companies, unit, visibleCompanies]);
   useEffect(() => {
-    if (!unitCompanies.some((c) => c.id === company)) setCompany(unitCompanies[0]?.id || '');
+    if (unitCompanies.some((c) => c.id === company)) return;
+    const wanted = link && link.unit === unit && unitCompanies.some((c) => c.id === link.company) ? link.company : '';
+    setCompany(wanted || unitCompanies[0]?.id || '');
   }, [unitCompanies.map((c) => c.id).join('|')]);
 
   // Quem vê todas as gerências: o aparelho passa a guardar as preventivas da gerência escolhida aqui
@@ -125,11 +129,10 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
     setLoading(true);
     setMsg(null);
     try {
-      const [t, p, w, d] = await Promise.all([dbListTeams(unit), dbGetUnitPeopleInfo(unit), dbListOpenWorkOrders(unit).catch(() => [] as WorkOrder[]), dbGetPlanningDeadlines().catch(() => [])]);
+      const [t, p, w] = await Promise.all([dbListTeams(unit), dbGetUnitPeopleInfo(unit), dbListOpenWorkOrders(unit).catch(() => [] as WorkOrder[])]);
       setTeams(t);
       setPeople(p);
       setOpenWos(w);
-      setDeadline(d.find((x) => x.id === unit)?.expiresAt || null);
     } catch (err: any) {
       setMsg({ ok: false, text: err?.code === 'permission-denied' ? 'O banco não deixou ler as equipes.' : `Não foi possível ler as equipes: ${err?.message || err}` });
     } finally {
@@ -163,10 +166,9 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const today = days.includes(todayStr) ? todayStr : '';
   const pastWeek = weekStart < mondayOf(new Date());
   const readOnly = !canEdit || pastWeek;
-  const deadlineValid = !!deadline && deadline !== 'none' && !Number.isNaN(new Date(deadline).getTime());
-  const deadlineLocked = !!limitedUnits && deadlineValid && new Date(deadline!).getTime() < Date.now();
-  const canProgram = !readOnly && !deadlineLocked;
-  const lockReason = !canEdit ? 'Seu perfil só consulta a Programação.' : pastWeek ? 'Semana que já passou: só consulta.' : deadlineLocked ? 'Prazo de planejamento vencido: só consulta. Peça ao Super Administrador para estender.' : '';
+  // Fase 7E-1: não existe mais o prazo de planejamento do Super Admin (vale o prazo de cada preventiva, do disparo)
+  const canProgram = !readOnly;
+  const lockReason = !canEdit ? 'Seu perfil só consulta a Programação.' : pastWeek ? 'Semana que já passou: só consulta.' : '';
   const companyObj = unitCompanies.find((c) => c.id === company);
   const companyName = companyObj?.name || company;
   const personOf = (mat: string) => people.find((p) => p.matricula === mat);
@@ -836,11 +838,6 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
 
       {msg && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{msg.text}</p>}
       {unitCompanies.length === 0 && !loading && <p className="text-xs text-slate-500">Nenhuma empresa ativa nesta gerência (Configurações › Empresas).</p>}
-      {deadlineLocked && !readOnly && (
-        <p className="px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-[11px] font-bold text-rose-800">
-          Prazo de planejamento da {unit} vencido: os blocos ficam só para consulta. Peça ao Super Administrador para estender o prazo.
-        </p>
-      )}
 
       {noCompany > 0 && (
         <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs flex flex-wrap items-start gap-2">
@@ -897,14 +894,6 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             {stat('Pernoites (pessoa)', pernoites)}
             {stat('Chamados programados', woInWeek)}
             {stat('Chamados sem dia', openCount, openCount > 0)}
-            {stat(
-              'Prazo de planejamento',
-              <span className="flex items-center gap-1">
-                <Clock className="w-4 h-4" />
-                {deadlineValid ? new Date(deadline!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sem prazo'}
-              </span>,
-              deadlineValid
-            )}
           </div>
 
           {!loading && here.length === 0 && (

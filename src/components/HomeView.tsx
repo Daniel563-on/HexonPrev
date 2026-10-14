@@ -20,7 +20,7 @@ export interface HomePerms {
   assign: boolean; // atribuir técnico (novas e atrasadas)
   contest: boolean; // responder contestação
   seePreventives: boolean;
-  plan: boolean; // planejar preventivas
+  plan: boolean; // programar preventivas ("Programar", Fase 7E-1)
   decideSolicitations: boolean; // corretivas da preventiva
   decideMaterial: boolean;
   confirmSupply: boolean;
@@ -126,11 +126,12 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
     saveLocal('hexon_orders_section', 'os');
     onNavigate('service-orders');
   };
-  const openPreventives = (t: 'plan' | 'exec' | 'consulta') => {
-    if (t === 'exec') {
-      saveLocal('hexon_orders_section', 'preventivas');
-      onNavigate('service-orders');
-    } else onNavigate('pmoc-preventivas');
+  // Fase 7E-1: Ordens de Serviço › Preventivas já no contador (A programar, Programadas, Em execução, Atrasadas)
+  const openPreventives = (t: 'aprog' | 'prog' | 'exec' | 'atr' | 'consulta') => {
+    if (t === 'consulta') return onNavigate('pmoc-preventivas');
+    setHomeLink('preventives-view', t);
+    saveLocal('hexon_orders_section', 'preventivas');
+    onNavigate('service-orders');
   };
   // Ordens de Serviço › Preventivas já buscando pelo nome do técnico
   const openTechPreventives = (name: string) => {
@@ -167,8 +168,8 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
     needs.push({ key: 'new', n: osN('Nova'), text: pl(osN('Nova'), 'chamado novo sem técnico', 'chamados novos sem técnico'), hint: 'Ordens de Serviço › Chamados GLPI › Novas', icon: <Inbox className={ico} />, tone: TONE.sky, onOpen: () => openOs({ status: 'Nova' }) });
   }
   if (perms.seePreventives && perms.plan) {
-    needs.push({ key: 'prevLate', n: prevLate, text: pl(prevLate, 'preventiva atrasada', 'preventivas atrasadas'), hint: 'Ordens de Serviço › Preventivas', icon: <AlertTriangle className={ico} />, tone: TONE.rose, onOpen: () => openPreventives('exec') });
-    needs.push({ key: 'prevNew', n: prevNew, text: pl(prevNew, 'preventiva aguardando planejamento', 'preventivas aguardando planejamento'), hint: 'PMOC › Preventivas', icon: <CalendarClock className={ico} />, tone: TONE.indigo, onOpen: () => openPreventives('plan') });
+    needs.push({ key: 'prevLate', n: prevLate, text: pl(prevLate, 'preventiva atrasada', 'preventivas atrasadas'), hint: 'Ordens de Serviço › Preventivas', icon: <AlertTriangle className={ico} />, tone: TONE.rose, onOpen: () => openPreventives('atr') });
+    needs.push({ key: 'prevNew', n: prevNew, text: pl(prevNew, 'preventiva aguardando planejamento', 'preventivas aguardando planejamento'), hint: 'Ordens de Serviço › Preventivas', icon: <CalendarClock className={ico} />, tone: TONE.indigo, onOpen: () => openPreventives('aprog') });
   }
   if (perms.decideSolicitations) {
     const n = pending.solicitations;

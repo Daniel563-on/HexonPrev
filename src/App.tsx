@@ -64,10 +64,7 @@ import {
   dbSaveUser,
   dbUpdateUserSessionId,
   dbVerifySessionAuthenticity,
-  signOutHexon,
-  dbGetPlanningDeadlines,
-  dbSavePlanningDeadline,
-  PlanningDeadline
+  signOutHexon
 } from './db/firebase';
 
 export default function App() {
@@ -587,7 +584,7 @@ export default function App() {
         return false; // strictly Super Admin
       }
       if (actionId === 'delete_templates' || actionId === 'dispatch_orders' || actionId === 'view_costs') return false; // padrão: só Super Administrador
-      if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'manage_templates' || actionId === 'plan_orders') {
+      if (actionId === 'create_asset' || actionId === 'import_assets' || actionId === 'manage_templates') {
         return userProfile.perfil === 'Administrador';
       }
       if (actionId.startsWith('os_')) return false; // OS: só pelo perfil
@@ -1213,7 +1210,7 @@ export default function App() {
                 assign: userHasActionPermission('os_assign'),
                 contest: userHasActionPermission('os_contest_reply'),
                 seePreventives: userHasActionPermission('view_service_orders'),
-                plan: userHasActionPermission('plan_orders'),
+                plan: userHasActionPermission('prog_edit'), // Fase 7E-1: programar preventivas = "Programar"
                 decideSolicitations: userHasActionPermission('manage_solicitations'),
                 decideMaterial: userHasActionPermission('material_requests_decide'),
                 confirmSupply: userHasActionPermission('supply_requests_confirm'),
@@ -1275,6 +1272,7 @@ export default function App() {
                   activeUnit={visibleUnits === null ? adminUnit : undefined}
                   unitOptions={visibleUnits === null ? managementNames : undefined}
                   onActiveUnitChange={changeAdminUnit}
+                  onNavigate={setCurrentTab}
                 />
               }
             />
@@ -1400,7 +1398,6 @@ export default function App() {
               orders={orders}
               activeUnit={visibleUnits === null ? adminUnit : undefined}
               onActiveUnitChange={visibleUnits === null ? changeAdminUnit : undefined}
-              limitedUnits={visibleUnits !== null}
               onViewedMonthChange={setOrdersMonth}
               onNavigate={setCurrentTab}
             />
