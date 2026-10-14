@@ -475,6 +475,12 @@ export default function AssetImportWizard(props: Props) {
                   <span>Os baixados saem das preventivas: as OS abertas deles são canceladas.</span>
                 </p>
               )}
+              {plan.toSave.length === 0 && plan.toRetire.length === 0 && (
+                <p className="text-xs font-bold text-emerald-700 flex gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  Nada para gravar: os ativos já estão iguais à planilha.
+                </p>
+              )}
             </div>
           )}
 
