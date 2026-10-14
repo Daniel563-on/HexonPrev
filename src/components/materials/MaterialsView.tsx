@@ -182,7 +182,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
           </select>
           <select value={company} onChange={(e) => { setCompany(e.target.value); setShown(PAGE); }} className={field} aria-label="Filtrar por empresa">
             <option value="Todas">Todas as empresas</option>
-            {(unit === 'Todas' ? myCompanies : companiesOfUnit(myCompanies, unit)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {(unit === 'Todas' ? myCompanies : companiesOfUnit(myCompanies, unit)).filter((c) => c.active || c.id === company).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={availability} onChange={(e) => { setAvailability(e.target.value as typeof availability); setShown(PAGE); }} className={field}>
             <option value="Todos">Com e sem valor</option>

@@ -315,7 +315,7 @@ export default function AddressesView({ userName = '' }: { userName?: string }) 
           </select>
           <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className={`${inputClass} md:w-56`} aria-label="Filtrar por empresa">
             <option value="Todas">Todas as empresas</option>
-            {domCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {domCompanies.filter((c) => c.active || c.id === companyFilter).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             <option value="">Sem empresa</option>
           </select>
         </div>

@@ -117,7 +117,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     dbGetCompanies().then(setCompanies).catch(() => {});
   }, []);
   const unitCompanies = useMemo(
-    () => companiesOfUnit(companies, unit).filter((c) => visibleCompanies === null || visibleCompanies.includes(c.id)),
+    () => companiesOfUnit(companies, unit).filter((c) => c.active && (visibleCompanies === null || visibleCompanies.includes(c.id))),
     [companies, unit, visibleCompanies]
   );
   // Empresas da busca: a escolhida; senão as que o perfil vê (null = todas)

@@ -164,7 +164,7 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
                     {m.name}
                   </label>
                 ))}
-                {units.length === 0 && <span className={`text-xs ${muted}`}>Cadastre as gerências primeiro (Usuários › Gerências).</span>}
+                {units.length === 0 && <span className={`text-xs ${muted}`}>Cadastre as gerências primeiro (Configurações › Gerências).</span>}
               </div>
             </div>
             <label className="flex items-start gap-2 text-xs font-bold cursor-pointer">

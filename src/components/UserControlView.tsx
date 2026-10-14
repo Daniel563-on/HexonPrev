@@ -5,9 +5,6 @@ import {
   dbSaveUser, 
   dbDeleteUser, 
   dbGetManagements, 
-  dbSaveManagement, 
-  dbDeleteManagement, 
-  dbGetAssets,
   dbAddAuditLog,
   dbGetPermissions,
   dbSavePermissions,
@@ -27,7 +24,6 @@ import {
 } from '../db/firebase';
 import { AccessProfile, Company, HexonUser, JobRole, Management, SystemPermission } from '../types';
 import ProfilesTab from './users/ProfilesTab';
-import UnitBackfillCard from './users/UnitBackfillCard';
 import { dbBumpDataVersion } from '../db/appControl';
 import WorkforceTab from './users/WorkforceTab';
 
@@ -37,7 +33,7 @@ interface UserControlViewProps {
 }
 
 export default function UserControlView({ currentUserProfile, darkMode }: UserControlViewProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'managements' | 'permissions' | 'workforce'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'permissions' | 'workforce'>('users');
   
   // Lists state
   const [users, setUsers] = useState<HexonUser[]>([]);
@@ -71,10 +67,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     companies: [] as string[]
   });
 
-  // Mgmt Modal state
-  const [isMgmtModalOpen, setIsMgmtModalOpen] = useState(false);
-  const [mgmtForm, setMgmtForm] = useState({ id: '', name: '', description: '' });
-
   // Filter query state
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -102,9 +94,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         setProfiles(await dbGetProfiles(force, true));
         if (activeSubTab === 'users') setJobRoles(await dbGetJobRoles(force));
         if (activeSubTab === 'users') setCompanies(await dbGetCompanies(force).catch(() => []));
-      } else if (activeSubTab === 'managements') {
-        const mList = await dbGetManagements();
-        setManagements(mList);
       }
     } catch (e) {
       console.error('Error loading RBAC settings:', e);
@@ -323,65 +312,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     });
   };
 
-  // Gerências
-  const handleSaveManagement = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mgmtForm.name) return;
-
-    try {
-      const item: Management = {
-        id: mgmtForm.id || `m_${Date.now()}`,
-        name: mgmtForm.name,
-        description: mgmtForm.description
-      };
-      await dbSaveManagement(item);
-      await dbAddAuditLog({
-        userMatricula: currentUserProfile.matricula,
-        userName: currentUserProfile.name,
-        action: mgmtForm.id ? 'Atualizou Gerência' : 'Criou Gerência',
-        target: `managements/${item.id}`,
-        details: `Registrou gerência ${item.name}`,
-        timestamp: new Date().toISOString()
-      });
-      setIsMgmtModalOpen(false);
-      dbBumpDataVersion();
-      loadAllData();
-    } catch (err: any) {
-      console.error(err);
-      alert(`Não foi possível salvar a gerência: ${err?.message || err}`);
-    }
-  };
-
-  const handleDeleteManagement = async (id: string, name: string) => {
-    if (name === 'Todas') {
-      alert('A gerência de atuação global "Todas" não pode ser excluída.');
-      return;
-    }
-    // Gerência em uso não pode ser excluída (OS, usuários, ativos e regras do banco guardam o nome)
-    const usersIn = users.filter((u) => u.gerencia === name).length;
-    const assetsIn = (await dbGetAssets().catch(() => [])).filter((a) => a.sector === name).length;
-    const profilesIn = profiles.filter((p) => (p.units || []).includes(name)).length;
-    if (usersIn + assetsIn + profilesIn > 0) {
-      alert(`A gerência "${name}" está em uso (${usersIn} usuário(s), ${assetsIn} ativo(s), ${profilesIn} perfil(is)) e não pode ser excluída.`);
-      return;
-    }
-    setGenericConfirm({
-      show: true,
-      title: 'Excluir Gerência',
-      message: `Tem certeza que deseja excluir a gerência "${name}"? Os ativos e preventivas estructurados nesta gerência perderão o setor de atuação.`,
-      onConfirm: async () => {
-        try {
-          await dbDeleteManagement(id);
-          dbBumpDataVersion();
-          loadAllData();
-        } catch (err: any) {
-          console.error(err);
-          alert(`Não foi possível excluir a gerência: ${err?.message || err}`);
-        }
-      }
-    });
-  };
-
   // Permissions Management handlers
   const handleTogglePermission = (permissionId: string, role: 'Administrador' | 'Profissional') => {
     setPermissionsMatrix(prev => {
@@ -478,10 +408,10 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             Nível: Super Administrador
           </span>
           <h2 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'} mt-1`}>
-            Usuários, Gerências e Permissões
+            Usuários e Permissões
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Cadastro de usuários, gerências, perfis de acesso e efetivo, válidos para todo o sistema.
+            Cadastro de usuários, perfis de acesso e efetivo, válidos para todo o sistema. As gerências ficam em Configurações › Gerências.
           </p>
         </div>
 
@@ -494,18 +424,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
             >
               <span className="material-symbols-outlined text-[15px]">person_add</span>
               Novo Colaborador
-            </button>
-          )}
-          {activeSubTab === 'managements' && (
-            <button 
-              onClick={() => {
-                setMgmtForm({ id: '', name: '', description: '' });
-                setIsMgmtModalOpen(true);
-              }}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[15px]">add_circle</span>
-              Nova Gerência
             </button>
           )}
         </div>
@@ -523,17 +441,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         >
           <span className="material-symbols-outlined text-base">manage_accounts</span>
           Colaboradores e Perfis ({users.length})
-        </button>
-        <button
-          onClick={() => { setActiveSubTab('managements'); setSearchQuery(''); }}
-          className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-            activeSubTab === 'managements' 
-              ? 'border-blue-600 text-blue-600' 
-              : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">corporate_fare</span>
-          Gerências
         </button>
         <button
           onClick={() => { setActiveSubTab('permissions'); setSearchQuery(''); }}
@@ -575,7 +482,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
           <input
             type="text"
             placeholder={
-              activeSubTab === 'users' ? 'Buscar colaborador por nome, matrícula, e-mail...' : 'Filtre gerências operacionais...'
+              'Buscar colaborador por nome, matrícula, e-mail...'
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -731,54 +638,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {/* TAB 2: GERÊNCIAS */}
-          {activeSubTab === 'managements' && (
-            <div className="max-w-3xl mx-auto">
-              {currentUserProfile.perfil === 'Super Administrador' && <UnitBackfillCard darkMode={darkMode} />}
-              
-              {/* Gerências */}
-              <div className={`p-5 rounded-xl border ${darkMode ? 'bg-[#0a1122]/40 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <h3 className={`text-sm font-black uppercase tracking-wider ${darkMode ? 'text-slate-300' : 'text-slate-700'} mb-4 flex items-center gap-2`}>
-                  <span className="material-symbols-outlined text-base">domain</span>
-                  Gerências Técnicas / Oficinas
-                </h3>
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                  {managements.map((m) => (
-                    <div 
-                      key={m.id}
-                      className={`p-3 rounded-lg border text-xs flex justify-between items-center ${
-                        darkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'
-                      }`}
-                    >
-                      <div>
-                        <span className={`font-bold block ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{m.name}</span>
-                        <span className="text-slate-550 text-[10.5px] mt-0.5 block">{m.description || 'Sem descrição cadastrada'}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button 
-                          onClick={() => {
-                            setMgmtForm(m);
-                            setIsMgmtModalOpen(true);
-                          }}
-                          className="p-1 text-slate-500 hover:text-blue-500 transition-colors animate-none"
-                        >
-                          <span className="material-symbols-outlined text-base">edit</span>
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteManagement(m.id, m.name)}
-                          className="p-1 text-slate-500 hover:text-rose-600 transition-colors animate-none"
-                        >
-                          <span className="material-symbols-outlined text-base">delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
             </div>
           )}
 
@@ -1000,7 +859,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                     ))}
                     {managements.length === 0 && (
                       <>
-                        <option value="" disabled>Cadastre as gerências primeiro (Controle de Usuários → Gerências)</option>
+                        <option value="" disabled>Cadastre as gerências primeiro (Configurações › Gerências)</option>
                       </>
                     )}
                   </select>
@@ -1105,51 +964,6 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 </button>
               </div>
 
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 2: ADD/EDIT GERÊNCIA */}
-      {isMgmtModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-101 flex items-center justify-center p-4">
-          <div className={`w-full max-w-sm rounded-2xl shadow-xl overflow-hidden animate-fade-in ${darkMode ? 'bg-[#0a1122] border border-slate-800 text-white' : 'bg-white text-slate-900'}`}>
-            <div className="px-5 py-3.5 border-b border-slate-150 dark:border-slate-800 flex justify-between items-center font-bold text-xs uppercase tracking-wider">
-              <span>{mgmtForm.id ? 'Editar Gerência' : 'Cadastrar Nova Gerência'}</span>
-              <button onClick={() => setIsMgmtModalOpen(false)} className="text-slate-400 hover:text-white"><span className="material-symbols-outlined text-sm">close</span></button>
-            </div>
-            <form onSubmit={handleSaveManagement} className="p-5 space-y-3.5">
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nome da Gerência *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Predial, Hidráulica, TI"
-                  value={mgmtForm.name}
-                  disabled={!!mgmtForm.id}
-                  onChange={(e) => setMgmtForm({ ...mgmtForm, name: e.target.value })}
-                  className={`w-full text-xs font-bold px-3 py-2 border rounded-lg disabled:opacity-60 disabled:cursor-not-allowed ${darkMode ? 'bg-[#121b2d] border-slate-805' : 'bg-white'}`}
-                />
-                {mgmtForm.id && (
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    O nome não muda depois de criada: OS, usuários, ativos e regras do banco guardam este nome. Só a descrição pode ser editada.
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Descrição</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Cabines de média e alta tensão, cabeamentos"
-                  value={mgmtForm.description}
-                  onChange={(e) => setMgmtForm({ ...mgmtForm, description: e.target.value })}
-                  className={`w-full text-xs font-bold px-3 py-2 border rounded-lg ${darkMode ? 'bg-[#121b2d] border-slate-805' : 'bg-white'}`}
-                />
-              </div>
-              <div className="flex justify-end gap-1.5 pt-3 border-t dark:border-slate-850">
-                <button type="button" onClick={() => setIsMgmtModalOpen(false)} className="px-3 py-1.5 border hover:bg-slate-50/10 rounded text-xs font-bold">Cancelar</button>
-                <button type="submit" className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm">Salvar</button>
-              </div>
             </form>
           </div>
         </div>

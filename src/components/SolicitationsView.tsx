@@ -220,7 +220,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
           <select value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Empresa" className={selectCls}>
             <option value="Todas">Todas as empresas</option>
             {companies
-              .filter((c) => isCompanyVisible(c.id, visibleCompanies) && (unit ? c.units.includes(unit) : scopeUnits === null || c.units.some((u) => scopeUnits.includes(u))))
+              .filter((c) => c.active && isCompanyVisible(c.id, visibleCompanies) && (unit ? c.units.includes(unit) : scopeUnits === null || c.units.some((u) => scopeUnits.includes(u))))
               .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}

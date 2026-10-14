@@ -227,9 +227,10 @@ export default function AssetsView({
   const visibleOptions = (f: FacetKey, values: string[], selected: string) =>
     values.filter((v) => v === selected || countOf(f, v) > 0);
 
-  // Opções do filtro Empresa: as que aparecem nos itens (mais a escolhida), pelo nome
+  // Opções do filtro Empresa: as que aparecem nos itens (mais a escolhida), pelo nome; empresa inativa não aparece (A5)
   const companyOptions = React.useMemo(() => {
-    const ids = new Set<string>(allItems.map((a) => a.company || ''));
+    const inactive = new Set(companies.filter((c) => !c.active).map((c) => c.id));
+    const ids = new Set<string>(allItems.map((a) => a.company || '').filter((id) => !inactive.has(id)));
     if (filterEmpresa !== 'Todas') ids.add(filterEmpresa);
     return Array.from(ids).sort((x, y) => companyName(x).localeCompare(companyName(y)));
   }, [allItems, filterEmpresa, companies]);

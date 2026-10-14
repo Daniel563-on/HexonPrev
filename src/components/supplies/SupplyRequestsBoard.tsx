@@ -96,7 +96,7 @@ export default function SupplyRequestsBoard({
     if (!unit && units.length) setUnit(units.includes(userProfile.gerencia || '') ? userProfile.gerencia! : units[0]);
   }, [units]);
 
-  const unitCompanies = companies.filter((c) => c.units.includes(unit) && isCompanyVisible(c.id, visibleCompanies));
+  const unitCompanies = companies.filter((c) => c.active && c.units.includes(unit) && isCompanyVisible(c.id, visibleCompanies));
   const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id;
 
   const load = async (more = false) => {

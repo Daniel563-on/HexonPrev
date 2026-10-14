@@ -144,7 +144,7 @@ export default function PreventivesBoard(props: Props) {
       .then(setPeople)
       .catch(() => setPeople([]));
   }, [unit]);
-  const unitCompanies = useMemo(() => companiesOfUnit(companies, unit).filter((c) => isCompanyVisible(c.id, visibleCompanies)), [companies, unit, visibleCompanies]);
+  const unitCompanies = useMemo(() => companiesOfUnit(companies, unit).filter((c) => c.active && isCompanyVisible(c.id, visibleCompanies)), [companies, unit, visibleCompanies]);
   useEffect(() => {
     if (company !== 'Todas' && companies.length > 0 && !unitCompanies.some((c) => c.id === company)) setCompany(unitCompanies.length === 1 ? unitCompanies[0].id : 'Todas');
     if (company === 'Todas' && unitCompanies.length === 1 && visibleCompanies !== null) setCompany(unitCompanies[0].id);

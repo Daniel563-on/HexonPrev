@@ -215,7 +215,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
             </select>
             <select value={company} onChange={(e) => setCompany(e.target.value)} className={field} aria-label="Filtrar por empresa">
               <option value="Todas">Todas as empresas</option>
-              {(unit === 'Todas' ? companies : companies.filter((c) => c.units.includes(unit))).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {(unit === 'Todas' ? companies : companies.filter((c) => c.units.includes(unit))).filter((c) => c.active || c.id === company).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <select value={cargo} onChange={(e) => setCargo(e.target.value)} className={field}>
               <option value="Todos">Todos os cargos</option>

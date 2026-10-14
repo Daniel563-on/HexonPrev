@@ -167,13 +167,13 @@ const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', curren
 const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 
 export default function JobRolesPanel({ roles: baseRoles, cargoNames, activeCountByCargo, currentUserName, darkMode, onChanged }: Props) {
-  // Empresa escolhida: só as que contabilizam homem-hora, hora extra e pernoite
+  // Empresa escolhida: só as ativas que contabilizam homem-hora, hora extra e pernoite (inativa: os valores ficam guardados)
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState('');
   useEffect(() => {
     dbGetCompanies(true)
       .then((list) => {
-        const tracked = list.filter((c) => c.costTracking);
+        const tracked = list.filter((c) => c.costTracking && c.active);
         setCompanies(tracked);
         setCompany((cur) => cur || tracked[0]?.id || '');
       })
