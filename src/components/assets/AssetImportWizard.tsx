@@ -26,15 +26,13 @@ interface Props {
   userName: string;
   canManageTypes: boolean; // "Criar e editar modelos de preventiva": cria no PMOC os tipos novos (sem periodicidade)
   onReloadAssets: () => Promise<void>;
-  setCustomDynamicFields: (fields: string[]) => void;
 }
 
 const STEPS = ['Arquivo', 'Colunas', 'Tipos', 'Conferência'];
-const FIELDS_SHOWN = ['CRAAI', 'COMARCA', 'LOCALIZAÇÃO', 'MATERIAL', 'CAPACIDADE', 'TIPO', 'MARCA', 'MODELO', 'Nº DE SÉRIE', 'DATA DE AQUISIÇÃO', 'VALOR LÍQUIDO'];
 const n = (v: number) => v.toLocaleString('pt-BR');
 
 export default function AssetImportWizard(props: Props) {
-  const { isOpen, onClose, assets, managements, companies, userName, canManageTypes, onReloadAssets, setCustomDynamicFields } = props;
+  const { isOpen, onClose, assets, managements, companies, userName, canManageTypes, onReloadAssets } = props;
   const units = useMemo(() => managements.map((m) => m.name).filter((x) => x && x !== 'Todas'), [managements]);
   const [step, setStep] = useState(0);
   const [unit, setUnit] = useState('');
@@ -206,12 +204,6 @@ export default function AssetImportWizard(props: Props) {
       } else if (newTypes.length) {
         typesNote = 'Peça a quem cuida do PMOC para clicar em "Atualizar tipos" e marcar as periodicidades.';
       }
-      try {
-        localStorage.setItem('HEXON_CUSTOM_FIELDS', JSON.stringify(FIELDS_SHOWN));
-      } catch {
-        /* ignora */
-      }
-      setCustomDynamicFields(FIELDS_SHOWN);
       setDone({ saved: plan.toSave.length, retired: plan.toRetire.length, cancelled, movedOrders, newTypes, typesNote });
       await onReloadAssets();
     } catch (e: any) {

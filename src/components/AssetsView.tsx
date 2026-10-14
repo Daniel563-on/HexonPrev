@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { AssetScannerModal, AssetDeleteModal, AssetSectorDeleteModal } from './assets/AssetActionModals';
 import AssetImportWizard from './assets/AssetImportWizard';
-import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
+import AssetForm from './assets/AssetForm';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
 import { AddressDetailPanel } from './assets/AddressDetailPanel';
 import AssetGroupedList from './assets/AssetGroupedList';
@@ -51,9 +51,7 @@ import {
   dbDeleteAsset, 
   dbDeleteAssetsBySector, 
   dbGetManagements,
-  dbGetPeriodicityRules,
   dbSavePeriodicityRules,
-  dbGetCustomDynamicFields,
   dbSaveCustomDynamicFields,
   dbGetServiceOrderById,
   dbGetTemplates
@@ -107,33 +105,10 @@ export default function AssetsView({
   const [addressCraais, setAddressCraais] = useState<{ craai: string; comarca: string }[]>([]);
   const [addressList, setAddressList] = useState<Address[]>([]);
 
-  // Dynamic custom fields mapped from XLSX columns
-  const [customDynamicFields, setCustomDynamicFields] = useState<string[]>([]);
 
   // XLSX Import state
   const [showImportModal, setShowImportModal] = useState(false);
 
-  // Custom rules mappings for spreadsheet TIPO to Periodicities map
-  const [periodicityRules, setPeriodicityRules] = useState<Array<{ keyword: string; selectPeriodicities: ('Mensal' | 'Trimestral' | 'Semestral' | 'Anual')[] }>>(() => {
-    try {
-      const saved = localStorage.getItem('hexon_periodicity_rules');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('Failed to load periodicity rules:', e);
-    }
-    return [
-      { keyword: 'ACJ', selectPeriodicities: ['Mensal', 'Semestral'] },
-      { keyword: 'QUADRO ELÉTRICO', selectPeriodicities: ['Mensal', 'Trimestral', 'Anual'] },
-      { keyword: 'AR CONDICIONADO', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
-      { keyword: 'CHILLER', selectPeriodicities: ['Mensal', 'Semestral', 'Anual'] },
-      { keyword: 'BOMBA', selectPeriodicities: ['Mensal', 'Semestral'] },
-      { keyword: 'EXTINTOR', selectPeriodicities: ['Mensal', 'Anual'] },
-      { keyword: 'PREDIAL', selectPeriodicities: ['Semestral', 'Anual'] },
-      { keyword: 'CIVIL', selectPeriodicities: ['Semestral', 'Anual'] },
-    ];
-  });
 
   // Active asset being edited (Extraído na Etapa 3)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -291,16 +266,6 @@ export default function AssetsView({
 
   useEffect(() => {
     loadAssetsData();
-    dbGetCustomDynamicFields().then(fields => {
-      if (fields && fields.length > 0) {
-        setCustomDynamicFields(fields);
-      }
-    });
-    dbGetPeriodicityRules().then(rules => {
-      if (rules && rules.length > 0) {
-        setPeriodicityRules(rules);
-      }
-    });
   }, [userProfile, orders]);
 
   // Histórico do ativo: carregado em páginas de 12 dentro do painel do ativo (AssetDetailPanel)
@@ -647,19 +612,24 @@ export default function AssetsView({
         assets={consultationResults.slice(0, 30)}
       />
 
-      {/* EDIT ASSET FORM MODAL (EXTRAÍDO NA ETAPA 3) */}
-      <AssetEditModal
-        isOpen={!!editingAsset}
-        onClose={() => setEditingAsset(null)}
+      {/* CADASTRAR / EDITAR ATIVO (A4-C): mesmos campos da planilha, tipo de manutenção, sem periodicidade */}
+      <AssetForm
+        isOpen={showAddModal || !!editingAsset}
         asset={editingAsset}
-        managements={managements}
+        onClose={() => {
+          setShowAddModal(false);
+          setEditingAsset(null);
+        }}
+        assets={assets}
+        managements={managements.filter((m) => !visibleUnits || visibleUnits.includes(m.name))}
         companies={companies}
         userName={userProfile?.name || ''}
-        onSaveSuccess={(updatedAsset) => {
-          setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a));
-          if (selectedAsset?.id === updatedAsset.id) {
-            setSelectedAsset(updatedAsset);
-          }
+        canViewCosts={userProfile?.perfil === 'Super Administrador' || !!userHasActionPermission?.('view_costs')}
+        canManageTypes={userProfile?.perfil === 'Super Administrador' || !userHasActionPermission || userHasActionPermission('manage_templates')}
+        onSaved={(saved) => {
+          if (editingAsset) {
+            if (selectedAsset?.id === saved.id) setSelectedAsset(saved);
+          } else setSelectedAsset(saved);
         }}
       />
 
@@ -702,19 +672,6 @@ export default function AssetsView({
         }}
       />
 
-      {/* CREATE NEW ASSET FORM MODAL (EXTRAÍDO NA ETAPA 3) */}
-      <AssetCreateModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        managements={managements}
-        companies={companies}
-        periodicityRules={periodicityRules}
-        customDynamicFields={customDynamicFields}
-        onCreateSuccess={async (newAsset) => {
-          await loadAssetsData();
-          setSelectedAsset(newAsset);
-        }}
-      />
 
       {/* IMPORTAR PLANILHA (A4-A): colunas, tipo por material, conferência antes de gravar */}
       <AssetImportWizard
@@ -726,7 +683,6 @@ export default function AssetsView({
         userName={userProfile?.name || ''}
         canManageTypes={userProfile?.perfil === 'Super Administrador' || !userHasActionPermission || userHasActionPermission('manage_templates')}
         onReloadAssets={loadAssetsData}
-        setCustomDynamicFields={setCustomDynamicFields}
       />
 
     </div>
