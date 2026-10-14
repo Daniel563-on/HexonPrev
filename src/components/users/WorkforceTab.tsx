@@ -67,7 +67,7 @@ export default function WorkforceTab({ users, managements, profiles, currentUser
     if (wfVersion === 0) return;
     dbGetWorkforce(false).then(setPeople).catch(() => {});
   }, [wfVersion]);
-  const companyName = (id: string) => companies.find((c) => c.id === id)?.name || id;
+  const companyName = (id: string) => { const c = companies.find((x) => x.id === id); return c ? `${c.name}${c.active === false ? ' (inativa)' : ''}` : id; };
 
   const unitNames = managements.map((m) => m.name).filter((n) => n && n !== 'Todas');
 

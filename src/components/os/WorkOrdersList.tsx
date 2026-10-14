@@ -4,6 +4,8 @@ import { Company, HexonUser, WorkOrder, WorkOrderStatus } from '../../types';
 import {
   companiesOfUnit,
   dbGetCompanies,
+  inactiveCompanyIds,
+  OS_OPEN_STATUSES,
   OS_FILTER_STATUSES,
   OS_PANEL_STATUSES,
   OsStatusFilter,
@@ -29,6 +31,7 @@ import {
 import WorkOrderSheet from './WorkOrderSheet';
 import OsSignQueue from './OsSignQueue';
 import AssignWorkOrderModal from './AssignWorkOrderModal';
+import ChooseCompanyModal from './ChooseCompanyModal';
 import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
@@ -41,6 +44,10 @@ import { HomeOsLink, clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 // em aberto = parcial), planilha da lista filtrada e backup em ZIP só das concluídas (pastas por mês da conclusão).
 // Empresa (etapa especial E4): filtro no banco (lista, contadores, planilha e ZIP); perfil "só as empresas do usuário"
 // vê só as dele. Atribuir/trocar lista só os técnicos da empresa da OS.
+// A5-B: chamado em aberto de empresa inativa = "Sem empresa": opção no filtro, aviso, etiqueta e "Escolher empresa"
+// (só o Super Administrador).
+
+const PENDING = '__sem_empresa__'; // filtro "Sem empresa" (em aberto das empresas inativas da gerência)
 
 interface Props {
   userProfile: HexonUser;
@@ -120,8 +127,19 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     () => companiesOfUnit(companies, unit).filter((c) => c.active && (visibleCompanies === null || visibleCompanies.includes(c.id))),
     [companies, unit, visibleCompanies]
   );
-  // Empresas da busca: a escolhida; senão as que o perfil vê (null = todas)
-  const cos: string[] | null = companyFilter ? [companyFilter] : visibleCompanies === null ? null : [...visibleCompanies];
+  // Empresas inativas da gerência (A5-B): o que está em aberto delas aparece como "Sem empresa"
+  const inactive = useMemo(() => inactiveCompanyIds(companies), [companies]);
+  const unitInactive = useMemo(
+    () => companiesOfUnit(companies, unit).filter((c) => !c.active && (visibleCompanies === null || visibleCompanies.includes(c.id))).map((c) => c.id).slice(0, 10),
+    [companies, unit, visibleCompanies]
+  );
+  const [pendingCount, setPendingCount] = useState(0);
+  const isSuper = userProfile.perfil === 'Super Administrador';
+  const [choosing, setChoosing] = useState<WorkOrder | null>(null);
+  const isPending = (o: WorkOrder) => !!o.company && inactive.has(o.company) && OS_OPEN_STATUSES.includes(o.status);
+  // Empresas da busca: a escolhida; "Sem empresa" = as inativas da gerência; senão as que o perfil vê (null = todas)
+  const cos: string[] | null =
+    companyFilter === PENDING ? unitInactive : companyFilter ? [companyFilter] : visibleCompanies === null ? null : [...visibleCompanies];
   const cosKey = cos === null ? '*' : cos.join(',');
   const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '—');
 
@@ -156,6 +174,9 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   // quiet: recontagem em segundo plano (mantém os números na tela até chegarem os novos)
   const loadCounters = (quiet = false) => {
     if (!unit) return;
+    // Chamados em aberto "Sem empresa" (A5-B): 1 contagem, só se a gerência tem empresa inativa
+    if (unitInactive.length) dbCountWorkOrders(unit, { kind: 'pending' }, unitInactive).then(setPendingCount).catch(() => {});
+    else setPendingCount(0);
     if (!quiet) setCounters(null);
     dbGetOsCounters(unit, cos)
       .then(setCounters)
@@ -254,9 +275,20 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       firstCompanyRun.current = false;
       return;
     }
-    loadFirst(mode);
+    // "Sem empresa" mostra só as em aberto; ao sair dele, volta para as Novas
+    const m: OsListMode = companyFilter === PENDING ? { kind: 'pending' } : mode.kind === 'pending' ? { kind: 'filter', status: 'Nova' } : mode;
+    if (m !== mode) {
+      setMode(m);
+      setStatus(m.kind === 'filter' ? m.status || '' : '');
+    }
+    loadFirst(m);
     loadCounters();
   }, [companyFilter]);
+  // As empresas chegaram depois da 1ª contagem: conta os "Sem empresa"
+  useEffect(() => {
+    if (unit && unitInactive.length) dbCountWorkOrders(unit, { kind: 'pending' }, unitInactive).then(setPendingCount).catch(() => {});
+    else setPendingCount(0);
+  }, [unit, unitInactive.join(',')]);
 
   const applyFilters = () => {
     if (from && to && from > to) return setError('Período: a data inicial é depois da final.');
@@ -426,6 +458,27 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       </button>
     ) : null;
 
+  // A5-B: em aberto de empresa inativa = "Sem empresa"; concluída de empresa inativa mostra o nome com "(inativa)"
+  const companyCell = (o: WorkOrder) =>
+    isPending(o) ? (
+      <span>
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black">SEM EMPRESA</span>
+        <span className="block text-[10px] font-normal normal-case tracking-normal text-slate-500">era {companyName(o.company)} (inativa)</span>
+      </span>
+    ) : o.company && inactive.has(o.company) ? (
+      <>
+        {companyName(o.company)} <span className="text-[10px] font-normal text-slate-400">(inativa)</span>
+      </>
+    ) : (
+      companyName(o.company)
+    );
+  const chooseBtn = (o: WorkOrder) =>
+    isSuper && isPending(o) ? (
+      <button type="button" onClick={(e) => { e.stopPropagation(); setChoosing(o); }} className="h-7 px-2 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer">
+        Escolher empresa
+      </button>
+    ) : null;
+
   const isMode = (k: string, st?: string) => !found && mode.kind === k && (k !== 'filter' || ((mode as any).status || '') === (st || ''));
 
   return (
@@ -438,14 +491,20 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
               <option key={u} value={u}>{u}</option>
             ))}
           </select>
-          {unitCompanies.length > 0 && !signView && (
+          {(unitCompanies.length > 0 || pendingCount > 0) && !signView && (
             <>
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-2">Empresa</span>
-              <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer" aria-label="Empresa">
+              <select
+                value={companyFilter}
+                onChange={(e) => setCompanyFilter(e.target.value)}
+                className={`h-8 px-2 text-xs font-bold border rounded-lg cursor-pointer ${companyFilter === PENDING ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white'}`}
+                aria-label="Empresa"
+              >
                 <option value="">{visibleCompanies === null ? 'Todas' : 'Todas as minhas'}</option>
                 {unitCompanies.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
+                {(pendingCount > 0 || companyFilter === PENDING) && <option value={PENDING}>⚠ Sem empresa ({pendingCount})</option>}
               </select>
             </>
           )}
@@ -477,6 +536,30 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       {signView && mySignRole && <OsSignQueue userProfile={userProfile} units={unitOptions} mySignRole={mySignRole} onOpen={setSelected} />}
       {!signView && (
         <>
+          {/* A5-B: chamados em aberto de empresa inativa */}
+          {pendingCount > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3.5 py-2.5 text-xs flex flex-wrap items-center gap-2" role="status">
+              <span>
+                <b>
+                  {pendingCount} chamado{pendingCount > 1 ? 's' : ''} em aberto {pendingCount > 1 ? 'estão' : 'está'} sem empresa
+                </b>{' '}
+                (empresa inativada).{' '}
+                {isSuper ? (
+                  <>
+                    Em cada um, use <b>Escolher empresa</b>.
+                  </>
+                ) : (
+                  'Peça ao Super Administrador para escolher a empresa.'
+                )}{' '}
+                <span className="text-amber-700">(As OS concluídas continuam com o nome da empresa.)</span>
+              </span>
+              {companyFilter !== PENDING && (
+                <button type="button" onClick={() => setCompanyFilter(PENDING)} className="h-7 px-2.5 rounded-md border border-amber-400 bg-white text-amber-800 text-[10px] font-black cursor-pointer">
+                  Ver os sem empresa
+                </button>
+              )}
+            </div>
+          )}
           {/* Painel de acompanhamento */}
           <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Painel de acompanhamento">
             {OS_PANEL_STATUSES.map((s) =>
@@ -571,7 +654,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 {items.map((o) => (
                   <tr key={o.id} className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => setSelected(o)}>
                     <td className="p-2.5 font-mono font-bold text-indigo-700 whitespace-nowrap">{o.number}</td>
-                    <td className="p-2.5 font-bold text-slate-700">{companyName(o.company)}</td>
+                    <td className="p-2.5 font-bold text-slate-700">{companyCell(o)}</td>
                     <td className="p-2.5">{o.intervencao || '—'}</td>
                     <td className="p-2.5 font-mono">{o.glpi || '—'}</td>
                     <td className="p-2.5">
@@ -592,7 +675,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                     <td className="p-2.5 whitespace-nowrap">{dayBR(o.deadline)}</td>
                     <td className="p-2.5">{statusBadge(o)}</td>
                     {canViewCosts && <td className="p-2.5 text-right whitespace-nowrap">{costCell(o)}</td>}
-                    <td className="p-2.5 text-right">{assignBtn(o)}</td>
+                    <td className="p-2.5 text-right whitespace-nowrap">{chooseBtn(o) || assignBtn(o)}</td>
                   </tr>
                 ))}
                 {!loading && items.length === 0 && (
@@ -625,7 +708,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   <span>{statusBadge(o)}</span>
                 </div>
                 <p className="text-xs font-bold text-slate-800">{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
-                <p className="text-[10px] font-black uppercase tracking-wide text-blue-700">Empresa: {companyName(o.company)}</p>
+                <p className="text-[10px] font-black uppercase tracking-wide text-blue-700">Empresa: {companyCell(o)}</p>
                 <p className="text-[11px] text-slate-600">{o.execAddressText}{manualBadge(o)} · {o.comarca}</p>
                 <p className="text-[11px] text-slate-500">
                   {o.assignedTechnicianName || 'Em aberto'} · aberta {dayBR(o.createdAt)} · prazo {dayBR(o.deadline)}
@@ -633,7 +716,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 </p>
                 <div className="flex items-center justify-between">
                   {canViewCosts ? <span className="text-xs">{costCell(o)}</span> : <span />}
-                  {assignBtn(o)}
+                  {chooseBtn(o) || assignBtn(o)}
                 </div>
               </div>
             ))}
@@ -674,6 +757,25 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       )}
 
       {zipOpen && <ZipBackupModal unit={unit} cos={cos} label={companyFilter ? companyName(companyFilter) : ''} onClose={() => setZipOpen(false)} />}
+
+      {/* Escolher empresa (A5-B, só o Super Administrador) */}
+      {choosing && (
+        <ChooseCompanyModal
+          order={choosing}
+          companies={companies}
+          userName={userProfile.name}
+          onClose={() => setChoosing(null)}
+          onSaved={(o, msg) => {
+            setChoosing(null);
+            setAssignMsg(msg);
+            pageCache.current.clear();
+            // Na lista "Sem empresa" ela sai; nas outras, a linha mostra a empresa nova
+            setPages((prev) => prev.map((p) => ({ ...p, items: companyFilter === PENDING ? p.items.filter((x) => x.id !== o.id) : p.items.map((x) => (x.id === o.id ? o : x)) })));
+            setFound((prev) => (prev ? prev.map((x) => (x.id === o.id ? o : x)) : prev));
+            loadCounters(true);
+          }}
+        />
+      )}
 
       {/* Atribuir técnico (Fase 7E-2: com dia e pernoite para quem também tem "Programar") */}
       {assigning && (

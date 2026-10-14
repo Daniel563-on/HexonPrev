@@ -71,7 +71,7 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
         </div>
       )}
       {tab === 'audit' && isSuper && <AuditLogsTab darkMode={darkMode} />}
-      {tab === 'companies' && isSuper && <CompaniesTab userName={userProfile.name} darkMode={darkMode} />}
+      {tab === 'companies' && isSuper && <CompaniesTab userName={userProfile.name} userMatricula={userProfile.matricula} darkMode={darkMode} />}
       {tab === 'managements' && isSuper && <ManagementsTab userName={userProfile.name} userMatricula={userProfile.matricula} darkMode={darkMode} />}
       {tab === 'warehouses' && isSuper && <WarehousesTab userName={userProfile.name} darkMode={darkMode} />}
       {tab === 'os-templates' && canEditOsTemplates && <OsTemplatesEditor userProfile={userProfile} />}

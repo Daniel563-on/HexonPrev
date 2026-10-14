@@ -54,7 +54,7 @@ function plannedFields(o: ServiceOrder, s: string, e: string, tech: { name: stri
     timeline: arrayUnion(timelineEvent('Programada', by, note))
   };
 }
-function revertFields(o: ServiceOrder, now: string, by: string, note: string) {
+export function revertFields(o: ServiceOrder, now: string, by: string, note: string) {
   return {
     status: 'Novo',
     scheduledDate: '',

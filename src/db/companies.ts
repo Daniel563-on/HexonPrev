@@ -62,4 +62,9 @@ export function visibleCompanies(user: HexonUser, profile: AccessProfile | undef
 export const companyTracksCost = (list: Company[], id: string | undefined): boolean => !!id && !!list.find((c) => c.id === id)?.costTracking;
 
 export const companyNames = (ids: string[] | undefined, list: Company[]): string =>
-  (ids || []).map((id) => list.find((c) => c.id === id)?.name || id).join(', ');
+  (ids || []).map((id) => { const c = list.find((x) => x.id === id); return c ? `${c.name}${c.active === false ? ' (inativa)' : ''}` : id; }).join(', ');
+
+// EMPRESA INATIVA (ajuste A5-B, 14/10/2026): nada é apagado nem regravado; o que está em aberto ou é cadastro de empresa
+// inativa aparece como "Sem empresa (pendente)" até receber outra empresa. Reativar a empresa devolve o que não mudou.
+export const inactiveCompanyIds = (list: Company[]): Set<string> => new Set(list.filter((c) => !c.active).map((c) => c.id));
+export const isCompanyPending = (id: string | undefined, inactive: Set<string>): boolean => !id || inactive.has(id);

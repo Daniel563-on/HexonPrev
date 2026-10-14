@@ -163,6 +163,10 @@ export default function AssetsView({
     [assets, addressItems, visibleUnits, visibleCompanies]
   );
   const companyName = (id: string) => (id ? companies.find((c) => c.id === id)?.name || id : 'Sem empresa');
+  // A5-B: ativo de empresa inativa conta como "Sem empresa" (pendente até receber a empresa nova)
+  const inactive = React.useMemo(() => new Set(companies.filter((c) => !c.active).map((c) => c.id)), [companies]);
+  const companyKey = (id?: string) => (id && !inactive.has(id) ? id : '');
+  const NO_COMPANY = '__sem_empresa__';
 
   const commonEquipmentTypes = React.useMemo(
     () => ['Todos', ...Array.from(new Set<string>(allItems.map((a) => String(a.specs?.TIPO || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
@@ -189,12 +193,13 @@ export default function AssetsView({
     const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, empresa: 0, craai: 0, comarca: 0, tipo: 0 };
     const list: Asset[] = [];
     let semTipo = 0;
+    let semEmpresa = 0;
     for (const a of allItems) {
       if (!matchesSearch(a, q)) continue;
       const v: Record<FacetKey, string> = {
         status: a.status,
         gerencia: a.sector,
-        empresa: a.company || '',
+        empresa: companyKey(a.company),
         craai: String(a.specs?.CRAAI || ''),
         comarca: String(a.specs?.COMARCA || ''),
         tipo: String(a.specs?.TIPO || '').trim()
@@ -209,6 +214,8 @@ export default function AssetsView({
       };
       // "Sem tipo" (não gera preventiva): com os outros filtros, fora endereços e baixados
       if (a.kind !== 'address' && a.status !== 'Baixado' && !v.tipo && FACETS.every((o) => o === 'tipo' || ok[o])) semTipo++;
+      // "Sem empresa" (A5-B): sem empresa ou de empresa inativa, com os outros filtros, fora endereços e baixados
+      if (a.kind !== 'address' && a.status !== 'Baixado' && !v.empresa && FACETS.every((o) => o === 'empresa' || ok[o])) semEmpresa++;
       for (const f of FACETS) {
         if (FACETS.every((o) => o === f || ok[o])) {
           counts[f].set(v[f], (counts[f].get(v[f]) || 0) + 1);
@@ -218,8 +225,8 @@ export default function AssetsView({
       if (FACETS.every((f) => ok[f])) list.push(a);
     }
     list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
-    return { consultationResults: list, facetCounts: { counts, totals, semTipo } };
-  }, [allItems, searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento]);
+    return { consultationResults: list, facetCounts: { counts, totals, semTipo, semEmpresa } };
+  }, [allItems, searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento, inactive]);
 
   // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
   const countOf = (f: FacetKey, value: string) => facetCounts.counts[f].get(value) || 0;
@@ -229,11 +236,10 @@ export default function AssetsView({
 
   // Opções do filtro Empresa: as que aparecem nos itens (mais a escolhida), pelo nome; empresa inativa não aparece (A5)
   const companyOptions = React.useMemo(() => {
-    const inactive = new Set(companies.filter((c) => !c.active).map((c) => c.id));
-    const ids = new Set<string>(allItems.map((a) => a.company || '').filter((id) => !inactive.has(id)));
+    const ids = new Set<string>(allItems.map((a) => companyKey(a.company)));
     if (filterEmpresa !== 'Todas') ids.add(filterEmpresa);
     return Array.from(ids).sort((x, y) => companyName(x).localeCompare(companyName(y)));
-  }, [allItems, filterEmpresa, companies]);
+  }, [allItems, filterEmpresa, companies, inactive]);
 
   const filtersKey = [searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento].join('|');
   const hasActiveFilters = filtersKey !== ['', 'Todos', 'Todas', 'Todas', 'Todas', 'Todas', 'Todos'].join('|');
@@ -458,15 +464,18 @@ export default function AssetsView({
               { key: 'Em Manutenção', label: 'Em manutenção', tone: 'text-amber-600', n: countOf('status', 'Em Manutenção') },
               { key: 'Parado', label: 'Parado', tone: 'text-orange-600', n: countOf('status', 'Parado') },
               { key: 'Baixado', label: 'Baixado', tone: 'text-slate-500', n: countOf('status', 'Baixado') },
-              { key: NO_TYPE, label: 'Sem tipo (não geram preventiva)', tone: 'text-rose-600', n: facetCounts.semTipo }
+              { key: NO_TYPE, label: 'Sem tipo (não geram preventiva)', tone: 'text-rose-600', n: facetCounts.semTipo },
+              // A5-B: só aparece quando há ativo sem empresa (ou de empresa inativa)
+              ...(facetCounts.semEmpresa > 0 || filterEmpresa === '' ? [{ key: NO_COMPANY, label: 'Sem empresa (não geram preventiva)', tone: 'text-amber-700', n: facetCounts.semEmpresa }] : [])
             ].map((c) => {
-              const active = c.key === NO_TYPE ? filterTipoEquipamento === NO_TYPE : filterTipoBem === c.key;
+              const active = c.key === NO_TYPE ? filterTipoEquipamento === NO_TYPE : c.key === NO_COMPANY ? filterEmpresa === '' : filterTipoBem === c.key;
               return (
                 <button
                   key={c.key}
                   type="button"
                   onClick={() => {
                     if (c.key === NO_TYPE) setFilterTipoEquipamento(active ? 'Todos' : NO_TYPE);
+                    else if (c.key === NO_COMPANY) setFilterEmpresa(active ? 'Todas' : '');
                     else setFilterTipoBem(active ? 'Todos' : (c.key as typeof filterTipoBem));
                   }}
                   aria-pressed={active}
@@ -579,7 +588,7 @@ export default function AssetsView({
               results={consultationResults}
               resetKey={filtersKey}
               searching={!!searchText.trim()}
-              companyName={companyName}
+              companyName={(id: string) => (id && inactive.has(id) ? `Sem empresa (era ${companyName(id)}, inativa)` : companyName(id))}
               canViewCosts={userProfile?.perfil === 'Super Administrador' || !!userHasActionPermission?.('view_costs')}
               onSelectAsset={(asset) => setSelectedAsset(asset)}
               onEditAsset={(asset) => handleOpenEditModal(asset)}

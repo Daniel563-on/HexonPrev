@@ -25,7 +25,8 @@ export const osFilterLabel = (s: OsStatusFilter): string =>
 export type OsListMode =
   | { kind: 'filter'; status?: OsStatusFilter; tech?: string; from?: string; to?: string } // datas AAAA-MM-DD (abertura)
   | { kind: 'late' } // atrasadas: prazo passou e ainda em aberto
-  | { kind: 'closed'; from: string; to: string }; // concluídas no período (data da conclusão)
+  | { kind: 'closed'; from: string; to: string } // concluídas no período (data da conclusão)
+  | { kind: 'pending' }; // A5-B: em aberto das empresas de "cos" (as inativas da gerência) = "Sem empresa"
 
 export interface OsListPage {
   items: WorkOrder[];
@@ -48,6 +49,8 @@ function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
     p.push(cos.length === 1 ? where('company', '==', cos[0]) : where('company', 'in', cos.slice(0, 10)));
   if (mode.kind === 'late') {
     p.push(where('status', 'in', OS_OPEN_STATUSES), where('deadline', '<', todayStr()), orderBy('deadline', 'asc'));
+  } else if (mode.kind === 'pending') {
+    p.push(where('status', 'in', OS_OPEN_STATUSES), orderBy('createdAt', 'desc'));
   } else if (mode.kind === 'closed') {
     p.push(where('status', '==', 'Concluída'), where('closedAt', '>=', startOf(mode.from)), where('closedAt', '<=', endOf(mode.to)), orderBy('closedAt', 'desc'));
   } else {
@@ -66,6 +69,7 @@ function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
 export function osMatchesMode(o: WorkOrder, mode: OsListMode, cos: string[] | null): boolean {
   if (cos && !(mode.kind === 'filter' && !mode.status && mode.tech) && !cos.includes(o.company || '')) return false;
   if (mode.kind === 'late') return OS_OPEN_STATUSES.includes(o.status) && !!o.deadline && o.deadline < todayStr();
+  if (mode.kind === 'pending') return OS_OPEN_STATUSES.includes(o.status);
   if (mode.kind === 'closed') return o.status === 'Concluída' && !!o.closedAt && o.closedAt >= startOf(mode.from) && o.closedAt <= endOf(mode.to);
   if (mode.status?.startsWith('sign:')) {
     if (o.nextSigner !== mode.status.slice(5)) return false;

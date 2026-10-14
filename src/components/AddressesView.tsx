@@ -61,11 +61,13 @@ export default function AddressesView({ userName = '' }: { userName?: string }) 
     return addresses.filter((a) => {
       if (statusFilter === 'Ativos' && !a.active) return false;
       if (statusFilter === 'Inativos' && a.active) return false;
-      if (companyFilter !== 'Todas' && (a.company || '') !== companyFilter) return false;
+      // "Sem empresa": sem empresa ou de empresa inativa (A5-B)
+      const co = a.company && !companies.some((c) => c.id === a.company && !c.active) ? a.company : '';
+      if (companyFilter !== 'Todas' && co !== companyFilter) return false;
       if (!q) return true;
       return [a.code, a.craai, a.comarca, a.address].some((v) => (v || '').toLowerCase().includes(q));
     });
-  }, [addresses, search, statusFilter, companyFilter]);
+  }, [addresses, search, statusFilter, companyFilter, companies]);
 
   const activeCount = addresses.filter((a) => a.active).length;
 
@@ -345,7 +347,7 @@ export default function AddressesView({ userName = '' }: { userName?: string }) 
                     <td className="py-2 pr-3 font-bold text-slate-700">{a.craai}</td>
                     <td className="py-2 pr-3 font-bold text-slate-700">{a.comarca}</td>
                     <td className="py-2 pr-3 text-slate-600">{a.address}</td>
-                    <td className="py-2 pr-3 font-bold text-slate-700">{companyName(a.company) || <span className="text-amber-600">Sem empresa</span>}</td>
+                    <td className="py-2 pr-3 font-bold text-slate-700">{a.company && companies.find((c) => c.id === a.company)?.active !== false ? companyName(a.company) : <span className="text-amber-600">Sem empresa{a.company ? ` (era ${companyName(a.company)}, inativa)` : ''}</span>}</td>
                     <td className="py-2 pr-3">
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${a.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
                         {a.active ? 'Ativo' : 'Inativo'}

@@ -518,6 +518,15 @@ service cloud.firestore {
           && osChanged().hasOnly(['answers', 'execAddressId', 'execAddressText', 'execAddressManual', 'craai', 'comarca', 'reqAddressId', 'reqAddressText', 'intervencao', 'glpi', 'assetCode', 'assetId', 'assetName', 'deadline', 'company', 'updatedAt', 'timeline'])
           && request.resource.data.get('company', '') != ''
           && osPerm(u, p, 'os_edit') && osSees(u, p))
+        // TROCAR EMPRESA INATIVA (ajuste A5-B, "Escolher empresa"; só o Super Administrador): chamado em aberto de empresa
+        // inativa recebe uma empresa ativa que atua na gerência; se estava num bloco, sai dele (perde o dia) e continua com o técnico
+        || (resource.data.status in ['Nova', 'Em andamento', 'Pendente'] && osSameStatus()
+          && osChanged().hasOnly(['company', 'scheduledDate', 'scheduledEndDate', 'lotId', 'updatedAt', 'timeline'])
+          && 'company' in osChanged() && osDayCleared()
+          && u.perfil == 'Super Administrador'
+          && get(/databases/$(database)/documents/companies/$(resource.data.company)).data.active == false
+          && get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.active == true
+          && resource.data.unit in get(/databases/$(database)/documents/companies/$(request.resource.data.company)).data.units)
         // DESATRIBUIR ("Atribuir técnico"): só se o técnico não começou (sem execução salva, nunca Pendente); volta para "Nova"
         || (osStatusFrom('Em andamento', 'Nova') && !('exec' in resource.data) && resource.data.get('pauses', []).size() == 0
           && osChanged().hasOnly(['status', 'assignedTechnicianMatricula', 'assignedTechnicianName', 'assignedAt', 'techOpen', 'scheduledDate', 'scheduledEndDate', 'lotId', 'updatedAt', 'timeline'])

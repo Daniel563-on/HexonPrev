@@ -13,6 +13,7 @@ import { isSectorInGerencia } from '../types';
 // Vistoria (DOM): por endereço, conforme o modelo: Diária (dias úteis), Semanal (seg–sex), Quinzenal (1–15 / 16–fim).
 // Nada cai em fim de semana. Número fixo da OS = ativo/endereço + período, então não existe OS repetida.
 // Empresa (etapa especial E3): a OS leva a empresa do ativo (preventiva) ou do endereço (vistoria); sem empresa não gera.
+// A5-B: empresa inativa conta como sem empresa (não gera).
 
 export const MAX_DISPATCH_MONTHS = 12;
 
@@ -110,11 +111,13 @@ export interface DispatchInput {
   addresses: Address[];
   cycle: CycleSetting | null;
   todayStr: string;
+  inactiveCompanies?: string[]; // A5-B: empresas inativas (o que é delas não gera OS)
 }
 
 // Monta o disparo (nada é gravado aqui)
 export function planDispatch(input: DispatchInput): DispatchPlan {
   const { unit, startMonth, endMonth, assets, assetTypes, templates, addresses, cycle, todayStr } = input;
+  const inactive = new Set(input.inactiveCompanies || []);
   const months = monthRange(startMonth, endMonth);
   const isTest = !cycle;
   const now = new Date().toISOString();
@@ -146,6 +149,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
       const label = `${asset.code} - ${asset.name}`;
       if (!tipo) { skip('Ativo sem TIPO no cadastro', label); continue; }
       if (!asset.company) { skip('Ativo sem empresa', label); continue; }
+      if (inactive.has(asset.company)) { skip('Ativo de empresa inativa (sem empresa)', label); continue; }
       const type = unitTypes.find((t) => assetTypeKey(t.name) === assetTypeKey(tipo));
       if (!type) { skip('Tipo não cadastrado (aba 1: "Atualizar tipos")', tipo); continue; }
       if (type.periodicities.length === 0) { skip('Tipo sem periodicidade marcada (aba 1)', type.name); continue; }
@@ -202,6 +206,7 @@ export function planDispatch(input: DispatchInput): DispatchPlan {
         const model = byAddress.get(addr.id) || restModel;
         if (!model) { skip('Endereço sem modelo de vistoria (aba 2)', `${addr.code} - ${addr.address}`); continue; }
         if (!addr.company) { skip('Endereço sem empresa (cadastro de Endereços)', `${addr.code} - ${addr.address}`); continue; }
+        if (inactive.has(addr.company)) { skip('Endereço de empresa inativa (sem empresa)', `${addr.code} - ${addr.address}`); continue; }
         for (const p of surveyPeriods(model.periodicity, month, todayStr)) {
           counts[model.periodicity] = (counts[model.periodicity] || 0) + 1;
           orders.push({

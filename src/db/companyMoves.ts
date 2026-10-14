@@ -1,10 +1,45 @@
 import { runBulk } from './guard';
-import { arrayUnion, collection, doc, documentId, getDocs, query, serverTimestamp, where, writeBatch } from './guard';
+import { arrayRemove, arrayUnion, collection, doc, documentId, getDoc, getDocs, query, serverTimestamp, where, writeBatch } from './guard';
+import { ServiceOrder } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
 import { timelineEvent } from './executionTeam';
+import { dbGetCompanies, inactiveCompanyIds, isCompanyPending } from './companies';
+import { revertFields } from './blocks';
+
+// A5-B: OS em aberto "sem empresa" (sem empresa gravada ou de empresa inativa) que recebe a empresa nova do ativo/endereço.
+// Em qualquer situação aberta ela vai junto; a que estava programada (bloco/lote) pela empresa inativa volta para "Novo"
+// (sai do bloco, sem técnico) — menos a que já está em execução, que continua com o técnico até terminar.
+type MoveWrite = { id: string; lotId?: string; fields: Record<string, unknown> };
+function moveFields(o: ServiceOrder, to: string, now: string, by: string, text: string, inactive: Set<string>): MoveWrite {
+  const pending = isCompanyPending(o.company, inactive);
+  const back = pending && o.status !== 'Em Execução' && o.status !== 'Novo' && (!!o.lotId || o.status === 'Planejada');
+  const event = timelineEvent('Empresa alterada', by, text);
+  if (!back) return { id: o.id, fields: { company: to, updatedAt: now, syncAt: serverTimestamp(), timeline: arrayUnion(event) } };
+  const rev = revertFields(o, now, by, 'Saiu da programação da empresa inativa');
+  return { id: o.id, lotId: o.lotId, fields: { ...rev, company: to, timeline: arrayUnion(event, timelineEvent('Voltou para Novo', by, 'Saiu da programação da empresa inativa')) } };
+}
+
+// Grava as mudanças (pacotes de 400) e tira as OS dos lotes que ainda existem
+async function commitMoves(writes: MoveWrite[], now: string): Promise<void> {
+  const db = dbInstance!;
+  const lotIds = Array.from(new Set(writes.map((w) => w.lotId || '').filter(Boolean)));
+  const existing = new Set<string>();
+  for (const id of lotIds) if ((await getDoc(doc(db, 'planningLots', id))).exists()) existing.add(id);
+  const ops: ((b: ReturnType<typeof writeBatch>) => void)[] = writes.map((w) => (b) => b.update(doc(db, 'serviceOrders', w.id), w.fields));
+  for (const id of existing) {
+    const ids = writes.filter((w) => w.lotId === id).map((w) => w.id);
+    ops.push((b) => b.update(doc(db, 'planningLots', id), { orderIds: arrayRemove(...ids), updatedAt: now }));
+  }
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + 400).forEach((op) => op(batch));
+    await batch.commit();
+  }
+}
 
 // TROCA DE EMPRESA DO ATIVO / ENDEREÇO (etapa especial E3): as preventivas e vistorias dele ainda "Novo"
 // (não programadas) passam para a empresa nova; as programadas ou em execução ficam com a antiga até terminar.
+// A5-B: as que estão "sem empresa" (empresa inativa) vão junto em qualquer situação aberta (ver moveFields).
 // Lê uma vez as OS abertas da gerência (campo de controle unitOpen) — só acontece quando há troca, que é rara.
 // Operação em massa: roda liberada do disjuntor (src/db/guard.ts)
 export function dbMoveNewOrdersToCompany(...args: Parameters<typeof dbMoveNewOrdersNow>): ReturnType<typeof dbMoveNewOrdersNow> {
@@ -22,29 +57,25 @@ async function dbMoveNewOrdersNow(
   const db = dbInstance;
   const target = new Map(moves.map((m) => [m.id, m.company]));
   try {
-    const snap = await getDocs(query(collection(db, 'serviceOrders'), where('unitOpen', '==', unit)));
-    const toMove = snap.docs.filter((d) => {
-      const o = d.data() as any;
-      const to = target.get(String(o[field] || ''));
-      return o.status === 'Novo' && !!to && o.company !== to;
-    });
-    const now = new Date().toISOString();
-    for (let i = 0; i < toMove.length; i += 400) {
-      const batch = writeBatch(db);
-      toMove.slice(i, i + 400).forEach((d) => {
-        const o = d.data() as any;
-        const to = target.get(String(o[field]))!;
-        batch.update(doc(db, 'serviceOrders', d.id), {
-          company: to,
-          updatedAt: now,
-          syncAt: serverTimestamp(),
-          timeline: arrayUnion(
-            timelineEvent('Empresa alterada', by, `${o.company ? companyLabel(o.company) : 'sem empresa'} → ${companyLabel(to)} (o ${field === 'assetId' ? 'ativo' : 'endereço'} mudou de empresa)`)
-          )
-        });
+    const [snap, companies] = await Promise.all([getDocs(query(collection(db, 'serviceOrders'), where('unitOpen', '==', unit))), dbGetCompanies().catch(() => [])]);
+    const inactive = inactiveCompanyIds(companies);
+    // "Novo": vai para a empresa nova; sem empresa (ou de empresa inativa): vai em qualquer situação aberta (A5-B)
+    const toMove = snap.docs
+      .map((d) => ({ ...(d.data() as ServiceOrder), id: d.id }))
+      .filter((o) => {
+        const to = target.get(String((o as any)[field] || ''));
+        return !!to && o.company !== to && (o.status === 'Novo' || isCompanyPending(o.company, inactive));
       });
-      await batch.commit();
-    }
+    const now = new Date().toISOString();
+    const what = field === 'assetId' ? 'ativo' : 'endereço';
+    const from = (c?: string) => (!c ? 'sem empresa' : inactive.has(c) ? `${companyLabel(c)} (inativa)` : companyLabel(c));
+    await commitMoves(
+      toMove.map((o) => {
+        const to = target.get(String((o as any)[field]))!;
+        return moveFields(o, to, now, by, `${from(o.company)} → ${companyLabel(to)} (o ${what} mudou de empresa)`, inactive);
+      }),
+      now
+    );
     return toMove.length;
   } catch (err: any) {
     checkQuotaException(err);
@@ -77,8 +108,10 @@ async function dbFixOrdersNow(unit: string, companyLabel: (id: string) => string
   if (!firebaseActive || !dbInstance || !unit) return { fixed: 0, missing: [] };
   const db = dbInstance;
   try {
-    const snap = await getDocs(query(collection(db, 'serviceOrders'), where('unitOpen', '==', unit)));
-    const without = snap.docs.filter((d) => !(d.data() as any).company);
+    const [snap, companies] = await Promise.all([getDocs(query(collection(db, 'serviceOrders'), where('unitOpen', '==', unit))), dbGetCompanies().catch(() => [])]);
+    const inactive = inactiveCompanyIds(companies);
+    // Sem empresa gravada ou de empresa inativa (A5-B)
+    const without = snap.docs.filter((d) => isCompanyPending((d.data() as any).company, inactive));
     const assetIds = Array.from(new Set(without.map((d) => String((d.data() as any).assetId || '')).filter(Boolean)));
     const addressIds = Array.from(new Set(without.map((d) => String((d.data() as any).addressId || '')).filter(Boolean)));
     const [assetCo, addressCo] = await Promise.all([companiesOf('assets', assetIds), companiesOf('addresses', addressIds)]);
@@ -87,22 +120,22 @@ async function dbFixOrdersNow(unit: string, companyLabel: (id: string) => string
     without.forEach((d) => {
       const o = d.data() as any;
       const company = o.assetId ? assetCo.get(String(o.assetId)) : o.addressId ? addressCo.get(String(o.addressId)) : '';
-      if (company) plan.push({ id: d.id, company, from: o.assetId ? 'ativo' : 'endereço' });
+      // O ativo/endereço também precisa ter empresa ATIVA
+      if (company && !inactive.has(company)) plan.push({ id: d.id, company, from: o.assetId ? 'ativo' : 'endereço' });
       else missing.push({ id: d.id, label: `${o.assetName || o.title || d.id}${o.assetCode ? ` (${o.assetCode})` : ''}${o.comarca ? ` · ${o.comarca}` : ''}` });
     });
     const now = new Date().toISOString();
-    for (let i = 0; i < plan.length; i += 400) {
-      const batch = writeBatch(db);
-      plan.slice(i, i + 400).forEach((p) =>
-        batch.update(doc(db, 'serviceOrders', p.id), {
-          company: p.company,
-          updatedAt: now,
-          syncAt: serverTimestamp(),
-          timeline: arrayUnion(timelineEvent('Empresa alterada', by, `sem empresa → ${companyLabel(p.company)} (empresa do ${p.from}; correção das OS geradas antes da separação por empresa)`))
-        })
-      );
-      await batch.commit();
-    }
+    const byId = new Map(without.map((d) => [d.id, { ...(d.data() as ServiceOrder), id: d.id }]));
+    await commitMoves(
+      plan.map((p) => {
+        const o = byId.get(p.id)!;
+        const text = o.company
+          ? `${companyLabel(o.company)} (inativa) → ${companyLabel(p.company)} (empresa do ${p.from})`
+          : `sem empresa → ${companyLabel(p.company)} (empresa do ${p.from}; correção das OS geradas antes da separação por empresa)`;
+        return moveFields(o, p.company, now, by, text, inactive);
+      }),
+      now
+    );
     return { fixed: plan.length, missing };
   } catch (err: any) {
     checkQuotaException(err);

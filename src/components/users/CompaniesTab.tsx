@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, X } from 'lucide-react';
 import { Company, Management } from '../../types';
-import { companyIdOf, dbGetCompanies, dbGetManagements, dbSaveCompany } from '../../db/firebase';
+import { CompanyImpact, companyIdOf, dbCompanyImpact, dbGetCompanies, dbGetManagements, dbInactivateCompany, dbSaveCompany } from '../../db/firebase';
 
 // CONFIGURAÇÕES › EMPRESAS (etapa especial E1, só o Super Administrador): empresas contratadas, as gerências em que
 // atuam e se contabilizam homem-hora, hora extra e pernoite. Não se exclui: inativa some das listas de escolha.
+// A5-B: ao inativar, uma janela mostra o que é dela (fica "sem empresa") e quem fica inativo junto (usuários e efetivo).
 
 const blank = (): Company => ({ id: '', name: '', units: [], costTracking: false, active: true, createdAt: '', updatedAt: '', updatedBy: '' });
 
-export default function CompaniesTab({ userName, darkMode }: { userName: string; darkMode: boolean }) {
+export default function CompaniesTab({ userName, userMatricula, darkMode }: { userName: string; userMatricula: string; darkMode: boolean }) {
   const [list, setList] = useState<Company[]>([]);
   const [units, setUnits] = useState<Management[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,6 +17,9 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Inativar (A5-B): o que é da empresa, conferido antes de salvar
+  const [impact, setImpact] = useState<{ company: Company; data: CompanyImpact } | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -40,6 +44,20 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
     if (editing.units.length === 0) return setError('Marque pelo menos uma gerência em que a empresa atua.');
     const id = isNew ? companyIdOf(name) : editing.id;
     if (list.some((c) => c.id !== editing.id && (c.id === id || c.name.trim().toLowerCase() === name.toLowerCase()))) return setError('Já existe uma empresa com esse nome.');
+    const before = list.find((c) => c.id === editing.id);
+    // Ativa -> inativa: mostra antes o que é dela (A5-B)
+    if (!isNew && before?.active && !editing.active) {
+      setChecking(true);
+      setError(null);
+      try {
+        setImpact({ company: { ...editing, id, name }, data: await dbCompanyImpact({ ...editing, id, name }) });
+      } catch (e: any) {
+        setError(`Não foi possível conferir o que é da empresa: ${e?.message || e}`);
+      } finally {
+        setChecking(false);
+      }
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -48,6 +66,22 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
       await load();
     } catch (e: any) {
       setError(e?.code === 'permission-denied' ? 'O banco recusou: só o Super Administrador cadastra empresas.' : `Não foi possível salvar: ${e?.message || e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmInactivate = async () => {
+    if (!impact) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await dbInactivateCompany(impact.company, impact.data, { name: userName, matricula: userMatricula });
+      setImpact(null);
+      setEditing(null);
+      await load();
+    } catch (e: any) {
+      setError(e?.code === 'permission-denied' ? 'O banco recusou: só o Super Administrador inativa empresas.' : `Não foi possível inativar: ${e?.message || e}`);
     } finally {
       setSaving(false);
     }
@@ -193,13 +227,71 @@ export default function CompaniesTab({ userName, darkMode }: { userName: string;
               <span>
                 Ativa
                 <span className={`block text-[10px] font-normal ${muted}`}>Inativa some das listas de escolha; o que já é dela continua guardado.</span>
+                {!isNew && !list.find((c) => c.id === editing.id)?.active && editing.active && (
+                  <span className="block text-[10px] font-bold text-amber-700 mt-0.5">
+                    Reativar devolve para ela o que ainda não recebeu outra empresa. Os usuários e o efetivo inativados junto continuam inativos: reative em Usuários se precisar.
+                  </span>
+                )}
               </span>
             </label>
             {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setEditing(null)} className="h-9 px-4 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
-              <button type="button" onClick={save} disabled={saving} className="h-9 px-4 rounded-lg bg-blue-600 text-white text-xs font-black cursor-pointer disabled:opacity-50">
-                {saving ? 'Salvando...' : 'Salvar empresa'}
+              <button type="button" onClick={save} disabled={saving || checking} className="h-9 px-4 rounded-lg bg-blue-600 text-white text-xs font-black cursor-pointer disabled:opacity-50">
+                {checking ? 'Conferindo o que é da empresa...' : saving ? 'Salvando...' : 'Salvar empresa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {impact && (
+        <div className="fixed inset-0 z-[1001] bg-slate-900/60 flex items-center justify-center p-4">
+          <div className={`w-full max-w-xl rounded-2xl p-5 space-y-3 max-h-[92vh] overflow-y-auto ${darkMode ? 'bg-[#0b1426] text-slate-100' : 'bg-white'}`} role="dialog" aria-label="Inativar empresa">
+            <p className="text-sm font-black">Inativar a empresa {impact.company.name}?</p>
+            <p className={`text-xs ${muted}`}>
+              Tudo isto fica <b className="text-amber-700">sem empresa (pendente)</b> até alguém escolher a empresa nova:
+            </p>
+            <ul className="space-y-1.5">
+              {[
+                ['Chamados GLPI em aberto (Nova, Em andamento, Pendente)', impact.data.openWorkOrders],
+                ['Preventivas e vistorias em aberto', impact.data.openOrders],
+                ['Ativos (Gestão de Ativos)', impact.data.assets],
+                ['Endereços das vistorias', impact.data.addresses]
+              ].map(([label, n]) => (
+                <li key={label as string} className="flex justify-between gap-3 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-900">
+                  <span>{label}</span>
+                  <b className="tabular-nums">{(n as number).toLocaleString('pt-BR')}</b>
+                </li>
+              ))}
+            </ul>
+            <p className={`text-xs ${muted}`}>
+              Ficam <b className="text-rose-700">inativos junto</b> (não entram mais no app; se forem trabalhar em outra empresa, são cadastrados nela):
+            </p>
+            <ul className="space-y-1.5">
+              <li className="flex justify-between gap-3 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-900">
+                <span>
+                  Usuários
+                  {impact.data.users.length > 0 && <span className="block text-[10px] text-rose-700">{impact.data.users.map((u) => `${u.name} (${u.matricula})`).join(', ')}</span>}
+                </span>
+                <b className="tabular-nums">{impact.data.users.length}</b>
+              </li>
+              <li className="flex justify-between gap-3 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-900">
+                <span>Pessoas do efetivo</span>
+                <b className="tabular-nums">{impact.data.workforce.length}</b>
+              </li>
+            </ul>
+            <p className="text-xs">
+              <b>Não muda (fica guardado com o nome da {impact.company.name}):</b> OS concluídas, canceladas e em assinatura; materiais e preços; valores de cargos, hora extra e pernoite; pedidos de material e de insumos; semanas publicadas.
+            </p>
+            <p className="text-xs">
+              A geração do mês <b>não cria preventiva</b> para ativo ou endereço sem empresa.
+            </p>
+            <p className={`text-xs ${muted}`}>Nada é apagado. Se a {impact.company.name} for reativada, volta para ela o que ainda não tiver recebido outra empresa (os usuários e o efetivo continuam inativos).</p>
+            {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setImpact(null)} disabled={saving} className="h-9 px-4 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
+              <button type="button" onClick={confirmInactivate} disabled={saving} className="h-9 px-4 rounded-lg bg-rose-600 text-white text-xs font-black cursor-pointer disabled:opacity-50">
+                {saving ? 'Inativando...' : 'Inativar empresa'}
               </button>
             </div>
           </div>

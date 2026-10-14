@@ -92,7 +92,7 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                     {asset.sector}
                   </span>
                   <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-100" title="Empresa responsável">
-                    {companyName(asset.company)}
+                    {companies.find((c) => c.id === asset.company)?.active === false ? `Sem empresa (era ${companyName(asset.company)}, inativa)` : companyName(asset.company)}
                   </span>
                   <span className="text-xs font-mono font-bold text-gray-400 uppercase tracking-widest">
                     REF ATIVO: {asset.code}

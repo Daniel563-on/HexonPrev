@@ -12,6 +12,8 @@ import {
   dbRevertOrderToNew,
   dbSaveServiceOrder,
   isCompanyVisible,
+  inactiveCompanyIds,
+  isCompanyPending,
   isSectorVisible,
   localMonthKey,
   localTodayStr,
@@ -44,6 +46,7 @@ const VIEWS: { key: View; label: string; tone: string }[] = [
   { key: 'canc', label: 'Canceladas', tone: 'text-slate-400' }
 ];
 const CLOSED = ['Concluída', 'Não Executada', 'Cancelada'];
+const PENDING = '__sem_empresa__'; // A5-B: filtro "Sem empresa"
 const ST_CHIP: Record<string, string> = {
   Novo: 'border-sky-200 bg-sky-50 text-sky-700',
   Planejada: 'border-indigo-200 bg-indigo-50 text-indigo-700',
@@ -145,8 +148,16 @@ export default function PreventivesBoard(props: Props) {
       .catch(() => setPeople([]));
   }, [unit]);
   const unitCompanies = useMemo(() => companiesOfUnit(companies, unit).filter((c) => c.active && isCompanyVisible(c.id, visibleCompanies)), [companies, unit, visibleCompanies]);
+  // A5-B: em aberto sem empresa gravada ou de empresa inativa = "Sem empresa" (segue a empresa do ativo/endereço)
+  const inactive = useMemo(() => inactiveCompanyIds(companies), [companies]);
+  const isPendingOrder = (o: ServiceOrder) =>
+    !CLOSED.includes(o.status) && isCompanyPending(o.company, inactive) && (visibleCompanies === null || (!!o.company && visibleCompanies.includes(o.company)));
+  const pendingCount = useMemo(
+    () => orders.filter((o) => (o.unit ? o.unit === unit : isSectorVisible(o.sector, [unit])) && isPendingOrder(o)).length,
+    [orders, unit, inactive, visibleCompanies]
+  );
   useEffect(() => {
-    if (company !== 'Todas' && companies.length > 0 && !unitCompanies.some((c) => c.id === company)) setCompany(unitCompanies.length === 1 ? unitCompanies[0].id : 'Todas');
+    if (company !== 'Todas' && company !== PENDING && companies.length > 0 && !unitCompanies.some((c) => c.id === company)) setCompany(unitCompanies.length === 1 ? unitCompanies[0].id : 'Todas');
     if (company === 'Todas' && unitCompanies.length === 1 && visibleCompanies !== null) setCompany(unitCompanies[0].id);
   }, [unitCompanies.map((c) => c.id).join('|')]);
   const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '');
@@ -163,10 +174,11 @@ export default function PreventivesBoard(props: Props) {
     () =>
       orders.filter((o) => {
         if (!(o.unit ? o.unit === unit : isSectorVisible(o.sector, [unit]))) return false;
+        if (company === PENDING) return isPendingOrder(o);
         if (company === 'Todas' ? !isCompanyVisible(o.company, visibleCompanies) : o.company !== company) return false;
         return !CLOSED.includes(o.status) || o.closedMonth === monthKey;
       }),
-    [orders, unit, company, visibleCompanies, monthKey]
+    [orders, unit, company, visibleCompanies, monthKey, inactive]
   );
   const comarcas = useMemo(() => Array.from(new Set<string>(base.map((o) => o.comarca || o.surveyLocation || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)), [base]);
   const techNames = useMemo(() => Array.from(new Set<string>(base.map((o) => o.assignedTechnician || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)), [base]);
@@ -284,6 +296,8 @@ export default function PreventivesBoard(props: Props) {
     if (selCompanies.length > 1) return setMsg({ ok: false, text: 'As preventivas marcadas são de empresas diferentes: programe uma empresa por vez (escolha a empresa no topo).' });
     if (!selCompanies[0] || !companies.some((c) => c.id === selCompanies[0]))
       return setMsg({ ok: false, text: 'Há preventiva sem empresa gravada: peça ao Super Administrador para corrigir (Programação › Semana › "Corrigir as empresas").' });
+    if (inactive.has(selCompanies[0]))
+      return setMsg({ ok: false, text: 'Há preventiva sem empresa (a empresa dela foi inativada): ela segue a empresa do ativo/endereço. Dê a empresa nova ao ativo (Gestão de Ativos) ou ao endereço; o Super Administrador também pode usar Programação › Semana › "Corrigir as empresas".' });
     setProgramming(true);
   };
 
@@ -377,7 +391,16 @@ export default function PreventivesBoard(props: Props) {
   const box = (on: boolean, onChange: (v: boolean) => void, label: string, disabled = false) => (
     <input type="checkbox" checked={on} disabled={disabled} onChange={(ev) => onChange(ev.target.checked)} onClick={(ev) => ev.stopPropagation()} className="w-4 h-4 cursor-pointer" aria-label={label} />
   );
-  const chip = (o: ServiceOrder) => <span className={`px-2 py-0.5 rounded-full border text-[10px] font-black whitespace-nowrap ${ST_CHIP[o.status] || ''}`}>{o.status === 'Novo' ? 'A programar' : o.status}</span>;
+  const chip = (o: ServiceOrder) => (
+    <>
+      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-black whitespace-nowrap ${ST_CHIP[o.status] || ''}`}>{o.status === 'Novo' ? 'A programar' : o.status}</span>
+      {isPendingOrder(o) && (
+        <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black whitespace-nowrap" title={o.company ? `Era ${companyName(o.company)} (inativa)` : 'Sem empresa gravada'}>
+          SEM EMPRESA
+        </span>
+      )}
+    </>
+  );
   const numCell = (o: ServiceOrder) => <span className="font-mono font-black text-indigo-700 dark:text-indigo-400 whitespace-nowrap">#{formatOrderNumber(o.id)}</span>;
   const trash = (o: ServiceOrder) =>
     canDelete && o.status === 'Novo' ? (
@@ -438,14 +461,15 @@ export default function PreventivesBoard(props: Props) {
           ) : (
             <span className="h-9 px-3 flex items-center text-xs font-black rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">{unit || '—'}</span>
           )}
-          {unitCompanies.length > 1 || visibleCompanies === null ? (
-            <select value={company} onChange={(ev) => setCompany(ev.target.value)} className={sel_} aria-label="Empresa">
+          {unitCompanies.length > 1 || visibleCompanies === null || pendingCount > 0 ? (
+            <select value={company} onChange={(ev) => setCompany(ev.target.value)} className={`${sel_} ${company === PENDING ? '!border-amber-400 !bg-amber-50 !text-amber-800' : ''}`} aria-label="Empresa">
               <option value="Todas">Todas as empresas</option>
               {unitCompanies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
+              {(pendingCount > 0 || company === PENDING) && <option value={PENDING}>⚠ Sem empresa ({pendingCount})</option>}
             </select>
           ) : unitCompanies.length === 1 ? (
             <span className="h-9 px-3 flex items-center text-xs font-black rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">{unitCompanies[0].name}</span>
@@ -462,6 +486,23 @@ export default function PreventivesBoard(props: Props) {
       </div>
 
       {!canProgram && <p className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-900 text-[11px] font-bold text-slate-600">Seu perfil só consulta (programar precisa da permissão "Programar").</p>}
+
+      {/* A5-B: preventivas em aberto sem empresa (empresa inativada) */}
+      {pendingCount > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3.5 py-2.5 text-xs flex flex-wrap items-center gap-2" role="status">
+          <span>
+            <b>
+              {pendingCount} preventiva{pendingCount > 1 ? 's' : ''}/vistoria{pendingCount > 1 ? 's' : ''} em aberto sem empresa
+            </b>{' '}
+            (empresa inativada). Elas seguem a empresa do <b>ativo</b> (ou do endereço): quando ele receber a empresa nova — editando ou importando a planilha de novo — as abertas dele vão junto. As que estavam programadas pela empresa inativa voltam para A programar; as em execução continuam com o técnico até terminar.
+          </span>
+          {company !== PENDING && (
+            <button type="button" onClick={() => setCompany(PENDING)} className="h-7 px-2.5 rounded-md border border-amber-400 bg-white text-amber-800 text-[10px] font-black cursor-pointer">
+              Ver as sem empresa
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {VIEWS.filter((v) => v.key !== 'canc' || counts.canc > 0 || view === 'canc').map((v) => (

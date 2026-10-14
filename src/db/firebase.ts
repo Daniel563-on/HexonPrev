@@ -41,6 +41,7 @@ export * from './osPdf';
 export * from './workOrderList';
 export * from './companies';
 export * from './companyMoves';
+export * from './companyInactivation';
 export * from './branding';
 export * from './warehouses';
 export * from './materialRequests';

@@ -93,7 +93,7 @@ export default function DispatchTab({ units, assets, templates, addresses, canDi
     try {
       // Modelos lidos do banco agora (nunca a cópia guardada: outro computador pode ter editado ou criado um modelo)
       const freshTemplates = await dbGetTemplates(true);
-      const draft = planDispatch({ unit, startMonth, endMonth, assets, assetTypes, templates: freshTemplates, addresses, cycle, todayStr: localTodayStr() });
+      const draft = planDispatch({ unit, startMonth, endMonth, assets, assetTypes, templates: freshTemplates, addresses, cycle, todayStr: localTodayStr(), inactiveCompanies: companies.filter((c) => !c.active).map((c) => c.id) });
       setPlan(await dbSplitExistingOrders(draft));
     } catch (err: any) {
       setError(`Não foi possível conferir: ${err?.message || err}`);

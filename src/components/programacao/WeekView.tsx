@@ -16,6 +16,8 @@ import {
   dbPublishWeek,
   dbSetWeekVisit,
   isCompanyVisible,
+  inactiveCompanyIds,
+  isCompanyPending,
   localTodayStr,
   CompanyFixResult,
   UnitPersonInfo
@@ -192,7 +194,10 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   // entram em nenhuma: aviso abaixo e "Corrigir as empresas" (Super Admin)
   const unitOrders = useMemo(() => orders.filter((o) => o.unit === unit && !!company && o.company === company), [orders, unit, company]);
   const OPEN = ['Novo', 'Planejada', 'Em Execução', 'Atrasada'];
-  const noCompany = useMemo(() => orders.filter((o) => o.unit === unit && !o.company && OPEN.includes(o.status)).length, [orders, unit]);
+  // A5-B: as de empresa inativa também contam como sem empresa
+  const inactive = useMemo(() => inactiveCompanyIds(companies), [companies]);
+  const noCompany = useMemo(() => orders.filter((o) => o.unit === unit && isCompanyPending(o.company, inactive) && OPEN.includes(o.status)).length, [orders, unit, inactive]);
+  const inactiveCount = useMemo(() => orders.filter((o) => o.unit === unit && !!o.company && inactive.has(o.company) && OPEN.includes(o.status)).length, [orders, unit, inactive]);
   const prevs = unitOrders.filter((o) => SHOWN.includes(o.status) && days.some((d) => coversDay(o, d)));
   // Lote: a empresa dele; lote antigo sem empresa: a das preventivas dele
   const weekLots = lots.filter((l) => (l.company ? l.company === company : orders.some((o) => o.lotId === l.id && o.unit === unit && o.company === company)));
@@ -844,9 +849,11 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-[240px]">
             <p className="font-black">
-              {noCompany} preventiva{noCompany > 1 ? 's' : ''} da {unit} {noCompany > 1 ? 'estão' : 'está'} sem empresa gravada e não {noCompany > 1 ? 'aparecem' : 'aparece'} na Programação.
+              {noCompany} preventiva{noCompany > 1 ? 's' : ''} da {unit} {noCompany > 1 ? 'estão' : 'está'} sem empresa{inactiveCount === noCompany ? ' (empresa inativada)' : inactiveCount ? ` (${inactiveCount} de empresa inativada)` : ' gravada'} e não {noCompany > 1 ? 'aparecem' : 'aparece'} na Programação.
             </p>
-            <p className="text-[11px]">Foram geradas antes da separação por empresa (07/10). A correção dá a cada uma a empresa do ativo (preventiva) ou do endereço (vistoria).</p>
+            <p className="text-[11px]">
+              {inactiveCount < noCompany ? 'As sem empresa gravada foram geradas antes da separação por empresa (07/10). ' : ''}A correção dá a cada uma a empresa do ativo (preventiva) ou do endereço (vistoria) — a empresa precisa estar ativa{inactiveCount ? '; dê antes a empresa nova aos ativos da empresa inativada (Gestão de Ativos)' : ''}.
+            </p>
             {user.perfil !== 'Super Administrador' && <p className="text-[11px] font-bold mt-1">Peça ao Super Administrador para corrigir.</p>}
           </div>
           {user.perfil === 'Super Administrador' && (
@@ -863,7 +870,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             {fixResult.missing.length > 0 && (
               <>
                 {' '}
-                <b>{fixResult.missing.length}</b> continuam sem empresa porque o ativo/endereço também não tem:{' '}
+                <b>{fixResult.missing.length}</b> continuam sem empresa porque o ativo/endereço também não tem empresa ativa:{' '}
                 <button type="button" onClick={() => setShowMissing(!showMissing)} className="font-black underline cursor-pointer">
                   {showMissing ? 'esconder a lista' : 'ver a lista'}
                 </button>{' '}

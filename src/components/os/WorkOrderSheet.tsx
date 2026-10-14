@@ -188,7 +188,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
             {[
-              ['Empresa', companyName],
+              ['Empresa', companies.find((c) => c.id === o.company)?.active === false ? `${companyName} (inativa${['Nova', 'Em andamento', 'Pendente'].includes(o.status) ? ' — sem empresa' : ''})` : companyName],
               ['Registrada por', o.createdByName],
               ['Criada em', fmtDT(o.createdAt)],
               ['Prazo (SLA)', dayBR(o.deadline)],
