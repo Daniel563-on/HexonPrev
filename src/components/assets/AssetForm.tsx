@@ -198,10 +198,11 @@ export default function AssetForm(p: Props) {
         await dbCancelOpenOrdersForAssets([next.id], `Ativo baixado no cadastro por ${userName}`, f.unit).catch((e) => console.warn('OS do ativo baixado não canceladas:', e));
       }
       // Tipo novo vai para o PMOC sem periodicidade (quem pode mexer nos modelos)
-      // (só com a lista de tipos já carregada: sem ela, todo tipo pareceria novo)
-      if (f.type.trim() && canManageTypes && typesReady && !types.some((t) => assetTypeKey(t.name) === assetTypeKey(f.type))) {
+      // (lista de tipos ainda carregando: busca agora; sem ela, todo tipo pareceria novo)
+      const known = typesReady ? types : await dbGetAssetTypes([f.unit]);
+      if (f.type.trim() && canManageTypes && !known.some((t) => assetTypeKey(t.name) === assetTypeKey(f.type))) {
         const names = [...unitAssets.filter((a) => a.id !== next.id && a.status !== 'Baixado').map(assetType), f.type.toUpperCase()].filter(Boolean);
-        await dbSyncAssetTypes(f.unit, names, types).catch((e) => console.warn('Tipo novo não criado no PMOC:', e));
+        await dbSyncAssetTypes(f.unit, names, known).catch((e) => console.warn('Tipo novo não criado no PMOC:', e));
       }
       onSaved(next);
       onClose();
