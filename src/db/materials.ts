@@ -193,3 +193,164 @@ async function dbApplyMaterialImportNow(plan: MaterialImportPlan): Promise<void>
   }
   markSyncStale(plan.kind);
 }
+
+// ===== PLANILHA DO ALMOXARIFADO (ajuste A7, 14/10/2026) =====
+// Colunas: GERÊNCIA, ALMOXARIFADO, CÓDIGO, MATERIAL, MATERIAL RESUMIDO, U.M., TOTAL - QTDE., TOTAL - VALOR, VALOR UNITÁRIO.
+// A planilha é a posição completa do almoxarifado da gerência (uma empresa escolhida na tela). Um material por código,
+// com o saldo de cada almoxarifado; valor = soma dos valores ÷ soma das quantidades (ao centavo). Quem saiu da planilha
+// fica sem saldo (o técnico não pede; continua na lista e no "material usado" da OS). Saldo só para consulta.
+
+// O técnico pode pedir? Com posição de almoxarifado: precisa de saldo; sem posição (cadastro antigo): valor > 0
+export const materialRequestable = (m: Material): boolean => m.cost > 0 && (!m.stockAt || (m.stockTotal || 0) > 0);
+
+export interface StockImportRow {
+  unit: string;
+  warehouse: string; // nome como veio na planilha
+  code: string;
+  description: string;
+  shortDescription: string;
+  measureUnit: string;
+  qty: number;
+  totalValue: number | null;
+  unitValue: number | null;
+  line: number;
+}
+
+export interface StockImportPlan {
+  company: string;
+  units: string[];
+  stockAt: string;
+  warehouses: { id: string; name: string; isNew: boolean }[];
+  toCreate: Material[];
+  toUpdate: { before: Material; after: Material }[];
+  unchanged: Material[]; // só a data da posição muda (também gravados)
+  toEmpty: Material[]; // saíram da planilha: ficam sem saldo
+  averaged: { code: string; description: string; values: number[]; cost: number }[]; // valor diferente entre almoxarifados
+  skipped: { row: StockImportRow; reason: string }[];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const sameStock = (a?: Record<string, number>, b?: Record<string, number>) => {
+  const ka = Object.keys(a || {}).filter((k) => (a as any)[k] > 0).sort();
+  const kb = Object.keys(b || {}).filter((k) => (b as any)[k] > 0).sort();
+  return ka.join('|') === kb.join('|') && ka.every((k) => (a as any)[k] === (b as any)[k]);
+};
+
+export function planStockImport(
+  rows: StockImportRow[],
+  existing: Material[],
+  company: string,
+  knownWarehouses: { id: string; name: string }[],
+  warehouseIdOf: (name: string) => string,
+  setBy: string
+): StockImportPlan {
+  const now = new Date().toISOString();
+  const today = localTodayStr();
+  const plan: StockImportPlan = { company, units: [], stockAt: today, warehouses: [], toCreate: [], toUpdate: [], unchanged: [], toEmpty: [], averaged: [], skipped: [] };
+  // Almoxarifados: pelo id (nome sem acento/maiúsculas); o que não existe será criado
+  const whById = new Map<string, { id: string; name: string; isNew: boolean }>();
+  // Agrupa por gerência + código
+  const groups = new Map<string, StockImportRow[]>();
+  for (const r of rows) {
+    const code = materialCodeKey(r.code);
+    const unit = String(r.unit || '').trim().toUpperCase();
+    if (!code || !String(r.description || '').trim()) {
+      plan.skipped.push({ row: r, reason: 'sem código ou material' });
+      continue;
+    }
+    if (!unit) {
+      plan.skipped.push({ row: r, reason: 'sem gerência' });
+      continue;
+    }
+    if (!String(r.warehouse || '').trim()) {
+      plan.skipped.push({ row: r, reason: 'sem almoxarifado' });
+      continue;
+    }
+    if (!Number.isFinite(r.qty) || r.qty < 0) {
+      plan.skipped.push({ row: r, reason: 'quantidade inválida' });
+      continue;
+    }
+    const whId = warehouseIdOf(r.warehouse);
+    if (!whById.has(whId)) {
+      const known = knownWarehouses.find((w) => w.id === whId);
+      whById.set(whId, { id: whId, name: known ? known.name : r.warehouse.trim(), isNew: !known });
+    }
+    const k = `${unit}|${code}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push({ ...r, unit, code });
+  }
+  plan.warehouses = Array.from(whById.values());
+  plan.units = Array.from(new Set(Array.from(groups.values()).map((g) => g[0].unit))).sort();
+
+  const seen = new Set<string>();
+  for (const g of groups.values()) {
+    const first = g[0];
+    const id = catalogIdOf('materials', first.unit, company, first.code);
+    seen.add(id);
+    const stock: Record<string, number> = {};
+    let qty = 0;
+    let value = 0;
+    let valueOk = true;
+    const unitValues: number[] = [];
+    for (const r of g) {
+      const w = warehouseIdOf(r.warehouse);
+      stock[w] = (stock[w] || 0) + r.qty;
+      qty += r.qty;
+      const total = r.totalValue ?? (r.unitValue !== null ? r.unitValue * r.qty : null);
+      if (total === null || !Number.isFinite(total)) valueOk = false;
+      else value += total;
+      if (r.unitValue !== null && Number.isFinite(r.unitValue)) unitValues.push(round2(r.unitValue));
+    }
+    const cost = valueOk && qty > 0 ? round2(value / qty) : unitValues.length ? unitValues[0] : 0;
+    if (new Set(unitValues).size > 1) plan.averaged.push({ code: first.code, description: first.description.trim(), values: Array.from(new Set(unitValues)), cost });
+    const description = first.description.trim();
+    const shortDescription = String(first.shortDescription || '').trim() || description;
+    const measureUnit = String(first.measureUnit || '').trim().toUpperCase() || 'UN';
+    const before = existing.find((m) => m.id === id);
+    const stockFields = { stock, stockTotal: qty, stockAt: today };
+    if (!before) {
+      plan.toCreate.push({
+        id, unit: first.unit, company, code: first.code, description, shortDescription, measureUnit, cost,
+        costFrom: cost > 0 ? today : '',
+        history: cost > 0 ? [{ value: cost, from: today, setAt: now, setBy, reason: 'planilha do almoxarifado' }] : [],
+        createdAt: now, updatedAt: now, ...stockFields
+      });
+      continue;
+    }
+    const costChanged = cost !== before.cost;
+    const changed =
+      costChanged || before.description !== description || (before.shortDescription || '') !== shortDescription || before.measureUnit !== measureUnit || !sameStock(before.stock, stock);
+    const after: Material = {
+      ...before, description, shortDescription, measureUnit, updatedAt: now, ...stockFields,
+      ...(costChanged
+        ? { cost, costFrom: today, history: [...(before.history || []), { value: cost, from: today, setAt: now, setBy, reason: 'planilha do almoxarifado' }] }
+        : {})
+    };
+    if (changed) plan.toUpdate.push({ before, after });
+    else plan.unchanged.push(after);
+  }
+  // Saíram da planilha (mesma gerência + empresa): ficam sem saldo e continuam na lista. Os que já estavam sem saldo
+  // não mudam (não aparecem de novo na conferência)
+  plan.toEmpty = existing
+    .filter((m) => m.company === company && plan.units.includes(m.unit) && !seen.has(m.id) && (!m.stockAt || (m.stockTotal || 0) > 0))
+    .map((m) => ({ ...m, stock: {}, stockTotal: 0, stockAt: today, updatedAt: now }));
+  return plan;
+}
+
+// Grava a planilha (operação em massa: liberada do disjuntor). Os almoxarifados novos entram antes, na lista de Configurações.
+export function dbApplyStockImport(...args: Parameters<typeof dbApplyStockImportNow>): ReturnType<typeof dbApplyStockImportNow> {
+  return runBulk(() => dbApplyStockImportNow(...args));
+}
+async function dbApplyStockImportNow(plan: StockImportPlan, addWarehouses: (list: { id: string; name: string }[]) => Promise<void>): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const db = dbInstance;
+  const fresh = plan.warehouses.filter((w) => w.isNew);
+  if (fresh.length) await addWarehouses(fresh);
+  const writes: Material[] = [...plan.toCreate, ...plan.toUpdate.map((u) => u.after), ...plan.unchanged, ...plan.toEmpty];
+  for (let i = 0; i < writes.length; i += 400) {
+    const batch = writeBatch(db);
+    writes.slice(i, i + 400).forEach((m) => batch.set(doc(db, 'materials', m.id), { ...cleanUndefined(m), syncAt: serverTimestamp() }));
+    await batch.commit();
+  }
+  markSyncStale('materials');
+}

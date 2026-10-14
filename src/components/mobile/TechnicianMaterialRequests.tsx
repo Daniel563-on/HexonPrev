@@ -12,6 +12,7 @@ import {
   formatQty,
   materialPickupGroups,
   materialsSyncStatus,
+  materialRequestable,
   MR_STATUS_LABEL,
   parseQty
 } from '../../db/firebase';
@@ -131,7 +132,8 @@ export default function TechnicianMaterialRequests({
     dbGetMaterials([unit], false, company)
       .then((l) => {
         if (catalogFor.current !== tag) return;
-        setCatalog(l.filter((m) => m.unit === unit && m.company === company && m.cost > 0));
+        // Só o que pode ser pedido: com valor e, com planilha do almoxarifado, com saldo (A7)
+        setCatalog(l.filter((m) => m.unit === unit && m.company === company && materialRequestable(m)));
         const st = materialsSyncStatus(unit, company);
         setCatalogInfo({ total: l.length, error: st?.error, code: st?.code });
       })
@@ -160,7 +162,7 @@ export default function TechnicianMaterialRequests({
       return { bad: true, text: `O banco não permitiu ler os materiais da ${where}. Avise o planejador.` };
     const n = catalog.length;
     const noValue = Math.max(0, catalogInfo.total - n);
-    const base = `${n} ${n === 1 ? 'material disponível' : 'materiais disponíveis'} (${where})${noValue ? ` · ${noValue} sem valor (não aparecem)` : ''}`;
+    const base = `${n} ${n === 1 ? 'material disponível' : 'materiais disponíveis'} (${where})${noValue ? ` · ${noValue} sem saldo ou sem valor (não aparecem)` : ''}`;
     if (catalogInfo.error) return { bad: true, text: `${base} · não foi possível atualizar a lista: ${catalogInfo.error}` };
     return { bad: n === 0, text: n === 0 && catalogInfo.total === 0 ? `Nenhum material cadastrado para ${where}.` : `${base} · atualiza sozinho` };
   })();
@@ -172,7 +174,7 @@ export default function TechnicianMaterialRequests({
     return catalog
       .filter((m) => !chosen.has(m.id))
       .filter((m) => {
-        const hay = norm(`${m.code} ${m.description}`);
+        const hay = norm(`${m.code} ${m.description} ${m.shortDescription || ''}`);
         return words.every((w) => hay.includes(w));
       })
       .slice(0, 30);
@@ -284,7 +286,7 @@ export default function TechnicianMaterialRequests({
                 <div className={`rounded-xl border max-h-64 overflow-y-auto divide-y ${darkMode ? 'border-slate-700 divide-slate-800' : 'border-slate-200 divide-slate-100'}`}>
                   {matches.map((m) => (
                     <button key={m.id} type="button" onClick={() => addItem(m)} className="w-full text-left px-3 py-2 text-xs cursor-pointer hover:bg-slate-500/10">
-                      <span className="font-bold">{m.description}</span>
+                      <span className="font-bold">{m.shortDescription || m.description}</span>
                       <span className="block text-[10px] text-slate-500">
                         Cód. {m.code} · {m.measureUnit}
                       </span>

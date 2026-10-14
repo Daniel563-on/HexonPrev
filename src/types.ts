@@ -664,6 +664,12 @@ export interface Material {
   history: MaterialCost[];
   createdAt: string;
   updatedAt: string;
+  // Planilha do almoxarifado (ajuste A7): nome resumido e saldo de cada almoxarifado na data da planilha (só para consulta;
+  // o app não desconta). Com "stockAt", o técnico só pede material com saldo; sem ele (cadastro antigo), vale o valor > 0.
+  shortDescription?: string;
+  stock?: Record<string, number>; // id do almoxarifado -> quantidade
+  stockTotal?: number;
+  stockAt?: string;               // "AAAA-MM-DD" da planilha
 }
 
 // CICLO DE PREVENTIVAS (por gerência)

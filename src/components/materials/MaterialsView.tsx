@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Company, HexonUser, Material } from '../../types';
+import { Company, HexonUser, Material, Warehouse } from '../../types';
 import {
   CatalogKind,
   catalogIdOf,
@@ -12,13 +12,18 @@ import {
   dbSaveCatalogItem,
   dbSetCatalogCost,
   localTodayStr,
-  materialCodeKey
+  materialCodeKey,
+  materialRequestable,
+  dbGetWarehouses
 } from '../../db/firebase';
 import MaterialImportModal from './MaterialImportModal';
+import StockImportModal from './StockImportModal';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // GESTÃO DE MATERIAIS e GESTÃO DE INSUMOS (Fase 8C): lista de cada gerência + empresa (etapa especial E2), a mesma tela
 // para as duas ("kind"). Sem controle de estoque; valor R$ 0,00 = o técnico não pode usar.
+// Materiais (ajuste A7): planilha do almoxarifado — nome resumido, saldo de cada almoxarifado (posição da planilha, só
+// consulta; o app não desconta) e valor médio. O técnico só pede material com saldo.
 
 interface Props {
   userProfile: HexonUser;
@@ -32,7 +37,7 @@ interface Props {
 export const CATALOG_TEXT: Record<CatalogKind, { title: string; intro: string; count: string; item: string; newItem: string; editItem: string; deleteItem: string; none: string; clash: string; keepNote: string }> = {
   materials: {
     title: 'Materiais',
-    intro: 'Cada gerência + empresa tem a sua lista, com os seus preços. O técnico só usa materiais da gerência e da empresa dele, com valor; material com R$ 0,00 fica aqui para o histórico.',
+    intro: 'Material do almoxarifado do MP, pela planilha do almoxarifado (código, saldo de cada almoxarifado e valor). O saldo é a posição da planilha, só para consulta: o app não desconta, a próxima planilha atualiza. O técnico só pede material com saldo.',
     count: 'material(is)',
     item: 'material',
     newItem: 'Novo material',
@@ -59,6 +64,12 @@ export const CATALOG_TEXT: Record<CatalogKind, { title: string; intro: string; c
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateBR = (d: string) => (d ? d.split('-').reverse().join('/') : '—');
 const PAGE = 200;
+const qtyBR = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+// "ALMOXARIFADO CENTRAL" -> "Central" (o Subalmoxarifado fica como está)
+const whShort = (name: string) => {
+  const t = name.replace(/^almoxarifado\s+/i, '').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : name;
+};
 
 export default function MaterialsView({ userProfile, visibleUnits, visibleCompanies, canManage, kind = 'materials' }: Props) {
   const T = CATALOG_TEXT[kind];
@@ -70,6 +81,11 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
   const [unit, setUnit] = useState('Todas');
   const [company, setCompany] = useState('Todas');
   const [availability, setAvailability] = useState<'Todos' | 'Disponível' | 'Sem valor'>('Todos');
+  // Materiais (A7): almoxarifado e saldo
+  const isMat = kind === 'materials';
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [whFilter, setWhFilter] = useState('Todos');
+  const [stockFilter, setStockFilter] = useState<'Todos' | 'Com saldo' | 'Sem saldo'>('Todos');
   const [shown, setShown] = useState(PAGE);
   const [showImport, setShowImport] = useState(false);
   const [editing, setEditing] = useState<Material | null>(null);
@@ -112,6 +128,7 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
   useEffect(() => {
     load(false);
     dbGetCompanies().then(setCompanies).catch(() => {});
+    if (isMat) dbGetWarehouses().then(setWarehouses).catch(() => {});
     if (visibleUnits === null) {
       dbGetManagements()
         .then((list) => setUnits(list.map((m) => m.name).filter((n) => n && n !== 'Todas')))
@@ -131,15 +148,40 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
     return materials.filter((m) => {
       if (unit !== 'Todas' && m.unit !== unit) return false;
       if (company !== 'Todas' && m.company !== company) return false;
-      if (availability === 'Disponível' && !(m.cost > 0)) return false;
-      if (availability === 'Sem valor' && m.cost > 0) return false;
-      if (q && ![m.code, m.description, m.measureUnit].some((v) => (v || '').toLowerCase().includes(q))) return false;
+      if (!isMat && availability === 'Disponível' && !(m.cost > 0)) return false;
+      if (!isMat && availability === 'Sem valor' && m.cost > 0) return false;
+      if (isMat && whFilter !== 'Todos' && !((m.stock || {})[whFilter] > 0)) return false;
+      if (isMat && stockFilter === 'Com saldo' && !((m.stockTotal || 0) > 0)) return false;
+      if (isMat && stockFilter === 'Sem saldo' && (m.stockTotal || 0) > 0) return false;
+      if (q && ![m.code, m.description, m.shortDescription, m.measureUnit].some((v) => (v || '').toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [materials, search, unit, company, availability]);
+  }, [materials, search, unit, company, availability, whFilter, stockFilter]);
 
   const inUnit = materials.filter((m) => (unit === 'Todas' || m.unit === unit) && (company === 'Todas' || m.company === company));
   const available = inUnit.filter((m) => m.cost > 0).length;
+  // Materiais (A7): números da posição do almoxarifado
+  const whName = (id: string) => warehouses.find((w) => w.id === id)?.name || id;
+  const withPosition = inUnit.filter((m) => !!m.stockAt);
+  const lastPosition = withPosition.reduce((d, m) => ((m.stockAt || '') > d ? m.stockAt || '' : d), '');
+  const withStock = inUnit.filter((m) => (m.stockTotal || 0) > 0).length;
+  const stockValue = inUnit.reduce((s, m) => s + m.cost * (m.stockTotal || 0), 0);
+  const perWarehouse = useMemo(() => {
+    const c = new Map<string, number>();
+    inUnit.forEach((m) => Object.entries(m.stock || {}).forEach(([w, q]) => Number(q) > 0 && c.set(w, (c.get(w) || 0) + 1)));
+    return Array.from(c.entries()).sort((a, b) => b[1] - a[1]);
+  }, [inUnit]);
+  const stockCell = (m: Material) => {
+    if (!m.stockAt) return <span className="text-slate-400">sem posição</span>;
+    const parts = Object.entries(m.stock || {}).filter(([, q]) => q > 0);
+    if (!parts.length) return <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-black">sem saldo</span>;
+    return (
+      <span className="font-bold text-slate-800 whitespace-nowrap">
+        {parts.map(([w, q]) => `${whShort(whName(w))} ${qtyBR(q)}`).join(' · ')}
+        {parts.length > 1 && <span className="text-slate-500 font-semibold"> = {qtyBR(m.stockTotal || 0)}</span>}
+      </span>
+    );
+  };
 
   const openNew = () => {
     setIsNew(true);
@@ -157,6 +199,11 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
         <div>
           <h2 className="text-lg font-black text-slate-800">{T.title}</h2>
           <p className="text-xs text-slate-500">{T.intro}</p>
+          {isMat && lastPosition && (
+            <p className="text-xs font-bold text-slate-700 mt-1">
+              Saldo = posição da planilha de {dateBR(lastPosition)}.
+            </p>
+          )}
         </div>
         {canManage && (
           <div className="flex gap-2 shrink-0">
@@ -164,17 +211,49 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
               {T.newItem}
             </button>
             <button type="button" onClick={() => setShowImport(true)} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
-              Importar planilha
+              {isMat ? 'Importar planilha do almoxarifado' : 'Importar planilha'}
             </button>
           </div>
         )}
       </div>
 
+      {isMat && withPosition.length > 0 && (
+        <div className="flex flex-wrap gap-2" aria-label="Números do almoxarifado">
+          {[
+            { n: inUnit.length.toLocaleString('pt-BR'), label: 'materiais', tone: 'text-slate-800', key: 'Todos' as const },
+            { n: withStock.toLocaleString('pt-BR'), label: 'com saldo', tone: 'text-emerald-700', key: 'Com saldo' as const },
+            { n: (inUnit.length - withStock).toLocaleString('pt-BR'), label: 'sem saldo (não aparecem para o técnico)', tone: 'text-amber-700', key: 'Sem saldo' as const }
+          ].map((c) => (
+            <button
+              key={c.label}
+              type="button"
+              onClick={() => { setStockFilter(c.key); setShown(PAGE); }}
+              aria-pressed={stockFilter === c.key}
+              className={`min-w-[130px] text-left px-3 py-2 rounded-xl border bg-white cursor-pointer ${stockFilter === c.key ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'}`}
+            >
+              <p className={`text-lg font-black leading-none ${c.tone}`}>{c.n}</p>
+              <p className="text-[11px] font-bold text-slate-600 mt-1">{c.label}</p>
+            </button>
+          ))}
+          <div className="min-w-[150px] px-3 py-2 rounded-xl border border-slate-200 bg-white">
+            <p className="text-lg font-black leading-none text-slate-800">{brl(stockValue)}</p>
+            <p className="text-[11px] font-bold text-slate-600 mt-1">valor em estoque</p>
+          </div>
+          {perWarehouse.length > 0 && (
+            <div className="px-3 py-2 rounded-xl border border-slate-200 bg-white">
+              <p className="text-sm font-black leading-tight text-slate-800">{perWarehouse.map(([w, n]) => `${whShort(whName(w))} ${n}`).join(' · ')}</p>
+              <p className="text-[11px] font-bold text-slate-600 mt-1">materiais por almoxarifado</p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
         <p className="text-xs font-bold text-slate-700">
-          {inUnit.length} {T.count}{unit !== 'Todas' ? ` em ${unit}` : ''}{company !== 'Todas' ? ` • ${companyName(company)}` : ''} • {available} disponível(is) para o técnico • {inUnit.length - available} com R$ 0,00
+          {inUnit.length} {T.count}{unit !== 'Todas' ? ` em ${unit}` : ''}{company !== 'Todas' ? ` • ${companyName(company)}` : ''} •{' '}
+          {isMat ? `${inUnit.filter(materialRequestable).length} disponível(is) para o técnico pedir` : `${available} disponível(is) para o técnico • ${inUnit.length - available} com R$ 0,00`}
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-1 gap-3 ${isMat ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
           <input value={search} onChange={(e) => { setSearch(e.target.value); setShown(PAGE); }} placeholder="Buscar código, descrição..." className={field} />
           <select value={unit} onChange={(e) => { setUnit(e.target.value); setShown(PAGE); }} className={field}>
             <option value="Todas">Todas as gerências</option>
@@ -184,11 +263,25 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
             <option value="Todas">Todas as empresas</option>
             {(unit === 'Todas' ? myCompanies : companiesOfUnit(myCompanies, unit)).filter((c) => c.active || c.id === company).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={availability} onChange={(e) => { setAvailability(e.target.value as typeof availability); setShown(PAGE); }} className={field}>
-            <option value="Todos">Com e sem valor</option>
-            <option value="Disponível">Disponíveis (com valor)</option>
-            <option value="Sem valor">Sem valor (R$ 0,00)</option>
-          </select>
+          {isMat ? (
+            <>
+              <select value={whFilter} onChange={(e) => { setWhFilter(e.target.value); setShown(PAGE); }} className={field} aria-label="Filtrar por almoxarifado">
+                <option value="Todos">Todos os almoxarifados</option>
+                {perWarehouse.map(([w]) => <option key={w} value={w}>{whName(w)}</option>)}
+              </select>
+              <select value={stockFilter} onChange={(e) => { setStockFilter(e.target.value as typeof stockFilter); setShown(PAGE); }} className={field} aria-label="Filtrar por saldo">
+                <option value="Todos">Com e sem saldo</option>
+                <option value="Com saldo">Com saldo</option>
+                <option value="Sem saldo">Sem saldo</option>
+              </select>
+            </>
+          ) : (
+            <select value={availability} onChange={(e) => { setAvailability(e.target.value as typeof availability); setShown(PAGE); }} className={field}>
+              <option value="Todos">Com e sem valor</option>
+              <option value="Disponível">Disponíveis (com valor)</option>
+              <option value="Sem valor">Sem valor (R$ 0,00)</option>
+            </select>
+          )}
         </div>
       </div>
 
@@ -197,9 +290,11 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
           <thead>
             <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500">
               <th className="p-3">Código</th>
-              <th className="p-3">Descrição</th>
-              <th className="p-3">Unid.</th>
-              <th className="p-3">Valor</th>
+              <th className="p-3">{isMat ? 'Material' : 'Descrição'}</th>
+              <th className="p-3">{isMat ? 'U.M.' : 'Unid.'}</th>
+              {isMat && <th className="p-3">Saldo por almoxarifado</th>}
+              <th className="p-3">{isMat ? 'Valor unit.' : 'Valor'}</th>
+              {isMat && <th className="p-3">Valor em estoque</th>}
               <th className="p-3">Gerência</th>
               <th className="p-3">Empresa</th>
               <th className="p-3 text-right">Ações</th>
@@ -207,14 +302,21 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.slice(0, shown).map((m) => (
-              <tr key={m.id} className={m.cost > 0 ? '' : 'bg-amber-50/40'}>
+              <tr key={m.id} className={(isMat ? materialRequestable(m) : m.cost > 0) ? '' : 'bg-amber-50/40'}>
                 <td className="p-3 font-mono font-bold">{m.code}</td>
-                <td className="p-3 font-semibold text-slate-800">{m.description}</td>
+                <td className="p-3 font-semibold text-slate-800">
+                  {isMat && m.shortDescription ? m.shortDescription : m.description}
+                  {isMat && m.shortDescription && m.shortDescription !== m.description && (
+                    <span className="block text-[10px] font-normal text-slate-400">{m.description}</span>
+                  )}
+                </td>
                 <td className="p-3">{m.measureUnit}</td>
+                {isMat && <td className="p-3">{stockCell(m)}</td>}
                 <td className="p-3">
                   <span className={`font-black ${m.cost > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{brl(m.cost)}</span>
                   {m.costFrom && <span className="block text-[10px] text-slate-400">desde {dateBR(m.costFrom)}</span>}
                 </td>
+                {isMat && <td className="p-3 whitespace-nowrap">{m.stockAt && (m.stockTotal || 0) > 0 ? brl(m.cost * (m.stockTotal || 0)) : '—'}</td>}
                 <td className="p-3">{m.unit}</td>
                 <td className="p-3">{companyName(m.company)}</td>
                 <td className="p-3 text-right whitespace-nowrap">
@@ -246,10 +348,10 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
               </tr>
             ))}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-400 italic">{T.none}</td></tr>
+              <tr><td colSpan={isMat ? 9 : 7} className="p-6 text-center text-slate-400 italic">{T.none}</td></tr>
             )}
             {loading && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-400">Carregando...</td></tr>
+              <tr><td colSpan={isMat ? 9 : 7} className="p-6 text-center text-slate-400">Carregando...</td></tr>
             )}
           </tbody>
         </table>
@@ -262,7 +364,19 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
         )}
       </div>
 
-      {showImport && (
+      {showImport && isMat && (
+        <StockImportModal
+          units={units}
+          companies={myCompanies}
+          currentUserName={userProfile.name}
+          onClose={() => setShowImport(false)}
+          onDone={() => {
+            load();
+            dbGetWarehouses(true).then(setWarehouses).catch(() => {});
+          }}
+        />
+      )}
+      {showImport && !isMat && (
         <MaterialImportModal
           kind={kind}
           units={units}
@@ -365,6 +479,7 @@ function MaterialFormModal({ kind, material, isNew, units, companies, materials,
         id,
         code: form.code.trim(),
         description: form.description.trim(),
+        ...(kind === 'materials' ? { shortDescription: (form.shortDescription || '').trim() || undefined } : {}),
         measureUnit: (form.measureUnit || 'UN').trim().toUpperCase(),
         createdAt: form.createdAt || now
       });
@@ -406,9 +521,16 @@ function MaterialFormModal({ kind, material, isNew, units, companies, materials,
           </label>
         </div>
         <label className="block">
-          <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Descrição *</span>
-          <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={field} />
+          <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">{kind === 'materials' ? 'Material (nome completo) *' : 'Descrição *'}</span>
+          <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={field} aria-label="Descrição" />
         </label>
+        {kind === 'materials' && (
+          <label className="block">
+            <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Nome resumido</span>
+            <input value={form.shortDescription || ''} onChange={(e) => setForm({ ...form, shortDescription: e.target.value })} placeholder="Aparece no celular e nas listas" className={field} aria-label="Nome resumido" />
+            <span className="block text-[10px] text-slate-500 mt-1">O saldo vem da planilha do almoxarifado (não se digita aqui).</span>
+          </label>
+        )}
         {isNew && <p className="text-[11px] text-slate-500">Depois de salvar, informe o valor em "Valor". Sem valor, o técnico não pode usar.</p>}
         {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
         <div className="flex justify-end gap-2">

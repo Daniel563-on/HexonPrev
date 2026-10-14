@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Warehouse as WarehouseIcon, CheckCircle2, XCircle, Clock, PackageCheck } from 'lucide-react';
-import { Company, HexonUser, MaterialRequest, MaterialRequestStatus, Warehouse } from '../../types';
+import { Company, HexonUser, Material, MaterialRequest, MaterialRequestStatus, Warehouse } from '../../types';
 import {
   dbApproveMaterialRequest,
   dbGetCompanies,
   dbGetManagements,
   dbGetMaterialRequestsPage,
+  dbGetMaterials,
   dbGetWarehouses,
   dbRejectMaterialRequest,
   formatQty,
@@ -75,6 +76,8 @@ export default function MaterialRequestsTab({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [changed, setChanged] = useState<Record<string, MaterialRequest>>({}); // decididos nesta tela (saem dos pendentes na hora)
+  // Saldo de cada almoxarifado (A7, posição da planilha; só consulta): materiais da gerência + empresa do pedido em análise
+  const [stockOf, setStockOf] = useState<Record<string, Material>>({});
 
   useEffect(() => {
     dbGetCompanies().then(setCompanies).catch(() => {});
@@ -131,10 +134,20 @@ export default function MaterialRequestsTab({
 
   const pendingCount = pending.filter((r) => r.unit === unit && isCompanyVisible(r.company, visibleCompanies) && !changed[r.id]).length;
   const activeWarehouses = warehouses.filter((w) => w.active);
+  // " — saldo 10" / " — sem saldo" (material com planilha do almoxarifado); sem planilha, nada
+  const stockLabel = (materialId: string, warehouseId: string) => {
+    const m = stockOf[materialId];
+    if (!m?.stockAt) return '';
+    const q = (m.stock || {})[warehouseId] || 0;
+    return q > 0 ? ` — saldo ${q.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}` : ' — sem saldo';
+  };
   const by = { name: userProfile.name, matricula: userProfile.matricula };
 
   const startAnalysis = (r: MaterialRequest) => {
     setMsg(null);
+    dbGetMaterials([r.unit], false, r.company)
+      .then((l) => setStockOf((prev) => ({ ...prev, ...Object.fromEntries(l.map((m) => [m.id, m])) })))
+      .catch(() => {});
     setAnalysis({ id: r.id, supplied: r.items.map((i) => formatQty(i.qty)), whs: r.items.map(() => ''), rms: r.items.map(() => ''), allWh: '', allRm: '', rejecting: false, reason: '' });
   };
 
@@ -291,7 +304,7 @@ export default function MaterialRequestsTab({
                     <th className="py-1 pr-2">Material</th>
                     <th className="py-1 pr-2 text-right">Pedido</th>
                     {(a || r.status === 'Aprovado' || r.status === 'Atendido') && <th className="py-1 text-right">Fornecido</th>}
-                    {a && <th className="py-1 pl-3">Almoxarifado</th>}
+                    {a && <th className="py-1 pl-3">Almoxarifado{(() => { const d = r.items.map((it) => stockOf[it.materialId]?.stockAt || '').sort().pop(); return d ? ` (saldo em ${d.slice(8, 10)}/${d.slice(5, 7)})` : ''; })()}</th>}
                     {a && <th className="py-1 pl-2">Nº da RM</th>}
                   </tr>
                 </thead>
@@ -328,6 +341,7 @@ export default function MaterialRequestsTab({
                               {activeWarehouses.map((w) => (
                                 <option key={w.id} value={w.name}>
                                   {w.name}
+                                  {stockLabel(it.materialId, w.id)}
                                 </option>
                               ))}
                             </select>

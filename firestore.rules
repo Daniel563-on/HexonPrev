@@ -283,9 +283,10 @@ service cloud.firestore {
     // Altera: só quem tem "Cadastrar e Importar Materiais" (suas gerências); todo material tem empresa.
     // O usuário e o perfil são lidos UMA vez e passados (o banco limita as contas por verificação: com perfil de acesso,
     // a versão antiga passava do limite de 1000 e o técnico não conseguia ler a lista)
+    // A7: quem aprova pedido de material também lê (vê o saldo de cada almoxarifado na aprovação)
     function matReadOk(u, p) {
       return osSees(u, p)
-        && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs')
+        && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs') || osPerm(u, p, 'material_requests_decide')
             || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
     }
     match /materials/{materialId} {
@@ -352,9 +353,16 @@ service cloud.firestore {
 
     // 4m. VALORES (pernoite): só quem tem "Visualizar Valores (R$)" lê; só o Super Administrador altera
     // 4o. CONTROLE DO SISTEMA — forçar atualização e modo manutenção. Todos leem (até a tela de login); só o Super Admin altera.
+    // A7: a lista de almoxarifados ("warehouses") também cresce pela importação da planilha do almoxarifado — quem tem
+    // "Cadastrar e Importar Materiais" só acrescenta (os que já existem continuam iguais)
     match /appControl/{docId} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin()
+        || (docId == 'warehouses' && isStaff() && hasPermission('manage_materials')
+            && request.resource.data.keys().hasOnly(['list', 'updatedAt', 'updatedBy'])
+            && request.resource.data.list is list && request.resource.data.list.size() <= 100
+            && (resource == null || (request.resource.data.list.size() > resource.data.list.size()
+                                     && request.resource.data.list.hasAll(resource.data.list))));
     }
 
     match /costSettings/{settingId} {
