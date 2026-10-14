@@ -135,7 +135,7 @@ export async function dbChangeWorkOrderCompany(o: WorkOrder, to: string, labels:
   const now = new Date().toISOString();
   const inBlock = !!(o.scheduledDate || o.scheduledEndDate || o.lotId);
   try {
-    const lotExists = o.lotId ? (await getDoc(doc(db, 'planningLots', o.lotId))).exists() : false;
+    const lotExists = o.lotId ? await getDoc(doc(db, 'planningLots', o.lotId)).then((d) => d.exists()).catch(() => false) : false;
     const batch = writeBatch(db);
     batch.update(doc(db, 'workOrders', o.id), {
       company: to,

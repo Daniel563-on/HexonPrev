@@ -25,7 +25,8 @@ async function commitMoves(writes: MoveWrite[], now: string): Promise<void> {
   const db = dbInstance!;
   const lotIds = Array.from(new Set(writes.map((w) => w.lotId || '').filter(Boolean)));
   const existing = new Set<string>();
-  for (const id of lotIds) if ((await getDoc(doc(db, 'planningLots', id))).exists()) existing.add(id);
+  // Lote apagado: a leitura volta vazia (ou "sem permissão" para quem não vê todas as gerências) — fica de fora
+  for (const id of lotIds) if (await getDoc(doc(db, 'planningLots', id)).then((d) => d.exists()).catch(() => false)) existing.add(id);
   const ops: ((b: ReturnType<typeof writeBatch>) => void)[] = writes.map((w) => (b) => b.update(doc(db, 'serviceOrders', w.id), w.fields));
   for (const id of existing) {
     const ids = writes.filter((w) => w.lotId === id).map((w) => w.id);
