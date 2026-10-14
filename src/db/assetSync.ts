@@ -253,11 +253,20 @@ export function removeLocalAssets(ids: string[]): void {
 // Telas que mostram a lista e querem receber as mudanças em tempo real
 export function subscribeLocalAssets(cb: (list: Asset[]) => void): () => void {
   subscribers.add(cb);
-  ensureAssetSync()
-    .then(() => {
-      if (subscribers.has(cb)) cb(currentList());
-    })
-    .catch(() => cb([]));
+  // Logo depois de recarregar a página o login ainda está voltando: tenta de novo por até 15 s
+  // (antes a tela ficava com "0 ativos" até sair e voltar)
+  let tries = 0;
+  const attempt = () =>
+    ensureAssetSync()
+      .then(() => {
+        if (subscribers.has(cb)) cb(currentList());
+      })
+      .catch(() => {
+        if (!subscribers.has(cb)) return;
+        if (firebaseActive && !canUseAssetSync() && tries++ < 30) setTimeout(attempt, 500);
+        else cb([]);
+      });
+  attempt();
   return () => {
     subscribers.delete(cb);
   };
