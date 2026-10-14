@@ -28,6 +28,7 @@ import {
 } from '../../db/firebase';
 import WorkOrderSheet from './WorkOrderSheet';
 import OsSignQueue from './OsSignQueue';
+import AssignWorkOrderModal from './AssignWorkOrderModal';
 import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
@@ -45,6 +46,7 @@ interface Props {
   userProfile: HexonUser;
   unitOptions: string[]; // gerências que o usuário pode ver
   canAssign: boolean;
+  canProgram?: boolean; // Fase 7E-2: "Programar" — o Atribuir técnico também programa o dia e o pernoite
   canEdit?: boolean;
   visibleCompanies?: string[] | null; // empresas que vê (null = todas as da gerência)
   canCancel: boolean;
@@ -62,7 +64,7 @@ const EXPORT_MAX = 2000;
 const field = 'h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white';
 const label = 'block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5';
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canProgram = false, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole }: Props) {
   // Atalho do Início: a lista abre já filtrada (situação, atrasadas ou "Precisam da minha assinatura")
   const [homeLink] = useState(() => peekHomeLink<HomeOsLink>('os-list'));
   useEffect(() => clearHomeLink('os-list'), []);
@@ -103,7 +105,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   const [selected, setSelected] = useState<WorkOrder | null>(null);
   const [assigning, setAssigning] = useState<WorkOrder | null>(null);
   const [techs, setTechs] = useState<HexonUser[]>([]);
-  const [assignTech, setAssignTech] = useState('');
+  const [assignMsg, setAssignMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [zipOpen, setZipOpen] = useState(false);
@@ -342,28 +344,12 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   // ===== Atribuir técnico =====
   const openAssign = async (o: WorkOrder) => {
     setAssigning(o);
-    setAssignTech(o.assignedTechnicianMatricula || '');
+    setAssignMsg(null);
     setError(null);
     const users = await dbGetUsers().catch(() => []);
     // Só os técnicos da empresa da OS
     setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas') && (!o.company || (u.companies || []).includes(o.company))));
   };
-  const assign = async () => {
-    if (!assigning) return;
-    const t = techs.find((x) => x.matricula === assignTech);
-    if (!t) return setError('Escolha o técnico.');
-    setBusy(true);
-    try {
-      await dbAssignWorkOrder(assigning, { matricula: t.matricula, name: t.name }, userProfile.name);
-      setAssigning(null);
-      refresh();
-    } catch (e: any) {
-      setError(e?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode atribuir OS nesta gerência.' : `Não foi possível atribuir: ${e?.message || e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   // ===== Planilha da lista filtrada (todas as páginas, até 2.000 OS) =====
   const exportXlsx = async () => {
     setExportMsg('Preparando a planilha...');
@@ -560,6 +546,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
             </p>
           )}
           {exportMsg && <p className="text-[11px] font-bold text-slate-700">{exportMsg}</p>}
+          {assignMsg && <p className="text-[11px] font-bold text-emerald-700">{assignMsg}</p>}
           {error && !assigning && <p className="text-xs font-bold text-rose-600">{error}</p>}
 
           {/* Computador: tabela */}
@@ -688,41 +675,20 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
 
       {zipOpen && <ZipBackupModal unit={unit} cos={cos} label={companyFilter ? companyName(companyFilter) : ''} onClose={() => setZipOpen(false)} />}
 
-      {/* Atribuir técnico */}
+      {/* Atribuir técnico (Fase 7E-2: com dia e pernoite para quem também tem "Programar") */}
       {assigning && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-3">
-            <p className="text-sm font-black text-slate-900">{assigning.assignedTechnicianMatricula ? 'Trocar técnico' : 'Atribuir técnico'} — {assigning.number}</p>
-            {assigning.status === 'Nova' ? (
-              <p className="text-[11px] font-bold text-amber-700">Ao atribuir, a OS fica "Em andamento" e o homem-hora começa a contar.</p>
-            ) : (
-              <p className="text-[11px] text-slate-500">A contagem do homem-hora continua desde a primeira atribuição.</p>
-            )}
-            <select value={assignTech} onChange={(e) => setAssignTech(e.target.value)} className="w-full h-9 px-3 text-xs border border-slate-200 rounded-lg bg-white">
-              <option value="">Selecione o técnico...</option>
-              {[
-                { label: `Técnicos da ${assigning.unit}`, list: techs.filter((t) => t.gerencia === assigning.unit) },
-                { label: 'Técnicos de todas as gerências', list: techs.filter((t) => t.gerencia === 'Todas') }
-              ]
-                .filter((g) => g.list.length > 0)
-                .map((g) => (
-                  <optgroup key={g.label} label={g.label}>
-                    {g.list.map((t) => (
-                      <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-                    ))}
-                  </optgroup>
-                ))}
-            </select>
-            {techs.length === 0 && <p className="text-[11px] text-slate-500">Nenhum técnico ativo nesta gerência.</p>}
-            {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => { setAssigning(null); setError(null); }} className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
-              <button type="button" onClick={assign} disabled={busy} className="h-8 px-3 rounded-lg bg-[#3525cd] text-white text-xs font-bold cursor-pointer disabled:opacity-50">
-                {busy ? 'Salvando...' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AssignWorkOrderModal
+          order={assigning}
+          techs={techs}
+          user={userProfile}
+          canProgram={canProgram}
+          onClose={() => setAssigning(null)}
+          onDone={(msg) => {
+            setAssigning(null);
+            setAssignMsg(msg);
+            refresh();
+          }}
+        />
       )}
     </div>
   );

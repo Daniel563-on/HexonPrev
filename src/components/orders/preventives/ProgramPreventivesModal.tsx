@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Info, Moon, Star } from 'lucide-react';
-import { Absence, BlockStop, Company, HexonUser, PlanningLot, ServiceOrder, UsualTeam, WeekPlan } from '../../../types';
-import { dbGetWeekPlan, dbListAbsences, dbListWeekLots, dbSaveBlock, localTodayStr, UnitPersonInfo } from '../../../db/firebase';
+import React, { useState } from 'react';
+import { AlertTriangle, Info, Star } from 'lucide-react';
+import { BlockStop, Company, HexonUser, PlanningLot, ServiceOrder, UsualTeam } from '../../../types';
+import { dbSaveBlock, localTodayStr, UnitPersonInfo } from '../../../db/firebase';
 import { coversDay, fitsWindow, localKey, localLabel, lotPlace } from '../../programacao/blockLayout';
 import { addDays, DAY_LABEL, isoWeek, mondayOf, weekDays } from '../../programacao/weekDates';
 import { MARK_LABEL, Shell, btn, btnMain } from '../../programacao/WeekModals';
 import { teamLabel } from '../../programacao/TeamForm';
+import { brDay, crewOf, DaysPicker, dayTxt as dayTxtOf, NightsBox, techOptions, useWeekData } from '../../programacao/weekPick';
 
 // PROGRAMAR PELA LISTA (Fase 7E-1): as preventivas marcadas em Ordens de Serviço › Preventivas viram um bloco da
 // Programação (o mesmo da grade da semana): técnico, dias da semana dentro do prazo de todas, noites fora e pessoas.
@@ -24,7 +25,7 @@ interface Props {
 }
 
 const MAX_STOPS = 20;
-const br = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+const br = brDay;
 const rawLocal = (k: string) => {
   const i = k.indexOf('|');
   return { comarca: k.slice(0, i), address: k.slice(i + 1) };
@@ -40,9 +41,7 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
   const lastWeek = hi ? mondayOf(new Date(`${hi}T12:00:00`)) : addDays(firstWeek, 7 * 8);
 
   const [weekStart, setWeekStart] = useState(firstWeek);
-  const [plan, setPlan] = useState<WeekPlan | null>(null);
-  const [absences, setAbsences] = useState<Absence[]>([]);
-  const [lots, setLots] = useState<PlanningLot[]>([]);
+  const { plan, absences, lots } = useWeekData(unit, company.id, weekStart);
   const [tech, setTech] = useState('');
   const [s, setS] = useState('');
   const [e, setE] = useState('');
@@ -53,26 +52,6 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
   const [weekendOk, setWeekendOk] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all([dbGetWeekPlan(unit, company.id, weekStart), dbListAbsences(unit, weekStart), dbListWeekLots(unit, weekStart)])
-      .then(([pl, ab, lt]) => {
-        if (!alive) return;
-        setPlan(pl);
-        setAbsences(ab);
-        setLots(lt);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setPlan(null);
-        setAbsences([]);
-        setLots([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [unit, company.id, weekStart]);
 
   const days = weekDays(weekStart);
   const goWeek = (n: number) => {
@@ -86,13 +65,7 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
   const usable = (d: string) => d >= lo && (!hi || d <= hi);
 
   // Técnicos da empresa; responsáveis de equipe primeiro (★)
-  const personOf = (mat: string) => people.find((p) => p.matricula === mat);
-  const myTeams = teams.filter((t) => (t.company ? t.company === company.id : (personOf(t.matricula)?.companies || []).includes(company.id)) && personOf(t.matricula)?.perfil === 'Profissional');
-  const techs = people.filter((p) => p.login && p.perfil === 'Profissional' && p.companies.includes(company.id));
-  const options = [
-    ...myTeams.map((t) => ({ matricula: t.matricula, name: personOf(t.matricula)?.name || t.respName || t.matricula, team: t })),
-    ...techs.filter((p) => !myTeams.some((t) => t.matricula === p.matricula)).map((p) => ({ matricula: p.matricula, name: p.name, team: null as UsualTeam | null }))
-  ];
+  const options = techOptions(people, teams, company.id);
   const chosen = options.find((x) => x.matricula === tech);
 
   const range = s && e ? days.filter((d) => d >= s && d <= e) : [];
@@ -100,13 +73,8 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
   const marksIn = range.filter((d) => plan?.days?.[d]);
   const possibleNights = range.slice(0, -1);
   const usedNights = sleep ? nights.filter((n) => possibleNights.includes(n)).sort() : [];
-  // Quem vai com ele nesses dias: equipe da semana (ou a cadastrada), ausente em algum dia fica de fora da conta
-  const myAbs = absences.filter((a) => a.company === company.id);
-  const absentIn = (mat: string) => range.some((d) => myAbs.some((a) => a.matricula === mat && a.from <= d && a.to >= d));
-  const crew = chosen ? [chosen.matricula, ...(chosen.team ? plan?.teams?.[chosen.team.matricula] ?? chosen.team.members : []).map((m) => m.matricula)] : [];
-  const crewHere = crew.filter((m) => !absentIn(m)).length;
-  const peopleN = Number(peopleTxt || crewHere);
-  const canSleep = !!company.costTracking && range.length >= 2;
+  const crew = crewOf(chosen, plan, absences, company.id, range);
+  const peopleN = Number(peopleTxt || crew.here);
 
   // O que o técnico já tem na semana
   const hisLots = chosen ? lots.filter((l) => l.technicianMatricula === chosen.matricula && !l.removedAt && (!l.company || l.company === company.id)) : [];
@@ -116,6 +84,7 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
         (o) => o.assignedTechnicianMatricula === chosen.matricula && ['Planejada', 'Em Execução', 'Atrasada'].includes(o.status) && days.some((d) => coversDay(o, d)) && !hisLots.some((l) => l.id === o.lotId)
       ).length
     : 0;
+  const dayTxt = (a: string, b: string) => dayTxtOf(days, a, b);
   const clip = (l: PlanningLot) => dayTxt(l.periodStart < days[0] ? days[0] : l.periodStart, l.periodEnd > days[6] ? days[6] : l.periodEnd);
 
   const pickDay = (d: string) => {
@@ -130,14 +99,6 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
       setE(anchor <= d ? d : anchor);
       setAnchor(null);
     }
-  };
-  const setSleepOn = (on: boolean) => {
-    setSleep(on);
-    if (on && nights.length === 0) setNights(possibleNights);
-  };
-  const dayTxt = (a: string, b: string) => {
-    const name = (d: string) => `${DAY_LABEL[days.indexOf(d)]?.toLowerCase() || ''} ${br(d)}`.trim();
-    return a === b ? name(a) : `${name(a)} a ${name(b)}`;
   };
 
   const keys = Array.from(new Set<string>(orders.map(localKey)));
@@ -183,9 +144,6 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
       setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode programar nesta gerência.' : `Não foi possível programar: ${err?.message || err}`);
     }
   };
-
-  const chip = (on: boolean, off: boolean) =>
-    `px-2.5 py-1.5 rounded-lg border text-[11px] font-bold ${off ? 'border-slate-100 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed' : on ? 'border-indigo-500 bg-indigo-600 text-white cursor-pointer' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer'}`;
 
   return (
     <Shell
@@ -235,35 +193,18 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
         )}
       </label>
 
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-black text-slate-700 dark:text-slate-200">Dias</span>
-          <span className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-            <button type="button" onClick={() => goWeek(-1)} disabled={weekStart <= firstWeek} className="h-7 w-7 rounded-md border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer disabled:opacity-30" title="Semana anterior">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-2">
-              Semana {isoWeek(weekStart)} · {br(days[0])} a {br(days[6])}
-            </span>
-            <button type="button" onClick={() => goWeek(1)} disabled={weekStart >= lastWeek} className="h-7 w-7 rounded-md border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer disabled:opacity-30" title="Próxima semana">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {days.map((d, i) => {
-            const off = !usable(d);
-            return (
-              <button key={d} type="button" disabled={off} onClick={() => pickDay(d)} className={chip(range.includes(d), off)} title={off ? (d < today ? 'Dia que já passou' : 'Fora do prazo das preventivas marcadas') : undefined}>
-                {DAY_LABEL[i]} {br(d)}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[10px] text-slate-500 mt-1">
-          {anchor ? 'Agora clique no último dia (ou no mesmo dia para um dia só).' : 'Clique no 1º e no último dia. Sábado e domingo: liberados para caso especial, com confirmação.'}
-        </p>
-      </div>
+      <DaysPicker
+        weekStart={weekStart}
+        days={days}
+        range={range}
+        anchor={anchor}
+        canPrev={weekStart > firstWeek}
+        canNext={weekStart < lastWeek}
+        onWeek={goWeek}
+        usable={usable}
+        offTitle={(d) => (d < today ? 'Dia que já passou' : 'Fora do prazo das preventivas marcadas')}
+        onPick={pickDay}
+      />
 
       <p className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
         Prazo das preventivas marcadas: {hi ? `dá para programar de ${br(lo)} até ${br(hi)}` : `a partir de ${br(lo)}`} (até o último dia do prazo).
@@ -282,68 +223,20 @@ export default function ProgramPreventivesModal({ user, unit, company, orders, u
         </label>
       )}
 
-      {!company.costTracking ? (
-        <p className="text-[11px] text-slate-500">A {company.name} não contabiliza pernoite.</p>
-      ) : !canSleep ? (
-        <p className="text-[11px] text-slate-500">{range.length === 1 ? 'Um dia só: sem pernoite.' : 'Com 2 dias ou mais, dá para informar as noites fora.'}</p>
-      ) : (
-        <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-          <p className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-            <Moon className="w-4 h-4 text-sky-600" />
-            Dormem fora?
-          </p>
-          <div className="flex gap-1.5 text-xs font-black">
-            <button type="button" onClick={() => setSleepOn(false)} className={`px-3 py-1.5 rounded-lg border cursor-pointer ${!sleep ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600'}`}>
-              Não
-            </button>
-            <button type="button" onClick={() => setSleepOn(true)} className={`px-3 py-1.5 rounded-lg border cursor-pointer ${sleep ? 'bg-sky-600 border-sky-600 text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600'}`}>
-              Sim
-            </button>
-          </div>
-          {sleep && (
-            <>
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="font-bold text-slate-600 dark:text-slate-300">Noites fora:</span>
-                {possibleNights.map((d) => {
-                  const on = nights.includes(d);
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setNights((p) => (on ? p.filter((x) => x !== d) : [...p, d]))}
-                      className={`px-2 py-1 rounded-md border font-bold cursor-pointer ${on ? 'bg-sky-600 border-sky-600 text-white' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
-                    >
-                      {DAY_LABEL[days.indexOf(d)].toLowerCase()} {br(d)}
-                    </button>
-                  );
-                })}
-                <span className="px-2 py-1 rounded-md border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 font-bold">
-                  {DAY_LABEL[days.indexOf(range[range.length - 1])].toLowerCase()} {br(range[range.length - 1])} (volta)
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                <span className="font-bold text-slate-600 dark:text-slate-300">Pessoas:</span>
-                <input
-                  value={peopleTxt}
-                  onChange={(ev) => setPeopleTxt(ev.target.value.replace(/\D/g, '').slice(0, 2))}
-                  placeholder={String(crewHere)}
-                  className="w-14 h-7 px-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-black"
-                  aria-label="Pessoas que dormem fora"
-                />
-                <span className="text-slate-500">{chosen ? `(${crewHere} da equipe da semana${crew.length > crewHere ? `, sem ${crew.length - crewHere} ausente(s)` : ''})` : '(escolha o técnico)'}</span>
-              </div>
-              {usedNights.length > 0 && (
-                <p className="text-[11px] text-slate-700 dark:text-slate-200">
-                  <b>
-                    {usedNights.length} noite{usedNights.length > 1 ? 's' : ''} × {peopleN} pessoa{peopleN > 1 ? 's' : ''} = {usedNights.length * peopleN} pernoites
-                  </b>
-                  , divididos entre as {orders.length} preventivas (e os chamados que entrarem neste bloco).
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <NightsBox
+        company={company}
+        days={days}
+        range={range}
+        sleep={sleep}
+        setSleep={setSleep}
+        nights={nights}
+        setNights={setNights}
+        peopleTxt={peopleTxt}
+        setPeopleTxt={setPeopleTxt}
+        crew={crew}
+        hasTech={!!chosen}
+        shareText={`entre as ${orders.length} preventivas (e os chamados que entrarem neste bloco)`}
+      />
 
       <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-[11px] text-indigo-900 dark:text-indigo-200 flex gap-2">
         <Info className="w-4 h-4 shrink-0" />

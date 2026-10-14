@@ -1242,6 +1242,7 @@ export default function App() {
               canSeeOs={userHasActionPermission('os_view')}
               canSeePreventives={userHasActionPermission('view_service_orders')}
               canAssign={userHasActionPermission('os_assign')}
+              canProgram={userHasActionPermission('prog_edit')}
               canEdit={userHasActionPermission('os_edit')}
               visibleCompanies={visibleCompanies}
               canCancel={userHasActionPermission('os_cancel')}

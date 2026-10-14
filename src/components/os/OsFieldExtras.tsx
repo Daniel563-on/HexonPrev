@@ -3,7 +3,7 @@ import { AlertTriangle, Hotel, Plus, Timer, Trash2 } from 'lucide-react';
 import { OrderParticipant, OvertimeRules, WorkOrderOvertimeDay } from '../../types';
 import { OVERTIME_DAYS, companyTracksCost, dbGetCompanies, dbGetOvertimeRules, overtimeDayKey, overtimeWarnings, rulesOfCompany } from '../../db/firebase';
 
-// ADICIONAIS DE CAMPO (técnico): hora extra por dia e pernoite. Dia de hora extra marcado como feriado
+// ADICIONAIS DE CAMPO (técnico): hora extra por dia (o pernoite só aparece: desde a Fase 7E-2 é o planejador quem informa). Dia de hora extra marcado como feriado
 // também zera o homem-hora daquele dia. Valem para todos os colaboradores lançados na OS. O técnico não vê valores (R$).
 // Etapa especial E5: só aparece quando a empresa da OS contabiliza homem-hora, hora extra e pernoite; avisos com as regras dela.
 
@@ -152,44 +152,33 @@ export default function OsFieldExtras({ editable, team, overtime, overnightNight
         )}
       </div>
 
-      {/* PERNOITE: no chamado de um bloco da Programação, vem da viagem informada pelo planejador (só leitura) */}
-      {plannedOvernight ? (
+      {/* PERNOITE (Fase 7E-2): o técnico não lança mais — vem do bloco da Programação, informado pelo planejador.
+          Resposta à contestação: sem pernoite a mais. Chamado antigo com pernoite já lançado pelo técnico: só mostra. */}
+      {!extra && (
         <div className={`${card} bg-slate-50`}>
           <div className="flex items-start gap-2">
             <Hotel className="w-4 h-4 text-rose-500 mt-0.5" />
             <div>
               <p className="text-xs font-black text-slate-800">Pernoite</p>
-              <p className="text-sm font-black text-slate-900">{plannedOvernight.text}</p>
-              <p className="text-[10px] text-slate-500">Informado pelo planejador (bloco da Programação). Você não lança pernoite nesta OS.</p>
+              {plannedOvernight ? (
+                <>
+                  <p className="text-sm font-black text-slate-900">{plannedOvernight.text}</p>
+                  <p className="text-[10px] text-slate-500">Informado pelo planejador (bloco da Programação). Você não lança pernoite nesta OS.</p>
+                </>
+              ) : overnightNights ? (
+                <>
+                  <p className="text-sm font-black text-slate-900">{overnightNights} diária(s)</p>
+                  <p className="text-[10px] text-slate-500">Lançado nesta OS antes da mudança. Agora o pernoite é informado pelo planejador.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-black text-slate-900">Sem pernoite</p>
+                  <p className="text-[10px] text-slate-500">O pernoite é informado pelo planejador ao programar o dia. Se a equipe precisar dormir fora, avise o planejador.</p>
+                </>
+              )}
             </div>
           </div>
         </div>
-      ) : (
-      <div className={card}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2">
-            <Hotel className="w-4 h-4 text-rose-500 mt-0.5" />
-            <div>
-              <p className="text-xs font-black text-slate-800">{extra ? 'Teve pernoite a mais?' : 'Houve pernoite (diária de hotel)?'}</p>
-              <p className="text-[10px] text-slate-500">{extra ? 'Diárias a mais (somam às já lançadas).' : 'Diárias × valor do pernoite × colaboradores da OS.'}</p>
-            </div>
-          </div>
-          <YesNo value={overnightNights !== null} disabled={!editable} onChange={(v) => onChange({ overnightNights: v ? overnightNights || 1 : null })} />
-        </div>
-        {overnightNights !== null && (
-          <label className="block">
-            <span className={label}>{extra ? 'Diárias a mais' : 'Quantidade de diárias'}</span>
-            <input
-              inputMode="numeric"
-              className={`${field} block w-28`}
-              value={overnightNights || ''}
-              disabled={!editable}
-              onChange={(e) => onChange({ overnightNights: Math.min(60, Number(e.target.value.replace(/\D/g, '')) || 0) })}
-              aria-label="Quantidade de diárias"
-            />
-          </label>
-        )}
-      </div>
       )}
     </div>
   );

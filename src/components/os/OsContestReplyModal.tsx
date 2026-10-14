@@ -8,7 +8,8 @@ import OsFieldExtras from './OsFieldExtras';
 import ExecutionExtras from '../orders/execution/ExecutionExtras';
 
 // RESPONDER CONTESTAÇÃO: depois da assinatura do técnico a OS não muda. Aqui se informa o que foi resolvido e,
-// se precisar, ACRESCENTA (perguntas ainda sem resposta, pessoas, materiais, hora extra e pernoite a mais).
+// se precisar, ACRESCENTA (perguntas ainda sem resposta, pessoas, materiais e hora extra; desde a Fase 7E-2 sem pernoite a
+// mais: o pernoite é o do bloco da Programação, informado pelo planejador).
 // Ao confirmar, a OS volta para a vez do cliente (assinar no celular ou novo link). Técnico da OS ou quem tem
 // "Responder contestação de OS".
 
@@ -32,7 +33,6 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
   const [team, setTeam] = useState<OrderParticipant[]>(base.team || []);
   const [materials, setMaterials] = useState<UsedMaterial[]>([]);
   const [overtime, setOvertime] = useState<WorkOrderOvertimeDay[] | null>(null);
-  const [overnight, setOvernight] = useState<number | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -61,13 +61,12 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
       const dates = valid.map((d) => d.date);
       if (new Set(dates).size !== dates.length) return setMsg('Hora extra a mais: o mesmo dia foi lançado duas vezes. Junte as horas num só.');
     }
-    if (overnight !== null && !(overnight > 0)) return setMsg('Pernoite a mais: informe as diárias, ou marque "Não".');
     const add = {
       answers: Object.fromEntries(Object.entries(answers).filter(([id, v]) => !empty(v) && open.some((f) => f.id === id))),
       team: team.filter((p) => !locked.includes(p.matricula)),
       materials: materials.filter((m) => m.qty > 0),
       overtime,
-      overnightNights: overnight
+      overnightNights: null
     };
     setBusy(true);
     setMsg(null);
@@ -112,7 +111,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
           </label>
 
           <button type="button" onClick={() => setShowAdd(!showAdd)} className="w-full p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-left cursor-pointer">
-            <span className="text-xs font-black text-slate-800">Acrescentar à OS (opcional): respostas, equipe, materiais, hora extra, pernoite</span>
+            <span className="text-xs font-black text-slate-800">Acrescentar à OS (opcional): respostas, equipe, materiais e hora extra</span>
             {showAdd ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
 
@@ -151,11 +150,9 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
                 extra
                 team={team}
                 overtime={overtime}
-                overnightNights={overnight}
-                plannedOvernight={order.lotId ? { nights: 0, text: 'Pernoite da viagem (bloco da Programação)' } : null}
+                overnightNights={null}
                 onChange={(next) => {
                   if ('overtime' in next) setOvertime(next.overtime ?? null);
-                  if ('overnightNights' in next) setOvernight(next.overnightNights ?? null);
                 }}
               />
             </div>
