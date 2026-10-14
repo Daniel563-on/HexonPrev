@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch } from './guard';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where, writeBatch } from './guard';
 import { AssetPeriodicity, AssetTypeConfig, CycleSetting } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 
@@ -92,6 +92,8 @@ export async function dbSyncAssetTypes(unit: string, typeNames: string[], curren
     if (!key || known.has(key)) continue;
     known.add(key);
     const t: AssetTypeConfig = { id: assetTypeIdOf(unit, name), unit, name: name.trim(), periodicities: [], createdAt: now, updatedAt: now };
+    // Nunca regrava um tipo que já existe (a lista recebida pode estar incompleta): perderia as periodicidades
+    if ((await getDoc(doc(dbInstance, 'assetTypes', t.id))).exists()) continue;
     batch.set(doc(dbInstance, 'assetTypes', t.id), t);
     result.created.push(t.name);
   }

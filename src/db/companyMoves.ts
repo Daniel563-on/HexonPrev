@@ -6,13 +6,14 @@ import { timelineEvent } from './executionTeam';
 import { dbGetCompanies, inactiveCompanyIds, isCompanyPending } from './companies';
 import { revertFields } from './blocks';
 
-// A5-B: OS em aberto "sem empresa" (sem empresa gravada ou de empresa inativa) que recebe a empresa nova do ativo/endereço.
-// Em qualquer situação aberta ela vai junto; a que estava programada (bloco/lote) pela empresa inativa volta para "Novo"
-// (sai do bloco, sem técnico) — menos a que já está em execução, que continua com o técnico até terminar.
+// A5-B: OS em aberto de empresa INATIVA que recebe a empresa nova do ativo/endereço: vai junto em qualquer situação
+// aberta; a que estava programada (bloco/lote) pela empresa inativa volta para "Novo" (sai do bloco, sem técnico) — menos
+// a que já está em execução, que continua com o técnico até terminar. Sem empresa gravada (antigas, antes de 07/10):
+// recebe a empresa e continua como está (como antes).
 type MoveWrite = { id: string; lotId?: string; fields: Record<string, unknown> };
 function moveFields(o: ServiceOrder, to: string, now: string, by: string, text: string, inactive: Set<string>): MoveWrite {
-  const pending = isCompanyPending(o.company, inactive);
-  const back = pending && o.status !== 'Em Execução' && o.status !== 'Novo' && (!!o.lotId || o.status === 'Planejada');
+  const fromInactive = !!o.company && inactive.has(o.company);
+  const back = fromInactive && o.status !== 'Em Execução' && o.status !== 'Novo' && (!!o.lotId || o.status === 'Planejada');
   const event = timelineEvent('Empresa alterada', by, text);
   if (!back) return { id: o.id, fields: { company: to, updatedAt: now, syncAt: serverTimestamp(), timeline: arrayUnion(event) } };
   const rev = revertFields(o, now, by, 'Saiu da programação da empresa inativa');
@@ -59,12 +60,12 @@ async function dbMoveNewOrdersNow(
   try {
     const [snap, companies] = await Promise.all([getDocs(query(collection(db, 'serviceOrders'), where('unitOpen', '==', unit))), dbGetCompanies().catch(() => [])]);
     const inactive = inactiveCompanyIds(companies);
-    // "Novo": vai para a empresa nova; sem empresa (ou de empresa inativa): vai em qualquer situação aberta (A5-B)
+    // "Novo": vai para a empresa nova; de empresa inativa: vai em qualquer situação aberta (A5-B)
     const toMove = snap.docs
       .map((d) => ({ ...(d.data() as ServiceOrder), id: d.id }))
       .filter((o) => {
         const to = target.get(String((o as any)[field] || ''));
-        return !!to && o.company !== to && (o.status === 'Novo' || isCompanyPending(o.company, inactive));
+        return !!to && o.company !== to && (o.status === 'Novo' || (!!o.company && inactive.has(o.company)));
       });
     const now = new Date().toISOString();
     const what = field === 'assetId' ? 'ativo' : 'endereço';

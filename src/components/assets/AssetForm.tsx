@@ -61,6 +61,7 @@ export default function AssetForm(p: Props) {
   const units = useMemo(() => managements.map((m) => m.name).filter((x) => x && x !== 'Todas'), [managements]);
   const [f, setF] = useState<Form | null>(null);
   const [types, setTypes] = useState<AssetTypeConfig[]>([]);
+  const [typesReady, setTypesReady] = useState(false); // lista de tipos da gerência já carregada
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -91,7 +92,12 @@ export default function AssetForm(p: Props) {
   useEffect(() => {
     if (!isOpen || !f?.unit) return;
     let alive = true;
-    dbGetAssetTypes([f.unit]).then((t) => alive && setTypes(t));
+    setTypesReady(false);
+    dbGetAssetTypes([f.unit]).then((t) => {
+      if (!alive) return;
+      setTypes(t);
+      setTypesReady(true);
+    });
     return () => {
       alive = false;
     };
@@ -192,7 +198,8 @@ export default function AssetForm(p: Props) {
         await dbCancelOpenOrdersForAssets([next.id], `Ativo baixado no cadastro por ${userName}`, f.unit).catch((e) => console.warn('OS do ativo baixado não canceladas:', e));
       }
       // Tipo novo vai para o PMOC sem periodicidade (quem pode mexer nos modelos)
-      if (f.type.trim() && canManageTypes && !types.some((t) => assetTypeKey(t.name) === assetTypeKey(f.type))) {
+      // (só com a lista de tipos já carregada: sem ela, todo tipo pareceria novo)
+      if (f.type.trim() && canManageTypes && typesReady && !types.some((t) => assetTypeKey(t.name) === assetTypeKey(f.type))) {
         const names = [...unitAssets.filter((a) => a.id !== next.id && a.status !== 'Baixado').map(assetType), f.type.toUpperCase()].filter(Boolean);
         await dbSyncAssetTypes(f.unit, names, types).catch((e) => console.warn('Tipo novo não criado no PMOC:', e));
       }
