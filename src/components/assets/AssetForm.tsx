@@ -257,7 +257,7 @@ export default function AssetForm(p: Props) {
               <span className={lbl}>Empresa <span className="text-rose-600">*</span></span>
               <select value={f.company} onChange={(e) => set('company', e.target.value)} className={inp} aria-label="Empresa">
                 <option value="">Escolha a empresa...</option>
-                {unitCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {unitCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}{c.active ? '' : ' (inativa — escolha outra)'}</option>)}
               </select>
             </label>
           </div>

@@ -186,6 +186,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       setUserModalError('Técnico precisa de exatamente 1 empresa (campo Empresa).');
       return;
     }
+    // A5-B: quem ficou inativo junto com a empresa só volta ativo numa empresa ativa (é cadastrado na empresa nova)
+    if (userForm.status === 'Ativo' && formCompanies.length > 0 && formCompanies.every((id) => companies.find((c) => c.id === id)?.active === false)) {
+      setUserModalError('A empresa marcada está inativa: marque uma empresa ativa ou deixe o usuário inativo.');
+      return;
+    }
 
     setIsSavingUser(true);
     try {

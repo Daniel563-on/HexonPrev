@@ -274,7 +274,7 @@ export default function AddressesView({ userName = '' }: { userName?: string }) 
               <label className={labelClass}>Empresa *</label>
               <select value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className={inputClass} aria-label="Empresa do endereço">
                 <option value="">Selecione...</option>
-                {domCompanies.filter((c) => c.active || c.id === form.company).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {domCompanies.filter((c) => c.active || c.id === form.company).map((c) => <option key={c.id} value={c.id}>{c.name}{c.active ? '' : ' (inativa — escolha outra)'}</option>)}
               </select>
             </div>
           </div>
