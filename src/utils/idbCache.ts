@@ -58,6 +58,21 @@ export async function idbSet(key: string, value: any): Promise<void> {
   }
 }
 
+// Todas as chaves guardadas (usado ao apagar a cópia do aparelho depois de "Zerar o banco")
+export async function idbKeys(): Promise<string[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).getAllKeys();
+      req.onsuccess = () => resolve((req.result || []).map((k) => String(k)));
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function idbRemove(key: string): Promise<void> {
   try {
     const db = await openDB();

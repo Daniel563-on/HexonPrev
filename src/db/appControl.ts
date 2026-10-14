@@ -14,6 +14,8 @@ export interface AppControl {
   maintenance?: boolean;        // "Modo manutenção": só o Super Administrador usa o sistema
   maintenanceMessage?: string;
   dataVersionAt?: number;       // cadastros mudaram (usuários, gerências, perfis, permissões, modelos): aparelhos abertos relêem
+  resetAt?: number;             // "Zerar o banco" (gravado pelo servidor): cada aparelho apaga a cópia guardada das OS
+  resetUsersAt?: number;        // zerar para implantação: também a cópia dos usuários
   updatedAt?: string;
   updatedBy?: string;
 }

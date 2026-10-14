@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import './index.css';
 // App instalável (PWA): guarda o pedido de instalação do navegador para o botão "Instalar aplicativo"
 import './lib/installApp';
+import { runPendingReset } from './lib/resetLocal';
 
 // Intercept and suppress noisy browser extension/MetaMask console errors in the iframe
 if (typeof window !== 'undefined') {
@@ -144,17 +145,21 @@ if (validationToken) {
     );
   });
 } else {
-  Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner'), import('./components/GuardBanner'), import('./components/PdfReadySheet')]).then(([{ default: App }, { default: AppUpdateBanner }, { default: GuardBanner }, { default: PdfReadySheet }]) => {
-    root.render(
-      <StrictMode>
-        <App />
-        {/* Aviso de nova versão (forçar atualização / conferência automática) */}
-        <AppUpdateBanner />
-        {/* Aviso do disjuntor do banco (uso anormal) */}
-        <GuardBanner />
-        {/* Celular: "PDF pronto" com o menu de compartilhar (P39) */}
-        <PdfReadySheet />
-      </StrictMode>
-    );
-  });
+  // Depois de "Zerar o banco" (A2): apaga a cópia guardada antes de abrir as telas
+  runPendingReset()
+    .catch(() => {})
+    .then(() => Promise.all([import('./App.tsx'), import('./components/AppUpdateBanner'), import('./components/GuardBanner'), import('./components/PdfReadySheet')]))
+    .then(([{ default: App }, { default: AppUpdateBanner }, { default: GuardBanner }, { default: PdfReadySheet }]) => {
+      root.render(
+        <StrictMode>
+          <App />
+          {/* Aviso de nova versão (forçar atualização / conferência automática) */}
+          <AppUpdateBanner />
+          {/* Aviso do disjuntor do banco (uso anormal) */}
+          <GuardBanner />
+          {/* Celular: "PDF pronto" com o menu de compartilhar (P39) */}
+          <PdfReadySheet />
+        </StrictMode>
+      );
+    });
 }

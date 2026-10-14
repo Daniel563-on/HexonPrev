@@ -16,6 +16,25 @@ guardar o código do servidor e permitir republicá-lo.
 - Roda com a conta de serviço `hexon-functions@core-philosophy-lr5vm.iam.gserviceaccount.com`,
   que tem somente `roles/datastore.user` e `roles/firebaseauth.admin`.
 
+## Função `resetDatabase` (Zerar o banco — ajuste A2)
+
+- Região: `us-central1`; até 60 minutos; chamada pela tela Configurações › Sistema › **Zerar o banco** (`src/db/resetDatabase.ts`).
+- Confere se quem chamou é **Super Administrador ativo** (igual à `resetUserPassword`).
+- `action: 'count'`: só conta o que vai ser apagado (nada é apagado).
+- `action: 'run'` (exige `confirm: 'ZERAR'`; um zerar de cada vez):
+  - liga o modo manutenção, apaga em pacotes de 400 e grava o andamento em `appControl/reset`;
+  - **Limpar movimento (testes):** preventivas/vistorias (`serviceOrders`, `orderSignatures`, `orderSupplies`, `orderStarts`,
+    `orderDeletions`, `dispatchIndex`), `histories`, `monthlySummaries`, chamados (`workOrders`, `workOrderSignatures`,
+    `osValidations`), programação (`planningLots`, `weekPlans`, `absences`, `planningDeadlines`), pedidos (`materialRequests`,
+    `supplyRequests`), `counters` e Quadro de Avisos (`notices` com os "ciente", `noticeImages`, `noticeFiles`);
+  - **Zerar para implantação:** o mesmo + `auditLogs`, `accessLogs`, `cycleSettings` e usuários (ficam só os Super
+    Administradores, com `authIndex` e logins; os outros logins, inclusive anônimos, são apagados);
+  - no fim: registro "Banco zerado" na Auditoria, manutenção volta como estava e grava `appControl/status.resetAt`
+    (e `resetUsersAt` na implantação) — cada aparelho apaga a própria cópia guardada ao abrir o sistema.
+- Nunca apaga cadastros (empresas, gerências, perfis, ativos, endereços, modelos e versões, materiais, insumos, efetivo,
+  cargos, regras de HE, pernoite, equipes, almoxarifados, logo/tela de login, painel do Histórico GLPI).
+- No emulador (testes) usa o banco padrão (`FUNCTIONS_EMULATOR`); publicada, o banco do app.
+
 ## Funções agendadas (rodam sozinhas, horário de Brasília)
 
 - `dailyDeadlines` — todo dia às **00:00**: lê só as OS que vencem (campos de controle `openEnd` e `plannedEnd`, índices esparsos) e marca "Atrasada" e "Não Executada" (mesma regra do app,
@@ -53,9 +72,10 @@ guardar o código do servidor e permitir republicá-lo.
 
    ```bash
    gcloud run services add-iam-policy-binding resetuserpassword --region=us-central1 --project=core-philosophy-lr5vm --member="allUsers" --role="roles/run.invoker"
+   gcloud run services add-iam-policy-binding resetdatabase --region=us-central1 --project=core-philosophy-lr5vm --member="allUsers" --role="roles/run.invoker"
    ```
 
-   Isso é seguro: a própria função confere o login e o perfil de Super Administrador.
+   Isso é seguro: as próprias funções conferem o login e o perfil de Super Administrador.
 
 ## Configuração feita uma única vez (já aplicada — referência)
 

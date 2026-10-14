@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { APP_VERSION, fetchDeployedVersion, newForceReloadAt, reloadSafely, subscribeAppControl, takeJustUpdated } from '../db/appControl';
+import { checkResetMarks } from '../lib/resetLocal';
 
 // NOVA VERSÃO DO SISTEMA: aviso com "Atualizar agora" e recarga sozinha em 1 minuto.
 // Aparece quando o Super Administrador aperta "Forçar atualização" ou quando o app percebe sozinho
@@ -28,6 +29,8 @@ export default function AppUpdateBanner() {
   useEffect(
     () =>
       subscribeAppControl((c) => {
+        // "Zerar o banco" (A2): apaga a cópia guardada neste aparelho
+        checkResetMarks(c).catch(() => {});
         const at = newForceReloadAt(c);
         if (at && !pendingRef.current) {
           setPending({ forceAt: at, auto: true });

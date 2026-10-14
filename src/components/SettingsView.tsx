@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import SystemControlCard from './users/SystemControlCard';
 import BrandingCard from './users/BrandingCard';
 import LoginBrandingCard from './users/LoginBrandingCard';
+import ResetDatabaseCard from './users/ResetDatabaseCard';
 import AuditLogsTab from './users/AuditLogsTab';
 import OsTemplatesEditor from './os/OsTemplatesEditor';
 import CompaniesTab from './users/CompaniesTab';
@@ -9,7 +10,7 @@ import WarehousesTab from './users/WarehousesTab';
 import { HexonUser } from '../types';
 
 // CONFIGURAÇÕES: coisas do sistema todo.
-// Sistema = logo do sistema, tela de login (frases e fundos), forçar atualização e modo manutenção; Auditoria = ações registradas e acessos (só Super Administrador).
+// Sistema = logo do sistema, tela de login (frases e fundos), forçar atualização, modo manutenção e zerar o banco; Auditoria = ações registradas e acessos (só Super Administrador).
 // Empresas = empresas contratadas de cada gerência (só Super Administrador). Almoxarifados = lista dos pedidos de material (só Super Administrador).
 // Modelos de OS = quem tem "Criar e editar modelos de OS" no perfil (o Super Administrador também).
 type SettingsTab = 'system' | 'audit' | 'companies' | 'warehouses' | 'os-templates';
@@ -60,6 +61,10 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
           <div className="xl:col-span-5 space-y-4 order-first xl:order-none">
             <BrandingCard darkMode={darkMode} userName={userProfile.name} />
             <SystemControlCard darkMode={darkMode} userName={userProfile.name} />
+          </div>
+          {/* Zerar o banco (A2): largura toda, no fim */}
+          <div className="xl:col-span-12">
+            <ResetDatabaseCard darkMode={darkMode} />
           </div>
         </div>
       )}
