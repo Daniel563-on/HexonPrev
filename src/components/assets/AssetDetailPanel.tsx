@@ -283,6 +283,8 @@ export const AssetDetailPanel: React.FC<AssetDetailPanelProps> = ({
                   excluded.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
               );
               if (isExcluded) return null;
+              // Valores em R$ (valor líquido / de aquisição): só quem tem "Visualizar Valores (R$)"
+              if (!canViewCosts && /valor/i.test(key)) return null;
 
               const val = asset.specs[key];
               if (val === undefined || val === null || String(val).trim() === '') return null;

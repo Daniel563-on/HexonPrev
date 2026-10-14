@@ -35,7 +35,7 @@ import AssetImportWizard from './assets/AssetImportWizard';
 import { AssetEditModal, AssetCreateModal } from './assets/AssetFormModals';
 import { AssetDetailPanel } from './assets/AssetDetailPanel';
 import { AddressDetailPanel } from './assets/AddressDetailPanel';
-import { AssetConsultationTable } from './assets/AssetConsultationTable';
+import AssetGroupedList from './assets/AssetGroupedList';
 import OrderDetailsDrawer from './orders/OrderDetailsDrawer';
 import { printAssetTag, parseScannedQrCode } from '../utils/qrUtils';
 import { Asset, MaintenanceLog, formatDateBR, HexonUser, ServiceOrder, Management, MaintenanceTemplate, Address, Company } from '../types';
@@ -205,6 +205,7 @@ export default function AssetsView({
     ].some((value) => String(value || '').toLowerCase().includes(q));
 
   // Resultado + contagem inteligente: cada opção mostra quantos ativos teria, respeitando os OUTROS filtros
+  const NO_TYPE = '__sem_tipo__';
   type FacetKey = 'status' | 'gerencia' | 'empresa' | 'craai' | 'comarca' | 'tipo';
   const { consultationResults, facetCounts } = React.useMemo(() => {
     const FACETS: FacetKey[] = ['status', 'gerencia', 'empresa', 'craai', 'comarca', 'tipo'];
@@ -212,6 +213,7 @@ export default function AssetsView({
     const counts = Object.fromEntries(FACETS.map((f) => [f, new Map<string, number>()])) as Record<FacetKey, Map<string, number>>;
     const totals: Record<FacetKey, number> = { status: 0, gerencia: 0, empresa: 0, craai: 0, comarca: 0, tipo: 0 };
     const list: Asset[] = [];
+    let semTipo = 0;
     for (const a of allItems) {
       if (!matchesSearch(a, q)) continue;
       const v: Record<FacetKey, string> = {
@@ -228,8 +230,10 @@ export default function AssetsView({
         empresa: filterEmpresa === 'Todas' || v.empresa === filterEmpresa,
         craai: filterCraai === 'Todas' || v.craai === filterCraai,
         comarca: filterUnidade === 'Todas' || v.comarca === filterUnidade,
-        tipo: filterTipoEquipamento === 'Todos' || v.tipo === filterTipoEquipamento
+        tipo: filterTipoEquipamento === 'Todos' || (filterTipoEquipamento === NO_TYPE ? v.tipo === '' : v.tipo === filterTipoEquipamento)
       };
+      // "Sem tipo" (não gera preventiva): com os outros filtros, fora endereços e baixados
+      if (a.kind !== 'address' && a.status !== 'Baixado' && !v.tipo && FACETS.every((o) => o === 'tipo' || ok[o])) semTipo++;
       for (const f of FACETS) {
         if (FACETS.every((o) => o === f || ok[o])) {
           counts[f].set(v[f], (counts[f].get(v[f]) || 0) + 1);
@@ -239,7 +243,7 @@ export default function AssetsView({
       if (FACETS.every((f) => ok[f])) list.push(a);
     }
     list.sort((x, y) => String(x.code).localeCompare(String(y.code), undefined, { numeric: true }));
-    return { consultationResults: list, facetCounts: { counts, totals } };
+    return { consultationResults: list, facetCounts: { counts, totals, semTipo } };
   }, [allItems, searchText, filterTipoBem, filterGerencia, filterEmpresa, filterCraai, filterUnidade, filterTipoEquipamento]);
 
   // Texto da opção com a quantidade; opções sem ativo somem (menos a que está escolhida)
@@ -481,6 +485,34 @@ export default function AssetsView({
         />
       ) : (
         <>
+          {/* CONTADORES (clicáveis): situação dos ativos e os que estão sem tipo (não geram preventiva) */}
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Situação dos ativos">
+            {[
+              { key: 'Operando', label: 'Operando', tone: 'text-emerald-700 dark:text-emerald-400', n: countOf('status', 'Operando') },
+              { key: 'Em Manutenção', label: 'Em manutenção', tone: 'text-amber-600', n: countOf('status', 'Em Manutenção') },
+              { key: 'Parado', label: 'Parado', tone: 'text-orange-600', n: countOf('status', 'Parado') },
+              { key: 'Baixado', label: 'Baixado', tone: 'text-slate-500', n: countOf('status', 'Baixado') },
+              { key: NO_TYPE, label: 'Sem tipo (não geram preventiva)', tone: 'text-rose-600', n: facetCounts.semTipo }
+            ].map((c) => {
+              const active = c.key === NO_TYPE ? filterTipoEquipamento === NO_TYPE : filterTipoBem === c.key;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => {
+                    if (c.key === NO_TYPE) setFilterTipoEquipamento(active ? 'Todos' : NO_TYPE);
+                    else setFilterTipoBem(active ? 'Todos' : (c.key as typeof filterTipoBem));
+                  }}
+                  aria-pressed={active}
+                  className={`min-w-[120px] text-left px-3 py-2 rounded-xl border cursor-pointer ${active ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50/40 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'}`}
+                >
+                  <p className={`text-lg font-black leading-none ${c.tone}`}>{c.n.toLocaleString('pt-BR')}</p>
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-1">{c.label}</p>
+                </button>
+              );
+            })}
+          </div>
+
           {/* FILTROS (aplicados na hora) */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
             <div className="flex items-center gap-3">
@@ -553,6 +585,7 @@ export default function AssetsView({
                 <span className={labelClass}>Tipo</span>
                 <select value={filterTipoEquipamento} onChange={(e) => setFilterTipoEquipamento(e.target.value)} className={selectClass}>
                   <option value="Todos">{optionLabel('Todos', facetCounts.totals.tipo)}</option>
+                  {(facetCounts.semTipo > 0 || filterTipoEquipamento === NO_TYPE) && <option value={NO_TYPE}>{optionLabel('Sem tipo', facetCounts.semTipo)}</option>}
                   {visibleOptions('tipo', commonEquipmentTypes.filter((t) => t !== 'Todos'), filterTipoEquipamento).map((t) => (
                     <option key={t} value={t}>{optionLabel(t, countOf('tipo', t))}</option>
                   ))}
@@ -576,15 +609,17 @@ export default function AssetsView({
               <Loader2 className="w-4 h-4 animate-spin" /> Preparando a cópia local dos ativos...
             </div>
           ) : (
-            <AssetConsultationTable
+            <AssetGroupedList
               results={consultationResults}
               resetKey={filtersKey}
+              searching={!!searchText.trim()}
+              companyName={companyName}
+              canViewCosts={userProfile?.perfil === 'Super Administrador' || !!userHasActionPermission?.('view_costs')}
               onSelectAsset={(asset) => setSelectedAsset(asset)}
               onEditAsset={(asset) => handleOpenEditModal(asset)}
               onDeleteAsset={(asset) => handleDeleteAssetTrigger(asset)}
-              userHasActionPermission={userHasActionPermission}
-              userProfile={userProfile}
-              pageSize={50}
+              canEdit={!userHasActionPermission || userHasActionPermission('create_asset')}
+              canDelete={userProfile?.perfil === 'Super Administrador'}
             />
           )}
         </>
