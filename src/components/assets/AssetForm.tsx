@@ -106,9 +106,13 @@ export default function AssetForm(p: Props) {
 
   if (!isOpen || !f) return null;
 
-  const set = (k: keyof Form, v: string) => setF((prev) => (prev ? { ...prev, [k]: v } : prev));
+  const set = (k: keyof Form, v: string) => {
+    setError('');
+    setF((prev) => (prev ? { ...prev, [k]: v } : prev));
+  };
   // Prédio já cadastrado: CRAAI e comarca vêm dos ativos dele (se ainda estiverem vazios)
   const pickBuilding = (v: string) => {
+    setError('');
     const same = unitAssets.find((a) => norm(buildingOf(a)) === norm(v));
     setF((prev) =>
       prev ? { ...prev, building: v, craai: prev.craai || (same ? s(same, 'CRAAI', 'craai') : ''), comarca: prev.comarca || (same ? s(same, 'COMARCA', 'comarca') : '') } : prev
