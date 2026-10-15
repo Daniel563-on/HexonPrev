@@ -1,6 +1,6 @@
 import { collection, getCountFromServer, query, where } from './guard';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
-import { OsCounters, dbCountWorkOrders, dbGetOsCounters } from './workOrderList';
+import { OsCounters, cachedOsCount, dbCountWorkOrdersCached, dbGetOsCounters } from './workOrderList';
 
 // INÍCIO: números dos Chamados GLPI das gerências do resumo (somados) — as mesmas contagens do painel da lista de OS,
 // mais as atrasadas (prazo passou e o técnico ainda não assinou). Contar não baixa as OS.
@@ -13,7 +13,7 @@ export interface HomeOsCounts {
 export async function dbGetHomeOsCounts(units: string[], cos: string[] | null): Promise<HomeOsCounts> {
   const per = await Promise.all(
     units.map(async (u) => {
-      const [c, late] = await Promise.all([dbGetOsCounters(u, cos), dbCountWorkOrders(u, { kind: 'late' }, cos)]);
+      const [c, late] = await Promise.all([dbGetOsCounters(u, cos), dbCountWorkOrdersCached(u, { kind: 'late' }, cos)]);
       return { c, late };
     })
   );
@@ -26,9 +26,14 @@ export async function dbGetHomeOsCounts(units: string[], cos: string[] | null): 
   return { byStatus, late: per.reduce((s, p) => s + p.late, 0) };
 }
 
-// OS esperando a assinatura do engenheiro e/ou do gerente (fila "GERÊNCIA|papel", a mesma de "Precisam da minha assinatura")
-export async function dbCountSignQueue(units: string[], roles: ('engenheiro' | 'gerente')[]): Promise<number> {
-  if (!firebaseActive || !dbInstance || units.length === 0 || roles.length === 0) return 0;
+// OS esperando a assinatura do engenheiro e/ou do gerente (fila "GERÊNCIA|papel", a mesma de "Precisam da minha assinatura").
+// Guardada na sessão como as do painel (ajuste S10)
+export function dbCountSignQueue(units: string[], roles: ('engenheiro' | 'gerente')[]): Promise<number> {
+  if (!firebaseActive || !dbInstance || units.length === 0 || roles.length === 0) return Promise.resolve(0);
+  return cachedOsCount(units, `sign§${roles.join(',')}`, () => countSignQueueNow(units, roles));
+}
+async function countSignQueueNow(units: string[], roles: ('engenheiro' | 'gerente')[]): Promise<number> {
+  if (!dbInstance) return 0;
   const keys = units.flatMap((u) => roles.map((r) => `${u}|${r}`));
   try {
     let total = 0;

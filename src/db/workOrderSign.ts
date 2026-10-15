@@ -197,11 +197,20 @@ export async function dbSignAsRole(orders: WorkOrder[], role: 'engenheiro' | 'ge
 
 // Fila "Precisam da minha assinatura" (índice esparso workOrders.signQueue).
 // Para o engenheiro, também confere as OS que esperam o cliente pelo link: se o cliente já aprovou, a OS entra na fila.
-export async function dbGetSignQueue(units: string[], role: 'engenheiro' | 'gerente', by = ''): Promise<WorkOrder[]> {
+// Ajuste S18 (Lote 5): essa conferência (1 leitura por OS esperando o cliente + 1 por link) é feita no máximo a cada
+// 15 min nesta sessão; "Atualizar" (force) confere na hora. A resposta do link não chega em tempo real: ela também
+// entra na OS quando o técnico ou o escritório abrem a OS.
+const LINK_CHECK_MS = 15 * 60 * 1000;
+const linkCheckedAt = new Map<string, number>();
+export async function dbGetSignQueue(units: string[], role: 'engenheiro' | 'gerente', by = '', force = false): Promise<WorkOrder[]> {
   if (!firebaseActive || !dbInstance || units.length === 0) return [];
-  if (role === 'engenheiro') {
-    const waiting = await dbGetQueueKeys(units.map((u) => `${u}|cliente`)).catch(() => [] as WorkOrder[]);
-    await Promise.all(waiting.filter((o) => o.validationToken).map((o) => dbSyncOsValidation(o, by || 'Sistema').catch(() => null)));
+  const key = units.slice().sort().join('|');
+  if (role === 'engenheiro' && (force || Date.now() - (linkCheckedAt.get(key) || 0) >= LINK_CHECK_MS)) {
+    const waiting = await dbGetQueueKeys(units.map((u) => `${u}|cliente`)).catch(() => null);
+    if (waiting) {
+      await Promise.all(waiting.filter((o) => o.validationToken).map((o) => dbSyncOsValidation(o, by || 'Sistema').catch(() => null)));
+      linkCheckedAt.set(key, Date.now());
+    }
   }
   return dbGetQueueKeys(units.map((u) => `${u}|${role}`));
 }

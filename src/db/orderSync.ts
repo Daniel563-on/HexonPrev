@@ -77,16 +77,25 @@ function notifyAll(): void {
   subscribers.forEach((cb) => cb());
 }
 
-function schedulePersist(u: UnitSync): void {
-  if (!activeUid) return;
-  const uid = activeUid;
+// Ajuste S11 (Lote 5): a cópia da gerência (milhares de OS, até ~13 MB) era regravada inteira 1 s depois de cada
+// mudança. Agora: grava na hora a 1ª carga; as mudanças são juntadas e gravadas no máximo a cada 15 s e quando o app
+// vai para segundo plano. Se uma gravação se perder, a próxima abertura só relê o que mudou depois da última gravada.
+const PERSIST_EVERY_MS = 15000;
+function persistNow(u: UnitSync): Promise<void> {
   if (u.persistTimer) clearTimeout(u.persistTimer);
+  u.persistTimer = null;
+  if (!activeUid) return Promise.resolve();
+  const oldestKept = prevMonthKey();
+  const orders = Array.from(u.store.values()).filter((o) => !isStale(o, oldestKept));
+  const data: StoredOrders = { version: 1, orders, lastSyncMs: u.lastSyncMs };
+  return idbSet(storageKey(activeUid, u.unit), data).catch(() => {});
+}
+function schedulePersist(u: UnitSync): void {
+  if (!activeUid || u.persistTimer) return;
   u.persistTimer = setTimeout(() => {
-    const oldestKept = prevMonthKey();
-    const orders = Array.from(u.store.values()).filter((o) => !isStale(o, oldestKept));
-    const data: StoredOrders = { version: 1, orders, lastSyncMs: u.lastSyncMs };
-    idbSet(storageKey(uid, u.unit), data).catch(() => {});
-  }, 1000);
+    u.persistTimer = null;
+    persistNow(u);
+  }, PERSIST_EVERY_MS);
 }
 
 // 1ª vez no aparelho: abertas + fechadas do mês atual e do anterior
@@ -209,6 +218,10 @@ function hookVisibility(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
+      // Indo para segundo plano: grava agora o que estava esperando (só no aparelho; não usa o banco)
+      units.forEach((u) => {
+        if (u.persistTimer) persistNow(u);
+      });
     } else if (hiddenAt && Date.now() - hiddenAt > 25 * 60 * 1000 && activeUid) {
       hiddenAt = 0;
       units.forEach((u) => {
@@ -223,8 +236,7 @@ function stopUnit(u: UnitSync): void {
   u.unsub = null;
   u.unsubStarts?.();
   u.unsubStarts = null;
-  if (u.persistTimer) clearTimeout(u.persistTimer);
-  u.persistTimer = null;
+  if (u.persistTimer) persistNow(u); // grava o que estava esperando antes de parar
 }
 
 export function stopOrderSync(): void {
@@ -282,7 +294,8 @@ function ensureUnit(uid: string, unit: string): UnitSync {
       u.lastSyncMs = saved.lastSyncMs || 0;
     } else {
       await fullDownloadWithRetry(u, uid);
-      schedulePersist(u);
+      // 1ª carga gravada na hora (antes ficava 1 s esperando: fechar o navegador nesse meio fazia baixar tudo de novo)
+      await persistNow(u);
     }
     if (activeUid !== uid || units.get(unit) !== u) return;
     await startUnitListener(u);

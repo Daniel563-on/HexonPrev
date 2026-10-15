@@ -104,6 +104,36 @@ export async function dbCountWorkOrders(unit: string, mode: OsListMode, cos: str
   return snap.data().count;
 }
 
+// Ajuste S10 (Lote 5): as contagens do painel (Início e Ordens de Serviço) ficam guardadas na sessão por gerência +
+// empresas e são reaproveitadas ao trocar de tela. Ficam velhas quando a escuta de mudanças (abaixo) vê uma OS da
+// gerência mudar — inclusive a 1ª resposta dela, que traz o que mudou nos últimos 10 min — e no máximo em 5 min.
+const COUNT_TTL_MS = 5 * 60 * 1000;
+const countCache = new Map<string, { unit: string; at: number; p: Promise<number> }>();
+export function cachedOsCount(units: string[], key: string, fn: () => Promise<number>): Promise<number> {
+  const k = `${units.join('|')}§${key}`;
+  const hit = countCache.get(k);
+  if (hit && Date.now() - hit.at < COUNT_TTL_MS) return hit.p;
+  const p = fn();
+  const entry = { unit: `|${units.join('|')}|`, at: Date.now(), p };
+  countCache.set(k, entry);
+  p.catch(() => countCache.get(k) === entry && countCache.delete(k));
+  return p;
+}
+export function markOsCountsStale(unit: string): void {
+  Array.from(countCache.entries()).forEach(([k, e]) => {
+    if (e.unit.includes(`|${unit}|`)) countCache.delete(k);
+  });
+}
+const oldestCountAt = (unit: string): number | null => {
+  let min: number | null = null;
+  countCache.forEach((e) => {
+    if (e.unit.includes(`|${unit}|`)) min = min === null ? e.at : Math.min(min, e.at);
+  });
+  return min;
+};
+export const dbCountWorkOrdersCached = (unit: string, mode: OsListMode, cos: string[] | null = null): Promise<number> =>
+  cachedOsCount([unit], `${JSON.stringify(mode)}§${cos ? cos.join(',') : '*'}`, () => dbCountWorkOrders(unit, mode, cos));
+
 export interface OsCounters {
   byStatus: Partial<Record<OsStatusFilter, number>>;
 }
@@ -111,7 +141,7 @@ export interface OsCounters {
 export const OS_PANEL_STATUSES: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada', 'Cancelada'];
 export async function dbGetOsCounters(unit: string, cos: string[] | null = null): Promise<OsCounters> {
   try {
-    const counts = await Promise.all(OS_PANEL_STATUSES.map((s) => dbCountWorkOrders(unit, { kind: 'filter', status: s }, cos)));
+    const counts = await Promise.all(OS_PANEL_STATUSES.map((s) => dbCountWorkOrdersCached(unit, { kind: 'filter', status: s }, cos)));
     const byStatus: Partial<Record<OsStatusFilter, number>> = {};
     OS_PANEL_STATUSES.forEach((s, i) => (byStatus[s] = counts[i]));
     return { byStatus };
@@ -123,8 +153,9 @@ export async function dbGetOsCounters(unit: string, cos: string[] | null = null)
 
 // Mudanças nas OS da gerência a partir de agora (números do painel em tempo real; ajustes da etapa 8).
 // Abrir não lê nada antigo: só chegam as OS gravadas depois de "since" (updatedAt), 1 leitura por OS que mudar.
-// Índice: workOrders unit + updatedAt. A 1ª resposta (o que já estava no intervalo) é ignorada.
-export function subscribeWorkOrderChanges(unit: string, sinceIso: string, onChange: (changed: WorkOrder[]) => void): () => void {
+// Índice: workOrders unit + updatedAt. A 1ª resposta (o que já estava no intervalo) não vai para a tela; ela só serve
+// para saber se as contagens guardadas na sessão (S10) ficaram velhas: se sim, "onStale" pede para contar de novo.
+export function subscribeWorkOrderChanges(unit: string, sinceIso: string, onChange: (changed: WorkOrder[]) => void, onStale?: () => void): () => void {
   if (!unit || !firebaseActive || !dbInstance) return () => {};
   let first = true;
   return onSnapshot(
@@ -132,10 +163,20 @@ export function subscribeWorkOrderChanges(unit: string, sinceIso: string, onChan
     (snap) => {
       if (first) {
         first = false;
+        // Margem de 2 min para relógios de aparelhos diferentes
+        const counted = oldestCountAt(unit);
+        const newest = snap.docs.reduce((m, d) => Math.max(m, Date.parse(String((d.data() as WorkOrder).updatedAt || '')) || 0), 0);
+        if (counted !== null && newest && newest >= counted - 120000) {
+          markOsCountsStale(unit);
+          onStale?.();
+        }
         return;
       }
       const changed = snap.docChanges().filter((c) => c.type !== 'removed').map((c) => ({ ...(c.doc.data() as WorkOrder), id: c.doc.id }));
-      if (changed.length) onChange(changed);
+      if (changed.length) {
+        markOsCountsStale(unit);
+        onChange(changed);
+      }
     },
     (err) => {
       console.warn('Não foi possível acompanhar as mudanças das OS:', err);

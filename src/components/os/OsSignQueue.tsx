@@ -23,15 +23,16 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
   const [signing, setSigning] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = () => {
+  // force ("Atualizar"): confere na hora os links de cliente pendentes (sem isso, no máximo a cada 15 min — S18)
+  const load = (force = false) => {
     setLoading(true);
     setSel(new Set());
-    dbGetSignQueue(units, role, userProfile.name)
+    dbGetSignQueue(units, role, userProfile.name, force)
       .then(setList)
       .catch((e) => setMsg({ ok: false, text: `Não foi possível carregar: ${e?.message || e}` }))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [role, units.join('|')]);
+  useEffect(() => load(), [role, units.join('|')]);
 
   const toggle = (id: string) =>
     setSel((prev) => {
@@ -72,7 +73,7 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
           <span className="text-[11px] text-slate-500">{list.length} OS aguardando a assinatura do {OS_SIGN_LABEL[role].toLowerCase()}</span>
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={load} disabled={loading} className="h-8 px-3 rounded-lg border border-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40 bg-white">
+          <button type="button" onClick={() => load(true)} disabled={loading} className="h-8 px-3 rounded-lg border border-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40 bg-white">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </button>
           <button type="button" onClick={() => setSigning(true)} disabled={sel.size === 0 || loading} className="h-8 px-3 rounded-lg text-white text-[11px] font-black flex items-center gap-1 cursor-pointer disabled:opacity-40" style={{ background: color }}>

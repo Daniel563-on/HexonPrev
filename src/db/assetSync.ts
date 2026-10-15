@@ -57,14 +57,22 @@ function currentList(): Asset[] {
   return Array.from(store.values());
 }
 
-function schedulePersist(): void {
-  if (!activeUid) return;
-  const uid = activeUid;
+// Ajuste S11 (Lote 5), igual à cópia das OS: 1ª carga gravada na hora; mudanças juntadas e gravadas no máximo a cada
+// 15 s e quando o app vai para segundo plano (antes: a cópia inteira 1 s depois de cada mudança)
+const PERSIST_EVERY_MS = 15000;
+function persistNow(): Promise<void> {
   if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = null;
+  if (!activeUid) return Promise.resolve();
+  const data: StoredAssets = { version: 1, assets: currentList(), lastSyncMs, lastDeletionMs };
+  return idbSet(storageKey(activeUid), data).catch(() => {});
+}
+function schedulePersist(): void {
+  if (!activeUid || persistTimer) return;
   persistTimer = setTimeout(() => {
-    const data: StoredAssets = { version: 1, assets: currentList(), lastSyncMs, lastDeletionMs };
-    idbSet(storageKey(uid), data).catch(() => {});
-  }, 1000);
+    persistTimer = null;
+    persistNow();
+  }, PERSIST_EVERY_MS);
 }
 
 function notify(): void {
@@ -162,6 +170,7 @@ function hookVisibility(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
+      if (persistTimer) persistNow(); // indo para segundo plano: grava agora o que estava esperando
     } else if (hiddenAt && Date.now() - hiddenAt > 25 * 60 * 1000 && activeUid && unsubAssets) {
       hiddenAt = 0;
       startListeners();
@@ -192,6 +201,7 @@ export function ensureAssetSync(): Promise<void> {
       lastDeletionMs = saved.lastDeletionMs || 0;
     } else {
       await fullDownload();
+      await persistNow(); // 1ª carga gravada na hora
     }
     if (activeUid !== uid) return;
     await startListeners();
@@ -209,8 +219,7 @@ export function ensureAssetSync(): Promise<void> {
 
 export function stopAssetSync(): void {
   stopListeners();
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = null;
+  if (persistTimer) persistNow(); // grava o que estava esperando antes de parar
   store.clear();
   activeUid = null;
   readyPromise = null;

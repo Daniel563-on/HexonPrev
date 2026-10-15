@@ -24,6 +24,7 @@ import {
   dbListWorkOrders,
   osMatchesMode,
   subscribeWorkOrderChanges,
+  markOsCountsStale,
   monthStartStr,
   runBulk,
   todayStr
@@ -185,6 +186,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   };
   const refresh = () => {
     loadFirst(mode, true);
+    markOsCountsStale(unit); // "Atualizar": conta de novo, sem usar o que está guardado na sessão
     loadCounters();
   };
 
@@ -238,7 +240,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       setCostVersion((v) => v + 1);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => loadCountersRef.current(true), 3000);
-    });
+    }, () => loadCountersRef.current(true)); // S10: números guardados da sessão ficaram velhos: conta de novo
     return () => {
       stop();
       window.clearTimeout(timer);

@@ -108,11 +108,17 @@ export default function HomeView({ userProfile, profileName, orders, ordersReady
     let timer: number | undefined;
     const since = new Date(Date.now() - 10 * 60000).toISOString();
     const stops = units.map((u) =>
-      subscribeWorkOrderChanges(u, since, (changed) => {
-        if (cos && !changed.some((o) => cos.includes(o.company || ''))) return;
-        window.clearTimeout(timer);
-        timer = window.setTimeout(() => loadOs.current(), 3000);
-      })
+      subscribeWorkOrderChanges(
+        u,
+        since,
+        (changed) => {
+          if (cos && !changed.some((o) => cos.includes(o.company || ''))) return;
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => loadOs.current(), 3000);
+        },
+        // S10: números guardados da sessão ficaram velhos (alguma OS mudou enquanto a tela estava fechada)
+        () => loadOs.current()
+      )
     );
     return () => {
       stops.forEach((s) => s());
