@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, CheckCircle2, XCircle, Clock, PackageCheck, Warehouse as WarehouseIcon, AlertTriangle } from 'lucide-react';
-import { Company, HexonUser, SupplyBalance, SupplyRequest, SupplyRequestStatus } from '../../types';
+import { Company, HexonUser, LiveState, SupplyBalance, SupplyRequest, SupplyRequestStatus } from '../../types';
 import {
   balanceSaldo,
   dbApproveSupplyRequest,
@@ -59,6 +59,7 @@ interface Work {
 export default function SupplyRequestsBoard({
   mode,
   live,
+  liveState = 'ok',
   scopeUnits,
   visibleCompanies = null,
   userProfile,
@@ -66,6 +67,7 @@ export default function SupplyRequestsBoard({
 }: {
   mode: Mode;
   live: SupplyRequest[];               // situação da vez (Pendente ou Confirmado), em tempo real
+  liveState?: LiveState;               // S14: a escuta já respondeu? (até lá, "…" e não 0)
   scopeUnits: string[] | null;         // null = todas
   visibleCompanies?: string[] | null;  // null = todas as das gerências que vê
   userProfile: HexonUser;
@@ -275,15 +277,17 @@ export default function SupplyRequestsBoard({
             className={`px-4 py-2 rounded-lg text-xs font-black cursor-pointer border ${filter === f.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}
           >
             {f.label}
-            {f.key === liveStatus ? ` (${liveOfUnit.length})` : ''}
+            {f.key === liveStatus ? ` (${liveState === 'loading' ? '…' : liveState === 'erro' ? '—' : liveOfUnit.length})` : ''}
           </button>
         ))}
       </div>
 
       {msg && !msg.id && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
-      {loading && <p className="text-xs text-slate-500">Carregando...</p>}
-      {!loading && list.length === 0 && (
-        <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">Nenhum pedido nesta situação.</div>
+      {(loading || (filter === liveStatus && liveState === 'loading')) && <p className="text-xs text-slate-500">Carregando...</p>}
+      {!loading && !(filter === liveStatus && liveState === 'loading') && list.length === 0 && (
+        <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">
+          {filter === liveStatus && liveState === 'erro' ? 'Não foi possível acompanhar os pedidos agora.' : 'Nenhum pedido nesta situação.'}
+        </div>
       )}
 
       <div className="space-y-3">

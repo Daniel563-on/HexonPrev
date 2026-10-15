@@ -662,7 +662,9 @@ export default function OrderDetailsDrawer({
                   );
                 })()}
                 <button 
+                  type="button"
                   onClick={onClose}
+                  aria-label="Fechar"
                   className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />

@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// Situação de uma escuta em tempo real (S14, Lote 6): 'loading' até a 1ª resposta — a tela mostra "…" em vez de 0
+export type LiveState = 'loading' | 'ok' | 'erro';
+
 export interface ChecklistItem {
   id: string;
   task: string;

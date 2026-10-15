@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Warehouse as WarehouseIcon, CheckCircle2, XCircle, Clock, PackageCheck } from 'lucide-react';
-import { Company, HexonUser, Material, MaterialRequest, MaterialRequestStatus, Warehouse } from '../../types';
+import { Company, HexonUser, LiveState, Material, MaterialRequest, MaterialRequestStatus, Warehouse } from '../../types';
 import {
   dbApproveMaterialRequest,
   dbGetCompanies,
@@ -50,12 +50,14 @@ interface Analysis {
 
 export default function MaterialRequestsTab({
   pending,
+  pendingState = 'ok',
   scopeUnits,
   visibleCompanies = null,
   userProfile,
   canDecide
 }: {
   pending: MaterialRequest[];          // pendentes das gerências que vê (tempo real)
+  pendingState?: LiveState;            // S14: a escuta já respondeu? (até lá, "…" e não 0)
   scopeUnits: string[] | null;         // null = todas
   visibleCompanies?: string[] | null;  // null = todas as das gerências que vê
   userProfile: HexonUser;
@@ -237,15 +239,17 @@ export default function MaterialRequestsTab({
             className={`px-4 py-2 rounded-lg text-xs font-black cursor-pointer border ${filter === f.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}
           >
             {f.label}
-            {f.key === 'Pendente' ? ` (${pendingCount})` : ''}
+            {f.key === 'Pendente' ? ` (${pendingState === 'loading' ? '…' : pendingState === 'erro' ? '—' : pendingCount})` : ''}
           </button>
         ))}
       </div>
 
       {msg && !msg.id && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
-      {loading && <p className="text-xs text-slate-500">Carregando...</p>}
-      {!loading && list.length === 0 && (
-        <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">Nenhum pedido nesta situação.</div>
+      {(loading || (filter === 'Pendente' && pendingState === 'loading')) && <p className="text-xs text-slate-500">Carregando...</p>}
+      {!loading && !(filter === 'Pendente' && pendingState === 'loading') && list.length === 0 && (
+        <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">
+          {filter === 'Pendente' && pendingState === 'erro' ? 'Não foi possível acompanhar os pedidos agora.' : 'Nenhum pedido nesta situação.'}
+        </div>
       )}
 
       <div className="space-y-3">

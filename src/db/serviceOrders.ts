@@ -478,19 +478,24 @@ export function subscribeTechnicianSolicitations(matricula: string, onChange: (o
   };
 }
 
+// onState (S14, Lote 6): 'ok' quando todas as partes responderam pela 1ª vez; 'erro' se uma falhar
 export function subscribePendingSolicitations(
   scope: ServiceOrdersScope,
-  onChange: (orders: ServiceOrder[]) => void
+  onChange: (orders: ServiceOrder[]) => void,
+  onState?: (s: 'ok' | 'erro') => void
 ): () => void {
   if (!firebaseActive || !dbInstance) {
     onChange([]);
+    onState?.('ok');
     return () => {};
   }
   const filterSets = scopeFilterSets(scope);
   const parts: ServiceOrder[][] = filterSets.map(() => []);
+  const answered = new Set<number>();
   const emit = () => onChange(hydrateOrders(parts.flat().sort(compareOrdersNewestFirst)));
   if (filterSets.length === 0) {
     onChange([]);
+    onState?.('ok');
     return () => {};
   }
   const unsubscribers = filterSets.map((filters, i) =>
@@ -503,12 +508,15 @@ export function subscribePendingSolicitations(
         });
         parts[i] = list;
         emit();
+        answered.add(i);
+        if (answered.size === filterSets.length) onState?.('ok');
       },
       (err) => {
         console.warn('Firestore listen pending solicitations failed:', err);
         checkQuotaException(err);
         parts[i] = [];
         emit();
+        onState?.('erro');
       }
     )
   );
@@ -600,7 +608,7 @@ export async function dbCountSolicitations(
   } catch (err: any) {
     console.warn('Firestore count solicitations failed:', err);
     checkQuotaException(err);
-    return empty;
+    throw err; // S14 (Lote 6): a tela mostra "—" em vez de um 0 falso
   }
 }
 

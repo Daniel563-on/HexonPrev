@@ -30,7 +30,7 @@ import BrandBackground from './components/BrandBackground';
 import { AppControl, subscribeAppControl, takeDataVersionChange, waitPendingWrites } from './db/appControl';
 import { onSyncChange } from './db/localSync';
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
-import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, SupplyRequest, Notice, isSectorInGerencia } from './types';
+import { ServiceOrder, Asset, HexonUser, SystemPermission, AccessProfile, MaterialRequest, SupplyRequest, Notice, LiveState, isSectorInGerencia } from './types';
 import { 
   subscribeTechnicianOrders,
   subscribeUnitOrders,
@@ -463,10 +463,13 @@ export default function App() {
   }, [userProfile?.id, userProfile?.perfil, userProfile?.matricula, visibleUnitsKey]);
 
   // Solicitações de corretiva pendentes de ação (tempo real): contador do menu e lista da aba Solicitações
+  // S14 (Lote 6): cada escuta diz se já respondeu (a tela mostra "…" até lá, em vez de 0 ou "nenhum")
   const [pendingSolicitationOrders, setPendingSolicitationOrders] = useState<ServiceOrder[]>([]);
+  const [solicitationsLive, setSolicitationsLive] = useState<LiveState>('loading');
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
-    return subscribePendingSolicitations({ units: visibleUnits }, setPendingSolicitationOrders);
+    setSolicitationsLive('loading');
+    return subscribePendingSolicitations({ units: visibleUnits }, setPendingSolicitationOrders, setSolicitationsLive);
   }, [userProfile?.id, userProfile?.perfil, visibleUnitsKey]);
 
   // Load and refresh lists from DB
@@ -606,6 +609,7 @@ export default function App() {
 
   // Pedidos de material pendentes (Fase 8B, tempo real): número do menu e aba Material — só quem vê ou aprova
   const [pendingMaterialRequests, setPendingMaterialRequests] = useState<MaterialRequest[]>([]);
+  const [materialLive, setMaterialLive] = useState<LiveState>('loading');
   const canSeeMaterialRequests =
     !!userProfile && userProfile.perfil !== 'Profissional' && (userHasActionPermission('material_requests_view') || userHasActionPermission('material_requests_decide'));
   const materialUnitsKey = (visibleUnits === null ? managementNames : visibleUnits).join('|');
@@ -615,14 +619,19 @@ export default function App() {
       return;
     }
     const units = visibleUnits === null ? managementNames : visibleUnits;
-    return subscribePendingMaterialRequests(units, (list) =>
-      setPendingMaterialRequests(list.filter((r) => isCompanyVisible(r.company, visibleCompanies)))
+    setMaterialLive('loading');
+    return subscribePendingMaterialRequests(
+      units,
+      (list) => setPendingMaterialRequests(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))),
+      setMaterialLive
     );
   }, [userProfile?.id, canSeeMaterialRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
   // Pedidos de insumos (Fase 8C-2, tempo real): aguardando aprovação (Solicitações › Insumos) e aguardando o almoxarifado
   // (menu Almoxarifado) — cada um só para quem tem a permissão
   const [pendingSupplyConfirm, setPendingSupplyConfirm] = useState<SupplyRequest[]>([]);
   const [pendingSupplyStore, setPendingSupplyStore] = useState<SupplyRequest[]>([]);
+  const [supplyConfirmLive, setSupplyConfirmLive] = useState<LiveState>('loading');
+  const [supplyStoreLive, setSupplyStoreLive] = useState<LiveState>('loading');
   const canSeeSupplyRequests =
     !!userProfile && userProfile.perfil !== 'Profissional' && (userHasActionPermission('supply_requests_view') || userHasActionPermission('supply_requests_confirm'));
   const canSupplyStore = !!userProfile && userProfile.perfil !== 'Profissional' && userHasActionPermission('supply_requests_supply');
@@ -632,7 +641,8 @@ export default function App() {
       return;
     }
     const units = visibleUnits === null ? managementNames : visibleUnits;
-    return subscribeSupplyAwaitingConfirm(units, (list) => setPendingSupplyConfirm(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))));
+    setSupplyConfirmLive('loading');
+    return subscribeSupplyAwaitingConfirm(units, (list) => setPendingSupplyConfirm(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))), setSupplyConfirmLive);
   }, [userProfile?.id, canSeeSupplyRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
   useEffect(() => {
     if (!canSupplyStore) {
@@ -640,7 +650,8 @@ export default function App() {
       return;
     }
     const units = visibleUnits === null ? managementNames : visibleUnits;
-    return subscribeSupplyAwaitingStore(units, (list) => setPendingSupplyStore(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))));
+    setSupplyStoreLive('loading');
+    return subscribeSupplyAwaitingStore(units, (list) => setPendingSupplyStore(list.filter((r) => isCompanyVisible(r.company, visibleCompanies))), setSupplyStoreLive);
   }, [userProfile?.id, canSupplyStore, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
   const solicitationsBadge = pendingSolicitationOrders.length + pendingMaterialRequests.length + pendingSupplyConfirm.length;
 
@@ -1341,6 +1352,7 @@ export default function App() {
               pendingOrders={pendingSolicitationOrders}
               pendingMaterialRequests={pendingMaterialRequests}
               pendingSupplyRequests={pendingSupplyConfirm}
+              liveStates={{ corretiva: solicitationsLive, material: materialLive, insumos: supplyConfirmLive }}
               scopeUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               onNavigateToOS={handleNavigateToOS}
@@ -1375,6 +1387,7 @@ export default function App() {
             <SupplyRequestsBoard
               mode="store"
               live={pendingSupplyStore}
+              liveState={supplyStoreLive}
               scopeUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
               userProfile={userProfile}

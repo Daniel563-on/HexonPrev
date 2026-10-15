@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Construction } from 'lucide-react';
-import { HexonUser, MaterialRequest, ServiceOrder, SupplyRequest } from '../../types';
+import { HexonUser, LiveState, MaterialRequest, ServiceOrder, SupplyRequest } from '../../types';
 import SolicitationsView from '../SolicitationsView';
 import MaterialRequestsTab from './MaterialRequestsTab';
 import SupplyRequestsBoard from '../supplies/SupplyRequestsBoard';
@@ -14,6 +14,7 @@ export default function SolicitationsHub(props: {
   pendingOrders: ServiceOrder[];
   pendingMaterialRequests: MaterialRequest[];
   pendingSupplyRequests: SupplyRequest[]; // aguardando confirmação (tempo real)
+  liveStates?: { corretiva: LiveState; material: LiveState; insumos: LiveState }; // S14: se as escutas já responderam
   scopeUnits: string[] | null;
   visibleCompanies?: string[] | null;
   onNavigateToOS: (osId?: string) => void;
@@ -63,6 +64,7 @@ export default function SolicitationsHub(props: {
         <SupplyRequestsBoard
           mode="confirm"
           live={props.pendingSupplyRequests}
+          liveState={props.liveStates?.insumos}
           scopeUnits={props.scopeUnits}
           visibleCompanies={props.visibleCompanies}
           userProfile={userProfile}
@@ -71,6 +73,7 @@ export default function SolicitationsHub(props: {
       ) : tab === 'material' && canSeeMaterial ? (
         <MaterialRequestsTab
           pending={props.pendingMaterialRequests}
+          pendingState={props.liveStates?.material}
           scopeUnits={props.scopeUnits}
           visibleCompanies={props.visibleCompanies}
           userProfile={userProfile}
@@ -79,6 +82,7 @@ export default function SolicitationsHub(props: {
       ) : (
         <SolicitationsView
           pendingOrders={props.pendingOrders}
+          pendingState={props.liveStates?.corretiva}
           scopeUnits={props.scopeUnits}
           visibleCompanies={props.visibleCompanies}
           onNavigateToOS={props.onNavigateToOS}

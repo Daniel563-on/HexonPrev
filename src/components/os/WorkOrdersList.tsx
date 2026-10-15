@@ -487,20 +487,23 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Gerência</span>
-          <select value={unit} onChange={(e) => setUnit(e.target.value)} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer" aria-label="Gerência">
-            {unitOptions.map((u) => (
-              <option key={u} value={u}>{u}</option>
-            ))}
-          </select>
+        {/* S15 (Lote 6): no celular, "Empresa" desce para a linha de baixo em vez de passar da borda */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+          <span className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Gerência</span>
+            <select value={unit} onChange={(e) => setUnit(e.target.value)} className="h-8 px-2 text-xs font-bold border border-slate-200 rounded-lg bg-white cursor-pointer" aria-label="Gerência">
+              {unitOptions.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          </span>
           {(unitCompanies.length > 0 || pendingCount > 0) && !signView && (
-            <>
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-2">Empresa</span>
+            <span className="flex items-center gap-2 min-w-0 max-w-full sm:ml-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Empresa</span>
               <select
                 value={companyFilter}
                 onChange={(e) => setCompanyFilter(e.target.value)}
-                className={`h-8 px-2 text-xs font-bold border rounded-lg cursor-pointer ${companyFilter === PENDING ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white'}`}
+                className={`h-8 px-2 text-xs font-bold border rounded-lg cursor-pointer min-w-0 max-w-full ${companyFilter === PENDING ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white'}`}
                 aria-label="Empresa"
               >
                 <option value="">{visibleCompanies === null ? 'Todas' : 'Todas as minhas'}</option>
@@ -509,7 +512,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 ))}
                 {(pendingCount > 0 || companyFilter === PENDING) && <option value={PENDING}>⚠ Sem empresa ({pendingCount})</option>}
               </select>
-            </>
+            </span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">

@@ -105,18 +105,24 @@ export function subscribeMyMaterialRequests(matricula: string, onChange: (list: 
 }
 
 // Pendentes das gerências (número do menu Solicitações; tempo real). units = gerências que a pessoa vê (máx. 30)
-export function subscribePendingMaterialRequests(units: string[], onChange: (list: MaterialRequest[]) => void): () => void {
+// onState (S14, Lote 6): 'ok' na 1ª resposta; 'erro' se a escuta falhar
+export function subscribePendingMaterialRequests(units: string[], onChange: (list: MaterialRequest[]) => void, onState?: (s: 'ok' | 'erro') => void): () => void {
   if (!firebaseActive || !dbInstance || units.length === 0) {
     onChange([]);
+    onState?.('ok');
     return () => {};
   }
   return onSnapshot(
     query(collection(dbInstance, 'materialRequests'), where('mrPend', 'in', units.slice(0, 30))),
-    (snap) => onChange(snap.docs.map((d) => ({ ...(d.data() as MaterialRequest), id: d.id }))),
+    (snap) => {
+      onChange(snap.docs.map((d) => ({ ...(d.data() as MaterialRequest), id: d.id })));
+      onState?.('ok');
+    },
     (err) => {
       console.warn('Não foi possível acompanhar os pedidos pendentes:', err);
       checkQuotaException(err);
       onChange([]);
+      onState?.('erro');
     }
   );
 }

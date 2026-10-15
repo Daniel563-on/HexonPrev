@@ -142,23 +142,30 @@ export function subscribeMySupplyRequests(matricula: string, onChange: (list: Su
 }
 
 // Aguardando o administrativo (Solicitações) ou o almoxarifado, das gerências que a pessoa vê (máx. 30; tempo real)
-function subscribeByControl(field: 'srConf' | 'srStore', units: string[], onChange: (list: SupplyRequest[]) => void): () => void {
+// onState (S14, Lote 6): 'ok' na 1ª resposta; 'erro' se a escuta falhar
+type OnLiveState = (s: 'ok' | 'erro') => void;
+function subscribeByControl(field: 'srConf' | 'srStore', units: string[], onChange: (list: SupplyRequest[]) => void, onState?: OnLiveState): () => void {
   if (!firebaseActive || !dbInstance || units.length === 0) {
     onChange([]);
+    onState?.('ok');
     return () => {};
   }
   return onSnapshot(
     query(collection(dbInstance, 'supplyRequests'), where(field, 'in', units.slice(0, 30))),
-    (snap) => onChange(mapDocs(snap).sort((a, b) => a.createdAt.localeCompare(b.createdAt))),
+    (snap) => {
+      onChange(mapDocs(snap).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+      onState?.('ok');
+    },
     (err) => {
       console.warn('Não foi possível acompanhar os pedidos de insumos:', err);
       checkQuotaException(err);
       onChange([]);
+      onState?.('erro');
     }
   );
 }
-export const subscribeSupplyAwaitingConfirm = (units: string[], cb: (l: SupplyRequest[]) => void) => subscribeByControl('srConf', units, cb);
-export const subscribeSupplyAwaitingStore = (units: string[], cb: (l: SupplyRequest[]) => void) => subscribeByControl('srStore', units, cb);
+export const subscribeSupplyAwaitingConfirm = (units: string[], cb: (l: SupplyRequest[]) => void, onState?: OnLiveState) => subscribeByControl('srConf', units, cb, onState);
+export const subscribeSupplyAwaitingStore = (units: string[], cb: (l: SupplyRequest[]) => void, onState?: OnLiveState) => subscribeByControl('srStore', units, cb, onState);
 
 export const SR_PAGE_SIZE = 20;
 

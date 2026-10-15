@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, ShieldAlert, Clock, CheckCircle2, XCircle } from 'lucide-react';
-import { ServiceOrder, HexonUser, ChecklistItem, formatDateBR, Company } from '../types';
+import { ServiceOrder, HexonUser, ChecklistItem, formatDateBR, Company, LiveState } from '../types';
 import { formatOrderNumber } from '../utils/orderNumber';
 import {
   dbGetHandledSolicitationsPage, dbCountSolicitations, dbDecideCorrective, dbFixCorrective,
@@ -19,6 +19,7 @@ const HANDLED_PAGE_SIZE = 20;
 
 interface SolicitationsViewProps {
   pendingOrders: ServiceOrder[]; // OS com item aguardando decisão (tempo real, já filtradas pela gerência)
+  pendingState?: LiveState;      // S14: a escuta das pendentes já respondeu? (até lá, "Carregando..." e não "nenhuma")
   scopeUnits: string[] | null;   // unidades do usuário; null = todas
   visibleCompanies?: string[] | null; // empresas que vê (null = todas as das gerências que vê; etapa especial E3)
   onNavigateToOS: (osId?: string) => void;
@@ -30,7 +31,7 @@ interface SolicitationsViewProps {
 // Edição em andamento de um item: decidir (abrir/não abrir) ou corrigir o texto de uma decisão
 type Editing = { orderId: string; itemId: string; mode: CorrectiveDecision | 'fix'; text: string } | null;
 
-export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCompanies = null, onReload, userProfile, userHasActionPermission }: SolicitationsViewProps) {
+export default function SolicitationsView({ pendingOrders, pendingState = 'ok', scopeUnits, visibleCompanies = null, onReload, userProfile, userHasActionPermission }: SolicitationsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [company, setCompany] = useState('Todas');
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -49,7 +50,12 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   const [handledCursor, setHandledCursor] = useState<unknown>(null);
   const [handledHasMore, setHandledHasMore] = useState(false);
   const [loadingHandled, setLoadingHandled] = useState(false);
-  const [counts, setCounts] = useState({ pendente: 0, resolvido: 0, cancelado: 0 });
+  // S14 (Lote 6): null = contando (mostra "…"), 'erro' = a contagem falhou (mostra "—"); antes começava com 0
+  const [counts, setCounts] = useState<{ pendente: number; resolvido: number; cancelado: number } | null | 'erro'>(null);
+  const countsSeq = useRef(0); // nº da última contagem pedida
+  const countsShown = useRef(0); // nº da contagem que está na tela (uma mais antiga não troca uma mais nova)
+  const countsFloor = useRef(0); // contagens pedidas antes da troca de gerência não valem mais
+  const countsKey = useRef('');
   const [local, setLocal] = useState<Record<string, ServiceOrder>>({}); // OS já alteradas nesta tela (antes do banco devolver)
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
@@ -82,8 +88,21 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
     }
   };
 
-  const refreshCounts = () => {
-    dbCountSolicitations({ units: queryUnits }).then(setCounts).catch(() => {});
+  // Recontar depois de uma decisão mantém o número antigo até chegar o novo; trocar a gerência volta para "…"
+  const refreshCounts = (reset = false) => {
+    const seq = ++countsSeq.current;
+    if (reset) {
+      countsFloor.current = seq;
+      setCounts(null);
+    }
+    const show = (c: { pendente: number; resolvido: number; cancelado: number } | 'erro') => {
+      if (seq < countsFloor.current || seq <= countsShown.current) return;
+      countsShown.current = seq;
+      setCounts(c);
+    };
+    dbCountSolicitations({ units: queryUnits })
+      .then(show)
+      .catch(() => show('erro'));
   };
 
   useEffect(() => {
@@ -95,7 +114,9 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
   }, [statusFilter, scopeUnitsKey]);
 
   useEffect(() => {
-    refreshCounts();
+    const keyChanged = countsKey.current !== scopeUnitsKey;
+    countsKey.current = scopeUnitsKey;
+    refreshCounts(keyChanged);
   }, [pendingOrders.length, scopeUnitsKey]);
 
   // Lista atual (com as alterações feitas aqui por cima) e só as OS que têm itens de solicitação
@@ -185,11 +206,13 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
     );
   };
 
-  const FILTERS: { key: SolicitationFilter; label: string; n: number }[] = [
-    { key: 'Pendente', label: 'Aguardando decisão', n: counts.pendente },
-    { key: 'Resolvido', label: 'Com corretiva aberta', n: counts.resolvido },
-    { key: 'Cancelado', label: 'Todos "não abrir"', n: counts.cancelado },
-    { key: 'Com Acao', label: 'Decididas (todas)', n: counts.resolvido + counts.cancelado }
+  const num = (pick: (c: { pendente: number; resolvido: number; cancelado: number }) => number) =>
+    counts === null ? '…' : counts === 'erro' ? '—' : String(pick(counts));
+  const FILTERS: { key: SolicitationFilter; label: string; n: string }[] = [
+    { key: 'Pendente', label: 'Aguardando decisão', n: num((c) => c.pendente) },
+    { key: 'Resolvido', label: 'Com corretiva aberta', n: num((c) => c.resolvido) },
+    { key: 'Cancelado', label: 'Todos "não abrir"', n: num((c) => c.cancelado) },
+    { key: 'Com Acao', label: 'Decididas (todas)', n: num((c) => c.resolvido + c.cancelado) }
   ];
   const selectCls = 'text-xs font-bold border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 cursor-pointer text-slate-700 shrink-0';
 
@@ -232,6 +255,7 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
             key={f.key}
             type="button"
             onClick={() => setStatusFilter(f.key)}
+            title={counts === 'erro' ? 'Não foi possível contar agora' : undefined}
             className={`px-4 py-2 rounded-lg text-xs font-black cursor-pointer border ${statusFilter === f.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}
           >
             {f.label} ({f.n})
@@ -242,7 +266,11 @@ export default function SolicitationsView({ pendingOrders, scopeUnits, visibleCo
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-6">
         {orders.length === 0 ? (
           <div className="xl:col-span-2 bg-white p-8 rounded-xl border border-slate-200 text-center text-sm font-bold text-slate-500">
-            {loadingHandled ? 'Carregando...' : 'Nenhuma solicitação nesta situação.'}
+            {loadingHandled || (statusFilter === 'Pendente' && pendingState === 'loading')
+              ? 'Carregando...'
+              : statusFilter === 'Pendente' && pendingState === 'erro'
+                ? 'Não foi possível acompanhar as solicitações agora.'
+                : 'Nenhuma solicitação nesta situação.'}
           </div>
         ) : (
           orders.map((o) => {
