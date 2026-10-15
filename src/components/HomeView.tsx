@@ -182,7 +182,7 @@ export default function HomeView({ userProfile, profileName, orders, ordersReady
   }
   if (perms.confirmSupply) {
     const n = pending.supplyConfirm;
-    needs.push({ key: 'supC', n, text: pl(n, 'pedido de insumo para confirmar', 'pedidos de insumo para confirmar'), hint: 'Solicitações › Insumos', icon: <PackageOpen className={ico} />, tone: TONE.amber, onOpen: () => openSolicitations('insumos') });
+    needs.push({ key: 'supC', n, text: pl(n, 'pedido de insumo para aprovar', 'pedidos de insumo para aprovar'), hint: 'Solicitações › Insumos', icon: <PackageOpen className={ico} />, tone: TONE.amber, onOpen: () => openSolicitations('insumos') });
   }
   if (perms.supplyStore) {
     const n = pending.supplyStore;

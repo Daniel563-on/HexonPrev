@@ -8,7 +8,7 @@ import { clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 
 // TELA SOLICITAÇÕES (Fase 8): abas "Corretiva" (itens das preventivas), "Material" (pedidos de material do MP, 8B)
 // e "Insumos" (pedidos de insumos, 8C-2). Material: quem tem "Ver pedidos de material" ou "Aprovar / reprovar pedidos de material".
-// Insumos: quem tem "Ver pedidos de insumos" ou "Confirmar pedidos de insumos".
+// Insumos: quem tem "Ver pedidos de insumos" ou "Aprovar pedidos de insumos".
 // "Hora extra" e "Pernoite" (Fase 8D): só as abas, em construção (pedido do usuário); aparecem para todos.
 export default function SolicitationsHub(props: {
   pendingOrders: ServiceOrder[];

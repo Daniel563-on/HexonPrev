@@ -201,15 +201,15 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   supply_requests_view: {
     id: 'supply_requests_view',
     name: 'Ver pedidos de insumos',
-    description: 'Solicitações › Insumos: ver os pedidos de insumos das gerências do perfil (sem confirmar).',
+    description: 'Solicitações › Insumos: ver os pedidos de insumos das gerências do perfil (sem aprovar).',
     category: 'Abas',
     area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   supply_requests_confirm: {
     id: 'supply_requests_confirm',
-    name: 'Confirmar pedidos de insumos',
-    description: 'Confirmar (vai para o almoxarifado) ou reprovar (motivo) os pedidos de insumos dos técnicos.',
+    name: 'Aprovar pedidos de insumos (vê o saldo e ajusta a quantidade)',
+    description: 'Solicitações › Insumos: aprovar vendo o saldo do contrato (pode diminuir a quantidade de cada item; o aprovado fica reservado e vai para o almoxarifado) ou reprovar (motivo).',
     category: 'Ações',
     area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -217,7 +217,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   supply_requests_supply: {
     id: 'supply_requests_supply',
     name: 'Fornecer insumos (almoxarifado)',
-    description: 'Menu Almoxarifado: fornecer os pedidos de insumos confirmados (quantidade de cada item) ou recusar (motivo).',
+    description: 'Menu Almoxarifado: fornecer exatamente o que foi aprovado (abate do saldo do contrato) ou recusar (motivo; o aprovado volta ao saldo).',
     category: 'Abas',
     area: 'solicitacoes',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -281,16 +281,33 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_supplies: {
     id: 'view_supplies',
     name: 'Ver insumos',
-    description: 'Acesso à Gestão de Insumos (gerências do perfil).',
+    description: 'Gestão de Insumos: contrato e saldo de cada empresa (uma lista para todas as gerências).',
     category: 'Abas',
     area: 'cadastros',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
   manage_supplies: {
     id: 'manage_supplies',
-    name: 'Cadastrar e importar insumos',
-    description: 'Cadastrar, editar, alterar o valor e importar a planilha de insumos das gerências do perfil.',
+    name: 'Editar descrição e unidade dos insumos',
+    description: 'Gestão de Insumos: corrigir a descrição e a unidade de um item do contrato. Quantidade e preço só mudam pela importação do contrato ou do aditivo.',
     category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  // Lote 3 (insumos como contrato da empresa): só quem tem marcado no perfil (as regras do banco conferem o perfil)
+  import_supplies_contract: {
+    id: 'import_supplies_contract',
+    name: 'Importar contrato e aditivos de insumos',
+    description: 'Gestão de Insumos: importar a planilha do contrato da empresa e dos aditivos (quantidade total e preço). O contrato vale para todas as gerências da empresa.',
+    category: 'Ações',
+    area: 'cadastros',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
+  supplies_report: {
+    id: 'supplies_report',
+    name: 'Relatório de saídas de insumos',
+    description: 'Gestão de Insumos › Relatório de saídas: ver e baixar o Excel com filtros (item, gerência, OS, GLPI e técnico), das gerências do perfil.',
+    category: 'Abas',
     area: 'cadastros',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },

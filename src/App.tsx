@@ -10,6 +10,7 @@ import ServiceOrdersView from './components/ServiceOrdersView';
 import TemplatesView from './components/TemplatesView';
 import SolicitationsHub from './components/solicitations/SolicitationsHub';
 import SupplyRequestsBoard from './components/supplies/SupplyRequestsBoard';
+import SuppliesView from './components/supplies/SuppliesView';
 import LoginView from './components/LoginView';
 import UserControlView from './components/UserControlView';
 import AddressesView from './components/AddressesView';
@@ -538,6 +539,9 @@ export default function App() {
     if (tab === 'glpi') return userHasActionPermission('glpi_view') || userHasActionPermission('glpi_manage');
     // Fase 7: Programação para quem vê ou programa
     if (tab === 'programacao') return userHasActionPermission('prog_view') || userHasActionPermission('prog_edit');
+    // Gestão de Insumos (Lote 3): contrato e saldo ("Ver insumos", importar ou corrigir texto) e/ou o relatório de saídas
+    if (tab === 'supplies')
+      return ['view_supplies', 'import_supplies_contract', 'manage_supplies', 'supplies_report'].some((id) => userHasActionPermission(id));
 
     let permId = '';
     const profile = resolveUserProfile(userProfile, accessProfiles);
@@ -582,7 +586,7 @@ export default function App() {
 
     // Fallback safe defaults if permissions not loaded yet
     if (!permissionsMatrix) {
-      if (actionId === 'manage_materials' || actionId === 'manage_supplies') return false; // padrão: só Super Administrador
+      if (['manage_materials', 'manage_supplies', 'view_supplies', 'import_supplies_contract', 'supplies_report'].includes(actionId)) return false; // padrão: só Super Administrador
       if (actionId === 'delete_asset' || actionId === 'delete_order') {
         return false; // strictly Super Admin
       }
@@ -615,7 +619,7 @@ export default function App() {
       setPendingMaterialRequests(list.filter((r) => isCompanyVisible(r.company, visibleCompanies)))
     );
   }, [userProfile?.id, canSeeMaterialRequests, materialUnitsKey, (visibleCompanies || ['*']).join('|')]);
-  // Pedidos de insumos (Fase 8C-2, tempo real): aguardando confirmação (Solicitações › Insumos) e aguardando o almoxarifado
+  // Pedidos de insumos (Fase 8C-2, tempo real): aguardando aprovação (Solicitações › Insumos) e aguardando o almoxarifado
   // (menu Almoxarifado) — cada um só para quem tem a permissão
   const [pendingSupplyConfirm, setPendingSupplyConfirm] = useState<SupplyRequest[]>([]);
   const [pendingSupplyStore, setPendingSupplyStore] = useState<SupplyRequest[]>([]);
@@ -1366,7 +1370,7 @@ export default function App() {
             />
           )}
 
-          {/* Almoxarifado (Fase 8C-2): fornecer ou recusar os pedidos de insumos confirmados */}
+          {/* Almoxarifado (Fase 8C-2): fornecer ou recusar os pedidos de insumos aprovados */}
           {currentTab === 'almoxarifado' && userProfile && (
             <SupplyRequestsBoard
               mode="store"
@@ -1378,14 +1382,16 @@ export default function App() {
             />
           )}
 
-          {/* Gestão de Insumos (Fase 8C): mesma tela dos materiais, com a lista de insumos */}
-          {currentTab === 'supplies' && userProfile && (
-            <MaterialsView
-              kind="supplies"
+          {/* Gestão de Insumos (Lote 3): contrato de insumos da empresa, saldo e relatório de saídas */}
+          {currentTab === 'supplies' && userProfile && userHasTabPermission('supplies') && (
+            <SuppliesView
               userProfile={userProfile}
               visibleUnits={visibleUnits}
               visibleCompanies={visibleCompanies}
-              canManage={userHasActionPermission('manage_supplies')}
+              canView={['view_supplies', 'import_supplies_contract', 'manage_supplies'].some((id) => userHasActionPermission(id))}
+              canReport={userHasActionPermission('supplies_report')}
+              canImport={userHasActionPermission('import_supplies_contract')}
+              canEdit={userHasActionPermission('manage_supplies')}
             />
           )}
 

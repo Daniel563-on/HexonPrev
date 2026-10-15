@@ -533,7 +533,8 @@ export interface SupplyRequestItem {
   description: string;
   measureUnit: string;
   qty: number;           // pedida (aceita decimais)
-  qtySupplied?: number;  // fornecida pelo almoxarifado (pode ser menor; 0 = não fornecido)
+  qtyApproved?: number;  // aprovada pelo administrativo (Lote 3; pode ser menor que a pedida; 0 = não aprovado) — fica reservada no saldo
+  qtySupplied?: number;  // fornecida pelo almoxarifado (Lote 3: = aprovada; pedidos antigos: digitada, pode ser menor)
 }
 // O que entra na OS (gravado pelo almoxarifado ao fornecer e copiado para a OS no "Recebi")
 export interface SupplyOsEntry {
@@ -571,6 +572,7 @@ export interface SupplyRequest {
   techSr?: string;       // matrícula enquanto o pedido aparece para o técnico (índice esparso)
   srConf?: string;       // gerência enquanto aguarda a confirmação (índice esparso)
   srStore?: string;      // gerência enquanto aguarda o almoxarifado (índice esparso)
+  suppliedAt?: string;   // data/hora do fornecimento (Lote 3: relatório de saídas; índice esparso gerência + empresa + suppliedAt)
 }
 // Insumos recebidos de uma OS (coleção "orderSupplies", id = id da OS): fora da OS para não se perderem
 // quando a OS é regravada inteira (preventiva) e para as listas continuarem leves
@@ -672,6 +674,20 @@ export interface Material {
   stock?: Record<string, number>; // id do almoxarifado -> quantidade
   stockTotal?: number;
   stockAt?: string;               // "AAAA-MM-DD" da planilha
+}
+
+// SALDO DO CONTRATO DE INSUMOS (Lote 3; coleção "supplyBalances", id = id do item do contrato em "supplies").
+// Separado do item para o técnico não ler o saldo e para cada movimento não chegar à cópia guardada nos celulares.
+// Saldo = contratado − fornecido − aprovado que ainda está no almoxarifado (reservado).
+export interface SupplyBalance {
+  id: string;
+  company: string;
+  code: string;
+  contractQty: number;   // quantidade total do contrato (planilha do contrato / aditivo)
+  suppliedQty: number;   // já fornecido pelo almoxarifado
+  reservedQty: number;   // aprovado pelo administrativo, aguardando o almoxarifado
+  qtyHistory?: { qty: number; at: string; by: string; reason: string }[]; // quantidade total a cada importação
+  updatedAt: string;
 }
 
 // CICLO DE PREVENTIVAS (por gerência)

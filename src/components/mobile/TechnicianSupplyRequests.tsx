@@ -7,12 +7,12 @@ import {
   dbCreateSupplyRequest,
   dbGetCompanies,
   dbGetMyWorkOrders,
-  dbGetSupplies,
+  dbGetSupplyContract,
   dbReceiveSupplyRequest,
   formatSupplyQty,
   parseQty,
   SR_STATUS_LABEL,
-  suppliesSyncStatus
+  supplyContractSyncStatus
 } from '../../db/firebase';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import { useSyncVersion } from '../../utils/useSyncVersion';
@@ -20,8 +20,9 @@ import { useSyncVersion } from '../../utils/useSyncVersion';
 // PEDIDO DE INSUMOS (Fase 8C-2) — aba Solicitações do celular, seção "Insumos".
 // Só aparece para técnico de empresa marcada no cadastro ("Técnicos pedem insumos").
 // O pedido é para uma OS aberta dele (chamado GLPI em andamento, pendente ou contestado, ou preventiva aberta) da empresa
-// marcada, com o nº do GLPI (chamado: vem da OS; preventiva: digitado). A lista de insumos é a da gerência + empresa da OS,
-// guardada no aparelho em tempo real. Depois de fornecido, "Recebi" põe os insumos na OS.
+// marcada, com o nº do GLPI (chamado: vem da OS; preventiva: digitado). A lista de insumos é o contrato da empresa da OS
+// (Lote 3: uma lista para todas as gerências; o técnico não vê o saldo), guardada no aparelho em tempo real.
+// O administrativo aprova (pode diminuir a quantidade); depois de fornecido, "Recebi" põe os insumos na OS.
 
 interface OrderOption {
   key: string;
@@ -126,18 +127,18 @@ export default function TechnicianSupplyRequests({
   const order = options.find((o) => o.key === orderKey) || null;
   const glpi = order?.kind === 'os' ? order.glpi : glpiText.replace(/\D/g, '');
 
-  // Lista de insumos da gerência + empresa da OS (cópia do aparelho em tempo real; R$ 0,00 não pode ser usado)
+  // Contrato de insumos da empresa da OS (cópia do aparelho em tempo real; sem saldo — quem vê o saldo é o administrativo)
   const supVersion = useSyncVersion('supplies');
   const loadCatalog = (silent: boolean) => {
     if (!order) return;
-    const { unit, company } = order;
-    const tag = `${unit}|${company}`;
+    const { company } = order;
+    const tag = company;
     if (!silent) setLoadingCatalog(true);
-    dbGetSupplies([unit], false, company)
+    dbGetSupplyContract(company)
       .then((l) => {
         if (catalogFor.current !== tag) return;
-        setCatalog(l.filter((m) => m.unit === unit && m.company === company && m.cost > 0));
-        const st = suppliesSyncStatus(unit, company);
+        setCatalog(l);
+        const st = supplyContractSyncStatus(company);
         setCatalogInfo({ total: l.length, error: st?.error, code: st?.code });
       })
       .catch((err) => {
@@ -150,24 +151,23 @@ export default function TechnicianSupplyRequests({
       });
   };
   useEffect(() => {
-    catalogFor.current = order ? `${order.unit}|${order.company}` : '';
+    catalogFor.current = order ? order.company : '';
     setCatalog([]);
     setCatalogInfo(null);
     if (order) loadCatalog(false);
-  }, [order?.unit, order?.company]);
+  }, [order?.company]);
   useEffect(() => {
     if (supVersion > 0) loadCatalog(true);
   }, [supVersion]);
   const catalogLine = (() => {
     if (!order || loadingCatalog || !catalogInfo) return null;
-    const where = `${order.unit} · ${companyNames([order.company], companyList) || order.company}`;
+    const where = companyNames([order.company], companyList) || order.company;
     if (catalogInfo.error && catalogInfo.code === 'permission-denied')
       return { bad: true, text: `O banco não permitiu ler os insumos da ${where}. Avise o planejador.` };
     const n = catalog.length;
-    const noValue = Math.max(0, catalogInfo.total - n);
-    const base = `${n} ${n === 1 ? 'insumo disponível' : 'insumos disponíveis'} (${where})${noValue ? ` · ${noValue} sem valor (não aparecem)` : ''}`;
+    const base = `${n} ${n === 1 ? 'insumo' : 'insumos'} no contrato (${where})`;
     if (catalogInfo.error) return { bad: true, text: `${base} · não foi possível atualizar a lista: ${catalogInfo.error}` };
-    return { bad: n === 0, text: n === 0 && catalogInfo.total === 0 ? `Nenhum insumo cadastrado para ${where}.` : `${base} · atualiza sozinho` };
+    return { bad: n === 0, text: n === 0 ? `Nenhum contrato de insumos importado para ${where}.` : `${base} · atualiza sozinho` };
   })();
 
   const matches = useMemo(() => {
@@ -403,6 +403,12 @@ export default function TechnicianSupplyRequests({
               {r.items.map((it) => (
                 <li key={it.supplyId} className="text-xs">
                   • {it.description} — {formatSupplyQty(it.qty)} {it.measureUnit}
+                  {r.status === 'Confirmado' && it.qtyApproved !== undefined && it.qtyApproved < it.qty && (
+                    <span className="font-bold text-amber-600">
+                      {' '}
+                      · {it.qtyApproved > 0 ? `aprovado ${formatSupplyQty(it.qtyApproved)}` : 'não aprovado'}
+                    </span>
+                  )}
                   {r.status === 'Fornecido' && it.qtySupplied !== undefined && (
                     <span className={`font-bold ${it.qtySupplied < it.qty ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {' '}
@@ -414,7 +420,7 @@ export default function TechnicianSupplyRequests({
             </ul>
             {(r.status === 'Pendente' || r.status === 'Confirmado') && (
               <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> {r.status === 'Pendente' ? 'Aguardando a confirmação do administrativo.' : 'Confirmado: aguardando o almoxarifado.'}
+                <Clock className="w-3.5 h-3.5" /> {r.status === 'Pendente' ? 'Aguardando a aprovação do administrativo.' : 'Aprovado: aguardando o almoxarifado.'}
               </p>
             )}
             {r.status === 'Fornecido' && (

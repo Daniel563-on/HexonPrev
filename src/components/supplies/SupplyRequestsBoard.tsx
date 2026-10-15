@@ -1,29 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, CheckCircle2, XCircle, Clock, PackageCheck, Warehouse as WarehouseIcon } from 'lucide-react';
-import { Company, HexonUser, SupplyRequest, SupplyRequestStatus } from '../../types';
+import { Search, CheckCircle2, XCircle, Clock, PackageCheck, Warehouse as WarehouseIcon, AlertTriangle } from 'lucide-react';
+import { Company, HexonUser, SupplyBalance, SupplyRequest, SupplyRequestStatus } from '../../types';
 import {
-  dbConfirmSupplyRequest,
+  balanceSaldo,
+  dbApproveSupplyRequest,
   dbGetCompanies,
   dbGetManagements,
+  dbGetSupplyBalancesByIds,
   dbGetSupplyRequestsPage,
   dbRejectSupplyRequest,
   dbSupplySupplyRequest,
   formatSupplyQty,
   isCompanyVisible,
+  itemApprovedQty,
   parseQty,
   SR_STATUS_LABEL
 } from '../../db/firebase';
 
 // PEDIDOS DE INSUMOS NO COMPUTADOR (Fase 8C-2) — uma tela, dois modos:
-// - "confirm" (Solicitações › Insumos): o administrativo confirma (vai para o almoxarifado) ou reprova com motivo.
-// - "store" (menu Almoxarifado): o almoxarifado fornece (quantidade de cada item; já vem a pedida; 0 = não fornecido)
-//   ou recusa com motivo. O GLPI aparece em destaque.
+// - "confirm" (Solicitações › Insumos): o administrativo APROVA vendo o saldo do contrato (Lote 3; pode diminuir a
+//   quantidade de cada item, nunca acima do saldo — o aprovado fica reservado) ou reprova com motivo.
+// - "store" (menu Almoxarifado): o almoxarifado fornece exatamente o aprovado (abate do saldo) ou recusa com motivo
+//   (o aprovado volta ao saldo). O GLPI aparece em destaque.
 // A situação "da vez" (Pendente / Confirmado) chega em tempo real (lista do App); as outras vêm do banco em páginas de 20.
 
 type Mode = 'confirm' | 'store';
 const FILTERS: Record<Mode, { key: SupplyRequestStatus; label: string }[]> = {
   confirm: [
-    { key: 'Pendente', label: 'Aguardando confirmação' },
+    { key: 'Pendente', label: 'Aguardando aprovação' },
     { key: 'Confirmado', label: 'No almoxarifado' },
     { key: 'Fornecido', label: 'Aguardando recebimento' },
     { key: 'Recebido', label: 'Recebidos' },
@@ -47,7 +51,6 @@ const STATUS_STYLE: Record<string, string> = {
 
 interface Work {
   id: string;
-  supplied: string[];
   note: string;
   rejecting: boolean;
   reason: string;
@@ -66,7 +69,7 @@ export default function SupplyRequestsBoard({
   scopeUnits: string[] | null;         // null = todas
   visibleCompanies?: string[] | null;  // null = todas as das gerências que vê
   userProfile: HexonUser;
-  canAct: boolean;                     // confirmar (modo confirm) ou fornecer (modo store)
+  canAct: boolean;                     // aprovar (modo confirm) ou fornecer (modo store)
 }) {
   const liveStatus: SupplyRequestStatus = mode === 'confirm' ? 'Pendente' : 'Confirmado';
   const [units, setUnits] = useState<string[]>(scopeUnits || []);
@@ -83,6 +86,10 @@ export default function SupplyRequestsBoard({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [done, setDone] = useState<Record<string, true>>({}); // resolvidos nesta tela (saem da lista da vez na hora)
+  // Aprovação (Lote 3): saldo do contrato de cada item dos pedidos aguardando e a quantidade a aprovar de cada pedido
+  const [bal, setBal] = useState<Map<string, SupplyBalance | null>>(new Map());
+  const [balReady, setBalReady] = useState(false);
+  const [appr, setAppr] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     dbGetCompanies().then(setCompanies).catch(() => {});
@@ -131,6 +138,30 @@ export default function SupplyRequestsBoard({
     );
   }, [filter, live, page, unit, company, search, done, visibleCompanies]);
 
+  // Saldo dos itens dos pedidos aguardando aprovação (1 leitura por item; guardado 30 s)
+  const approving = mode === 'confirm' && canAct && filter === 'Pendente';
+  const balIds = approving ? Array.from(new Set(liveOfUnit.flatMap((r) => r.items.map((i) => i.supplyId)))).sort() : [];
+  const loadBal = async (force = false) => {
+    if (!balIds.length) return;
+    try {
+      setBal(await dbGetSupplyBalancesByIds(balIds, force));
+      setBalReady(true);
+    } catch (err: any) {
+      setMsg({ id: '', ok: false, text: `Não foi possível ler o saldo do contrato: ${err?.message || err}` });
+    }
+  };
+  useEffect(() => {
+    loadBal(false);
+  }, [balIds.join('|')]);
+  const saldoOf = (id: string) => balanceSaldo(bal.get(id));
+  // Quantidade sugerida: a pedida, limitada ao saldo (sem saldo / fora do contrato = 0)
+  const suggested = (r: SupplyRequest) =>
+    r.items.map((it) => {
+      const s = saldoOf(it.supplyId);
+      return formatSupplyQty(s === null ? 0 : Math.max(0, Math.min(it.qty, s)));
+    });
+  const apprOf = (r: SupplyRequest) => appr[r.id] || (balReady ? suggested(r) : r.items.map(() => ''));
+
   const by = { name: userProfile.name, matricula: userProfile.matricula };
   const finish = (r: SupplyRequest, text: string) => {
     setDone({ ...done, [r.id]: true });
@@ -149,28 +180,55 @@ export default function SupplyRequestsBoard({
     }
   };
 
-  const confirm = (r: SupplyRequest) => run(r, () => dbConfirmSupplyRequest(r, by), `${r.number} confirmado: foi para o almoxarifado.`);
-  const reject = (r: SupplyRequest) =>
-    run(r, () => dbRejectSupplyRequest(r, work?.reason || '', by), `${r.number} ${mode === 'confirm' ? 'reprovado' : 'recusado'}: o técnico vê o motivo.`);
-  const supply = (r: SupplyRequest) => {
-    if (!work) return;
-    const supplied = work.supplied.map(parseQty);
-    if (supplied.some((q) => !Number.isFinite(q) || q < 0)) return setMsg({ id: r.id, ok: false, text: 'Confira as quantidades fornecidas (0 = não fornecido).' });
-    const over = r.items.find((it, i) => supplied[i] > it.qty);
-    if (over) return setMsg({ id: r.id, ok: false, text: `A quantidade fornecida de "${over.description}" é maior que a pedida.` });
-    return run(r, () => dbSupplySupplyRequest(r, supplied, work.note, by), `${r.number} fornecido: o técnico confirma o recebimento e os insumos entram na OS.`);
+  const approve = async (r: SupplyRequest) => {
+    const qs = apprOf(r).map(parseQty);
+    if (qs.some((q) => !Number.isFinite(q) || q < 0)) return setMsg({ id: r.id, ok: false, text: 'Confira as quantidades a aprovar (0 = não aprovado).' });
+    const over = r.items.find((it, i) => qs[i] > it.qty);
+    if (over) return setMsg({ id: r.id, ok: false, text: `A quantidade aprovada de "${over.description}" é maior que a pedida.` });
+    const noSaldo = r.items.find((it, i) => {
+      const s = saldoOf(it.supplyId);
+      return qs[i] > 0 && (s === null || qs[i] > s + 1e-9);
+    });
+    if (noSaldo) {
+      const s = saldoOf(noSaldo.supplyId);
+      return setMsg({
+        id: r.id,
+        ok: false,
+        text: s === null ? `"${noSaldo.description}" não está no contrato da empresa: aprove 0.` : `Não dá para aprovar acima do saldo: "${noSaldo.description}" tem ${formatSupplyQty(Math.max(0, s))} ${noSaldo.measureUnit}.`
+      });
+    }
+    if (qs.every((q) => q === 0)) return setMsg({ id: r.id, ok: false, text: 'Nenhum item aprovado: use "Reprovar" e informe o motivo.' });
+    setBusy(true);
+    try {
+      await dbApproveSupplyRequest(r, qs, by);
+      finish(r, `${r.number} aprovado: foi para o almoxarifado (o aprovado ficou reservado no saldo).`);
+      loadBal(true);
+    } catch (err: any) {
+      setMsg({ id: r.id, ok: false, text: err?.message || String(err) });
+      loadBal(true); // saldo mudou (outra aprovação ao mesmo tempo): mostra o de agora
+    } finally {
+      setBusy(false);
+    }
   };
+  const reject = (r: SupplyRequest) =>
+    run(
+      r,
+      () => dbRejectSupplyRequest(r, work?.reason || '', by),
+      mode === 'confirm' ? `${r.number} reprovado: o técnico vê o motivo.` : `${r.number} recusado: o aprovado voltou ao saldo e o técnico vê o motivo.`
+    );
+  const supply = (r: SupplyRequest) =>
+    run(r, () => dbSupplySupplyRequest(r, work?.note || '', by), `${r.number} fornecido (abatido do saldo): o técnico confirma o recebimento e os insumos entram na OS.`);
   const startWork = (r: SupplyRequest, rejecting = false) => {
     setMsg(null);
-    setWork({ id: r.id, supplied: r.items.map((i) => formatSupplyQty(i.qty)), note: '', rejecting, reason: '' });
+    setWork({ id: r.id, note: '', rejecting, reason: '' });
   };
 
   const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
   const title = mode === 'confirm' ? 'Pedidos de insumos' : 'Almoxarifado — insumos';
   const intro =
     mode === 'confirm'
-      ? 'Insumos pedidos pelos técnicos para as OS deles, com o nº do GLPI. Confirme para enviar ao almoxarifado, ou reprove com o motivo. Depois do fornecimento, o "Recebi" do técnico lança os insumos na OS.'
-      : 'Pedidos de insumos confirmados pelo administrativo. Informe a quantidade fornecida de cada item (pode ser menor que a pedida) ou recuse com o motivo. O técnico confirma o recebimento e os insumos entram na OS.';
+      ? 'Insumos pedidos pelos técnicos para as OS deles, com o nº do GLPI. Aprove vendo o saldo do contrato (pode diminuir a quantidade de cada item; o aprovado fica reservado e vai para o almoxarifado), ou reprove com o motivo. Depois do fornecimento, o "Recebi" do técnico lança os insumos na OS.'
+      : 'Pedidos de insumos aprovados pelo administrativo. Forneça exatamente o aprovado (abate do saldo do contrato) ou recuse com o motivo (o aprovado volta ao saldo). O técnico confirma o recebimento e os insumos entram na OS.';
 
   return (
     <div className="space-y-5 font-sans">
@@ -248,47 +306,126 @@ export default function SupplyRequestsBoard({
                 </div>
               </div>
 
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-[10px] uppercase text-slate-400 text-left">
-                    <th className="py-1 pr-2">Código</th>
-                    <th className="py-1 pr-2">Insumo</th>
-                    <th className="py-1 pr-2 text-right">Pedido</th>
-                    {showSupplied && <th className="py-1 text-right">Fornecido</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.items.map((it, i) => (
-                    <tr key={it.supplyId} className="border-t border-slate-100">
-                      <td className="py-1.5 pr-2 font-mono text-slate-500">{it.code}</td>
-                      <td className="py-1.5 pr-2 font-semibold text-slate-800">{it.description}</td>
-                      <td className="py-1.5 pr-2 text-right whitespace-nowrap">
-                        {formatSupplyQty(it.qty)} {it.measureUnit}
-                      </td>
-                      {mode === 'store' && w && !w.rejecting ? (
-                        <td className="py-1.5 text-right">
-                          <input
-                            value={w.supplied[i]}
-                            onChange={(e) => setWork({ ...w, supplied: w.supplied.map((x, j) => (j === i ? e.target.value : x)) })}
-                            inputMode="decimal"
-                            aria-label={`Fornecido de ${it.description}`}
-                            className="w-20 px-2 py-1 border border-slate-300 rounded text-right font-bold"
-                          />
-                        </td>
-                      ) : (
-                        showSupplied && (
-                          <td className={`py-1.5 text-right font-bold whitespace-nowrap ${(it.qtySupplied ?? 0) < it.qty ? 'text-amber-600' : 'text-emerald-700'}`}>
-                            {formatSupplyQty(it.qtySupplied ?? 0)} {it.measureUnit}
-                          </td>
-                        )
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {(() => {
+                const editing = approving && r.status === 'Pendente';
+                const qs = editing ? apprOf(r) : [];
+                const storeView = mode === 'store' && r.status === 'Confirmado';
+                const hasApproved = r.items.some((it) => it.qtyApproved !== undefined);
+                const showApproved = !editing && !storeView && hasApproved;
+                const showSupplied = r.status === 'Fornecido' || r.status === 'Recebido';
+                const list = storeView ? r.items.filter((it) => itemApprovedQty(it) > 0) : r.items;
+                const notApproved = storeView ? r.items.filter((it) => itemApprovedQty(it) <= 0) : [];
+                const less = editing
+                  ? r.items
+                      .map((it, i) => ({ it, q: parseQty(qs[i]) }))
+                      .filter(({ it, q }) => Number.isFinite(q) && q < it.qty)
+                  : [];
+                return (
+                  <>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[10px] uppercase text-slate-400 text-left">
+                          <th className="py-1 pr-2">Item</th>
+                          <th className="py-1 pr-2">Insumo</th>
+                          <th className="py-1 pr-2 text-right">Pedido</th>
+                          {editing && <th className="py-1 pr-2 text-right">Saldo do contrato</th>}
+                          {editing && <th className="py-1 text-right">Aprovar</th>}
+                          {storeView && <th className="py-1 text-right">A fornecer (aprovado)</th>}
+                          {showApproved && <th className="py-1 pr-2 text-right">Aprovado</th>}
+                          {showSupplied && <th className="py-1 text-right">Fornecido</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {list.map((it) => {
+                          const i = r.items.indexOf(it);
+                          const saldo = editing ? saldoOf(it.supplyId) : null;
+                          const q = editing ? parseQty(qs[i]) : NaN;
+                          return (
+                            <tr key={it.supplyId} className="border-t border-slate-100">
+                              <td className="py-1.5 pr-2 font-mono text-slate-500">{it.code}</td>
+                              <td className="py-1.5 pr-2 font-semibold text-slate-800">{it.description}</td>
+                              <td className={`py-1.5 pr-2 text-right whitespace-nowrap ${storeView ? 'text-slate-500' : ''}`}>
+                                {formatSupplyQty(it.qty)} {it.measureUnit}
+                              </td>
+                              {editing && (
+                                <td
+                                  className={`py-1.5 pr-2 text-right whitespace-nowrap font-black ${
+                                    !balReady ? 'text-slate-400' : saldo === null || saldo <= 0 ? 'text-rose-600' : saldo < it.qty ? 'text-amber-700' : 'text-emerald-700'
+                                  }`}
+                                >
+                                  {!balReady ? '…' : saldo === null ? 'fora do contrato' : saldo <= 0 ? 'sem saldo' : `${formatSupplyQty(saldo)} ${it.measureUnit}`}
+                                </td>
+                              )}
+                              {editing && (
+                                <td className="py-1.5 text-right">
+                                  <input
+                                    value={qs[i]}
+                                    disabled={!balReady}
+                                    onChange={(e) => setAppr({ ...appr, [r.id]: qs.map((x, j) => (j === i ? e.target.value : x)) })}
+                                    inputMode="decimal"
+                                    aria-label={`Aprovar de ${it.description}`}
+                                    className={`w-20 px-2 py-1 border rounded text-right font-bold ${Number.isFinite(q) && q < it.qty ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                  />
+                                </td>
+                              )}
+                              {storeView && (
+                                <td className="py-1.5 text-right font-black text-slate-900 whitespace-nowrap">
+                                  {formatSupplyQty(itemApprovedQty(it))} {it.measureUnit}
+                                </td>
+                              )}
+                              {showApproved && (
+                                <td className={`py-1.5 pr-2 text-right whitespace-nowrap ${itemApprovedQty(it) < it.qty ? 'text-amber-600 font-bold' : 'text-slate-700'}`}>
+                                  {formatSupplyQty(itemApprovedQty(it))} {it.measureUnit}
+                                </td>
+                              )}
+                              {showSupplied && (
+                                <td className={`py-1.5 text-right font-bold whitespace-nowrap ${(it.qtySupplied ?? 0) < it.qty ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                  {formatSupplyQty(it.qtySupplied ?? 0)} {it.measureUnit}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {editing && balReady && less.length > 0 && (
+                      <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {less.length === r.items.length && less.every(({ q }) => q === 0) ? (
+                          <span>Nenhum item com quantidade a aprovar{r.items.every((it) => (saldoOf(it.supplyId) ?? 0) <= 0) ? ' (sem saldo no contrato)' : ''}: use "Reprovar" e informe o motivo.</span>
+                        ) : (
+                        <span>
+                          Aprovando menos que o pedido:{' '}
+                          {less.map(({ it, q }, k) => (
+                            <React.Fragment key={it.supplyId}>
+                              {k > 0 ? ' e ' : ''}
+                              {it.code}{' '}
+                              <b>
+                                {formatSupplyQty(q)} de {formatSupplyQty(it.qty)}
+                              </b>
+                              {(saldoOf(it.supplyId) ?? 0) <= 0 ? ' (sem saldo)' : ''}
+                            </React.Fragment>
+                          ))}
+                          . O técnico vê o que foi aprovado. Não dá para aprovar acima do saldo.
+                        </span>
+                        )}
+                      </div>
+                    )}
+                    {storeView && (
+                      <p className="text-[11px] text-slate-500">
+                        {r.confirmation ? `Aprovado por ${r.confirmation.by} em ${fmtDate(r.confirmation.at)}` : 'Aprovado'}
+                        {notApproved.length > 0 ? ` (${notApproved.map((it) => it.code).join(', ')} não ${notApproved.length === 1 ? 'aprovado' : 'aprovados'})` : ''}. O almoxarifado
+                        não muda as quantidades.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               {r.note && <p className="text-xs text-slate-600">Observação do técnico: {r.note}</p>}
 
-              {r.confirmation && <p className="text-[11px] text-slate-500">Confirmado por {r.confirmation.by} em {fmtDate(r.confirmation.at)}</p>}
+              {r.confirmation && !(mode === 'store' && r.status === 'Confirmado') && (
+                <p className="text-[11px] text-slate-500">Aprovado por {r.confirmation.by} em {fmtDate(r.confirmation.at)}</p>
+              )}
               {r.supply && (
                 <p className="text-xs text-slate-600 flex items-center gap-1.5">
                   <WarehouseIcon className="w-4 h-4 text-violet-600" /> Fornecido por {r.supply.by} em {fmtDate(r.supply.at)}
@@ -310,22 +447,27 @@ export default function SupplyRequestsBoard({
               {r.status === liveStatus && canAct && !w && (
                 <div className="flex flex-wrap gap-2">
                   {mode === 'confirm' ? (
-                    <button type="button" disabled={busy} onClick={() => confirm(r)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer disabled:opacity-50 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" /> {busy ? 'Salvando...' : 'Confirmar'}
+                    <button
+                      type="button"
+                      disabled={busy || !balReady}
+                      onClick={() => approve(r)}
+                      className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> {busy ? 'Salvando...' : 'Aprovar (vai ao almoxarifado)'}
                     </button>
                   ) : (
-                    <button type="button" onClick={() => startWork(r)} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black cursor-pointer flex items-center gap-1">
-                      <PackageCheck className="w-4 h-4" /> Fornecer
+                    <button type="button" onClick={() => startWork(r)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer flex items-center gap-1">
+                      <PackageCheck className="w-4 h-4" /> Fornecer — abate do saldo
                     </button>
                   )}
                   <button type="button" disabled={busy} onClick={() => startWork(r, true)} className="px-4 py-2 rounded-lg border border-rose-300 text-rose-700 text-xs font-black cursor-pointer flex items-center gap-1">
-                    <XCircle className="w-4 h-4" /> {mode === 'confirm' ? 'Reprovar' : 'Recusar'}
+                    <XCircle className="w-4 h-4" /> {mode === 'confirm' ? 'Reprovar' : 'Recusar (motivo)'}
                   </button>
                 </div>
               )}
               {r.status === liveStatus && !canAct && (
                 <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> {mode === 'confirm' ? 'Aguardando quem confirma os pedidos de insumos.' : 'Aguardando o almoxarifado.'}
+                  <Clock className="w-3.5 h-3.5" /> {mode === 'confirm' ? 'Aguardando quem aprova os pedidos de insumos.' : 'Aguardando o almoxarifado.'}
                 </p>
               )}
 
@@ -336,7 +478,7 @@ export default function SupplyRequestsBoard({
                     <input value={w.note} onChange={(e) => setWork({ ...w, note: e.target.value })} placeholder="Ex.: retirar no balcão 2" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800" />
                   </label>
                   <button type="button" disabled={busy} onClick={() => supply(r)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer disabled:opacity-50 flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4" /> {busy ? 'Salvando...' : 'Confirmar fornecimento'}
+                    <CheckCircle2 className="w-4 h-4" /> {busy ? 'Salvando...' : 'Confirmar fornecimento (abate do saldo)'}
                   </button>
                   <button type="button" disabled={busy} onClick={() => setWork(null)} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold cursor-pointer">
                     Cancelar
@@ -351,7 +493,7 @@ export default function SupplyRequestsBoard({
                       value={w.reason}
                       onChange={(e) => setWork({ ...w, reason: e.target.value })}
                       rows={2}
-                      placeholder={mode === 'confirm' ? 'Ex.: "o técnico não irá mais precisar do insumo"' : 'Ex.: "sem estoque"'}
+                      placeholder={mode === 'confirm' ? 'Ex.: "o técnico não irá mais precisar do insumo"' : 'Ex.: "sem estoque" (o aprovado volta ao saldo)'}
                       className="w-full px-3 py-2 bg-white border border-rose-300 rounded-lg text-xs font-semibold text-slate-800"
                     />
                   </label>

@@ -306,29 +306,94 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // 4j-1. INSUMOS (Fase 8C) — lista de cada gerência + empresa, igual à de materiais.
-    // Lê: quem tem "Ver insumos", "Cadastrar e importar insumos" ou "Visualizar Valores" (custo da OS) nas suas gerências
-    // e o técnico (só a gerência E a empresa dele).
-    // Altera: só quem tem "Cadastrar e importar insumos" (suas gerências); todo insumo tem empresa. Excluir: só o Super Administrador.
-    // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
+    // 4j-1. INSUMOS (Fase 8C) — lista de cada gerência + empresa (listas antigas) e, desde o Lote 3, o CONTRATO DE
+    // INSUMOS DA EMPRESA (gerência '*': uma lista para todas as gerências da empresa).
+    // Contrato — lê: o técnico (só o da empresa dele; sem o saldo, que fica em supplyBalances) e a equipe com alguma
+    // permissão de insumos ou "Visualizar Valores". Importa (contrato/aditivo: tudo): "Importar contrato e aditivos de
+    // insumos", só empresa que atua nas gerências do perfil (e, com "Empresas que vê" = as do usuário, só as dele).
+    // Corrige descrição/unidade: "Editar descrição e unidade dos insumos". Excluir: só o Super Administrador.
+    // Listas antigas por gerência: como antes. Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
+    function supStaffPerm(u, p) {
+      return osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'import_supplies_contract')
+        || osPerm(u, p, 'supplies_report') || osPerm(u, p, 'supply_requests_view') || osPerm(u, p, 'supply_requests_confirm')
+        || osPerm(u, p, 'supply_requests_supply');
+    }
     function supReadOk(u, p) {
-      return (osSees(u, p)
-          && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
-              || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', []))))
-        // Técnico local (Lote 2): os da empresa dele, de qualquer gerência (o insumo sai da gerência da OS)
-        || (isLocalTechUser(u) && resource.data.get('company', '') in u.get('companies', []));
+      return resource.data.get('unit', '') == '*'
+        ? ((u.perfil != 'Profissional' && (supStaffPerm(u, p) || osPerm(u, p, 'view_costs')))
+            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])))
+        : ((osSees(u, p)
+            && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
+                || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', []))))
+          // Técnico local (Lote 2): os da empresa dele, de qualquer gerência (o insumo sai da gerência da OS)
+          || (isLocalTechUser(u) && resource.data.get('company', '') in u.get('companies', [])));
+    }
+    // Empresa do contrato: atua numa gerência do perfil (perfil que vê todas: qualquer uma) e, se o perfil vê só as
+    // empresas do usuário, é uma delas
+    function supCompanyOk(u, p, c) {
+      let scope = p.get('unitScope', 'own');
+      let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
+      let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
+      return c is string && c.size() > 0
+        && (all || get(/databases/$(database)/documents/companies/$(c)).data.get('units', []).hasAny(mine))
+        && (u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || p.get('companyScope', 'all') == 'all' || c in u.get('companies', []));
+    }
+    function supContractWriteOk(u, p) {
+      let d = request.resource.data;
+      return u.perfil != 'Profissional' && d.get('unit', '') == '*'
+        && (resource == null || (resource.data.get('unit', '') == '*' && resource.data.company == d.company))
+        && supCompanyOk(u, p, d.get('company', ''))
+        && (osPerm(u, p, 'import_supplies_contract')
+            || (resource != null && osPerm(u, p, 'manage_supplies')
+                && d.diff(resource.data).affectedKeys().hasOnly(['description', 'measureUnit', 'updatedAt', 'syncAt'])));
     }
     function supWriteOk(u, p) {
       let scope = p.get('unitScope', 'own');
       let all = u.perfil == 'Super Administrador' || p.get('kind', '') == 'total' || scope == 'all' || (scope == 'own' && u.get('gerencia', '') == 'Todas');
       let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
-      return osPerm(u, p, 'manage_supplies')
-        && request.resource.data.company is string && request.resource.data.company.size() > 0
-        && (all || (request.resource.data.unit in mine && (resource == null || resource.data.unit in mine)));
+      return (request.resource.data.get('unit', '') == '*' || (resource != null && resource.data.get('unit', '') == '*'))
+        ? supContractWriteOk(u, p)
+        : (osPerm(u, p, 'manage_supplies')
+          && request.resource.data.company is string && request.resource.data.company.size() > 0
+          && (all || (request.resource.data.unit in mine && (resource == null || resource.data.unit in mine))));
     }
     match /supplies/{supplyId} {
       allow read: if isStaff() && supReadOk(me(), osProfileOf(me()));
       allow create, update: if isStaff() && supWriteOk(me(), osProfileOf(me()));
+      allow delete: if isSuperAdmin();
+    }
+
+    // 4j-1b. SALDO DO CONTRATO DE INSUMOS (Lote 3; id = id do item do contrato em "supplies"). O técnico NÃO lê.
+    // Lê: a equipe com alguma permissão de insumos. Cria / muda a quantidade total: quem importa o contrato (nunca abaixo
+    // do já fornecido + aprovado; o saldo nasce junto com o item). Movimento: quem aprova (reserva) e quem fornece
+    // (reserva → fornecido) ou recusa (devolve) — só reserva e fornecido mudam, o fornecido só cresce e a soma nunca passa
+    // do contratado. Excluir: só o Super Administrador.
+    function sbMoveOk(u, p) {
+      let d = request.resource.data;
+      return u.perfil != 'Profissional'
+        && (osPerm(u, p, 'supply_requests_confirm') || osPerm(u, p, 'supply_requests_supply'))
+        && d.diff(resource.data).affectedKeys().hasOnly(['reservedQty', 'suppliedQty', 'updatedAt'])
+        && d.reservedQty is number && d.suppliedQty is number
+        && d.reservedQty >= 0 && d.suppliedQty >= resource.data.suppliedQty
+        && d.suppliedQty + d.reservedQty <= d.contractQty + 0.0005;
+    }
+    function sbImportOk(u, p, id) {
+      let d = request.resource.data;
+      return u.perfil != 'Profissional' && osPerm(u, p, 'import_supplies_contract')
+        && supCompanyOk(u, p, d.get('company', ''))
+        && d.contractQty is number && d.contractQty >= 0
+        && (resource == null
+            ? (d.keys().hasOnly(['company', 'code', 'contractQty', 'suppliedQty', 'reservedQty', 'qtyHistory', 'updatedAt'])
+               && d.suppliedQty == 0 && d.reservedQty == 0
+               && getAfter(/databases/$(database)/documents/supplies/$(id)).data.get('unit', '') == '*'
+               && getAfter(/databases/$(database)/documents/supplies/$(id)).data.get('company', '') == d.company)
+            : (d.diff(resource.data).affectedKeys().hasOnly(['contractQty', 'qtyHistory', 'updatedAt'])
+               && d.contractQty + 0.0005 >= d.suppliedQty + d.reservedQty));
+    }
+    match /supplyBalances/{balId} {
+      allow read: if isStaff() && me().perfil != 'Profissional' && supStaffPerm(me(), osProfileOf(me()));
+      allow create: if isStaff() && sbImportOk(me(), osProfileOf(me()), balId);
+      allow update: if isStaff() && (sbMoveOk(me(), osProfileOf(me())) || sbImportOk(me(), osProfileOf(me()), balId));
       allow delete: if isSuperAdmin();
     }
 
@@ -764,7 +829,8 @@ service cloud.firestore {
     function srStaffSees(u, p) {
       let scope = p.get('unitScope', 'own');
       let mine = scope == 'selected' ? p.get('units', []) : [u.get('gerencia', '')];
-      return (osPerm(u, p, 'supply_requests_view') || osPerm(u, p, 'supply_requests_confirm') || osPerm(u, p, 'supply_requests_supply'))
+      return (osPerm(u, p, 'supply_requests_view') || osPerm(u, p, 'supply_requests_confirm') || osPerm(u, p, 'supply_requests_supply')
+              || osPerm(u, p, 'supplies_report'))
         && (osSees(u, p) || resource.data.get('srConf', '') in mine || resource.data.get('srStore', '') in mine);
     }
     function srReadOk(u, p) {
@@ -775,9 +841,10 @@ service cloud.firestore {
     }
     function srUpdateOk(u, p) {
       return
-        // CONFIRMAR (administrativo): vai para o almoxarifado
+        // APROVAR (administrativo; Lote 3: com a quantidade aprovada de cada item, reservada no saldo na mesma transação)
         (resource.data.status == 'Pendente' && request.resource.data.status == 'Confirmado'
-          && srChanged().hasOnly(['status', 'confirmation', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && srChanged().hasOnly(['status', 'items', 'confirmation', 'srConf', 'srStore', 'updatedAt', 'timeline'])
+          && request.resource.data.items.size() == resource.data.items.size()
           && !('srConf' in request.resource.data) && request.resource.data.get('srStore', '') == resource.data.unit
           && request.resource.data.confirmation.byMatricula == u.matricula
           && osPerm(u, p, 'supply_requests_confirm') && osSees(u, p))
@@ -788,10 +855,12 @@ service cloud.firestore {
           && request.resource.data.rejection.byMatricula == u.matricula
           && request.resource.data.rejection.get('reason', '').size() >= 3
           && osPerm(u, p, resource.data.status == 'Pendente' ? 'supply_requests_confirm' : 'supply_requests_supply') && osSees(u, p))
-        // FORNECER (almoxarifado): quantidade de cada item e o que entra na OS
+        // FORNECER (almoxarifado): o aprovado de cada item (abatido do saldo na mesma transação), o que entra na OS e a data
+        // do fornecimento (relatório de saídas)
         || (resource.data.status == 'Confirmado' && request.resource.data.status == 'Fornecido'
-          && srChanged().hasOnly(['status', 'items', 'supply', 'osEntry', 'srStore', 'updatedAt', 'timeline'])
+          && srChanged().hasOnly(['status', 'items', 'supply', 'osEntry', 'suppliedAt', 'srStore', 'updatedAt', 'timeline'])
           && !('srStore' in request.resource.data)
+          && request.resource.data.get('suppliedAt', '') is string && request.resource.data.get('suppliedAt', '').size() > 0
           && request.resource.data.items.size() == resource.data.items.size()
           && request.resource.data.supply.byMatricula == u.matricula
           && request.resource.data.osEntry.number == resource.data.number

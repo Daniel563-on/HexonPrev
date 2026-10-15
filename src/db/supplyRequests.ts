@@ -18,17 +18,21 @@ import {
 } from './guard';
 import { MaterialRequestEvent, OrderSupplies, SupplyOsEntry, SupplyRequest, SupplyRequestItem, SupplyRequestStatus } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
+import { clearSupplyBalancesCache, round3 } from './supplies';
 
 // PEDIDOS DE INSUMOS (Fase 8C-2) — coleção "supplyRequests" (id = número PI-AAAA-NNNN)
 // e o contador do número por ano ("counters/supplyRequests_AAAA").
 // Fluxo: Pendente (aguarda o administrativo) → Confirmado (aguarda o almoxarifado) → Fornecido (aguarda o técnico)
 //        → Recebido: os insumos fornecidos entram na OS (registro "orderSupplies/{id da OS}", no mesmo pacote).
 //        O administrativo (Pendente) ou o almoxarifado (Confirmado) podem reprovar com motivo → o técnico toca em "Ciente".
+// Lote 3 (contrato de insumos da empresa, src/db/supplies.ts): o administrativo APROVA vendo o saldo e pode diminuir a
+// quantidade de cada item (qtyApproved) — o aprovado fica reservado no saldo; o almoxarifado fornece exatamente o
+// aprovado (abate do saldo) ou recusa (a reserva volta ao saldo). Tudo em transação (dois ao mesmo tempo não passam do saldo).
 // Campos de controle (índices esparsos): techSr = matrícula enquanto aparece para o técnico;
 // srConf = gerência enquanto aguarda a confirmação; srStore = gerência enquanto aguarda o almoxarifado.
 
 export const SR_STATUS_LABEL: Record<SupplyRequestStatus, string> = {
-  Pendente: 'Aguardando confirmação',
+  Pendente: 'Aguardando aprovação',
   Confirmado: 'Aguardando almoxarifado',
   Fornecido: 'Aguardando recebimento',
   Recebido: 'Recebido (na OS)',
@@ -183,63 +187,163 @@ export async function dbGetSupplyRequestsPage(
 
 const reqRef = (id: string) => doc(dbInstance!, 'supplyRequests', id);
 
-// ADMINISTRATIVO: confirmar (vai para o almoxarifado)
-export async function dbConfirmSupplyRequest(req: SupplyRequest, by: Who): Promise<void> {
-  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  const now = new Date().toISOString();
-  await updateDoc(reqRef(req.id), {
-    status: 'Confirmado',
-    confirmation: { by: by.name, byMatricula: by.matricula, at: now },
-    srConf: deleteField(),
-    srStore: req.unit,
-    updatedAt: now,
-    timeline: arrayUnion(ev(by.name, 'Confirmado — enviado ao almoxarifado'))
+// Quantidade aprovada de cada item (pedidos aprovados antes do Lote 3 não têm: vale a pedida, sem reserva no saldo)
+export const itemApprovedQty = (it: SupplyRequestItem): number => (it.qtyApproved !== undefined ? it.qtyApproved : it.qty);
+const balRef = (id: string) => doc(dbInstance!, 'supplyBalances', id);
+// Soma por item do contrato (o mesmo insumo em duas linhas soma)
+function perSupply(items: SupplyRequestItem[], qtys: number[]): Map<string, { qty: number; it: SupplyRequestItem }> {
+  const m = new Map<string, { qty: number; it: SupplyRequestItem }>();
+  items.forEach((it, i) => {
+    const q = qtys[i] || 0;
+    if (q <= 0) return;
+    const cur = m.get(it.supplyId);
+    m.set(it.supplyId, { qty: round3((cur?.qty || 0) + q), it });
   });
+  return m;
+}
+const txErr = (err: any) => {
+  checkQuotaException(err);
+  clearSupplyBalancesCache();
+  return err;
+};
+
+// ADMINISTRATIVO: aprovar (vai para o almoxarifado) com a quantidade de cada item (pode ser menor que a pedida; 0 = não
+// aprovado). Confere o saldo do contrato e reserva o aprovado, na mesma transação.
+export async function dbApproveSupplyRequest(req: SupplyRequest, approved: number[], by: Who): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  if (approved.length !== req.items.length || approved.some((q) => !Number.isFinite(q) || q < 0)) throw new Error('Confira as quantidades aprovadas.');
+  const over = req.items.find((it, i) => approved[i] > it.qty);
+  if (over) throw new Error(`A quantidade aprovada de "${over.description}" é maior que a pedida.`);
+  if (approved.every((q) => q === 0)) throw new Error('Nenhum item aprovado: use "Reprovar" e informe o motivo.');
+  const db = dbInstance;
+  const now = new Date().toISOString();
+  try {
+    await runTransaction(db, async (tx) => {
+      const cur = await tx.get(reqRef(req.id));
+      if (!cur.exists() || cur.data().status !== 'Pendente') throw new Error('Este pedido já foi analisado por outra pessoa.');
+      const items = (cur.data() as SupplyRequest).items;
+      const need = perSupply(items, approved);
+      const bals = new Map<string, any>();
+      for (const id of need.keys()) {
+        const b = await tx.get(balRef(id));
+        bals.set(id, b.exists() ? b.data() : null);
+      }
+      for (const [id, { qty, it }] of need) {
+        const b = bals.get(id);
+        if (!b) throw new Error(`"${it.description}" (${it.code}) não está no contrato de insumos da empresa: aprove 0 ou reprove.`);
+        const saldo = round3((Number(b.contractQty) || 0) - (Number(b.suppliedQty) || 0) - (Number(b.reservedQty) || 0));
+        if (qty > saldo + 1e-9)
+          throw new Error(`Saldo insuficiente de "${it.description}" (${it.code}): o saldo agora é ${fmtQty(Math.max(0, saldo))} ${it.measureUnit}. Ajuste a quantidade.`);
+      }
+      for (const [id, { qty }] of need) tx.update(balRef(id), { reservedQty: round3((Number(bals.get(id).reservedQty) || 0) + qty), updatedAt: now });
+      const less = items.map((it, i) => (approved[i] < it.qty ? `${it.code}: ${fmtQty(approved[i])} de ${fmtQty(it.qty)}` : '')).filter(Boolean);
+      tx.update(reqRef(req.id), {
+        status: 'Confirmado',
+        items: items.map((it, i) => cleanUndefined({ ...it, qtyApproved: approved[i] })),
+        confirmation: { by: by.name, byMatricula: by.matricula, at: now },
+        srConf: deleteField(),
+        srStore: req.unit,
+        updatedAt: now,
+        timeline: arrayUnion(ev(by.name, 'Aprovado — enviado ao almoxarifado', less.length ? `Aprovado menos que o pedido: ${less.join('; ')}` : undefined))
+      });
+    });
+  } catch (err: any) {
+    throw txErr(err);
+  }
+  clearSupplyBalancesCache();
 }
 
-// REPROVAR: pelo administrativo (Pendente) ou recusa do almoxarifado (Confirmado); motivo obrigatório
+// REPROVAR: pelo administrativo (Pendente) ou recusa do almoxarifado (Confirmado; o aprovado volta ao saldo); motivo obrigatório
 export async function dbRejectSupplyRequest(req: SupplyRequest, reason: string, by: Who): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   const text = reason.trim();
   if (text.length < 3) throw new Error('Informe o motivo.');
   const stage = req.status === 'Pendente' ? 'confirmacao' : 'almoxarifado';
+  const db = dbInstance;
   const now = new Date().toISOString();
-  await updateDoc(reqRef(req.id), {
-    status: 'Reprovado',
-    rejection: { by: by.name, byMatricula: by.matricula, at: now, reason: text, stage },
-    ...(stage === 'confirmacao' ? { srConf: deleteField() } : { srStore: deleteField() }),
-    updatedAt: now,
-    timeline: arrayUnion(ev(by.name, stage === 'confirmacao' ? 'Reprovado' : 'Recusado pelo almoxarifado', text))
-  });
+  try {
+    await runTransaction(db, async (tx) => {
+      const cur = await tx.get(reqRef(req.id));
+      if (!cur.exists() || cur.data().status !== req.status) throw new Error('Este pedido já foi analisado por outra pessoa.');
+      const items = (cur.data() as SupplyRequest).items;
+      // Recusa do almoxarifado: devolve ao saldo o que estava reservado (aprovado no Lote 3)
+      const back = stage === 'almoxarifado' ? perSupply(items, items.map((it) => it.qtyApproved || 0)) : new Map();
+      const bals = new Map<string, any>();
+      for (const id of back.keys()) {
+        const b = await tx.get(balRef(id));
+        if (b.exists()) bals.set(id, b.data());
+      }
+      for (const [id, { qty }] of back) {
+        const b = bals.get(id);
+        if (b) tx.update(balRef(id), { reservedQty: Math.max(0, round3((Number(b.reservedQty) || 0) - qty)), updatedAt: now });
+      }
+      tx.update(reqRef(req.id), {
+        status: 'Reprovado',
+        rejection: { by: by.name, byMatricula: by.matricula, at: now, reason: text, stage },
+        ...(stage === 'confirmacao' ? { srConf: deleteField() } : { srStore: deleteField() }),
+        updatedAt: now,
+        timeline: arrayUnion(ev(by.name, stage === 'confirmacao' ? 'Reprovado' : 'Recusado pelo almoxarifado', text))
+      });
+    });
+  } catch (err: any) {
+    throw txErr(err);
+  }
+  clearSupplyBalancesCache();
 }
 
-// ALMOXARIFADO: fornecer (quantidade de cada item; 0 = não fornecido). O que entra na OS fica pronto aqui.
-export async function dbSupplySupplyRequest(req: SupplyRequest, supplied: number[], note: string, by: Who): Promise<void> {
+// ALMOXARIFADO: fornecer exatamente o aprovado (abate do saldo do contrato: sai da reserva e entra no fornecido).
+// O que entra na OS fica pronto aqui. Pedidos aprovados antes do Lote 3: fornece o pedido, sem mexer no saldo.
+export async function dbSupplySupplyRequest(req: SupplyRequest, note: string, by: Who): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
-  if (supplied.length !== req.items.length || supplied.some((q) => !Number.isFinite(q) || q < 0)) throw new Error('Confira as quantidades fornecidas.');
-  if (supplied.every((q) => q === 0)) throw new Error('Nenhum item fornecido: use "Recusar" e informe o motivo.');
+  const db = dbInstance;
   const now = new Date().toISOString();
-  const items = req.items.map((it, i) => ({ ...it, qtySupplied: supplied[i] }));
-  const osEntry: SupplyOsEntry = {
-    number: req.number,
-    glpi: req.glpi,
-    suppliedAt: now,
-    suppliedBy: by.name,
-    items: items
-      .filter((it) => (it.qtySupplied || 0) > 0)
-      .map((it) => ({ supplyId: it.supplyId, code: it.code, description: it.description, measureUnit: it.measureUnit, qty: it.qtySupplied as number }))
-  };
-  const partial = items.filter((it) => (it.qtySupplied || 0) < it.qty).map((it) => `${it.code}: ${fmtQty(it.qtySupplied || 0)} de ${fmtQty(it.qty)}`);
   const text = note.trim();
-  await updateDoc(reqRef(req.id), {
-    status: 'Fornecido',
-    items: items.map((it) => cleanUndefined(it)),
-    supply: cleanUndefined({ by: by.name, byMatricula: by.matricula, at: now, note: text || undefined }),
-    osEntry,
-    srStore: deleteField(),
-    updatedAt: now,
-    timeline: arrayUnion(ev(by.name, `Fornecido pelo almoxarifado (GLPI ${req.glpi})`, partial.length ? `Fornecido menos que o pedido: ${partial.join('; ')}` : text || undefined))
-  });
+  try {
+    await runTransaction(db, async (tx) => {
+      const cur = await tx.get(reqRef(req.id));
+      if (!cur.exists() || cur.data().status !== 'Confirmado') throw new Error('Este pedido já foi fornecido ou recusado por outra pessoa.');
+      const data = cur.data() as SupplyRequest;
+      const items = data.items.map((it) => ({ ...it, qtySupplied: itemApprovedQty(it) }));
+      if (items.every((it) => it.qtySupplied <= 0)) throw new Error('Nenhum item aprovado neste pedido: use "Recusar" e informe o motivo.');
+      const move = perSupply(data.items, data.items.map((it) => it.qtyApproved || 0));
+      const bals = new Map<string, any>();
+      for (const id of move.keys()) {
+        const b = await tx.get(balRef(id));
+        if (!b.exists()) throw new Error(`O item ${move.get(id)!.it.code} não está mais no contrato de insumos da empresa. Avise quem importa o contrato.`);
+        bals.set(id, b.data());
+      }
+      for (const [id, { qty }] of move) {
+        const b = bals.get(id);
+        tx.update(balRef(id), {
+          reservedQty: Math.max(0, round3((Number(b.reservedQty) || 0) - qty)),
+          suppliedQty: round3((Number(b.suppliedQty) || 0) + qty),
+          updatedAt: now
+        });
+      }
+      const osEntry: SupplyOsEntry = {
+        number: data.number,
+        glpi: data.glpi,
+        suppliedAt: now,
+        suppliedBy: by.name,
+        items: items
+          .filter((it) => it.qtySupplied > 0)
+          .map((it) => ({ supplyId: it.supplyId, code: it.code, description: it.description, measureUnit: it.measureUnit, qty: it.qtySupplied }))
+      };
+      tx.update(reqRef(req.id), {
+        status: 'Fornecido',
+        items: items.map((it) => cleanUndefined(it)),
+        supply: cleanUndefined({ by: by.name, byMatricula: by.matricula, at: now, note: text || undefined }),
+        osEntry,
+        suppliedAt: now,
+        srStore: deleteField(),
+        updatedAt: now,
+        timeline: arrayUnion(ev(by.name, `Fornecido pelo almoxarifado (GLPI ${data.glpi})`, text || undefined))
+      });
+    });
+  } catch (err: any) {
+    throw txErr(err);
+  }
+  clearSupplyBalancesCache();
 }
 
 // TÉCNICO: "Recebi" — o pedido vira Recebido e os insumos entram na OS (os dois no mesmo pacote)
@@ -325,3 +429,95 @@ export const orderSuppliesByRequestText = (os: OrderSupplies | null): string =>
     .join('\n');
 
 export const formatSupplyQty = fmtQty;
+
+// ===== RELATÓRIO DE SAÍDAS DE INSUMOS (Lote 3) =====
+// Uma linha por item fornecido: data, pedido, item, quantidade, gerência, OS, GLPI, técnico, quem aprovou e quem forneceu.
+// 1 busca por gerência (índice esparso gerência + empresa + suppliedAt), no período escolhido.
+export interface SupplyOutputRow {
+  suppliedAt: string;
+  number: string;
+  supplyId: string;
+  code: string;
+  description: string;
+  measureUnit: string;
+  qty: number;
+  unit: string;
+  company: string;
+  orderKind: 'preventiva' | 'os';
+  orderRef: string;      // "OS-2026-000123" ou "Preventiva #24117"
+  orderLabel: string;
+  glpi: string;
+  techName: string;
+  techMatricula: string;
+  suppliedBy: string;
+  approvedBy: string;
+  approvedAt: string;
+  status: SupplyRequestStatus;
+  receivedAt?: string;
+}
+
+const dayStartIso = (day: string) => new Date(`${day}T00:00:00`).toISOString();
+const nextDayIso = (day: string) => {
+  const d = new Date(`${day}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString();
+};
+
+export async function dbGetSupplyOutputs(units: string[], company: string, fromDay: string, toDay: string): Promise<SupplyOutputRow[]> {
+  if (!firebaseActive || !dbInstance || !company || units.length === 0) return [];
+  const db = dbInstance;
+  const from = dayStartIso(fromDay);
+  const to = nextDayIso(toDay);
+  try {
+    const parts = await Promise.all(
+      units.map((u) =>
+        getDocs(
+          query(
+            collection(db, 'supplyRequests'),
+            where('unit', '==', u),
+            where('company', '==', company),
+            where('suppliedAt', '>=', from),
+            where('suppliedAt', '<', to),
+            orderBy('suppliedAt')
+          )
+        )
+      )
+    );
+    const rows: SupplyOutputRow[] = [];
+    parts.forEach((snap) =>
+      mapDocs(snap).forEach((r) => {
+        if (!r.suppliedAt || (r.status !== 'Fornecido' && r.status !== 'Recebido')) return;
+        r.items.forEach((it) => {
+          const qty = it.qtySupplied || 0;
+          if (qty <= 0) return;
+          rows.push({
+            suppliedAt: r.suppliedAt!,
+            number: r.number,
+            supplyId: it.supplyId,
+            code: it.code,
+            description: it.description,
+            measureUnit: it.measureUnit,
+            qty,
+            unit: r.unit,
+            company: r.company,
+            orderKind: r.orderKind,
+            orderRef: String(r.orderLabel || '').split(' · ')[0] || r.orderId,
+            orderLabel: r.orderLabel,
+            glpi: r.glpi,
+            techName: r.techName,
+            techMatricula: r.techMatricula,
+            suppliedBy: r.supply?.by || '',
+            approvedBy: r.confirmation?.by || '',
+            approvedAt: r.confirmation?.at || '',
+            status: r.status,
+            receivedAt: r.receivedAt
+          });
+        });
+      })
+    );
+    return rows.sort((a, b) => b.suppliedAt.localeCompare(a.suppliedAt) || a.number.localeCompare(b.number) || a.code.localeCompare(b.code));
+  } catch (err: any) {
+    checkQuotaException(err);
+    throw err;
+  }
+}
