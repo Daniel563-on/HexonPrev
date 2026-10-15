@@ -87,7 +87,13 @@ export async function dbGetProfiles(force = false, canSeed = false): Promise<Acc
   if (cacheProfiles && !force) return [...cacheProfiles];
   if (!firebaseActive || !dbInstance) return buildSystemProfiles();
   try {
-    const snap = await getDocs(collection(dbInstance, 'profiles'));
+    // Ajuste S17 (também nos perfis, visto no teste do Lote 2): no 1º segundo do login a regra às vezes ainda recusa — tenta de novo em 1,5 s
+    const ref = collection(dbInstance, 'profiles');
+    const snap = await getDocs(ref).catch(async (err: any) => {
+      if (err?.code !== 'permission-denied') throw err;
+      await new Promise((r) => setTimeout(r, 1500));
+      return getDocs(ref);
+    });
     let list = snap.docs.map((d) => ({ ...(d.data() as AccessProfile), id: d.id }));
     if (list.length === 0) {
       list = await buildSystemProfiles();

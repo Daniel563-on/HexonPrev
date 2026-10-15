@@ -47,7 +47,7 @@ const toMs = (v: any): number => (v && typeof v.toMillis === 'function' ? v.toMi
 
 // Usuários: o aparelho guarda só o necessário para montar a equipe (sem e-mail, sessão etc. — LGPD)
 const PICK: Partial<Record<SyncedCollection, string[]>> = {
-  users: ['matricula', 'name', 'cargo', 'status', 'companies', 'gerencia', 'perfil']
+  users: ['matricula', 'name', 'cargo', 'status', 'companies', 'gerencia', 'perfil', 'localTech', 'localComarca']
 };
 
 const NAMES: Record<SyncedCollection, string> = {

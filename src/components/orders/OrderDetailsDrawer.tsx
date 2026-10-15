@@ -198,7 +198,9 @@ export default function OrderDetailsDrawer({
       const { result } = await dbStartOrder(selectedOrder, userProfile, isOffline());
       // Participantes já vêm com a equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está
       // de férias/atestado hoje (Fase 7C). Dá para mudar na OS.
-      const team = await dbGetDayTeam(selectedOrder.unit, selectedOrder.company, localTodayStr(), myMatricula);
+      // Técnico local (Lote 2) em preventiva de outra gerência: a equipe dele é programada na DOM
+      const teamUnit = userProfile.localTech && userProfile.gerencia !== selectedOrder.unit ? userProfile.gerencia : selectedOrder.unit;
+      const team = await dbGetDayTeam(teamUnit, selectedOrder.company, localTodayStr(), myMatricula);
       const me = { matricula: myMatricula, name: userProfile.name, cargo: userProfile.cargo || '' };
       const prefilled: ServiceOrder = {
         ...selectedOrder,
@@ -1334,6 +1336,8 @@ export default function OrderDetailsDrawer({
               {(isStartedByMe || (selectedOrder.materialsUsed || []).length > 0 || (selectedOrder.participants || []).length > 0) && (
                 <ExecutionExtras
                   unit={selectedOrder.unit || ''}
+                  company={selectedOrder.company}
+                  homeUnit={isStartedByMe && userProfile?.localTech && userProfile.gerencia !== selectedOrder.unit ? userProfile.gerencia : undefined}
                   editable={isStartedByMe}
                   executor={isStartedByMe
                     ? { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' }

@@ -17,9 +17,10 @@ interface Props {
   onChange: (team: OrderParticipant[]) => void;
   locked?: string[]; // matrículas que não podem sair (resposta à contestação: só acrescenta)
   executorTag?: string;
+  homeUnit?: string; // técnico local (Lote 2) em OS de outra gerência: equipe e equipe do dia vêm da gerência dele (DOM)
 }
 
-export default function OsTeamPicker({ unit, company, executor, team, editable, onChange, locked = [], executorTag = '(você)' }: Props) {
+export default function OsTeamPicker({ unit, company, executor, team, editable, onChange, locked = [], executorTag = '(você)', homeUnit }: Props) {
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [usual, setUsual] = useState<OrderParticipant[]>([]);
   const [q, setQ] = useState('');
@@ -27,15 +28,15 @@ export default function OsTeamPicker({ unit, company, executor, team, editable, 
 
   useEffect(() => {
     if (!editable) return;
-    dbGetTeamPeople(unit, executor.matricula).then(setPeople);
-  }, [editable, unit, executor.matricula, peopleVersion]);
+    dbGetTeamPeople(homeUnit || unit, executor.matricula).then(setPeople);
+  }, [editable, unit, homeUnit, executor.matricula, peopleVersion]);
   useEffect(() => {
     if (!editable) return;
     // Equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está ausente hoje (Fase 7C-2)
-    dbGetDayTeam(unit, company, localTodayStr(), executor.matricula)
+    dbGetDayTeam(homeUnit || unit, company, localTodayStr(), executor.matricula)
       .then(setUsual)
       .catch(() => setUsual([]));
-  }, [editable, unit, company, executor.matricula]);
+  }, [editable, unit, homeUnit, company, executor.matricula]);
 
   const taken = useMemo(() => new Set(team.map((p) => p.matricula)), [team]);
   // Atalhos da equipe do dia: só quem ainda é da mesma empresa

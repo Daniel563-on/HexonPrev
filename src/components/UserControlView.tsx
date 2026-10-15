@@ -20,9 +20,11 @@ import {
   dbRemoveImportedPersonForUser,
   dbGetCompanies,
   companiesOfUnit,
-  companyNames
+  companyNames,
+  dbGetAddresses
 } from '../db/firebase';
 import { AccessProfile, Company, HexonUser, JobRole, Management, SystemPermission } from '../types';
+import { LOCAL_TECH_UNIT } from '../lib/localTech';
 import ProfilesTab from './users/ProfilesTab';
 import { dbBumpDataVersion } from '../db/appControl';
 import WorkforceTab from './users/WorkforceTab';
@@ -43,6 +45,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
   const [profiles, setProfiles] = useState<AccessProfile[]>([]);
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]); // empresas contratadas (etapa especial E1)
+  const [comarcas, setComarcas] = useState<{ craai: string; comarca: string }[]>([]); // técnico local (Lote 2): da lista de endereços
   const activeJobRoles = jobRoles.filter((r) => !r.archived); // cargos que existem hoje no sistema
   const [customCargo, setCustomCargo] = useState(false); // digitando um cargo novo no cadastro do usuário
   const [saveNotice, setSaveNotice] = useState<string | null>(null); // aviso após salvar (a janela de alerta é bloqueada no preview)
@@ -64,8 +67,14 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     profileId: SYSTEM_PROFILE_IDS.execucao as string,
     status: 'Ativo' as HexonUser['status'],
     senha: '123456',
-    companies: [] as string[]
+    companies: [] as string[],
+    localTech: false,
+    localComarca: ''
   });
+  // Técnico (perfil escolhido) e técnico local (Lote 2): a gerência fica DOM travada
+  const formIsTech = legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao') === 'Profissional';
+  const localLocked = formIsTech && userForm.localTech;
+  const hasLocalUnit = managements.some((m) => m.name === LOCAL_TECH_UNIT);
 
   // Filter query state
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +103,13 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         setProfiles(await dbGetProfiles(force, true));
         if (activeSubTab === 'users') setJobRoles(await dbGetJobRoles(force));
         if (activeSubTab === 'users') setCompanies(await dbGetCompanies(force).catch(() => []));
+        if (activeSubTab === 'users') {
+          // Comarcas da lista de endereços (ativos), agrupadas pela CRAAI: "Comarca onde atua" do técnico local
+          const addrs = await dbGetAddresses().catch(() => []);
+          const seen = new Map<string, { craai: string; comarca: string }>();
+          addrs.filter((a) => a.active !== false && a.comarca).forEach((a) => seen.set(a.comarca.trim(), { craai: (a.craai || '').trim(), comarca: a.comarca.trim() }));
+          setComarcas(Array.from(seen.values()).sort((a, b) => a.craai.localeCompare(b.craai) || a.comarca.localeCompare(b.comarca)));
+        }
       }
     } catch (e) {
       console.error('Error loading RBAC settings:', e);
@@ -129,7 +145,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       profileId: SYSTEM_PROFILE_IDS.execucao,
       status: 'Ativo',
       senha: '123456',
-      companies: []
+      companies: [],
+      localTech: false,
+      localComarca: ''
     });
     setCustomCargo(false);
     setIsUserModalOpen(true);
@@ -149,7 +167,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       status: user.status,
       // If password is encrypted hash, keep empty in form unless admin enters a new one
       senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || ''),
-      companies: [...(user.companies || [])]
+      companies: [...(user.companies || [])],
+      localTech: user.localTech === true,
+      localComarca: user.localComarca || ''
     });
     setCustomCargo(false);
     setIsUserModalOpen(true);
@@ -176,6 +196,22 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     );
     if (duplicate) {
       setUserModalError(`A matrícula "${sanitizedMatricula}" já pertence ao colaborador "${duplicate.name}". Defina uma matrícula exclusiva.`);
+      return;
+    }
+
+    // Técnico (Lote 2): sem "Todas"; técnico local = gerência DOM + comarca onde atua (obrigatória)
+    const isTechForm = legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao') === 'Profissional';
+    const localTech = isTechForm && userForm.localTech;
+    if (isTechForm && !localTech && userForm.gerencia === 'Todas') {
+      setUserModalError('Técnico não tem mais a gerência "Todas": escolha a gerência dele ou marque "Técnico local".');
+      return;
+    }
+    if (localTech && userForm.gerencia !== LOCAL_TECH_UNIT) {
+      setUserModalError(`Técnico local fica na gerência ${LOCAL_TECH_UNIT}: cadastre a gerência ${LOCAL_TECH_UNIT} em Configurações › Gerências.`);
+      return;
+    }
+    if (localTech && !userForm.localComarca.trim()) {
+      setUserModalError('Escolha a comarca onde o técnico local atua.');
       return;
     }
 
@@ -208,7 +244,9 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         profileId: userForm.profileId,
         status: userForm.status,
         senha: finalSenha,
-        companies: formCompanies
+        companies: formCompanies,
+        localTech: localTech ? true : undefined,
+        localComarca: localTech ? userForm.localComarca.trim() : undefined
       };
 
       await dbSaveUser(newUser);
@@ -581,6 +619,11 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                             }`}>
                               {u.gerencia}
                             </span>
+                            {u.localTech && u.perfil === 'Profissional' && (
+                              <span className="ml-1 px-2 py-0.5 rounded font-bold text-[10.5px] bg-emerald-500/10 text-emerald-700" title={u.localComarca ? `Atua em ${u.localComarca}` : undefined}>
+                                técnico local{u.localComarca ? ` · ${u.localComarca}` : ''}
+                              </span>
+                            )}
                           </td>
 
                           {/* Empresa */}
@@ -848,18 +891,70 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   )}
                 </div>
 
-                {/* Gerência */}
+                {/* Perfil */}
                 <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Gerência Vinculada</label>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Perfil de Acesso (RBAC) *</label>
                   <select
-                    value={userForm.gerencia}
-                    onChange={(e) => setUserForm({...userForm, gerencia: e.target.value})}
+                    value={userForm.profileId}
+                    onChange={(e) => setUserForm({...userForm, profileId: e.target.value})}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
                       darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
                     }`}
                   >
-                    <option value="Todas">Todas (Acesso Global)</option>
-                    {managements.map((m) => (
+                    {profiles.map((pr) => (
+                      <option key={pr.id} value={pr.id}>{pr.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Técnico local (Lote 2): gerência DOM travada + comarca onde atua */}
+                {formIsTech && (
+                  <div className="col-span-2">
+                    <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer ${userForm.localTech ? 'border-emerald-400 bg-emerald-500/5' : darkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                      <input
+                        type="checkbox"
+                        aria-label="Técnico local"
+                        checked={userForm.localTech}
+                        disabled={!hasLocalUnit && !userForm.localTech}
+                        onChange={(e) =>
+                          setUserForm({
+                            ...userForm,
+                            localTech: e.target.checked,
+                            gerencia: e.target.checked ? LOCAL_TECH_UNIT : userForm.gerencia,
+                            localComarca: e.target.checked ? userForm.localComarca : '',
+                            companies: e.target.checked ? userForm.companies.filter((id) => companiesOfUnit(companies, LOCAL_TECH_UNIT).some((c) => c.id === id)) : userForm.companies
+                          })
+                        }
+                        className="mt-0.5 w-4 h-4 cursor-pointer"
+                      />
+                      <span>
+                        <span className="block text-xs font-black">Técnico local</span>
+                        <span className="block text-[10.5px] text-slate-500">
+                          {hasLocalUnit
+                            ? `Fica na ${LOCAL_TECH_UNIT} e pode receber chamados e preventivas de todas as gerências (só o que for atribuído a ele).`
+                            : `Cadastre a gerência ${LOCAL_TECH_UNIT} em Configurações › Gerências para usar.`}
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Gerência */}
+                <div>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Gerência Vinculada</label>
+                  <select
+                    aria-label="Gerência vinculada"
+                    value={userForm.gerencia}
+                    disabled={localLocked}
+                    onChange={(e) => setUserForm({...userForm, gerencia: e.target.value})}
+                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
+                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
+                    } ${localLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {(!formIsTech || userForm.gerencia === 'Todas') && (
+                      <option value="Todas" disabled={formIsTech}>{formIsTech ? 'Todas — não vale mais para técnico' : 'Todas (Acesso Global)'}</option>
+                    )}
+                    {managements.filter((m) => m.name !== 'Todas').map((m) => (
                       <option key={m.id} value={m.name}>{m.name}</option>
                     ))}
                     {managements.length === 0 && (
@@ -868,6 +963,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                       </>
                     )}
                   </select>
+                  {localLocked && <p className="text-[10px] text-slate-500 mt-1">Fixa em {LOCAL_TECH_UNIT} enquanto "Técnico local" estiver marcado.</p>}
+                  {formIsTech && !localLocked && <p className="text-[10px] text-slate-500 mt-1">Técnico não tem a opção "Todas" (técnico de várias gerências = "Técnico local").</p>}
                 </div>
 
                 {/* Empresa(s) */}
@@ -897,21 +994,32 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                   <p className="text-[10px] text-slate-500 mt-1">Técnico: exatamente 1. Planejador: uma ou várias. Engenheiro, gerente e quem abre chamado: nenhuma (o perfil define se vê todas).</p>
                 </div>
 
-                {/* Perfil */}
-                <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Perfil de Acesso (RBAC) *</label>
-                  <select
-                    value={userForm.profileId}
-                    onChange={(e) => setUserForm({...userForm, profileId: e.target.value})}
-                    className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
-                      darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
-                    }`}
-                  >
-                    {profiles.map((pr) => (
-                      <option key={pr.id} value={pr.id}>{pr.name}</option>
-                    ))}
-                  </select>
-                </div>
+
+                {/* Comarca onde atua (técnico local; obrigatória; da lista de endereços) */}
+                {formIsTech && userForm.localTech && (
+                  <div className="col-span-2">
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Comarca onde atua *</label>
+                    <select
+                      aria-label="Comarca onde atua"
+                      value={userForm.localComarca}
+                      onChange={(e) => setUserForm({ ...userForm, localComarca: e.target.value })}
+                      className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'}`}
+                    >
+                      <option value="">Escolha a comarca...</option>
+                      {userForm.localComarca && !comarcas.some((c) => c.comarca === userForm.localComarca) && <option value={userForm.localComarca}>{userForm.localComarca}</option>}
+                      {Array.from(new Set(comarcas.map((c) => c.craai))).map((craai) => (
+                        <optgroup key={craai || '-'} label={craai || 'Sem CRAAI'}>
+                          {comarcas.filter((c) => c.craai === craai).map((c) => (
+                            <option key={c.comarca} value={c.comarca}>{c.comarca}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {comarcas.length === 0 ? 'Nenhum endereço cadastrado (Gestão de Ativos › Endereços).' : 'Da lista de endereços. Nas listas de atribuição, quem atua na comarca da OS aparece primeiro.'}
+                    </p>
+                  </div>
+                )}
 
                 {/* Status */}
                 <div>

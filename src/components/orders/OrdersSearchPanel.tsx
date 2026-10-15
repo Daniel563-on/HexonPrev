@@ -53,7 +53,7 @@ export default function OrdersSearchPanel({ userProfile, visibleUnits = null, as
         setTechnicians(
           // Filtro pela matrícula (a OS guarda o técnico pela matrícula)
           list
-            .filter((u) => u.perfil === 'Profissional' && !!(u.matricula || '').trim() && (visibleUnits === null || u.gerencia === 'Todas' || visibleUnits.includes(u.gerencia)))
+            .filter((u) => u.perfil === 'Profissional' && !!(u.matricula || '').trim() && (visibleUnits === null || u.gerencia === 'Todas' || u.localTech === true || visibleUnits.includes(u.gerencia)))
             .map((u) => ({ name: u.name, matricula: (u.matricula || '').trim() }))
             .sort((a, b) => a.name.localeCompare(b.name))
         )

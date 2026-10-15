@@ -234,7 +234,8 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
   const companyWos = openWos.filter((w) => !!company && w.company === company);
   const woCount = (mat: string) => companyWos.filter((w) => w.assignedTechnicianMatricula === mat && !w.scheduledDate).length;
   const wosNew = companyWos.filter((w) => w.status === 'Nova' || !w.assignedTechnicianMatricula);
-  const wosNoDay = companyWos.filter((w) => w.status !== 'Nova' && !!w.assignedTechnicianMatricula && !w.scheduledDate);
+  // Lote 2: chamado com técnico de fora da gerência (técnico local) não é programado aqui — só atribuído, sem dia
+  const wosNoDay = companyWos.filter((w) => w.status !== 'Nova' && !!w.assignedTechnicianMatricula && !w.scheduledDate && !!personOf(w.assignedTechnicianMatricula));
   const woInWeek = weekLots.reduce((n, l) => n + (l.woIds?.length || 0), 0);
 
   // A programar: preventivas "Novo" cujo prazo cobre algum dia da semana a partir de hoje

@@ -19,6 +19,8 @@ import {
   stageItems
 } from '../../db/firebase';
 import OsFieldInput, { LocationPicker, osInput } from './OsFieldInput';
+import TechTwoLists from './TechTwoLists';
+import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
 
 // EMITIR OS (GLPI): a tela mostra exatamente as perguntas da etapa Criação do modelo escolhido
 // (perguntas livres + campos do sistema ligados), com as condições ("só quando...") funcionando na hora.
@@ -99,11 +101,12 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
     ? companiesOfUnit(companies, unit).filter((c) => (c.active || c.id === editOrder?.company) && isCompanyVisible(c.id, visibleCompanies))
     : [];
   const companyName = (id?: string) => (id ? companies.find((c) => c.id === id)?.name || id : '—');
-  // Técnicos da gerência da OS e, em bloco separado, os que atendem todas as gerências (gerência "Todas") — só da empresa da OS
+  // Técnicos da gerência da OS e, em outra lista, os técnicos locais (Lote 2; e os antigos com gerência "Todas") — só da
+  // empresa da OS. Na própria DOM os técnicos locais já são os técnicos da gerência.
   const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && !!company && (u.companies || []).includes(company));
   const unitTechs = unit ? activeTechs.filter((u) => u.gerencia === unit) : [];
-  const allUnitsTechs = unit ? activeTechs.filter((u) => u.gerencia === 'Todas') : [];
-  const technicians = [...unitTechs, ...allUnitsTechs];
+  const localTechs = unit && unit !== LOCAL_TECH_UNIT ? localTechOptions(activeTechs.filter((u) => u.gerencia !== unit)) : [];
+  const technicians: { matricula: string; name: string }[] = [...unitTechs, ...localTechs];
   const assignOn = !!template?.systemFields.find((s) => s.key === 'tecnico' && s.enabled) && canAssign;
 
   const reset = () => {
@@ -327,23 +330,20 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
         if (!assignOn) return null;
         return (
           <div>
-            <select className={input} value={v || ''} onChange={(e) => setA(key, e.target.value)} disabled={!unit || !company}>
-              <option value="">Deixar em aberto (o Encarregado atribui)</option>
-              {unitTechs.length > 0 && (
-                <optgroup label={`Técnicos da ${unit}`}>
-                  {unitTechs.map((t) => (
-                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-                  ))}
-                </optgroup>
-              )}
-              {allUnitsTechs.length > 0 && (
-                <optgroup label="Técnicos de todas as gerências">
-                  {allUnitsTechs.map((t) => (
-                    <option key={t.matricula} value={t.matricula}>{t.name} ({t.matricula})</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+            <TechTwoLists
+              unit={unit || 'gerência'}
+              unitTechs={unitTechs}
+              localTechs={localTechs}
+              comarca={(answers['sys:enderecoExecucao'] as OsLocationAnswer | undefined)?.comarca}
+              value={v || ''}
+              onChange={(m) => setA(key, m)}
+              unitPlaceholder="Deixar em aberto (o Encarregado atribui)"
+              disabled={!unit || !company}
+              selectClass={input}
+            />
+            {v && localTechs.some((t) => t.matricula === v) && (
+              <p className="text-[10px] font-bold text-emerald-700 mt-1">Técnico local: sem dia e sem pernoite; ele recebe no celular e faz dentro do prazo. O material usado sai da {unit}.</p>
+            )}
             {!unit && <p className="text-[10px] text-slate-500 mt-1">Escolha a gerência para ver os técnicos.</p>}
             {unit && !company && <p className="text-[10px] text-slate-500 mt-1">Escolha a empresa para ver os técnicos.</p>}
             {unit && company && technicians.length === 0 && <p className="text-[10px] text-slate-500 mt-1">Nenhum técnico ativo da empresa na gerência {unit}.</p>}

@@ -99,7 +99,9 @@ service cloud.firestore {
     // e a correção de campos de cadastro pelo Super Administrador (unit, craai, comarca, closedMonth).
     // Excluir: só o Super Administrador, e só OS "Novo".
     match /serviceOrders/{orderId} {
-      allow get: if isStaff() && (resource == null || seesAllUnits() || resource.data.unit in myUnits());
+      // Abrir uma: da gerência, ou a que está com o técnico (técnico local, Lote 2, recebe de qualquer gerência)
+      allow get: if isStaff() && (resource == null || seesAllUnits() || resource.data.unit in myUnits()
+        || resource.data.get('techOpen', '') == me().matricula || resource.data.get('techSol', '') == me().matricula);
       // Também pelos campos de controle (índices esparsos): abertas da gerência e OS/solicitações do próprio técnico
       allow list: if isStaff() && (seesAllUnits() || resource.data.unit in myUnits()
         || resource.data.unitOpen in myUnits()
@@ -110,7 +112,10 @@ service cloud.firestore {
       // A data de criação nunca muda: um disparo que tente regravar uma OS existente é recusado
       allow update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
-        && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits()))
+        && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits())
+            // Técnico local (Lote 2): só a preventiva que está com ele (de qualquer gerência), sem mudar a gerência dela
+            || (isLocalTechUser(me()) && request.resource.data.unit == resource.data.unit
+                && (resource.data.get('techOpen', '') == me().matricula || resource.data.get('techSol', '') == me().matricula)))
         && (resource.data.status != 'Concluída'
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd'])
             || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
@@ -285,9 +290,11 @@ service cloud.firestore {
     // a versão antiga passava do limite de 1000 e o técnico não conseguia ler a lista)
     // A7: quem aprova pedido de material também lê (vê o saldo de cada almoxarifado na aprovação)
     function matReadOk(u, p) {
-      return osSees(u, p)
-        && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs') || osPerm(u, p, 'material_requests_decide')
-            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
+      return (osSees(u, p)
+          && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs') || osPerm(u, p, 'material_requests_decide')
+              || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', []))))
+        // Técnico local (Lote 2): os da empresa dele, de qualquer gerência (o material sai da gerência da OS)
+        || (isLocalTechUser(u) && resource.data.get('company', '') in u.get('companies', []));
     }
     match /materials/{materialId} {
       allow read: if isStaff() && matReadOk(me(), osProfileOf(me()));
@@ -305,9 +312,11 @@ service cloud.firestore {
     // Altera: só quem tem "Cadastrar e importar insumos" (suas gerências); todo insumo tem empresa. Excluir: só o Super Administrador.
     // Usuário e perfil lidos UMA vez e passados (limite de 1000 contas por verificação)
     function supReadOk(u, p) {
-      return osSees(u, p)
-        && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
-            || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', [])));
+      return (osSees(u, p)
+          && (osPerm(u, p, 'view_supplies') || osPerm(u, p, 'manage_supplies') || osPerm(u, p, 'view_costs')
+              || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', []))))
+        // Técnico local (Lote 2): os da empresa dele, de qualquer gerência (o insumo sai da gerência da OS)
+        || (isLocalTechUser(u) && resource.data.get('company', '') in u.get('companies', []));
     }
     function supWriteOk(u, p) {
       let scope = p.get('unitScope', 'own');
@@ -507,6 +516,11 @@ service cloud.firestore {
     function osProfileOf(u) {
       return u.get('profileId', '') != '' && exists(/databases/$(database)/documents/profiles/$(u.get('profileId', '')))
         ? get(/databases/$(database)/documents/profiles/$(u.get('profileId', ''))).data : {};
+    }
+    // Técnico local (Lote 2): técnico da DOM marcado no cadastro; recebe atribuições de todas as gerências e usa
+    // material/insumo da gerência da OS (só os da empresa dele). Só o Super Administrador grava o cadastro.
+    function isLocalTechUser(u) {
+      return u.perfil == 'Profissional' && u.get('localTech', false) == true;
     }
     function osSees(u, p) {
       let scope = p.get('unitScope', 'own');

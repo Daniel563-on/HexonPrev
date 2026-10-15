@@ -47,6 +47,8 @@ const label = 'block text-[10px] font-black uppercase tracking-wider mb-1 text-s
 
 export default function OsExecutionForm({ order, userProfile, onClose, onChanged, canClientLink = false, canPdf = false }: Props) {
   const me: OrderParticipant = { matricula: userProfile.matricula, name: userProfile.name, cargo: userProfile.cargo || '' };
+  // Técnico local (Lote 2) num chamado de outra gerência: equipe da gerência dele; material da gerência e empresa do chamado
+  const localHome = userProfile.localTech && userProfile.gerencia !== order.unit ? userProfile.gerencia : undefined;
   const initial = (): WorkOrderExec => {
     const e = order.exec;
     const team = e?.team?.length ? e.team : [];
@@ -407,12 +409,14 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             ) : b.key === 'equipe' ? (
               <div key="equipe" className={section}>
                 <p className="text-xs font-black text-slate-800">Equipe</p>
-                <OsTeamPicker unit={order.unit} company={order.company} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
+                <OsTeamPicker unit={order.unit} company={order.company} homeUnit={localHome} executor={me} team={exec.team} editable={editable} onChange={(team) => patch({ team })} />
               </div>
             ) : (
               <div key="materiais" className={section}>
                 <ExecutionExtras
                   unit={order.unit}
+                  company={order.company}
+                  homeUnit={localHome}
                   editable={editable}
                   executor={me}
                   materials={exec.materials}

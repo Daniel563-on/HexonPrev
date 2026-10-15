@@ -18,11 +18,13 @@ interface Props {
   participants: OrderParticipant[];
   onChange: (next: { materialsUsed?: UsedMaterial[]; participants?: OrderParticipant[] }) => void;
   hideParticipants?: boolean; // OS (Hexon 2.0): a equipe tem um bloco próprio
+  company?: string; // empresa da OS: os materiais são dela (técnico local de outra gerência, Lote 2)
+  homeUnit?: string; // técnico local executando OS de outra gerência: as pessoas vêm da gerência dele (DOM)
 }
 
 const fmtQty = (n: number) => (Number.isFinite(n) ? String(n).replace('.', ',') : '');
 
-export default function ExecutionExtras({ unit, editable, executor, materials, participants, onChange, hideParticipants }: Props) {
+export default function ExecutionExtras({ unit, editable, executor, materials, participants, onChange, hideParticipants, company, homeUnit }: Props) {
   const [catalog, setCatalog] = useState<Material[]>([]);
   const [people, setPeople] = useState<OrderParticipant[]>([]);
   const [matSearch, setMatSearch] = useState('');
@@ -35,15 +37,17 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
   useEffect(() => {
     if (!editable || !unit) return;
     const mat = executor?.matricula;
-    dbGetPersonCompanies(unit, mat || '').then((cs) =>
-      dbGetMaterials([unit], false, cs[0]).then((list) => {
+    // Materiais da gerência da OS e da empresa de quem executa (= empresa da OS; o técnico local é de outra gerência)
+    dbGetPersonCompanies(homeUnit || unit, mat || '').then((found) => {
+      const cs = company ? [company] : found;
+      return dbGetMaterials([unit], false, cs[0]).then((list) => {
         setCatalog(list.filter((m) => m.unit === unit && m.cost > 0 && (!cs[0] || m.company === cs[0])));
         const st = materialsSyncStatus(unit, cs[0]);
         setMatError(st?.error ? (st.code === 'permission-denied' ? `O banco não permitiu ler os materiais da ${unit}.` : `Não foi possível atualizar a lista de materiais: ${st.error}`) : null);
-      })
-    );
-    dbGetTeamPeople(unit, mat).then(setPeople);
-  }, [editable, unit, executor?.matricula, syncVersion]);
+      });
+    });
+    dbGetTeamPeople(homeUnit || unit, mat).then(setPeople);
+  }, [editable, unit, homeUnit, company, executor?.matricula, syncVersion]);
 
   // Texto da quantidade (mantém "2," enquanto digita)
   useEffect(() => {

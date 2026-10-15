@@ -6,6 +6,7 @@ import {
   dbAddWeekLog,
   dbDetachOrderFromLot,
   dbGetCompanies,
+  dbGetLocalTechs,
   dbGetLotsByIds,
   dbGetUnitPeopleInfo,
   dbListTeams,
@@ -27,6 +28,9 @@ import { localKey, localLabel, splitKey } from '../../programacao/blockLayout';
 import { DAY_LABEL, mondayOf, weekDays } from '../../programacao/weekDates';
 import { teamLabel } from '../../programacao/TeamForm';
 import ProgramPreventivesModal from './ProgramPreventivesModal';
+import AssignLocalModal from './AssignLocalModal';
+import TechTwoLists from '../../os/TechTwoLists';
+import { LOCAL_TECH_UNIT, LocalTechOption } from '../../../lib/localTech';
 
 // ORDENS DE SERVIÇO › PREVENTIVAS (Fase 7E-1, layout novo; etapa de junção: o planejamento individual que era do PMOC
 // vem para cá e programa com o mesmo bloco da Programação). Contadores clicáveis; "A programar" agrupado por local com
@@ -109,8 +113,9 @@ export default function PreventivesBoard(props: Props) {
   const [teams, setTeams] = useState<UsualTeam[]>([]);
   const [people, setPeople] = useState<UnitPersonInfo[]>([]);
   const [view, setView] = useState<View>(() => (peekHomeLink<View>('preventives-view') as View) || 'aprog');
-  // Veio com busca (Semana › "Abrir", Início › técnico): abre no 1º contador que tem resultado
-  const [autoView, setAutoView] = useState(() => !!search.trim() && !peekHomeLink('preventives-view'));
+  // Veio com busca (Semana › "Abrir", Início › técnico): abre no 1º contador que tem resultado.
+  // Ajuste S19: sem busca, abre em "A programar" se tiver itens; senão em Atrasadas (se houver) ou no 1º contador com itens
+  const [autoView, setAutoView] = useState(() => !peekHomeLink('preventives-view'));
   const [comarca, setComarca] = useState('');
   const [tech, setTech] = useState('');
   const [periodicity, setPeriodicity] = useState('');
@@ -122,6 +127,9 @@ export default function PreventivesBoard(props: Props) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [lots, setLots] = useState<Record<string, PlanningLot | null>>({});
   const [programming, setProgramming] = useState(false);
+  const [assigningLocal, setAssigningLocal] = useState(false);
+  // Técnicos locais (Lote 2): as outras gerências só atribuem a eles (sem dia); na DOM eles já são os técnicos da gerência
+  const [localTechs, setLocalTechs] = useState<LocalTechOption[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<{ id: string; mode: 'tech' | 'date' | 'revert' } | null>(null);
   const [newTech, setNewTech] = useState('');
@@ -146,7 +154,15 @@ export default function PreventivesBoard(props: Props) {
     dbGetUnitPeopleInfo(unit)
       .then(setPeople)
       .catch(() => setPeople([]));
+    if (unit === LOCAL_TECH_UNIT) setLocalTechs([]);
+    else
+      dbGetLocalTechs()
+        .then(setLocalTechs)
+        .catch(() => setLocalTechs([]));
   }, [unit]);
+  const localMats = useMemo(() => new Set(localTechs.map((t) => t.matricula)), [localTechs]);
+  // Preventiva com técnico local: sem dia, fora da Programação desta gerência
+  const isLocalOrder = (o: ServiceOrder) => unit !== LOCAL_TECH_UNIT && !!o.assignedTechnicianMatricula && localMats.has(o.assignedTechnicianMatricula) && !o.scheduledDate;
   const unitCompanies = useMemo(() => companiesOfUnit(companies, unit).filter((c) => c.active && isCompanyVisible(c.id, visibleCompanies)), [companies, unit, visibleCompanies]);
   // A5-B: em aberto sem empresa gravada ou de empresa inativa = "Sem empresa" (segue a empresa do ativo/endereço)
   const inactive = useMemo(() => inactiveCompanyIds(companies), [companies]);
@@ -221,7 +237,7 @@ export default function PreventivesBoard(props: Props) {
   }, [filtered, weekEnd]);
   useEffect(() => {
     if (!autoView || base.length === 0) return;
-    const first = VIEWS.find((v) => counts[v.key] > 0);
+    const first = !search.trim() && counts.aprog > 0 ? VIEWS[0] : !search.trim() && counts.atr > 0 ? VIEWS.find((v) => v.key === 'atr') : VIEWS.find((v) => v.key !== 'canc' && counts[v.key] > 0);
     if (first) setView(first.key);
     setAutoView(false);
   }, [autoView, base.length, counts]);
@@ -266,6 +282,7 @@ export default function PreventivesBoard(props: Props) {
   }, [lotIdsKey]);
   const teamOf = (mat: string) => teams.find((t) => t.matricula === mat);
   const cameFrom = (o: ServiceOrder) => {
+    if (!o.lotId && isLocalOrder(o)) return { text: 'Atribuída ao técnico local', lot: null as PlanningLot | null };
     if (!o.lotId) return { text: 'Pela lista (sem bloco)', lot: null as PlanningLot | null };
     const l = lots[o.lotId];
     if (l === undefined) return { text: '…', lot: null };
@@ -301,6 +318,15 @@ export default function PreventivesBoard(props: Props) {
     setProgramming(true);
   };
 
+  // Lote 2: atribuir as marcadas ao técnico local (mesmas conferências de empresa do "Programar")
+  const startAssignLocal = () => {
+    setMsg(null);
+    if (selCompanies.length > 1) return setMsg({ ok: false, text: 'As preventivas marcadas são de empresas diferentes: atribua uma empresa por vez (escolha a empresa no topo).' });
+    if (!selCompanies[0] || !companies.some((c) => c.id === selCompanies[0]) || inactive.has(selCompanies[0]))
+      return setMsg({ ok: false, text: 'Há preventiva sem empresa (ou de empresa inativa): ela precisa de uma empresa ativa antes de ser atribuída.' });
+    setAssigningLocal(true);
+  };
+
   // Ações de uma programada (sozinha: sai do bloco, como no PMOC)
   const techsFor = (o: ServiceOrder) => people.filter((p) => p.login && p.perfil === 'Profissional' && (!o.company || p.companies.includes(o.company)));
   const canRevert = (o: ServiceOrder) => o.status === 'Atrasada' && (!o.endDate || today <= o.endDate.slice(0, 10));
@@ -316,6 +342,13 @@ export default function PreventivesBoard(props: Props) {
     setWeekendOk(false);
   };
   const isWeekendDay = (d: string) => [0, 6].includes(new Date(`${d}T12:00:00`).getDay());
+  const dayError = (o: ServiceOrder): string => {
+    if (!newStart || !newEnd || newEnd < newStart) return 'Informe o início e o fim.';
+    if (newStart < today) return 'Não dá para programar em dia que já passou.';
+    if ((o.startDate && newStart < o.startDate.slice(0, 10)) || (o.endDate && newEnd > o.endDate.slice(0, 10))) return `Fora do prazo da preventiva (${prazo(o)}).`;
+    if ((isWeekendDay(newStart) || isWeekendDay(newEnd)) && !weekendOk) return 'Confirme o trabalho no fim de semana.';
+    return '';
+  };
   const logInWeek = async (o: ServiceOrder, text: string) => {
     const l = o.lotId ? lots[o.lotId] : null;
     if (!l || l.source !== 'programacao' || !l.weekStart || !l.company) return;
@@ -328,15 +361,25 @@ export default function PreventivesBoard(props: Props) {
     let updated: ServiceOrder;
     let text = '';
     if (editing.mode === 'tech') {
-      const t = people.find((p) => p.matricula === newTech);
+      // Lote 2: técnico local = sem dia (sai do bloco); de técnico local para técnico da gerência = informar os dias
+      const lt = localTechs.find((x) => x.matricula === newTech && (!o.company || x.companies.includes(o.company)));
+      const t = lt || people.find((p) => p.matricula === newTech);
       if (!t) return setRowError('Escolha o técnico.');
-      updated = { ...base0, assignedTechnician: t.name, assignedTechnicianMatricula: t.matricula };
-      text = `OS ${formatOrderNumber(o.id)} passou para ${t.name}`;
+      if (lt) {
+        updated = { ...base0, assignedTechnician: lt.name, assignedTechnicianMatricula: lt.matricula, scheduledDate: '', scheduledEndDate: undefined, status: 'Planejada' };
+        text = `OS ${formatOrderNumber(o.id)} passou para ${lt.name} (técnico local, sem dia)`;
+      } else if (isLocalOrder(o)) {
+        const err = dayError(o);
+        if (err) return setRowError(err);
+        updated = { ...base0, assignedTechnician: t.name, assignedTechnicianMatricula: t.matricula, scheduledDate: newStart, scheduledEndDate: newEnd > newStart ? newEnd : undefined, status: 'Planejada' };
+        text = `OS ${formatOrderNumber(o.id)} passou para ${t.name}, ${dayRange(newStart, newEnd)}`;
+      } else {
+        updated = { ...base0, assignedTechnician: t.name, assignedTechnicianMatricula: t.matricula };
+        text = `OS ${formatOrderNumber(o.id)} passou para ${t.name}`;
+      }
     } else if (editing.mode === 'date') {
-      if (!newStart || !newEnd || newEnd < newStart) return setRowError('Informe o início e o fim.');
-      if (newStart < today) return setRowError('Não dá para programar em dia que já passou.');
-      if ((o.startDate && newStart < o.startDate.slice(0, 10)) || (o.endDate && newEnd > o.endDate.slice(0, 10))) return setRowError(`Fora do prazo da preventiva (${prazo(o)}).`);
-      if ((isWeekendDay(newStart) || isWeekendDay(newEnd)) && !weekendOk) return setRowError('Confirme o trabalho no fim de semana.');
+      const err = dayError(o);
+      if (err) return setRowError(err);
       updated = { ...base0, scheduledDate: newStart, scheduledEndDate: newEnd > newStart ? newEnd : undefined, status: 'Planejada' };
       text = `OS ${formatOrderNumber(o.id)} remarcada para ${dayRange(newStart, newEnd)}`;
     } else {
@@ -702,12 +745,22 @@ export default function PreventivesBoard(props: Props) {
                         <td className={td}>{numCell(o)}</td>
                         <td className={`${td} text-slate-800 dark:text-slate-100`}>{assetText(o)}</td>
                         <td className={`${td} text-slate-600 dark:text-slate-300`}>{localLabel(splitKey(localKey(o)))}</td>
-                        <td className={`${td} font-bold whitespace-nowrap ${o.status === 'Atrasada' ? 'text-amber-700' : 'text-slate-800 dark:text-slate-100'}`}>{dayRange(o.scheduledDate, o.scheduledEndDate)}</td>
+                        <td className={`${td} font-bold whitespace-nowrap ${o.status === 'Atrasada' ? 'text-amber-700' : 'text-slate-800 dark:text-slate-100'}`}>
+                          {isLocalOrder(o) ? (
+                            <>
+                              sem dia
+                              {o.endDate && <span className="block text-[10px] font-semibold text-slate-500">faz até {br(o.endDate)}</span>}
+                            </>
+                          ) : (
+                            dayRange(o.scheduledDate, o.scheduledEndDate)
+                          )}
+                        </td>
                         <td className={`${td} text-slate-800 dark:text-slate-100 whitespace-nowrap`}>
                           {o.assignedTechnician ? (
                             <>
                               {teamOf(o.assignedTechnicianMatricula || '') && <Star className="inline w-3 h-3 text-amber-500 fill-amber-400 mr-0.5" />}
                               {o.assignedTechnician}
+                              {isLocalOrder(o) && <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black">técnico local</span>}
                             </>
                           ) : (
                             '—'
@@ -732,9 +785,11 @@ export default function PreventivesBoard(props: Props) {
                                 <button type="button" onClick={() => startEdit(o, 'tech')} className={`${smallBtn} border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300`}>
                                   Técnico
                                 </button>
-                                <button type="button" onClick={() => startEdit(o, 'date')} className={`${smallBtn} border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300`}>
-                                  Remarcar
-                                </button>
+                                {!isLocalOrder(o) && (
+                                  <button type="button" onClick={() => startEdit(o, 'date')} className={`${smallBtn} border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300`}>
+                                    Remarcar
+                                  </button>
+                                )}
                                 <button type="button" onClick={() => startEdit(o, 'revert')} className={`${smallBtn} border-amber-200 bg-amber-50 text-amber-800`}>
                                   Voltar p/ Novo
                                 </button>
@@ -753,16 +808,23 @@ export default function PreventivesBoard(props: Props) {
                                 #{formatOrderNumber(o.id)} — {editing!.mode === 'tech' ? 'trocar o técnico' : editing!.mode === 'date' ? 'remarcar' : 'voltar para "Novo" (sem dia e sem técnico)?'}
                               </span>
                               {editing!.mode === 'tech' && (
-                                <select value={newTech} onChange={(ev) => setNewTech(ev.target.value)} className="h-8 px-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                                  <option value="">Novo técnico...</option>
-                                  {techsFor(o).map((t) => (
-                                    <option key={t.matricula} value={t.matricula}>
-                                      {t.name} ({t.matricula})
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="w-full max-w-xl">
+                                  <TechTwoLists
+                                    unit={unit}
+                                    unitTechs={techsFor(o)}
+                                    localTechs={localTechs.filter((t) => t.matricula !== o.assignedTechnicianMatricula && (!o.company || t.companies.includes(o.company)))}
+                                    comarca={o.comarca}
+                                    value={newTech}
+                                    onChange={setNewTech}
+                                    unitPlaceholder="Novo técnico..."
+                                    selectClass="w-full h-8 px-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                  />
+                                </div>
                               )}
-                              {editing!.mode === 'date' && (
+                              {editing!.mode === 'tech' && isLocalOrder(o) && !!newTech && !localMats.has(newTech) && (
+                                <span className="w-full text-[10px] font-bold text-slate-600">Técnico da {unit}: informe os dias (dentro do prazo).</span>
+                              )}
+                              {(editing!.mode === 'date' || (editing!.mode === 'tech' && isLocalOrder(o) && !!newTech && !localMats.has(newTech))) && (
                                 <>
                                   <input type="date" value={newStart} min={today} onChange={(ev) => { setNewStart(ev.target.value); if (newEnd < ev.target.value) setNewEnd(ev.target.value); }} className="h-8 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" aria-label="Início" />
                                   <span className="text-slate-500">até</span>
@@ -828,7 +890,13 @@ export default function PreventivesBoard(props: Props) {
             <div className="flex flex-wrap gap-2">
               {canProgram && (
                 <button type="button" onClick={startProgram} className="px-3 py-1.5 rounded-lg bg-white text-indigo-700 text-xs font-black cursor-pointer">
-                  Programar (técnico, dias, pernoite)
+                  {unit === LOCAL_TECH_UNIT ? 'Programar (técnico, dias, pernoite)' : `Programar (técnico da ${unit}, dias, pernoite)`}
+                </button>
+              )}
+              {canProgram && unit !== LOCAL_TECH_UNIT && (
+                <button type="button" onClick={startAssignLocal} className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black cursor-pointer flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Atribuir ao técnico local
                 </button>
               )}
               {canDelete && (
@@ -844,6 +912,23 @@ export default function PreventivesBoard(props: Props) {
         )}
       </div>
 
+      {assigningLocal && (
+        <AssignLocalModal
+          user={user}
+          unit={unit}
+          orders={selOrders}
+          localTechs={localTechs.filter((t) => t.companies.includes(selCompanies[0]))}
+          comarca={selPlaces.length === 1 ? splitKey(selPlaces[0]).comarca : undefined}
+          where={selPlaces.length === 1 ? localLabel(splitKey(selPlaces[0])) : `${selPlaces.length} locais`}
+          onClose={() => setAssigningLocal(false)}
+          onDone={(text) => {
+            setAssigningLocal(false);
+            setSel(new Set());
+            setMsg({ ok: true, text });
+            onReload();
+          }}
+        />
+      )}
       {programming && (
         <ProgramPreventivesModal
           user={user}

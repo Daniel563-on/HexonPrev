@@ -136,6 +136,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
                 <p className="text-xs font-black text-slate-800">Materiais a mais (mesmo material soma à quantidade já lançada)</p>
                 <ExecutionExtras
                   unit={order.unit}
+                  company={order.company}
                   editable
                   executor={null}
                   materials={materials}

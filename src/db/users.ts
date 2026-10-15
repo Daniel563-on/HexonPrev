@@ -251,7 +251,13 @@ export async function dbSaveUser(user: HexonUser): Promise<void> {
   if (firebaseActive && dbInstance) {
     try {
       // syncAt: os aparelhos recebem só o que mudou (cópia local das pessoas da gerência, src/db/localSync.ts)
-      await setDoc(doc(dbInstance, 'users', safeUser.id), { ...cleanUndefined(safeUser), senha: deleteField(), syncAt: serverTimestamp() }, { merge: true });
+      // Técnico local (Lote 2): desmarcado, os campos saem do cadastro (a gravação é "merge")
+      const local = safeUser.localTech === true;
+      await setDoc(
+        doc(dbInstance, 'users', safeUser.id),
+        { ...cleanUndefined(safeUser), senha: deleteField(), localTech: local ? true : deleteField(), localComarca: local ? safeUser.localComarca || '' : deleteField(), syncAt: serverTimestamp() },
+        { merge: true }
+      );
       // Mudou de gerência: sai da cópia local da gerência antiga
       if (previousGerencia && previousGerencia !== safeUser.gerencia) await syncTombstone('users', previousGerencia, safeUser.id).catch(() => {});
       markSyncStale('users');

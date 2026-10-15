@@ -454,6 +454,8 @@ export interface HexonUser {
   authUid?: string; // UID do Firebase Authentication vinculado
   profileId?: string; // perfil de acesso (cadastro de Perfis); "perfil" acima guarda o tipo básico derivado dele
   companies?: string[]; // empresas contratadas do usuário (ids); técnico = exatamente 1 (etapa especial E1)
+  localTech?: boolean; // técnico local (Lote 2): gerência DOM, recebe atribuições de todas as gerências (src/lib/localTech.ts)
+  localComarca?: string; // comarca onde o técnico local atua (obrigatória; da lista de endereços)
 }
 
 // EMPRESA CONTRATADA (etapa especial E1): dentro de cada gerência, várias empresas; cada uma com seu planejador,

@@ -2,6 +2,7 @@ import { doc, getDoc } from './guard';
 import { OrderParticipant, OrderTimelineEvent, UsualTeam } from '../types';
 import { firebaseActive, dbInstance, cleanUndefined, checkQuotaException } from './core';
 import { onSyncChange, syncedList } from './localSync';
+import { LOCAL_TECH_UNIT, LocalTechOption, localTechOptions } from '../lib/localTech';
 
 // EXECUÇÃO (Etapa 6.2): pessoas da gerência (participantes), equipe habitual e linha do tempo da OS
 
@@ -68,6 +69,17 @@ export interface UnitPersonInfo extends OrderParticipant {
 }
 export async function dbGetUnitPeopleInfo(unit: string): Promise<UnitPersonInfo[]> {
   return (await unitPeople(unit)).map((x) => ({ ...x.p, companies: x.companies, login: x.login, perfil: x.perfil }));
+}
+
+// TÉCNICOS LOCAIS (Lote 2): usuários da DOM marcados "Técnico local" + técnicos antigos com gerência "Todas".
+// Vêm da cópia guardada no aparelho (usuários por gerência; índice `gerencia` que já existe): 1ª vez baixa, depois só o que muda.
+export async function dbGetLocalTechs(company?: string): Promise<LocalTechOption[]> {
+  if (!firebaseActive || !dbInstance) return [];
+  const [dom, all] = await Promise.all([
+    syncedList<any>('users', LOCAL_TECH_UNIT, [['gerencia', LOCAL_TECH_UNIT]]).catch(() => []),
+    syncedList<any>('users', 'Todas', [['gerencia', 'Todas']]).catch(() => [])
+  ]);
+  return localTechOptions([...dom, ...all], company);
 }
 
 // Empresas de uma pessoa da gerência (técnico = 1 empresa)

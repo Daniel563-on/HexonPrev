@@ -37,6 +37,7 @@ import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
 import { ZipBuilder } from '../../lib/zip';
 import { HomeOsLink, clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
+import { isLocalTech } from '../../lib/localTech';
 
 // ORDENS DE SERVIÇO › CORRETIVAS (Fase 6): painel de acompanhamento (contadores), busca por nº da OS ou GLPI,
 // filtros (gerência + situação OU técnico + período; intervenção e "só atrasadas" filtram o que já veio),
@@ -265,7 +266,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     loadFirst(m);
     loadCounters();
     dbGetUsers()
-      .then((users) => setUnitTechs(users.filter((u) => u.perfil === 'Profissional' && (u.gerencia === unit || u.gerencia === 'Todas'))))
+      .then((users) => setUnitTechs(users.filter((u) => u.perfil === 'Profissional' && (u.gerencia === unit || u.gerencia === 'Todas' || isLocalTech(u)))))
       .catch(() => setUnitTechs([]));
   }, [unit]);
   // Trocou a empresa: recarrega a lista (mesmos filtros) e os contadores
@@ -379,8 +380,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setAssignMsg(null);
     setError(null);
     const users = await dbGetUsers().catch(() => []);
-    // Só os técnicos da empresa da OS
-    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas') && (!o.company || (u.companies || []).includes(o.company))));
+    // Só os técnicos da empresa da OS: da gerência e, em outra lista, os técnicos locais (Lote 2; e os antigos com "Todas")
+    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas' || isLocalTech(u)) && (!o.company || (u.companies || []).includes(o.company))));
   };
   // ===== Planilha da lista filtrada (todas as páginas, até 2.000 OS) =====
   const exportXlsx = async () => {

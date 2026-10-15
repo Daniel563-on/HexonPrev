@@ -7,6 +7,8 @@ import { addDays, isoWeek, mondayOf, weekDays } from '../programacao/weekDates';
 import { Shell, btn, btnMain } from '../programacao/WeekModals';
 import { teamLabel } from '../programacao/TeamForm';
 import { brDay, crewOf, DaysPicker, dayTxt as dayTxtOf, NightsBox, TechOption, useWeekData } from '../programacao/weekPick';
+import TechTwoLists from './TechTwoLists';
+import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
 
 // ATRIBUIR TÉCNICO DO CHAMADO (Fase 7E-2; etapa de junção: "Atribuir técnico" do Hexon principal + bloco da Programação).
 // Quem também tem "Programar" pode informar o dia (opcional) e o pernoite: se o técnico já tem um bloco nesses dias, o
@@ -48,8 +50,12 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
 
   const inBlock = !!order.lotId || !!order.scheduledDate;
   const techChanged = tech !== (order.assignedTechnicianMatricula || '');
+  // Técnicos da gerência e técnicos locais (Lote 2): para o técnico local só atribui (sem dia e sem pernoite)
+  const unitTechs = techs.filter((x) => x.gerencia === order.unit);
+  const localTechs = order.unit === LOCAL_TECH_UNIT ? [] : localTechOptions(techs.filter((x) => x.gerencia !== order.unit));
+  const localChosen = !!tech && localTechs.some((x) => x.matricula === tech);
   // Chamado já com dia: mudar o dia é pela Programação; trocar o técnico tira do bloco (como antes) e aí pode programar
-  const canDay = canProgram && !!order.company && (!inBlock || techChanged);
+  const canDay = canProgram && !!order.company && (!inBlock || techChanged) && !localChosen;
   useEffect(() => {
     if (!canDay || !withDay) return;
     dbGetCompanies()
@@ -196,11 +202,6 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
     }
   };
 
-  const groups = [
-    { label: `Técnicos da ${order.unit}`, list: techs.filter((x) => x.gerencia === order.unit) },
-    { label: 'Técnicos de todas as gerências', list: techs.filter((x) => x.gerencia === 'Todas') }
-  ].filter((g) => g.list.length > 0);
-
   return (
     <Shell
       title={`${order.assignedTechnicianMatricula ? 'Trocar técnico' : 'Atribuir técnico'} — ${order.number}`}
@@ -223,22 +224,20 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
       ) : (
         <p className="text-[11px] text-slate-500">A contagem do homem-hora continua desde a primeira atribuição.</p>
       )}
-      <label className="block">
-        <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 mb-1">Técnico</span>
-        <select value={tech} onChange={(ev) => setTech(ev.target.value)} className="w-full h-9 px-3 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 font-bold">
-          <option value="">Selecione o técnico...</option>
-          {groups.map((g) => (
-            <optgroup key={g.label} label={g.label}>
-              {g.list.map((x) => (
-                <option key={x.matricula} value={x.matricula}>
-                  {x.name} ({x.matricula})
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        {techs.length === 0 && <span className="block mt-1 text-[11px] text-slate-500">Nenhum técnico ativo nesta gerência.</span>}
-      </label>
+      {localTechs.length > 0 ? (
+        <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={localTechs} comarca={order.comarca} value={tech} onChange={(m) => { setTech(m); setWithDay(false); }} />
+      ) : (
+        <label className="block">
+          <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 mb-1">Técnico</span>
+          <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={[]} value={tech} onChange={setTech} />
+          {techs.length === 0 && <span className="block mt-1 text-[11px] text-slate-500">Nenhum técnico ativo nesta gerência.</span>}
+        </label>
+      )}
+      {localChosen && (
+        <p className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 text-[11px] text-emerald-900 dark:text-emerald-200">
+          <b>Técnico local: sem dia e sem pernoite.</b> Ele recebe no celular e faz dentro do prazo{order.deadline ? ` do chamado (${brDay(order.deadline)})` : ''}. Não entra na Programação da {order.unit}. O material usado sai da {order.unit}.
+        </p>
+      )}
 
       {inBlock && (
         <p className="p-2.5 rounded-lg border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/30 text-[11px] text-indigo-900 dark:text-indigo-200">
@@ -336,15 +335,17 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
         </div>
       )}
 
-      <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-[11px] text-indigo-900 dark:text-indigo-200 flex gap-2">
-        <Info className="w-4 h-4 shrink-0" />
-        <span>
-          {canDay
-            ? 'Com o dia, o chamado aparece na Programação (no bloco) e no celular do técnico com "Programada: …". Sem o dia, fica como hoje: com o técnico, sem dia. '
-            : ''}
-          <b>O técnico não lança pernoite:</b> o pernoite é o do bloco da Programação.
-        </span>
-      </div>
+      {!localChosen && (
+        <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-[11px] text-indigo-900 dark:text-indigo-200 flex gap-2">
+          <Info className="w-4 h-4 shrink-0" />
+          <span>
+            {canDay
+              ? 'Com o dia, o chamado aparece na Programação (no bloco) e no celular do técnico com "Programada: …". Sem o dia, fica como hoje: com o técnico, sem dia. '
+              : ''}
+            <b>O técnico não lança pernoite:</b> o pernoite é o do bloco da Programação.
+          </span>
+        </div>
+      )}
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
     </Shell>
   );
