@@ -60,7 +60,7 @@ export default function OsSignaturesPanel({ order: o, userProfile, mySignRole, c
     try {
       const meta = { name: userProfile.name, matricula: userProfile.matricula, cargo: userProfile.cargo || OS_SIGN_LABEL[role], via: 'sistema' as const };
       const at = new Date().toISOString();
-      await dbSignAsRole([o], role, meta, { [o.id]: renderOsSignature(strokes, { role, ...meta, at }) }, userProfile.name);
+      await dbSignAsRole([o], role, meta, { [o.id]: await renderOsSignature(strokes, { role, ...meta, at }) }, userProfile.name);
       onChanged();
     } catch (err: any) {
       setMsg(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não assina esta OS.' : `Não foi possível assinar: ${err?.message || err}`);

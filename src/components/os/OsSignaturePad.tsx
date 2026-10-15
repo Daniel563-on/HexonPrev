@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Eraser, Star, X } from 'lucide-react';
 import { OsSignatureRole } from '../../types';
 import { OS_SIGN_COLOR, OS_SIGN_LABEL } from '../../db/firebase';
+import { compactOsSignature } from '../../lib/signatureImage';
 
 // QUADRO DE ASSINATURA DA OS com carimbo no fundo ("VALIDAÇÃO DE ASSINATURA ELETRÔNICA"), uma cor por papel.
 // No celular abre deitado (paisagem): o Android vira a tela; quando o aparelho não deixa (iPhone), o quadro aparece
@@ -23,6 +24,7 @@ export interface StampInfo {
 
 const W = 720;
 const H = 270;
+const INK = '#0f172a';
 
 function drawStamp(ctx: CanvasRenderingContext2D, s: StampInfo) {
   const color = OS_SIGN_COLOR[s.role];
@@ -68,8 +70,8 @@ function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.lineWidth = 3;
-  ctx.strokeStyle = '#0f172a';
-  ctx.fillStyle = '#0f172a';
+  ctx.strokeStyle = INK;
+  ctx.fillStyle = INK;
   strokes.forEach((st) => {
     if (st.length === 1) {
       ctx.beginPath();
@@ -85,8 +87,8 @@ function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
   ctx.restore();
 }
 
-// Imagem final (PNG) = carimbo + desenho
-export function renderOsSignature(strokes: Stroke[], stamp: StampInfo): string {
+// Imagem final (PNG) = carimbo + desenho, gravada leve: PNG de 4 tons, mesmo tamanho (Lote 4; src/lib/signatureImage.ts)
+export async function renderOsSignature(strokes: Stroke[], stamp: StampInfo): Promise<string> {
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
@@ -95,7 +97,7 @@ export function renderOsSignature(strokes: Stroke[], stamp: StampInfo): string {
   ctx.fillRect(0, 0, W, H);
   drawStamp(ctx, stamp);
   drawStrokes(ctx, strokes);
-  return c.toDataURL('image/png');
+  return compactOsSignature(c, OS_SIGN_COLOR[stamp.role], INK);
 }
 
 interface Props {

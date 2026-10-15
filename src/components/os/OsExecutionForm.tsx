@@ -217,7 +217,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const onSigned = async (strokes: Stroke[], who: { name: string; matricula?: string; cargo?: string; rating?: number }) => {
     const role = signing!;
     const at = new Date().toISOString();
-    const image = renderOsSignature(strokes, { role, ...who, at });
+    const image = await renderOsSignature(strokes, { role, ...who, at });
     setSigning(null);
     setBusy(true);
     try {

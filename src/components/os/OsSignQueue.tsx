@@ -46,9 +46,9 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
     const chosen = list.filter((o) => sel.has(o.id));
     const meta = { name: userProfile.name, matricula: userProfile.matricula, cargo: userProfile.cargo || OS_SIGN_LABEL[role], via: 'sistema' as const };
     const images: Record<string, string> = {};
-    chosen.forEach((o) => (images[o.id] = renderOsSignature(strokes, { role, ...meta, at: new Date().toISOString() })));
     setLoading(true);
     try {
+      for (const o of chosen) images[o.id] = await renderOsSignature(strokes, { role, ...meta, at: new Date().toISOString() });
       const n = await dbSignAsRole(chosen, role, meta, images, userProfile.name);
       setMsg({ ok: true, text: `${n} OS assinada(s).` });
       load();

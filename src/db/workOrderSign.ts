@@ -155,13 +155,16 @@ export async function dbSignClient(o: WorkOrder, meta: OsSignatureMeta, image: s
 }
 
 // ENGENHEIRO / GERENTE: assina uma ou várias OS de uma vez (mesmo desenho; carimbo com a hora de cada uma)
+export const SIGN_BATCH = 25;
 export async function dbSignAsRole(orders: WorkOrder[], role: 'engenheiro' | 'gerente', meta: Omit<OsSignatureMeta, 'at'>, images: Record<string, string>, by: string): Promise<number> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   let done = 0;
-  // Lotes de até 100 OS (cada OS = 2 ou 3 gravações)
-  for (let i = 0; i < orders.length; i += 100) {
+  // Pacotes de até 25 OS (cada OS = 2 ou 3 gravações; Lote 4, S9): bem abaixo do limite de 10 MiB por pedido do banco.
+  // Se um pacote falhar, os anteriores já ficaram assinados: a mensagem diz quantos
+  for (let i = 0; i < orders.length; i += SIGN_BATCH) {
     const batch = writeBatch(dbInstance);
-    orders.slice(i, i + 100).forEach((o) => {
+    let inBatch = 0;
+    orders.slice(i, i + SIGN_BATCH).forEach((o) => {
       if (o.status !== 'Aguardando assinaturas' || o.nextSigner !== role) return;
       const now = new Date().toISOString();
       const next = nextSignerAfter(o, role);
@@ -178,9 +181,16 @@ export async function dbSignAsRole(orders: WorkOrder[], role: 'engenheiro' | 'ge
         if (o.assetId) batch.set(doc(dbInstance!, 'histories', `os_${o.id}`), historyDoc(o, now));
       }
       batch.update(doc(dbInstance!, 'workOrders', o.id), updates);
-      done++;
+      inBatch++;
     });
-    await batch.commit();
+    if (!inBatch) continue;
+    try {
+      await batch.commit();
+    } catch (err: any) {
+      if (!done) throw err;
+      throw new Error(`${done} de ${orders.length} OS assinada(s); as outras não foram (${err?.message || err}). Atualize a lista e assine as que faltaram.`);
+    }
+    done += inBatch;
   }
   return done;
 }

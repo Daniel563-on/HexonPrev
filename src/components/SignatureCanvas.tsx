@@ -1,5 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { RotateCcw, PenTool, CheckCircle } from 'lucide-react';
+import { compactInkSignature } from '../lib/signatureImage';
+
+const INK = '#1e1b4b';
 
 interface SignatureCanvasProps {
   onSave: (signatureBase64: string, signeeName: string) => void;
@@ -29,7 +32,7 @@ export default function SignatureCanvas({ onSave, onCancel, defaultName = 'Danie
     // Adapt to styling resolution
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = '#1e1b4b'; // Deep dark indigo for neat ink
+    ctx.strokeStyle = INK; // Deep dark indigo for neat ink
   }, []);
 
   const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -91,7 +94,7 @@ export default function SignatureCanvas({ onSave, onCancel, defaultName = 'Danie
     setHasDrawn(false);
   };
 
-  const saveSignature = () => {
+  const saveSignature = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !hasDrawn) {
       alert('Por favor, assine no painel antes de validar.');
@@ -103,8 +106,8 @@ export default function SignatureCanvas({ onSave, onCancel, defaultName = 'Danie
       return;
     }
 
-    // Capture as PNG Base64 string
-    const dataUrl = canvas.toDataURL('image/png');
+    // PNG leve (Lote 4): mesmo tamanho, traço em 4 tons com fundo transparente (src/lib/signatureImage.ts)
+    const dataUrl = await compactInkSignature(canvas, INK);
     onSave(dataUrl, signeeName);
   };
 
