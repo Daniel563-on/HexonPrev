@@ -22,7 +22,7 @@ import NoticesView from './components/notices/NoticesView';
 import GlpiPanelView from './components/GlpiPanelView';
 import ProgramacaoView from './components/programacao/ProgramacaoView';
 import { useNoticeState } from './components/notices/useNoticeState';
-import { NoticeViewer, noticeActive, noticeCompaniesOf, noticeTargets, subscribeNotices } from './db/notices';
+import { NoticeViewer, noticeActive, noticeCompaniesOf, noticeTargets, noticeUnitsFor, subscribeNotices } from './db/notices';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import BrandLogo from './components/BrandLogo';
 import BrandBackground from './components/BrandBackground';
@@ -447,9 +447,12 @@ export default function App() {
   const dataUnitsKey = dataUnits.join('|');
   // O cadastro abre na hora (guardado no aparelho), mas o login do Firebase volta um instante depois:
   // por isso a escuta também recomeça quando o login fica pronto (senão a 1ª tela ficava sem OS)
+  // Ajuste S4: até a cópia de todas as gerências chegar, o Início mostra "Carregando…" (e não "ainda não foram disparadas")
+  const [ordersReady, setOrdersReady] = useState(false);
   useEffect(() => {
     if (!userProfile || userProfile.perfil === 'Profissional') return;
-    return subscribeUnitOrders(dataUnits, ordersMonth, setOrders);
+    setOrdersReady(false);
+    return subscribeUnitOrders(dataUnits, ordersMonth, setOrders, () => setOrdersReady(true));
   }, [userProfile?.id, userProfile?.perfil, dataUnitsKey, ordersMonth, currentUser?.uid]);
 
   // Técnico: OS em tempo real, só as abertas atribuídas à matrícula dele (as concluídas saem do app)
@@ -639,13 +642,16 @@ export default function App() {
 
   // Quadro de Avisos (Fase 9A, tempo real): avisos que valem nas gerências da pessoa — número no menu e sino do celular
   const [notices, setNotices] = useState<Notice[]>([]);
+  // Técnico local (vê mais de uma gerência): só os avisos da DOM e os de todas as gerências (ajuste S2)
+  const noticeUnits = noticeUnitsFor(userProfile?.perfil, visibleUnits);
+  const noticeUnitsKey = noticeUnits === null ? '*' : noticeUnits.join('|');
   useEffect(() => {
     if (!userProfile) return;
-    return subscribeNotices(visibleUnits, setNotices);
-  }, [userProfile?.id, visibleUnitsKey, currentUser?.uid]);
+    return subscribeNotices(noticeUnits, setNotices);
+  }, [userProfile?.id, noticeUnitsKey, currentUser?.uid]);
   const noticeViewer: NoticeViewer = {
     perfil: userProfile?.perfil || 'Profissional',
-    units: visibleUnits,
+    units: noticeUnits,
     companies: userProfile ? noticeCompaniesOf(userProfile, visibleCompanies) : []
   };
   const myNotices = notices.filter((n) => noticeActive(n) && noticeTargets(n, noticeViewer));
@@ -1202,6 +1208,7 @@ export default function App() {
               userProfile={userProfile}
               profileName={resolveUserProfile(userProfile, accessProfiles)?.name || userProfile.perfil}
               orders={filteredOrders}
+              ordersReady={ordersReady}
               units={dataUnits}
               visibleCompanies={visibleCompanies}
               perms={{

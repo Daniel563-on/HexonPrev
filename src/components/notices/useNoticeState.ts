@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Notice } from '../../types';
-import { dbConfirmNotice, dbHasConfirmedNotice } from '../../db/notices';
+import { dbConfirmNotice, dbConfirmNotices, dbHasConfirmedNotice } from '../../db/notices';
 import { markNotices, noticeIds } from '../../lib/noticeSeen';
 
 // QUADRO DE AVISOS: "novo" (ainda não visto neste aparelho) e "Li e estou ciente" dos urgentes.
@@ -47,12 +47,29 @@ export function useNoticeState(matricula: string, name: string, list: Notice[]) 
     }
   };
 
+  // Ajuste S2: "Li e estou ciente de todos" (um pacote só)
+  const confirmMany = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBusy('*');
+    setError('');
+    try {
+      const done = await dbConfirmNotices(ids, { matricula, name });
+      markNotices(matricula, 'confirmed', done);
+      if (done.length < ids.length) setError(`${ids.length - done.length} aviso(s) não puderam ser confirmados. Tente de novo.`);
+    } catch (err: any) {
+      setError(err?.code === 'permission-denied' ? 'O banco recusou a confirmação.' : `Não foi possível gravar: ${err?.message || err}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const isNew = (n: Notice) => !seen.has(n.id) && n.createdBy.matricula !== matricula;
   const needs = (n: Notice) => n.kind === 'urgente' && !confirmed.has(n.id);
   return {
     isNew,
     needs,
     confirm,
+    confirmMany,
     busy,
     error,
     pending: list.filter((n) => isNew(n) || needs(n)).length,

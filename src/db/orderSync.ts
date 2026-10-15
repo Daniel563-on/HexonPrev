@@ -2,6 +2,7 @@ import { runBulk } from './guard';
 import {
   collection,
   getDocs,
+  getDocsFromServer,
   limit,
   onSnapshot,
   orderBy,
@@ -93,13 +94,15 @@ function schedulePersist(u: UnitSync): void {
 function fullDownload(...args: Parameters<typeof fullDownloadNow>): ReturnType<typeof fullDownloadNow> {
   return runBulk(() => fullDownloadNow(...args));
 }
+// Ajuste S4 (simulação geral): só do servidor. getDocs, sem conexão, devolvia o que havia no aparelho (nada) sem erro
+// e a cópia "pronta" e vazia era guardada; depois a escuta (syncAt > 0) baixava todo o histórico da gerência.
 async function fullDownloadNow(u: UnitSync): Promise<void> {
   const db = dbInstance!;
   const ref = collection(db, 'serviceOrders');
   const [openSnap, closedSnap] = await Promise.all([
     // Abertas da gerência pelo campo de controle unitOpen (índice esparso: só OS abertas)
-    getDocs(query(ref, where('unitOpen', '==', u.unit))),
-    getDocs(query(ref, where('unit', '==', u.unit), where('closedMonth', 'in', [localMonthKey(), prevMonthKey()])))
+    getDocsFromServer(query(ref, where('unitOpen', '==', u.unit))),
+    getDocsFromServer(query(ref, where('unit', '==', u.unit), where('closedMonth', 'in', [localMonthKey(), prevMonthKey()])))
   ]);
   u.store.clear();
   let maxSync = 0;
@@ -239,6 +242,25 @@ export function canUseOrderSync(): boolean {
   return !!(firebaseActive && dbInstance && user && !user.isAnonymous);
 }
 
+// 1ª carga sem conexão (ou banco lento): tenta de novo em 5 s, 15 s, 30 s e depois a cada 60 s enquanto a gerência
+// estiver sendo vista. Recusa do banco (permissão) ou disjuntor: para e avisa no console, como antes.
+async function fullDownloadWithRetry(u: UnitSync, uid: string): Promise<void> {
+  const waits = [5000, 15000, 30000, 60000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fullDownload(u);
+      return;
+    } catch (err: any) {
+      const fatal = err?.code === 'permission-denied' || err?.name === 'GuardError';
+      if (fatal || activeUid !== uid || units.get(u.unit) !== u) throw err;
+      const wait = waits[Math.min(attempt, waits.length - 1)];
+      console.warn(`1ª carga das OS (${u.unit}) não veio do servidor; nova tentativa em ${wait / 1000} s:`, err);
+      await new Promise((r) => setTimeout(r, wait));
+      if (activeUid !== uid || units.get(u.unit) !== u) throw err;
+    }
+  }
+}
+
 // Prepara (uma vez por gerência) a cópia local e a escuta
 function ensureUnit(uid: string, unit: string): UnitSync {
   const existing = units.get(unit);
@@ -259,7 +281,7 @@ function ensureUnit(uid: string, unit: string): UnitSync {
       });
       u.lastSyncMs = saved.lastSyncMs || 0;
     } else {
-      await fullDownload(u);
+      await fullDownloadWithRetry(u, uid);
       schedulePersist(u);
     }
     if (activeUid !== uid || units.get(unit) !== u) return;
@@ -294,7 +316,8 @@ function olderMonthOrders(unit: string, month: string): Promise<ServiceOrder[]> 
 
 // Lista para a tela de gestão: abertas das gerências + fechadas do mês visto (status recalculado pelos prazos).
 // Mesmo resultado que a escuta antiga, lendo do banco só o que mudou.
-export function subscribeUnitOrders(unitList: string[], month: string, onChange: (orders: ServiceOrder[]) => void): () => void {
+// onReady (ajuste S4): chamado quando a cópia de todas as gerências chegou (antes disso a tela mostra "Carregando…")
+export function subscribeUnitOrders(unitList: string[], month: string, onChange: (orders: ServiceOrder[]) => void, onReady?: () => void): () => void {
   if (!canUseOrderSync() || unitList.length === 0) {
     onChange([]);
     return () => {};
@@ -325,9 +348,12 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
   const inLocalCopy = month >= prevMonthKey();
   let older: ServiceOrder[] = [];
   let active = true;
+  // Só manda a lista depois que a cópia de todas as gerências chegou (antes, mudanças de outras escutas mandavam
+  // a lista vazia ou pela metade e o Início dizia "ainda não foram disparadas")
+  let started = false;
 
   const emit = () => {
-    if (!active) return;
+    if (!active || !started) return;
     const byId = new Map<string, ServiceOrder>();
     older.forEach((o) => byId.set(o.id, o));
     syncs.forEach((u) =>
@@ -365,9 +391,15 @@ export function subscribeUnitOrders(unitList: string[], month: string, onChange:
         const parts = await Promise.all(unitList.map((unit) => olderMonthOrders(unit, month)));
         older = parts.flat();
       }
+      started = true;
       emit();
+      if (active) onReady?.();
     })
-    .catch(() => emit());
+    .catch(() => {
+      started = true;
+      emit();
+      if (active) onReady?.();
+    });
 
   return () => {
     active = false;

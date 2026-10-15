@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { HexonUser, Notice } from '../../types';
-import { sortNotices } from '../../db/notices';
+import { noticeRecent, sortNotices } from '../../db/notices';
 import { markNotices, noticeIds } from '../../lib/noticeSeen';
 import NoticeCard from '../notices/NoticeCard';
 import { useNoticeState } from '../notices/useNoticeState';
 
 // QUADRO DE AVISOS no celular do técnico: sino com o número de avisos novos (e urgentes sem "Li e estou ciente").
-// Urgente ainda não confirmado abre sozinho na tela, uma vez por aparelho. As janelas vão direto no <body>:
-// dentro da barra de cima (efeito de vidro) elas ficariam presas no tamanho da barra.
+// Urgente ainda não confirmado abre sozinho na tela, uma vez por aparelho — ajuste S2: só o publicado nos últimos
+// 3 dias (os mais antigos ficam no sino) e, com mais de um, botão "Li e estou ciente de todos". As janelas vão direto
+// no <body>: dentro da barra de cima (efeito de vidro) elas ficariam presas no tamanho da barra.
 export default function MobileNotices({ notices, user }: { notices: Notice[]; user: HexonUser }) {
   const state = useNoticeState(user.matricula, user.name, notices);
   const [open, setOpen] = useState(false);
@@ -21,7 +22,7 @@ export default function MobileNotices({ notices, user }: { notices: Notice[]; us
     // espera um instante: o aparelho confere no banco se o urgente já foi confirmado em outro lugar
     const t = setTimeout(() => {
       const shown = noticeIds(user.matricula, 'shown');
-      const next = list.find((n) => state.needs(n) && !shown.has(n.id));
+      const next = list.find((n) => state.needs(n) && noticeRecent(n) && !shown.has(n.id));
       if (next) {
         markNotices(user.matricula, 'shown', [next.id]);
         setAuto(next);
@@ -29,6 +30,27 @@ export default function MobileNotices({ notices, user }: { notices: Notice[]; us
     }, 2000);
     return () => clearTimeout(t);
   }, [list.map((n) => n.id).join('|'), state.pending, open, !!auto]);
+
+  // Urgentes sem "ciente": os recentes (os que abrem sozinhos) e todos (lista do sino)
+  const recentPending = list.filter((n) => state.needs(n) && noticeRecent(n));
+  const allPending = list.filter((n) => state.needs(n));
+  const confirmAll = async (items: Notice[]) => {
+    const ids = items.map((n) => n.id);
+    markNotices(user.matricula, 'shown', ids);
+    await state.confirmMany(ids);
+    setAuto(null);
+  };
+  const allButton = (items: Notice[]) =>
+    items.length > 1 && (
+      <button
+        type="button"
+        disabled={state.busy === '*'}
+        onClick={() => confirmAll(items)}
+        className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-black cursor-pointer disabled:opacity-60"
+      >
+        {state.busy === '*' ? 'Gravando…' : `Li e estou ciente de todos (${items.length})`}
+      </button>
+    );
 
   const openList = () => {
     setOpen(true);
@@ -76,6 +98,7 @@ export default function MobileNotices({ notices, user }: { notices: Notice[]; us
             </div>
             <div className="p-4 space-y-3 max-w-2xl mx-auto">
               {state.error && <p className="text-xs font-bold text-rose-600">{state.error}</p>}
+              {allButton(allPending)}
               {list.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Nenhum aviso agora.</p>}
               {list.map(card)}
             </div>
@@ -91,6 +114,7 @@ export default function MobileNotices({ notices, user }: { notices: Notice[]; us
               <p className="text-center text-xs font-black uppercase tracking-widest text-white">Aviso urgente</p>
               {card(auto)}
               {state.error && <p className="text-xs font-bold text-rose-300 text-center">{state.error}</p>}
+              {allButton(recentPending)}
               <button type="button" onClick={() => setAuto(null)} className="w-full py-3 rounded-xl bg-white/90 text-slate-800 text-sm font-black cursor-pointer">
                 Fechar
               </button>

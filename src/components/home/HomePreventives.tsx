@@ -110,8 +110,10 @@ function TypeBar(props: { label: string; sub: string; t: TypeStat; head: string;
 // Fase 7E-1: abre Ordens de Serviço › Preventivas já no contador certo (o planejamento saiu do PMOC)
 type Target = 'aprog' | 'prog' | 'exec' | 'atr' | 'consulta';
 
-export default function HomePreventives(props: { orders: ServiceOrder[]; units: string[]; canSeePast: boolean; onOpen: (t: Target) => void }) {
-  const { orders, units, canSeePast } = props;
+// Ajuste S4 (simulação geral): loading = a cópia das OS deste aparelho ainda não chegou — mostra "Carregando…" e "…"
+// em vez de "ainda não foram disparadas" e zeros (no computador novo a 1ª carga pode levar um tempo).
+export default function HomePreventives(props: { orders: ServiceOrder[]; units: string[]; canSeePast: boolean; loading?: boolean; onOpen: (t: Target) => void }) {
+  const { orders, units, canSeePast, loading } = props;
   const now = new Date();
   const current = localMonthKey(now);
   const today = `${current}-${String(now.getDate()).padStart(2, '0')}`;
@@ -150,10 +152,10 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
 
   const isCurrent = month === current;
   const stats = useMemo<Stats | null>(() => {
-    if (isCurrent) return liveStats(orders, month, today);
+    if (isCurrent) return loading ? null : liveStats(orders, month, today);
     const rows = summaries[month];
     return Array.isArray(rows) ? summaryStats(rows) : null;
-  }, [orders, month, isCurrent, today, summaries]);
+  }, [orders, month, isCurrent, today, summaries, loading]);
   const prevRows = summaries[shiftMonth(current, -1)];
   const prev = Array.isArray(prevRows) ? summaryStats(prevRows) : null;
   const empty = !!stats && stats.ativos.total + stats.vistorias.total === 0;
@@ -178,10 +180,10 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
   };
 
   const openCards = [
-    { label: 'Aguardando planejamento', n: open.novo, tone: 'text-indigo-600 dark:text-indigo-400', icon: <CalendarClock className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'aprog' as Target },
-    { label: 'Planejadas', n: open.planejada, tone: 'text-sky-600 dark:text-sky-400', icon: <ClipboardCheck className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'prog' as Target },
-    { label: 'Em execução', n: open.execucao, tone: 'text-amber-600 dark:text-amber-400', icon: <Wrench className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
-    { label: 'Atrasadas', n: open.atrasada, tone: 'text-rose-600 dark:text-rose-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'atr' as Target },
+    { label: 'Aguardando planejamento', n: loading ? null : open.novo, tone: 'text-indigo-600 dark:text-indigo-400', icon: <CalendarClock className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'aprog' as Target },
+    { label: 'Planejadas', n: loading ? null : open.planejada, tone: 'text-sky-600 dark:text-sky-400', icon: <ClipboardCheck className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'prog' as Target },
+    { label: 'Em execução', n: loading ? null : open.execucao, tone: 'text-amber-600 dark:text-amber-400', icon: <Wrench className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
+    { label: 'Atrasadas', n: loading ? null : open.atrasada, tone: 'text-rose-600 dark:text-rose-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'atr' as Target },
     { label: `Concluídas em ${monthName(month)}`, n: stats ? stats.ativos.done + stats.vistorias.done : null, tone: 'text-emerald-600 dark:text-emerald-400', icon: <CheckCircle2 className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target },
     { label: `Não executadas em ${monthName(month)}`, n: stats ? stats.ativos.notDone + stats.vistorias.notDone : null, tone: 'text-slate-500 dark:text-slate-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target }
   ];

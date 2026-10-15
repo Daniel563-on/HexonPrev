@@ -280,7 +280,16 @@ export async function dbUpdateUserSessionId(userId: string, sessionId: string): 
   if (firebaseActive && dbInstance) {
     try {
       const userRef = doc(dbInstance, 'users', userId);
-      await updateDoc(userRef, { currentSessionId: sessionId });
+      // Ajuste S17: no 1º segundo do login a regra às vezes ainda não reconhece a pessoa — tenta de novo 2x em 1,5 s
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await updateDoc(userRef, { currentSessionId: sessionId });
+          break;
+        } catch (e: any) {
+          if (e?.code !== 'permission-denied' || attempt >= 2) throw e;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
     } catch (err: any) {
       console.warn('Firestore update session id failed, using setDoc fallback:', err);
       try {

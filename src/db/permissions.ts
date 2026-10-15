@@ -3,6 +3,7 @@ import { PermissionArea, SystemPermission } from '../types';
 import {
   firebaseActive,
   dbInstance,
+  authInstance,
   isCacheValid,
   updateCacheTimestamp,
   checkQuotaException
@@ -393,10 +394,18 @@ export async function dbGetPermissions(): Promise<{ [key: string]: SystemPermiss
     return { ...cachePermissions };
   }
 
-  if (firebaseActive && dbInstance) {
+  // Ajuste S17 (simulação geral): sem login de verdade (tela de entrada, conta anônima) a regra recusa a leitura —
+  // usa a cópia do aparelho sem perguntar ao banco; com login, se a regra recusar no 1º segundo (login ainda não
+  // chegou ao banco), tenta de novo uma vez em 1,5 s.
+  const realUser = !!authInstance?.currentUser && !authInstance.currentUser.isAnonymous;
+  if (firebaseActive && dbInstance && realUser) {
     try {
       const docRef = doc(dbInstance, 'config', 'permissions');
-      const docSnap = await getDoc(docRef);
+      const docSnap = await getDoc(docRef).catch(async (err: any) => {
+        if (err?.code !== 'permission-denied') throw err;
+        await new Promise((r) => setTimeout(r, 1500));
+        return getDoc(docRef);
+      });
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && data.permissions) {

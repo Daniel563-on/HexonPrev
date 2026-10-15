@@ -34,7 +34,7 @@ import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, subscribeMyWorkOrders, subscribeClientSignedOrders, dbDismissClientSigned, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
+  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, subscribeMyWorkOrders, subscribeClientSignedOrders, dbDismissClientSignedMany, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import TechnicianMaterialRequests from './TechnicianMaterialRequests';
@@ -155,15 +155,15 @@ export default function TechnicianMobileView({
     return subscribeClientSignedOrders(mat, setClientSigned);
   }, [userProfile.matricula]);
   const signedShown = clientSigned.filter((o) => !o.signatures?.engenheiro);
-  // O engenheiro assinou e o técnico não tocou em OK: tira o aviso sozinho (1 gravação por OS)
+  // O engenheiro assinou e o técnico não tocou em OK: tira o aviso sozinho, todos num pacote só.
+  // Ajuste S5: se o banco recusar, NÃO tenta de novo na hora (a lista muda ao desfazer e isso repetia a gravação sem
+  // parar até o disjuntor); fica para a próxima vez que o app abrir.
   const dismissedRef = React.useRef(new Set<string>());
   useEffect(() => {
-    clientSigned
-      .filter((o) => o.signatures?.engenheiro && !dismissedRef.current.has(o.id))
-      .forEach((o) => {
-        dismissedRef.current.add(o.id);
-        dbDismissClientSigned(o).catch(() => dismissedRef.current.delete(o.id));
-      });
+    const due = clientSigned.filter((o) => o.signatures?.engenheiro && !dismissedRef.current.has(o.id));
+    if (due.length === 0) return;
+    due.forEach((o) => dismissedRef.current.add(o.id));
+    dbDismissClientSignedMany(due).catch((err) => console.warn('Não foi possível tirar os avisos "Assinadas pelo cliente" (tenta de novo ao abrir o app):', err));
   }, [clientSigned]);
   const osCount =
     (myWorkOrders || []).filter((o) => !(o.status === 'Aguardando assinaturas' && o.nextSigner !== 'cliente') && o.status !== 'Concluída').length + signedShown.length;
@@ -399,6 +399,27 @@ export default function TechnicianMobileView({
     return myOrders.filter(o => o.status === 'Concluída').length;
   }, [myOrders]);
 
+  // Ajuste S1 (simulação geral): ordem de trabalho — atrasadas, de hoje, próximos dias (o mais perto primeiro) e,
+  // por último, as sem dia marcado (o prazo que vence antes primeiro). "Dia" = dia programado; vistoria diária sem
+  // programação usa o próprio dia da janela. Antes a lista seguia a criação e, no disparo, todas nascem juntas.
+  const compareByWorkDay = (a: ServiceOrder, b: ServiceOrder): number => {
+    const today = localTodayStr();
+    const rank = (o: ServiceOrder): [number, string] => {
+      const range = o.scheduledDate
+        ? [o.scheduledDate, o.scheduledEndDate || o.scheduledDate]
+        : o.startDate && o.endDate && o.startDate === o.endDate
+          ? [o.startDate, o.startDate]
+          : null;
+      if (o.status === 'Atrasada' || (range && range[1] < today)) return [0, range ? range[0] : o.endDate || ''];
+      if (range && range[0] <= today) return [1, range[0]];
+      if (range) return [2, range[0]];
+      return [3, o.endDate || ''];
+    };
+    const [ga, ka] = rank(a);
+    const [gb, kb] = rank(b);
+    return ga - gb || ka.localeCompare(kb) || String(a.id).localeCompare(String(b.id));
+  };
+
   // Filtered orders for the active filter tab and search
   const displayedOrders = useMemo(() => {
     return myOrders.filter(o => {
@@ -428,7 +449,7 @@ export default function TechnicianMobileView({
       }
 
       return true;
-    });
+    }).sort(compareByWorkDay);
   }, [myOrders, filterStatus, searchQuery, assets]);
 
   // Pagination: 20 orders per page

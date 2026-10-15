@@ -178,6 +178,16 @@ export const getDocs = ((q: any) => {
   });
 }) as typeof fs.getDocs;
 
+// Só do servidor (sem conexão dá erro em vez de devolver o que há no aparelho) — 1ª carga da cópia das OS (ajuste S4)
+export const getDocsFromServer = ((q: any) => {
+  remember(q);
+  if (!allow('read')) return Promise.reject(new GuardError());
+  return fs.getDocsFromServer(q).then((snap) => {
+    countDocs(snap);
+    return snap;
+  });
+}) as typeof fs.getDocsFromServer;
+
 // ===== Escutas =====
 // Bloqueada: não abre a escuta (devolve um "parar" vazio para a tela não quebrar)
 export const onSnapshot = ((ref: any, ...rest: any[]) => {

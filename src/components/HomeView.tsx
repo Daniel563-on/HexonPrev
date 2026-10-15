@@ -31,6 +31,7 @@ interface HomeViewProps {
   userProfile: HexonUser;
   profileName: string;
   orders: ServiceOrder[];
+  ordersReady?: boolean; // ajuste S4: a cópia das OS deste aparelho já chegou
   units: string[]; // gerências do resumo (quem vê todas: a escolhida no topo)
   visibleCompanies: string[] | null;
   perms: HomePerms;
@@ -60,7 +61,7 @@ const TONE = {
 };
 const ico = 'w-4 h-4';
 
-export default function HomeView({ userProfile, profileName, orders, units, visibleCompanies, perms, mySignRole, pending, onNavigate, onViewedMonthChange }: HomeViewProps) {
+export default function HomeView({ userProfile, profileName, orders, ordersReady, units, visibleCompanies, perms, mySignRole, pending, onNavigate, onViewedMonthChange }: HomeViewProps) {
   const cos = visibleCompanies;
   const cosKey = cos === null ? '*' : cos.join(',');
   const unitsKey = units.join('|');
@@ -238,7 +239,7 @@ export default function HomeView({ userProfile, profileName, orders, units, visi
       </div>
 
       {/* 4. PREVENTIVAS E VISTORIAS */}
-      {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} onOpen={openPreventives} />}
+      {perms.seePreventives && <HomePreventives orders={myOrders} units={units} canSeePast={cos === null} loading={ordersReady === false} onOpen={openPreventives} />}
 
       {/* 6. EQUIPE AGORA (quem atribui chamados ou planeja preventivas) */}
       {(perms.assign || perms.plan) && (

@@ -389,6 +389,16 @@ export async function dbDismissClientSigned(o: WorkOrder): Promise<void> {
   if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
   await updateDoc(doc(dbInstance, 'workOrders', o.id), { cliSigned: deleteField() });
 }
+// Ajuste S5 (simulação geral): os avisos que o engenheiro já assinou saem num pacote só (1 gravação para o
+// disjuntor, até 400 OS por pacote). Quem chama não tenta de novo na hora se o banco recusar.
+export async function dbDismissClientSignedMany(orders: WorkOrder[]): Promise<void> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  for (let i = 0; i < orders.length; i += 400) {
+    const batch = writeBatch(dbInstance);
+    orders.slice(i, i + 400).forEach((o) => batch.update(doc(dbInstance!, 'workOrders', o.id), { cliSigned: deleteField() }));
+    await batch.commit();
+  }
+}
 
 // ===== Resposta à contestação =====
 // Depois da assinatura do técnico nada do que foi lançado muda: a resposta só ACRESCENTA (perguntas ainda sem

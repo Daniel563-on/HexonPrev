@@ -1,4 +1,4 @@
-import { Bytes, collection, doc, getDoc, getDocFromCache, getDocs, onSnapshot, query, setDoc, where, writeBatch } from './guard';
+import { Bytes, collection, doc, getDoc, getDocFromCache, getDocs, onSnapshot, query, runBulk, setDoc, where, writeBatch } from './guard';
 import { HexonUser, Notice, NoticeRead } from '../types';
 import { firebaseActive, dbInstance, checkQuotaException, awaitWrite } from './core';
 import { localTodayStr } from './serviceOrders';
@@ -39,6 +39,22 @@ export function noticeTargets(n: Notice, v: NoticeViewer): boolean {
 }
 
 export const noticeActive = (n: Notice) => n.until >= localTodayStr();
+
+// Ajuste S2 (simulação geral): no celular só abre sozinho o urgente publicado nos últimos 3 dias; os mais antigos
+// ficam no sino (em aparelho novo, todos os urgentes ainda válidos abriam um atrás do outro por cima do trabalho).
+export const NOTICE_AUTO_OPEN_DAYS = 3;
+export const noticeRecent = (n: Notice, days = NOTICE_AUTO_OPEN_DAYS) => {
+  const t = Date.parse(n.createdAt || '');
+  return Number.isFinite(t) && Date.now() - t <= days * 24 * 60 * 60 * 1000;
+};
+
+// Técnico local (vê mais de uma gerência, ex.: técnico dos prédios da DOM com gerência "Todas"): recebe só os
+// avisos marcados para a DOM ou para todas as gerências (decisão do usuário, 15/10/2026). Os demais: as gerências dele.
+export const NOTICE_LOCAL_TECH_UNIT = 'DOM';
+export function noticeUnitsFor(perfil: HexonUser['perfil'] | undefined, visibleUnits: string[] | null): string[] | null {
+  if (perfil === 'Profissional' && (visibleUnits === null || visibleUnits.length > 1)) return [NOTICE_LOCAL_TECH_UNIT];
+  return visibleUnits;
+}
 
 // Fixados primeiro, depois urgentes, depois os mais novos
 export function sortNotices(list: Notice[]): Notice[] {
@@ -201,6 +217,37 @@ export async function dbConfirmNotice(noticeId: string, u: { matricula: string; 
   };
   // sem internet: fica no aparelho e sobe quando voltar
   await awaitWrite(setDoc(doc(dbInstance, 'notices', noticeId, 'reads', u.matricula), read));
+}
+// Ajuste S2: "Li e estou ciente de todos" — um pacote só (1 gravação para o disjuntor). Se o pacote for recusado
+// (algum já tinha sido confirmado em outro aparelho e a regra não deixa regravar), confirma um por um, como
+// operação em massa, e devolve os que ficaram confirmados.
+export async function dbConfirmNotices(noticeIds: string[], u: { matricula: string; name: string }): Promise<string[]> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  const ids = Array.from(new Set(noticeIds));
+  if (ids.length === 0) return [];
+  const read = (): NoticeRead => ({ matricula: u.matricula, name: u.name, at: new Date().toISOString() });
+  try {
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = writeBatch(dbInstance);
+      ids.slice(i, i + 400).forEach((id) => batch.set(doc(dbInstance!, 'notices', id, 'reads', u.matricula), read()));
+      await awaitWrite(batch.commit());
+    }
+    return ids;
+  } catch (err: any) {
+    checkQuotaException(err);
+    const done: string[] = [];
+    await runBulk(async () => {
+      for (const id of ids) {
+        try {
+          await awaitWrite(setDoc(doc(dbInstance!, 'notices', id, 'reads', u.matricula), read()));
+          done.push(id);
+        } catch {
+          if (await dbHasConfirmedNotice(id, u.matricula)) done.push(id);
+        }
+      }
+    });
+    return done;
+  }
 }
 export async function dbHasConfirmedNotice(noticeId: string, matricula: string): Promise<boolean> {
   if (!firebaseActive || !dbInstance) return false;
