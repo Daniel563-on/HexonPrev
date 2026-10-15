@@ -125,6 +125,7 @@ Feitos fora das fases: **Empresas contratadas** (E1–E5: tudo separado por ger�
     - **Observação honesta do valor em estoque:** com a planilha enviada, a conferência mostra R$ 609.953,47 e a soma da planilha é R$ 609.942,54 (diferença de R$ 10,93) — vem de arredondar ao centavo o valor médio de cada material e multiplicar pelo saldo; não é erro de saldo.
     - **Testes A7 (14/10/2026, emuladores reiniciados, regras do ramo):** `rules_a7` 8/8 (aprovador sem "Visualizar Materiais" lê o material; quem não aprova nem vê não lê; importador não apaga nem renomeia almoxarifado nem mexe em outro registro de controle; quem não importa não acrescenta; importador acrescenta e grava material com saldo) e `t_a7` 27/27 (importação da planilha enviada: conferência 102 novos / 1 mudou / 1 saiu, Subalmoxarifado criado, aviso da média, gravação; tela com saldo, contadores e filtros; técnico só vê material com saldo; aprovação mostra o saldo). **Regressão completa: 608/608** — 7D 47, avisos 73, 7C 139, semana 28, equipes 24, janelas 26, P39 12, empresa 16, 7E-1 32, 7E-2 24, A4 61, A5/A6 25, A5-B 66, A7 35; mais o teste antigo do pedido de material (8B) 24/24 → **632 no total, 0 falhas**.
     - **A7 autorizado pelo usuário ("Autorizo") e enviado ao `main` (14/10/2026):** o `main` não tinha mudado (`7cc04c9`) e andou até o ramo sem forçar. **Sem índice novo.** **Falta o usuário:** puxar no AI Studio, conferir no preview e fazer o deploy; **publicar as regras** (texto completo mandado no chat; muda `matReadOk` e a escrita de `appControl`) — publicar logo depois do deploy (antes disso, quem aprova pedido sem "Visualizar Materiais" não vê o saldo e o importador sem ser Super Admin não consegue criar almoxarifado novo); importar a planilha do almoxarifado em Gestão de Materiais › "Importar planilha do almoxarifado".
+  - **A8 (15/10/2026) — SIMULAÇÃO GERAL DE CARGA (pedido do usuário: 212 pessoas, ~8.300 preventivas e ~3.800 chamados por mês; nada do app foi mudado).** Resultado completo, custos por gerência e a lista de ajustes **S1–S22** na seção **7.1**. Prioridade ALTA: **S1** lista de preventivas do técnico fora da ordem do dia; **S2** avisos urgentes em fila por cima do trabalho; **S3** planejador da DOM (4 gerências) sem preventivas no emulador; **S4** cópia das preventivas pode ser gravada vazia; **S5** repetição sem fim ao tirar o aviso "Assinadas pelo cliente" desarma o disjuntor (comprovado). Custo previsto: ~US$ 0,10–0,22/mês de operações + armazenamento crescendo ~0,6–1,1 GB/mês (quase tudo imagens de assinatura, S8). **Aguardando o usuário dizer quais ajustes entram e em que ordem.**
 - ✅ **App instalável (PWA) — concluído e aprovado pelo usuário (10/10/2026).** ~90% dos técnicos usam Android. Comparação feita: PWA (escolhido) × app de loja (Capacitor: Apple US$ 99/ano, revisão, precisa de Mac) × nativo (descartado). **Desenho aprovado em 10/10/2026** (botão no login e em Meu Perfil; ícones por PR): ícone "Hexon" (logo sobre azul-marinho `#08122b`, versão recortável para o Android + 180 px para iPhone), tela cheia, botão "Instalar aplicativo" (Android: instalação do Chrome; iPhone: instrução Compartilhar › Adicionar à Tela de Início), sem banco/regra/índice. Service worker **só se o Chrome exigir** (conferir com `Page.getInstallabilityErrors` no Chromium; se exigir, um mínimo que não guarda nada). **Ícones:** o usuário envia o PNG original pelo GitHub (Add file › Upload files, no `main`); arquivos de imagem não passam pelo AI Studio (`assets/.aistudio` fica fora do git). Pelo histórico, arquivos colocados direto no `main` (ex.: `hosting-config`, 24/09) continuaram depois de todos os commits do AI Studio. **Notificações com o app fechado: o usuário decide depois** ("quando chegar lá eu vejo").
   - **Programado (10/10/2026, commit `673a881`; sem banco, regra ou índice):** `public/manifest.webmanifest` (nome "Hexon", `display: standalone`, `orientation: any`, cor `#08122b`) e `public/icons/` (`icon-192`, `icon-512` com cantos arredondados; `icon-maskable-512` com o logo dentro do círculo seguro do Android; `apple-touch-icon` 180 px), gerados do `LOGO HEXON.png` (1254 px, fundo transparente) sobre fundo azul-marinho em degradê. `index.html`: manifesto, `theme-color`, ícone do iPhone e tela cheia no iPhone. `src/lib/installApp.ts` (importado no `main.tsx`): guarda o pedido de instalação do navegador (`beforeinstallprompt`, **sem o aviso automático do Chrome**, inclusive na página do QR e no link do cliente). `src/components/InstallAppButton.tsx`: botão **"Instalar aplicativo"** abaixo do cartão de login e seção **"Aplicativo"** em Meu Perfil do celular; celular/tablet sempre (Android: instalação do Chrome; sem ela, passo a passo do menu ⋮; iPhone: passo a passo Compartilhar › Adicionar à Tela de Início); computador só quando o navegador libera; some quando aberto pelo ícone. **Sem service worker:** Chromium 141 aceita instalar sem ele (`Page.getInstallabilityErrors` vazio e `beforeinstallprompt` chegou). Testes 22/22 (`t_pwa.js`); regressão P39 12/12 e 7º ajuste 13/13. Entregue em 7 partes (`pwa/partes/pwa-parte-01..07-de-7.md`, ≤ 1.975 caracteres), conferidas sobre o main `53cea89` (resultado = ramo). **Ícones e manifesto pelo PR [Daniel563-on/HexonPrev#3](https://github.com/Daniel563-on/HexonPrev/pull/3)** (ramo `claude/pwa-icones`, só arquivos novos em `public/`; autorizado pelo usuário). Ordem: merge do PR → partes no AI Studio → deploy. **Aplicado no main (10/10/2026):** PR #3 mesclado (`26153a5`) + partes no AI Studio (`1820076`), tudo entrou na 1ª vez; igual ao ramo (só as diferenças antigas sem efeito); `public/` continuou no main depois do commit do AI Studio (imagens pelo GitHub + código pelo AI Studio funciona); tsc e build do main ok (`dist/` com manifesto e ícones). **Deploy feito e testado pelo usuário (10/10/2026): "ficou perfeito".** PWA concluído. Trocar o logo nas Configurações **não** muda o ícone instalado: ícone novo = PNG novo + PR + deploy.
 - **8D (hora extra e pernoite) — 11/10/2026:** explicado ao usuário o que já existe (HE por dia e pernoite lançados na OS; regras por empresa/cargo em Cargos e valores; pernoite por lote na preventiva; abas "em construção" em Solicitações) e o que falta (módulo de solicitações do principal: 8D-1 configurar e pedir, 8D-2 painel de custos e teto, 8D-3 assinatura e PDF). 5 perguntas abertas (para que serve na rotina — autorizar antes?; ligada à OS — recomendado opcional e sem somar no custo da OS; teto separado HE/pernoite; passou do teto só avisa; uma permissão "Tramitar"). **Usuário: "agora não"** — fica para depois.
@@ -484,6 +485,115 @@ Hexon 2.0 (seção 11), feitas em 03/10/2026:
 | Disparo (1.288 OS) | ~6,1 gravações/OS; tempo real = OS × telas de gestão abertas; ~2,3 leituras/OS (origem a confirmar) |
 | Assinatura | 7 a 43 KB (máx. possível ~124 KB) |
 | Gasto real até 02/10/2026 | R$ 0,00 (R$ 0,29 coberto por desconto/crédito) |
+
+---
+
+## 7.1 Simulação geral de carga (14–15/10/2026) — resultado e lista de ajustes S1–S22
+
+**Pedido do usuário (14/10/2026):** simular o sistema inteiro em carga máxima (pico 8h–10h) para achar problemas, ajustes e falhas de layout e ter um resumo de leituras/gravações por mês e por gerência, **antes de implantar**. "Anote todos os ajustes para serem tratados depois." Nada do app foi alterado; os ajustes abaixo ficam para aprovação.
+
+**Cenário combinado com o usuário**
+
+| Item | Valor usado |
+|---|---|
+| Pessoas | 212: 2 Super Admin, 20 do escritório (GMMR 5, GMEE 6, GMC 6, DOM 3 que veem as 3 gerências), 190 técnicos (GMMR 30 = 22 principal + 4 EMPRESA A + 4 EMPRESA B; GMEE 50; GMC 60; DOM 50 técnicos locais, um por prédio) |
+| Ativos | 8.000 (principal 6.000: GMMR ~500, GMEE ~2.670, GMC ~2.830; EMPRESA A 1.300 e EMPRESA B 700 na GMMR); 130 endereços para todas as gerências |
+| Preventivas/mês | ~8.308 (GMMR 2.500, GMEE 2.670, GMC 2.830, DOM 308 vistorias = 4 diárias + 30 semanais + 50 quinzenais — **interpretação a confirmar**: o usuário falou em "~120 semanais e ~100 quinzenais") |
+| Chamados/mês | 3.800 (GMC 1.700, GMEE 1.600, GMMR 500 = 300 principal + 100 + 100) + corretivas ≈ 5% das preventivas (~400) |
+| Assinaturas | técnico → cliente (metade no celular, metade por link) → engenheiro → gerente |
+| Pedidos/mês | 300 de material + 300 de insumos (só principal) |
+| Listas | materiais GMMR 103 (planilha real), GMEE 600, GMC 1.000; insumos 2.000 |
+| Avisos | 30 por gerência/mês (1/3 de cada tipo, alguns com foto) + 5 programações semanais publicadas por semana (PDF) |
+| Histórico | 6 meses (abril–setembro) + outubro; dia normal 14/10 e fim de mês 30/10 com o disparo de novembro |
+
+**Como foi feito:** emuladores do Firebase (banco + login) com as regras do ramo; o app compilado (sem o modo de desenvolvimento) com um **medidor** no `guard.ts` (cópia só da simulação) que anota cada leitura, escuta e gravação; robôs Playwright/Chromium que usam as telas como as pessoas (login, preventiva, chamado, assinaturas, link do cliente, pedidos, avisos, disparo). Importações e disparo de outubro feitos pelas telas. Unidades cobradas calculadas pelo tamanho real dos documentos (amostra de 300 por coleção) e pela lista de índices da seção 9. Os roteiros e dados da simulação ficaram no rascunho da sessão (se perdem entre sessões); para repetir, refazer a partir deste resumo.
+
+**Limites (não esquecer ao ler os números):** (1) o emulador **não é** o servidor do Google: tempos e travamentos com muita gente ao mesmo tempo são do emulador (ver S3); (2) as fotos da sessão (prints) usam navegador em inglês (datas aparecem mm/dd/yyyy só por isso); (3) assinaturas do histórico foram copiadas (~10 KB); a assinatura feita pelo robô (traço largo de propósito) ficou com 70–76 KB no chamado e ~20 KB na preventiva, mas a medida anterior no sistema real foi de **7 a 43 KB** (seção 7) — por isso armazenamento e gravações aparecem como faixa (robô = limite de cima); (4) a projeção do mês usa hábitos estimados (técnico abre o app 3x/dia, escritório 2x/dia, 22 dias úteis, 10% de aparelhos novos por mês) — mudar os hábitos muda o total, não a ordem de grandeza; (5) efetivo e equipes não foram cadastrados (a Programação mostra todos como "Fora das equipes").
+
+**Custo de cada ação (medido no app; unidades cobradas)**
+
+| Ação | Leitura | Tempo real | Gravação |
+|---|---|---|---|
+| Técnico executa 1 preventiva (iniciar, atestar, assinar, concluir) | 6 | 5 | 36 (assinatura ~20 KB) |
+| Técnico conclui 1 chamado (1 material + assinatura) | 4 | 0 | 91 (assinatura do robô ~76 KB; real 7–43 KB → ~25–60) |
+| Cliente assina no celular | 0 | 0 | 86 (assinatura ~71 KB) |
+| Link do cliente (gerar + responder + trazer a resposta) | 3 | 0 | ~35 |
+| Engenheiro ou gerente assina 1 chamado (em lote) | ~9 | 0 | ~66 (assinatura ~50 KB) |
+| Planejador emite 1 chamado | 2 | 0 | 16 |
+| Pedido de material inteiro (pedir, aprovar, retirar) | ~6 | ~3 | ~12 |
+| Pedido de insumos inteiro (pedir, confirmar, fornecer, receber) | ~5 | ~3 | ~17 |
+| Disparo do mês | ~0 | 0 | ~7 por preventiva (medido: 2.500 GMMR em 36 s) |
+| Aviso urgente com foto: publicar / cada técnico abre e dá ciente | 5 / 31 | 0 / 1 | 96 / 3 |
+| Técnico abre o app (cópia guardada) | 16–39 | 1 | 0 |
+| Técnico, celular novo | 88 (DOM) – 1.176 (GMC: 1.000 materiais) | 41–203 | 5 |
+| Planejador abre o app (cópia guardada) | ~44 | 1 | 0 |
+| Planejador, computador novo | ~5.600 preventivas + **8.000 ativos de todas as gerências** + 600–1.000 materiais + 2.000 insumos + usuários/endereços ≈ **16 mil** | ~370 | 5 |
+| Telas: Chamados 39 (+218 tempo real na 1ª vez), Programação ~420, Preventivas ~53, Início ~25, Solicitações ~25 | | | |
+
+**Projeção do mês (unidades cobradas)**
+
+| Gerência | Leitura | Tempo real | Gravação |
+|---|---|---|---|
+| GMMR | ~250 mil | ~123 mil | ~324 mil |
+| GMEE | ~352 mil | ~262 mil | ~664 mil |
+| GMC | ~374 mil | ~278 mil | ~706 mil |
+| DOM | ~176 mil | ~88 mil | ~19 mil |
+| Super Admin | ~10 mil | ~7 mil | 0 |
+| **Total** | **~1,16 milhão** | **~0,76 milhão** | **~1,71 milhão** |
+
+| Tipo de usuário | Leitura | Tempo real | Gravação |
+|---|---|---|---|
+| Técnicos | ~451 mil | ~107 mil | ~950 mil |
+| Escritório (planejador/administrativo/almoxarifado) | ~569 mil | ~644 mil | ~149 mil |
+| Engenheiro e gerente | ~123 mil | ~0 | ~554 mil |
+| Sistema (disparo, rotina das 00:00, fechamento) | ~9 mil | 0 | ~61 mil |
+| Super Admin | ~10 mil | ~7 mil | 0 |
+
+- **Por dia útil:** ~53 mil leituras (grátis 50 mil/dia), ~34 mil tempo real (grátis 50 mil), **~52 a ~75 mil gravações (grátis 40 mil)**; dia do disparo: +57 mil gravações. **Custo das operações: ~US$ 0,10 a 0,22/mês.** (A tabela acima usa a assinatura do robô, o limite de cima; com assinaturas reais de ~25 KB as gravações do mês ficam em ~1,2 milhão.)
+- **Armazenamento:** entra **~0,6 a 1,1 GB por mês**, quase tudo **imagens de assinatura** (chamados 360–870 MB, preventivas ~160 MB). Em 12 meses ~7–13 GB → ~US$ 1,4 a 2,9/mês no 12º mês (1 GB grátis; ~US$ 0,24/GB-mês).
+- **Assinaturas = ~40–60% das gravações e ~85–90% do armazenamento.** Com assinatura de ~8 KB (S8), as gravações cairiam para ~0,84 milhão/mês (~38 mil por dia útil, dentro do grátis) e o armazenamento para ~0,25 GB/mês (estimativa).
+- Funções da nuvem: rotina das 00:00 lê só as que vencem no dia (dezenas); fechamento do mês lê as ~8.300 do mês e grava 4 resumos.
+
+**Teste de carga (robôs ao mesmo tempo)**
+O emulador do Google aguentou **no máximo 4–6 aparelhos ao mesmo tempo** (8 GB de memória; acima disso fica sem memória e para de responder por até 60–100 s). Por isso os 212 foram passados em fila, alguns por vez; **os tempos abaixo são do emulador, não de produção** (produção não foi medida).
+
+| Rodada | Resultado |
+|---|---|
+| Pior caso: todos com aparelho novo às 8h (12 por vez) | O emulador não aguentou (derruba a conexão com mais de 10 mil mensagens pendentes). 20 de 21 emissões de chamado falharam com a tela Emitir OS em "Carregando…" esperando a cópia de ~16 mil registros do computador novo (S7). Mostra que a 1ª entrada de todos ao mesmo tempo (dia da implantação) é o momento mais pesado |
+| Dia normal, aparelhos com a cópia guardada (209 pessoas, 6 por vez, 73 min) | Escritório: emitir chamado 20/21 (mediana ~5 s), lista de chamados ~3 s, assinatura em lote 6/6 (~19 s), aprovar material / confirmar e fornecer insumos ok. Técnicos: entrar 188/190 (~15 s), link do cliente 20/20, cliente assina no celular 14/18; preventiva e conclusão de chamado com muitas falhas porque avisos urgentes abriam por cima dos botões (S2) e o emulador ficou lento. **Disjuntor desarmou 2 vezes** (técnicos locais da DOM, ao abrir o app) → S5 |
+| Fim de mês (30/10): disparo de novembro (8.308) com 40 pessoas trabalhando (4 por vez) | GMEE 2.782 gravações em 119 s, GMC 2.950 em 136 s, DOM 525 em 28 s; GMMR 2.500 em 218 s (repetido logo depois: o robô tentou escolher a gerência enquanto a tela ainda baixava os 8 mil ativos). O disparo não desarmou o disjuntor. Durante o disparo: emissões 2/2 e pedidos ok; 12 de 37 técnicos não abriram o app em 120 s (emulador ocupado gravando) |
+| Avisos urgentes ao abrir (rodada de fim de mês, mais estável) | Técnico local da DOM: média 4,7 e até 16 avisos para confirmar; GMMR até 1; GMEE e GMC 0 |
+
+Fluxos que funcionaram com várias pessoas ao mesmo tempo: entrar, emitir e atribuir chamado, listas e filtros, executar preventiva, concluir chamado com material, assinatura do cliente (celular e link), assinatura em lote do engenheiro/gerente, pedidos de material e insumos (pedir, aprovar, confirmar, fornecer, retirar/receber), avisos com foto, disparo. Nenhuma gravação disputada por todos: a única comum é o contador da numeração dos chamados (~170 por dia).
+
+**Layout (prints de computador e celular com o banco cheio):** nenhuma tela com rolagem para o lado no computador (1440 px) nem no celular (390 px). Achados em S1, S2, S14, S15, S16 e S19.
+
+**Ajustes anotados (para tratar depois; nada foi mudado)**
+
+| # | Prioridade | Achado | Proposta |
+|---|---|---|---|
+| S1 | ALTA | **Lista de preventivas do técnico não segue o dia agendado:** no técnico local da DOM começa pelo dia mais distante (30/10, 29/10, 28/10…); no técnico da EMPRESA A (217 pendentes, 11 páginas de 20) vem misturada (26/10, 20/10, 30/10…). A de hoje (14/10) não aparece na 1ª página. Causa: a lista segue a data de criação (`compareOrdersNewestFirst`) e no disparo todas nascem juntas | Ordenar: atrasadas, hoje, próximos dias; ou abrir já na página de hoje |
+| S2 | ALTA | **Avisos urgentes em fila no celular:** em aparelho novo, todos os urgentes ainda válidos abrem um por um por cima do trabalho (técnico local da DOM, gerência "Todas", recebe os das 4 gerências: sino com 89). Também apareceram no meio da execução do chamado. No teste de carga, técnico local da DOM teve de confirmar até 19 urgentes ao abrir o app, e os que abriam depois bloquearam o toque nos botões. 14 dos 34 urgentes válidos na simulação não tinham data de fim (abrem para sempre em aparelho novo) | Só abrir sozinho o urgente novo (ex.: últimos 3 dias); os outros só no sino; botão "ciente de todos"; técnico local só recebe os da DOM + "todas" (decidir com S6) |
+| S3 | ALTA (a confirmar em produção) | **Planejador da DOM (vê 4 gerências) não carregou nenhuma preventiva no emulador** (3 de 3 tentativas; Início dizia "As preventivas de outubro ainda não foram disparadas"). Causa no emulador: a 1ª carga de ~15 mil preventivas (~35 MB) passa de 10 mil mensagens no mesmo canal e o emulador derruba o canal ("too many pending messages… 10001"). O servidor real tem controle de fluxo — **não confirmei que falha em produção**, mas é a maior carga do sistema | Carregar a cópia uma gerência por vez; trocar "ainda não foram disparadas" por "Carregando…" enquanto a cópia não chegou; avaliar se a DOM precisa da cópia das 3 gerências ou só de contagens/resumos |
+| S4 | ALTA | **A cópia das preventivas pode ficar gravada vazia:** a 1ª carga (`orderSync.fullDownloadNow`) usa `getDocs`, que, se a conexão cair, devolve o que há no aparelho (nada) sem erro; a cópia "pronta" e vazia é guardada e depois a escuta `syncAt > 0` baixa **todo o histórico da gerência** (todos os meses), não só abertas + 2 meses. Visto no S3 | Usar `getDocsFromServer` (ou conferir `metadata.fromCache`) na 1ª carga e tentar de novo; não guardar cópia que não veio do servidor |
+| S5 | ALTA | **Repetição sem fim ao tirar o aviso "Assinadas pelo cliente" desarma o disjuntor:** quando o engenheiro já assinou, o celular do técnico tira o aviso sozinho (`TechnicianMobileView.tsx`, 1 gravação por chamado); se essa gravação é recusada pelo banco, o app desfaz, a lista muda e ele tenta de novo na hora, sem limite. Comprovado no emulador recusando a gravação de propósito: **121 tentativas no mesmo chamado em ~10 s → disjuntor desarmado → app do técnico bloqueado até recarregar** (nem o "ciente" dos avisos grava). No teste de carga aconteceu sozinho com 2 técnicos locais da DOM ao abrir o app (a causa exata da recusa ali não confirmei; provável cópia do aparelho diferente do banco depois de reiniciar o emulador) | Não tentar de novo na hora (tentar só na próxima abertura ou com espera crescente) e tirar os avisos num pacote só (`writeBatch`) |
+| S6 | MÉDIA | **Técnico local da DOM precisa ter gerência "Todas"** para receber chamados das outras gerências: pela regra pode ler todas as OS e recebe avisos de todas | Campo próprio "gerências que atende" no técnico local (sem "Todas") |
+| S7 | MÉDIA | **Computador novo do escritório baixa os 8.000 ativos de todas as gerências** (cópia local de ativos sem filtro), além de ~5.600 preventivas, 2.000 insumos e a lista de materiais (~16 mil leituras, ~20 MB no aparelho). No teste de carga, com vários computadores novos ao mesmo tempo, a tela Emitir OS ficou em "Carregando…" esperando essa carga | Cópia de ativos só das gerências da pessoa; carregar ativos só quando a tela precisar |
+| S8 | MÉDIA (custo) | **Imagens de assinatura grandes:** PNG 720×270 com carimbo, 7–43 KB no sistema real (até 76 KB no robô), 4 por chamado; preventiva ~20 KB. São ~85–90% do armazenamento e ~40–60% das gravações | Gravar menor (PNG preto e branco/paleta, WebP leve ou só os traços); meta ~8 KB. Conferir antes o PDF e a ficha |
+| S9 | MÉDIA | **Assinatura em lote do engenheiro/gerente: pacote de 100 OS** (`dbSignAsRole`); com assinaturas de ~100 KB o pacote passaria de 10 MiB, que é o limite do Firestore por pedido de gravação (pela documentação; não testado) | Pacotes de 25–50 OS ou assinatura menor (S8) |
+| S10 | MÉDIA | **DOM ao abrir de novo repete contagens** (45 de situação + 27 de "próximo a assinar" por abertura; ~600 tempo real) | Contar uma vez por abertura e reaproveitar no Início, no menu e em Ordens de Serviço |
+| S11 | MÉDIA | **Cópia das preventivas do escritório é regravada inteira no aparelho a cada mudança** (1 s depois; ~13 MB na GMC) e, se o navegador fecha antes de gravar a 1ª carga, baixa tudo de novo (engenheiro: 5.347 leituras numa reabertura) | Gravar por partes ou com intervalo maior; marcar a 1ª carga como feita só depois de gravada |
+| S12 | MÉDIA | **Lista de insumos é por gerência** (3 × 2.000 = 6.000 registros) e o técnico baixa 2.000 na 1ª vez que pede insumo; o usuário disse que "insumos serve para todas as gerências" | Lista única de insumos |
+| S13 | BAIXA | **Chamado guarda uma cópia inteira do modelo** (~metade dos 4,4 KB): cada leitura custa 2 unidades | Guardar a versão do modelo (como a preventiva, `templateVersions`) |
+| S14 | BAIXA | Solicitações: os contadores mostram "(0)" enquanto carregam (parece que não há nada) | Mostrar "…" até chegar |
+| S15 | BAIXA | Celular do escritório: em Ordens de Serviço o campo "Empresa" passa da borda da tela | Quebrar a linha dos filtros no celular |
+| S16 | BAIXA | Botão de fechar (X) da ficha da preventiva sem nome para leitor de tela | `aria-label="Fechar"` |
+| S17 | BAIXA (a conferir) | No login, a leitura das permissões (`config/permissions`) às vezes é negada no 1º segundo (2 de 6 entradas) e o app usa a lista padrão | Conferir se depois relê; ler só com o cadastro pronto |
+| S18 | BAIXA | Engenheiro: cada abertura da fila confere de novo todos os links de cliente pendentes (1 leitura por link) | Conferir só ao abrir "Aguardando cliente" ou guardar a última conferência |
+| S19 | BAIXA | Ordens de Serviço › Preventivas abre no filtro "A programar" mesmo com 0 (tela "Nenhuma preventiva neste filtro" com 1.358 programadas e 108 atrasadas na GMC) | Abrir no 1º contador com itens (ou em Atrasadas quando houver) |
+| S20 | INFO | EMPRESA A: 4 técnicos para 1.300 preventivas/mês (~15 por dia útil cada) | Confirmar com o usuário (dado do cenário) |
+| S21 | INFO | 75% dos ativos da principal ficam em prédios com técnico local (DOM) | Confirmar a divisão real |
+| S22 | INFO | Vistorias da DOM: ~308/mês na interpretação usada | Confirmar com o usuário |
 
 ---
 
