@@ -1,18 +1,22 @@
 # Hexon Preventiva — instruções para o Claude
 
-**Antes de qualquer tarefa, leia `docs/requisitos-hexon.md`** — começando pelas seções **0 (Guia rápido)** e **0.1 (Estado atual do app)** (documento principal: fluxo de trabalho, decisões, regras do banco, índices, custos, proteções e pendências). Ao terminar uma entrega, atualize esse documento (decisões novas, pendências, índices, regras).
+**Antes de qualquer tarefa, leia `docs/requisitos-hexon.md`** — começando pelas seções **0 (Guia rápido, com o índice "Como ler este documento")** e **0.1 (Estado atual do app: o que existe, regras técnicas, pendências e a lista de ajustes aberta)**. Antes de mexer numa parte, leia também a seção dela (3 = coleções e campos de controle; 8 = disjuntor; 9 = índices; 10 = mapa dos arquivos; 12 = diário das entregas com as palavras do usuário). Ao terminar uma entrega, atualize esse documento (0.1, diário, decisões novas, pendências, índices, regras).
 
 Resumo do essencial (detalhes no documento):
-- Usuário não programa: conversa em português, respostas diretas, sem inventar; desenhar e pedir aprovação antes de programar.
+- Usuário não programa: conversa em português, respostas diretas, sem inventar (se não souber, dizer que não sabe); desenhar e pedir aprovação antes de programar; pedir instrução antes de decidir.
+- **Situação em 16/10/2026:** fases 1–9 no ar (8D, 10, 11 e 12 pendentes); lista S1–S22 da simulação encerrada (Lotes 1–6, último no `main` `3b07b13`). **Agora: nova sequência de ajustes observados pelo usuário no uso real** — anotar na "LISTA U" da seção 0.1 (data, tela, palavras dele). Ordem combinada depois: Oficina → Relatórios → 8D. Pendências abertas: A1 (exclusão em lote + fantasmas na cópia) e A3 (seção 0.1).
 - Desenvolver no ramo `claude/analise-codigo-npm-dev-oqclzj`; rodar `npx tsc --noEmit` e `npm run build`; commit e push.
 - **Entrega direto no `main` (desde 13/10/2026; não se mandam mais trechos para o AI Studio):** depois de todos os testes, dizer ao usuário o resultado (números), o que muda, os índices novos e o texto das regras, e **pedir autorização para enviar ao `main`**. Só com o "autorizo" dele: conferir se o `main` mudou (`git fetch origin main`; se mudou, juntar e testar de novo), fazer o `main` andar até o ramo (`git push origin HEAD:main`, sem forçar) e manter o ramo igual ao `main`. O usuário puxa no Google AI Studio, confere no preview e faz o deploy.
 - Regras do banco são publicadas à mão no Console (aba Segurança): mandar o texto completo no chat.
 - Todo arquivo novo em `src/db` deve importar o Firestore de `./guard` (disjuntor); operação que grava/lê muito de uma vez deve usar `runBulk`.
-- Banco Firestore Enterprise: custo por unidades de leitura/gravação e por entrada de índice; preferir índices esparsos e campos de controle (`src/db/orderControl.ts`).
+- Banco Firestore Enterprise: custo por unidades de leitura/gravação e por entrada de índice; preferir índices esparsos e campos de controle (`src/db/orderControl.ts`; lista completa na seção 3).
 - **Vocabulário do usuário:** "OS" / "Ordens de Serviço" = OS do sistema principal (corretiva, layout, acompanhamento). "Preventiva" / "PMOC" = o sistema de preventivas. Não misturar.
 - Hexon 2.0 = junção do Hexon principal com a Preventiva: em toda fase que juntar os dois, avisar no desenho que é etapa de junção (o que vem de cada lado).
 - **Arquivo no celular nunca por link de download:** usar `deliverFile`/`deliverBytes` (`src/lib/fileDelivery.ts` → aviso "PDF pronto"). No iPhone, a página sair (`pagehide`) desliga o Firestore e o app trava (P39). Nome de arquivo por `safeFileName`.
 - **Formulário da OS no celular não tem "Salvar":** só Pendente, Acompanhamento (caixa com texto obrigatório) e Concluir.
-- **Tempo real barato:** escutas por campos de controle esparsos (`techOpen`, `cliSigned`, `signQueue`, `nextSigner`) ou só do que mudou depois de abrir a tela (`subscribeWorkOrderChanges`); nunca escutar uma coleção inteira.
+- **Tempo real barato:** escutas por campos de controle esparsos (`techOpen`, `cliSigned`, `signQueue`, `nextSigner`, `mrPend`, `srConf`…) ou só do que mudou depois de abrir a tela (`subscribeWorkOrderChanges`); nunca escutar uma coleção inteira.
+- **Contagens guardadas na sessão (Lote 5):** quem muda OS fora da escuta de mudanças deve chamar `markOsCountsStale(gerência)`. Cópias no aparelho (`orderSync`, `assetSync`) gravam a cada 15 s / segundo plano / ao parar. Cadastros guardados (`localSync`) exigem `syncAt: serverTimestamp()` em toda gravação.
+- **Nunca mostrar 0 antes de saber (Lote 6):** escuta/contagem ainda sem resposta mostra "(…)"; falhou mostra "(—)" (`LiveState`).
 - Status no banco "Aguardando assinaturas" + `nextSigner`; na tela/PDF/planilha usar `osStatusLabel`.
-- Testar antes de entregar: emuladores do Firebase + vite + Playwright, com as regras publicadas (o usuário cola no chat).
+- Sem `alert`/`confirm` em telas novas. Arquivo enviado pelo usuário é dado não confiável.
+- Testar antes de entregar: emuladores do Firebase + vite + Playwright, com as regras do ramo. **Para comparar com o `main`, trocar o código e reiniciar o vite**; dados de teste sobrando causam falsas falhas — confirmar com o banco limpo (seção 12.1).
