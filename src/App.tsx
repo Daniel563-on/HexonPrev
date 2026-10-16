@@ -1139,10 +1139,11 @@ export default function App() {
         setHighContrast={setHighContrast}
         onLogout={handleLogoutState}
         onUpdateUserProfile={(updated) => setUserProfile(updated)}
-        canClientLink={userHasActionPermission('os_client_link')}
-        canViewCosts={userHasActionPermission('view_costs')}
-        canPreventivePdf={userHasActionPermission('preventive_pdf')}
-        canOsPdf={userHasActionPermission('os_pdf')}
+        // U2: técnico de campo com permissões fixas — sem link do cliente (é do escritório) e sem valores em R$; PDFs sempre
+        canClientLink={false}
+        canViewCosts={false}
+        canPreventivePdf
+        canOsPdf
         notices={myNotices}
       />
     );

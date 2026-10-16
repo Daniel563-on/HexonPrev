@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, FileDown, Link2, Mail, MessageSquarePlus, MessageSquareReply, PauseCircle, PenTool, PlayCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, Eye, FileDown, Link2, Mail, MessageSquarePlus, MessageSquareReply, PauseCircle, PenTool, PlayCircle } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, WorkOrder, WorkOrderExec } from '../../types';
 import {
   OS_SIGN_LABEL,
@@ -33,6 +33,8 @@ import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 // Pendente = pausa com motivo (o tempo parado não conta). Concluir = o técnico assina (o homem-hora para);
 // depois o cliente assina no celular ou recebe o link de validação. Depois da assinatura do técnico nada muda:
 // Contestada = "Responder contestação" (o que foi resolvido + acréscimos) e a OS volta para o cliente.
+// U2 (16/10/2026): Assinaturas (nome e data, sem a imagem) e Linha do tempo, só leitura, já vêm na própria OS (sem leitura a mais).
+// "Assinadas pelo cliente" abre a OS em "somente visualizar" (viewOnly): nada se altera depois da assinatura do cliente.
 
 interface Props {
   order: WorkOrder;
@@ -41,11 +43,15 @@ interface Props {
   onChanged: (o: WorkOrder) => void;
   canClientLink?: boolean; // "Enviar link de validação ao cliente": sem ela, o técnico não vê o link
   canPdf?: boolean;        // "Baixar PDF da OS": botão PDF no topo (mapeado do modelo ou o padrão; com o que está salvo)
+  viewOnly?: boolean;      // U2: OS assinada pelo cliente — só ver (sem botões de alterar)
 }
 
 const label = 'block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500';
 
-export default function OsExecutionForm({ order, userProfile, onClose, onChanged, canClientLink = false, canPdf = false }: Props) {
+const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const SIGN_VIA: Record<string, string> = { celular: 'no celular', link: 'pelo link', sistema: 'no sistema' };
+
+export default function OsExecutionForm({ order, userProfile, onClose, onChanged, canClientLink = false, canPdf = false, viewOnly = false }: Props) {
   const me: OrderParticipant = { matricula: userProfile.matricula, name: userProfile.name, cargo: userProfile.cargo || '' };
   // Técnico local (Lote 2) num chamado de outra gerência: equipe da gerência dele; material da gerência e empresa do chamado
   const localHome = userProfile.localTech && userProfile.gerencia !== order.unit ? userProfile.gerencia : undefined;
@@ -78,7 +84,8 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
 
   // Contestada antes desta mudança (sem a assinatura do técnico guardada): ainda corrige e conclui de novo
   const oldContest = order.status === 'Contestada' && !order.techSignedAt;
-  const editable = order.status === 'Em andamento' || oldContest;
+  const editable = !viewOnly && (order.status === 'Em andamento' || oldContest);
+  const [showTimeline, setShowTimeline] = useState(false);
   // Chamado num bloco da Programação (Fase 7C-2): o pernoite é o da viagem, informado pelo planejador (só leitura)
   const [trip, setTrip] = useState<{ nights: number; text: string } | null>(null);
   useEffect(() => {
@@ -259,6 +266,11 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     : '';
 
   const openPause = order.pauses?.length ? order.pauses[order.pauses.length - 1] : null;
+  // Assinaturas exigidas pelo modelo (na ordem) e as já feitas; linha do tempo na ordem em que aconteceu (como na ficha do escritório)
+  const signRoles = order.templateSignatures || [];
+  const signedRoles = (['tecnico', 'cliente', 'engenheiro', 'gerente'] as const).filter((r) => !!order.signatures?.[r]);
+  const timeline = order.timeline || [];
+  const lastEvent = timeline.length ? timeline[timeline.length - 1] : null;
   const section = 'p-4 rounded-2xl border border-slate-200 bg-white space-y-3';
   // PDF da OS (mapeado do modelo ou o padrão), com o que já está salvo no banco
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -282,11 +294,12 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           <button type="button" onClick={onClose} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center cursor-pointer" title="Voltar">
             <ArrowLeft className="w-4 h-4" />
           </button>
+          {/* U2: o status fica numa linha própria (o texto longo, ex.: "Aguardando assinatura do engenheiro", cortava o número) */}
           <div className="min-w-0 flex-1">
             <p className="font-mono text-sm font-black text-indigo-700">{order.number}</p>
+            <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel(order)}</span>
             <p className="text-[11px] text-slate-500 truncate">{order.intervencao || 'OS'} · {order.execAddressText}</p>
           </div>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel(order)}</span>
           {canPdf && (
             <button type="button" onClick={downloadPdf} disabled={pdfBusy} title="Baixar o PDF da OS (com o que já está salvo)" className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-black text-slate-700 flex items-center gap-1 cursor-pointer disabled:opacity-50">
               <FileDown className="w-4 h-4" /> {pdfBusy ? '...' : 'PDF'}
@@ -295,6 +308,11 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
         </header>
 
         <div className="px-4 pt-4 space-y-3">
+          {viewOnly && (
+            <p className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] font-bold text-indigo-900 flex items-start gap-1.5" role="note">
+              <Eye className="w-4 h-4 shrink-0" /> Somente visualizar: o cliente já assinou esta OS. Nada pode ser alterado.
+            </p>
+          )}
           {clientSignedNow && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2">
               <p className="text-xs font-black text-emerald-800 flex items-center gap-1.5">
@@ -315,17 +333,21 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           {order.status === 'Pendente' && (
             <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 space-y-2">
               <p className="text-xs font-black text-orange-800">Pendente{openPause ? `: ${openPause.reason}` : ''}</p>
-              <p className="text-[11px] text-orange-800">O tempo parado não conta no homem-hora. Toque em Retomar para voltar a preencher.</p>
-              <button type="button" onClick={resume} disabled={busy} className="h-9 px-4 rounded-lg bg-orange-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-                <PlayCircle className="w-4 h-4" /> Retomar
-              </button>
+              {!viewOnly && (
+                <>
+                  <p className="text-[11px] text-orange-800">O tempo parado não conta no homem-hora. Toque em Retomar para voltar a preencher.</p>
+                  <button type="button" onClick={resume} disabled={busy} className="h-9 px-4 rounded-lg bg-orange-600 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    <PlayCircle className="w-4 h-4" /> Retomar
+                  </button>
+                </>
+              )}
             </div>
           )}
 
           {order.status === 'Contestada' && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
               <p className="text-xs font-black text-rose-800">Contestada pelo cliente{order.contestReason ? `: ${order.contestReason}` : ''}</p>
-              {oldContest ? (
+              {viewOnly ? null : oldContest ? (
                 <p className="text-[11px] text-rose-800">Verifique, corrija e conclua de novo (o homem-hora voltou a contar).</p>
               ) : (
                 <>
@@ -343,7 +365,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
               <p className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4" /> Concluída e assinada por {order.signatures?.tecnico?.name || 'você'}
               </p>
-              {order.nextSigner === 'cliente' ? (
+              {order.nextSigner === 'cliente' && !viewOnly ? (
                 <>
                   <p className="text-[11px] text-emerald-900">
                     Agora o cliente: assina aqui no celular{canClientLink ? ' ou recebe o link para validar.' : '. O link para o cliente validar é enviado pelo escritório.'}
@@ -376,9 +398,9 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
                     </div>
                   )}
                 </>
-              ) : (
-                <p className="text-[11px] text-emerald-900">Aguardando a assinatura do {order.nextSigner ? OS_SIGN_LABEL[order.nextSigner].toLowerCase() : '—'} no sistema.</p>
-              )}
+              ) : order.nextSigner && order.nextSigner !== 'cliente' ? (
+                <p className="text-[11px] text-emerald-900">Aguardando a assinatura do {OS_SIGN_LABEL[order.nextSigner].toLowerCase()} no sistema.</p>
+              ) : null}
             </div>
           )}
 
@@ -440,6 +462,55 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
             plannedOvernight={trip}
             onChange={(next) => patch(next)}
           />
+
+          {/* Assinaturas (U2): nome e data de quem já assinou, sem a imagem; a imagem fica no PDF */}
+          {(signRoles.length > 0 || signedRoles.length > 0) && (
+            <div className={section} aria-label="Assinaturas">
+              <p className="text-xs font-black text-slate-800">Assinaturas</p>
+              {[...signRoles, ...signedRoles.filter((r) => !signRoles.includes(r))].map((r) => {
+                const sg = order.signatures?.[r];
+                return (
+                  <p key={r} className="text-[11px] text-slate-700">
+                    <b>{OS_SIGN_LABEL[r]}:</b>{' '}
+                    {sg ? (
+                      <>
+                        {sg.name}
+                        {sg.matricula ? ` (mat. ${sg.matricula})` : ''} · {fmtDT(sg.at)}
+                        {SIGN_VIA[sg.via] ? ` · ${SIGN_VIA[sg.via]}` : ''}
+                        {r === 'cliente' && sg.rating ? ` · ${sg.rating} estrela(s)` : ''}
+                      </>
+                    ) : (
+                      <span className="text-slate-400">{order.nextSigner === r ? 'aguardando' : 'ainda não assinou'}</span>
+                    )}
+                  </p>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Linha do tempo (U2): o técnico vê tudo o que aconteceu com a OS enquanto ela está com ele */}
+          <div className={section} aria-label="Linha do tempo">
+            <button type="button" onClick={() => setShowTimeline(!showTimeline)} className="w-full flex items-center justify-between text-left cursor-pointer">
+              <span className="text-xs font-black text-slate-800">Linha do tempo ({timeline.length})</span>
+              {showTimeline ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {!showTimeline && lastEvent && (
+              <p className="text-[11px] text-slate-500">
+                Último: {fmtDT(lastEvent.at)} · {lastEvent.action}
+              </p>
+            )}
+            {showTimeline && (
+              <ul className="space-y-1.5">
+                {timeline.length === 0 && <li className="text-[11px] text-slate-400">Nada registrado ainda.</li>}
+                {timeline.map((e, i) => (
+                  <li key={i} className="text-[11px] text-slate-700 border-l-2 border-indigo-200 pl-2">
+                    <span className="text-slate-500">{fmtDT(e.at)}</span> · <b>{e.action}</b>
+                    {e.note ? `: ${e.note}` : ''} <span className="text-slate-400">· {e.by}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           {msg && <p className={`text-xs font-bold ${msg.ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>}
         </div>

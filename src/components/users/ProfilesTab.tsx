@@ -1,6 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AccessProfile, HexonUser, Management, ProfileKind } from '../../types';
-import { DEFAULT_PERMISSIONS, PERMISSION_AREAS, dbDeleteProfile, dbSaveProfile, resolveUserProfile, withDerivedPermissions } from '../../db/firebase';
+import {
+  DEFAULT_PERMISSIONS,
+  PERMISSION_AREAS,
+  dbDeleteProfile,
+  dbFixFieldProfiles,
+  dbSaveProfile,
+  isFieldFixed,
+  resolveUserProfile,
+  withDerivedPermissions,
+  withFieldFixed
+} from '../../db/firebase';
 
 // PERFIS DE ACESSO (somente Super Administrador)
 // Nome livre, tipo de uso, unidades visíveis e permissões de cada perfil.
@@ -8,8 +18,17 @@ import { DEFAULT_PERMISSIONS, PERMISSION_AREAS, dbDeleteProfile, dbSaveProfile, 
 const KIND_INFO: Record<ProfileKind, { label: string; hint: string }> = {
   total: { label: 'Acesso total', hint: 'Administra tudo, em todas as unidades.' },
   planejamento: { label: 'Escritório', hint: 'Usa o sistema no computador, conforme as permissões abaixo.' },
-  execucao: { label: 'Campo (técnico)', hint: 'Usa o aplicativo de execução em campo.' }
+  execucao: { label: 'Campo (técnico)', hint: 'Usa o aplicativo do técnico no celular. Permissões fixas.' }
 };
+
+// U2 (16/10/2026): o que o técnico de campo faz — fixo, não se marca nem desmarca nada
+const FIELD_DOES: { title: string; text: string }[] = [
+  { title: 'Minhas OS', text: 'executar, Pendente, Acompanhamento, Concluir, colher a assinatura do cliente no celular, ver a linha do tempo e baixar o PDF da OS.' },
+  { title: 'Preventivas atribuídas a ele', text: 'iniciar, executar, assinar e concluir, mesmo sem internet; baixar o PDF da preventiva.' },
+  { title: 'Também', text: 'Solicitações (corretivas, material e insumos), Escanear QR, Quadro de Avisos e Meu Perfil.' }
+];
+const FIELD_DOES_NOT = 'Não vê o link do cliente (é enviado pelo escritório) nem valores em R$.';
+const FIELD_SEES = 'Vê só a gerência e as empresas marcadas no cadastro do usuário. Técnico local: marcado no cadastro do usuário.';
 
 const OS_SIGN_LABEL: Record<NonNullable<AccessProfile['osSignAs']>, string> = {
   none: 'Nenhum',
@@ -52,6 +71,19 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // U2: perfis de Campo antigos (com permissões marcadas à mão) passam para o conjunto fixo, uma vez, ao abrir esta aba
+  const fieldFixTried = useRef(false);
+  const [fieldFixError, setFieldFixError] = useState<string | null>(null);
+  useEffect(() => {
+    if (fieldFixTried.current || !profiles.some((p) => !isFieldFixed(p))) return;
+    fieldFixTried.current = true;
+    dbFixFieldProfiles(profiles)
+      .then((n) => {
+        if (n > 0) onChanged();
+      })
+      .catch((err: any) => setFieldFixError(`Não foi possível ajustar os perfis de Campo às permissões fixas: ${err?.message || err}`));
+  }, [profiles]);
+
   const usersCount = (p: AccessProfile) => users.filter((u) => resolveUserProfile(u, profiles)?.id === p.id).length;
   const permissionList = Object.values(DEFAULT_PERMISSIONS);
 
@@ -68,7 +100,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
       setError('Informe o nome do perfil.');
       return;
     }
-    if (editing.unitScope === 'selected' && editing.units.length === 0) {
+    if (editing.kind === 'planejamento' && editing.unitScope === 'selected' && editing.units.length === 0) {
       setError('Escolha pelo menos uma unidade.');
       return;
     }
@@ -80,7 +112,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
     setSaving(true);
     setError(null);
     try {
-      const toSave: AccessProfile = {
+      const base: AccessProfile = {
         ...editing,
         name: editing.name.trim(),
         description: editing.description.trim(),
@@ -93,6 +125,8 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
             ? Object.fromEntries(permissionList.map((p) => [p.id, true]))
             : editing.permissions
       };
+      // Campo (técnico): permissões fixas, gerência e empresas do cadastro do usuário
+      const toSave = editing.kind === 'execucao' ? withFieldFixed(base) : base;
       await dbSaveProfile(toSave);
       setEditing(null);
       onChanged();
@@ -144,6 +178,8 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
         </button>
       </div>
 
+      {fieldFixError && <p className="text-xs font-bold text-rose-600">{fieldFixError}</p>}
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {profiles.map((p) => (
           <div key={p.id} className={`border rounded-xl p-4 space-y-3 ${card}`}>
@@ -170,7 +206,7 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
               <div>
                 <p className={`text-[9px] font-black uppercase ${muted}`}>Permissões</p>
                 <p className={`font-bold ${strong}`}>
-                  {p.kind === 'total' ? 'Todas' : `${permissionList.filter((perm) => !!withDerivedPermissions(p).permissions[perm.id]).length} de ${permissionList.length}`}
+                  {p.kind === 'total' ? 'Todas' : p.kind === 'execucao' ? 'Fixas do técnico' : `${permissionList.filter((perm) => !!withDerivedPermissions(p).permissions[perm.id]).length} de ${permissionList.length}`}
                 </p>
               </div>
               <div>
@@ -244,7 +280,23 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
               {editing.system && <p className={`text-[10px] mt-1 ${muted}`}>O tipo de uso dos perfis de fábrica não muda; o nome e as permissões podem mudar.</p>}
             </div>
 
-            {editing.kind !== 'total' && (
+            {editing.kind === 'execucao' && (
+              <div className={`rounded-lg border p-3 space-y-2 ${darkMode ? 'border-slate-800 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`} aria-label="Permissões fixas do técnico">
+                <p className={`text-xs font-black ${strong}`}>Permissões fixas do técnico de campo</p>
+                <p className={`text-[10px] ${muted}`}>O técnico usa o aplicativo próprio no celular. Aqui não se marca nem desmarca nada: vale para todos os perfis de Campo.</p>
+                <ul className="space-y-1">
+                  {FIELD_DOES.map((d) => (
+                    <li key={d.title} className={`text-[11px] ${strong}`}>
+                      <b>{d.title}:</b> {d.text}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] font-bold text-rose-700">{FIELD_DOES_NOT}</p>
+                <p className={`text-[11px] ${muted}`}>{FIELD_SEES}</p>
+              </div>
+            )}
+
+            {editing.kind === 'planejamento' && (
               <>
                 {/* Unidades visíveis */}
                 <div>
@@ -304,13 +356,13 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
                       </button>
                     ))}
                   </div>
-                  <p className={`text-[10px] mt-1 ${muted}`}>Planejador e técnico: "Só as empresas do usuário" (as marcadas no cadastro do usuário). Engenheiro, gerente e quem abre chamado: "Todas".</p>
+                  <p className={`text-[10px] mt-1 ${muted}`}>Planejador: "Só as empresas do usuário" (as marcadas no cadastro do usuário). Engenheiro, gerente e quem abre chamado: "Todas".</p>
                 </div>
 
                 {/* Permissões, por área */}
                 <div className="space-y-3">
                   <span className={`block text-[10px] font-black uppercase tracking-wider ${muted}`}>Permissões</span>
-                  <p className={`text-[10px] -mt-2 ${muted}`}>Valem no computador. As que também valem no celular do técnico dizem isso na descrição.</p>
+                  <p className={`text-[10px] -mt-2 ${muted}`}>Valem no computador. O técnico de campo tem permissões fixas (tipo de uso Campo).</p>
                   {PERMISSION_AREAS.map((area) => {
                     const list = permissionList.filter((perm) => perm.area === area.id);
                     if (list.length === 0) return null;

@@ -24,6 +24,26 @@ export function kindOfLegacyPerfil(perfil: HexonUser['perfil']): ProfileKind {
   return 'execucao';
 }
 
+// U2 (16/10/2026): o perfil de Campo (técnico) tem permissões FIXAS — o aplicativo do técnico já é todo dele.
+// Do catálogo valem só "Baixar PDF da OS" e "Baixar PDF da preventiva"; o resto fica desligado (link do cliente,
+// valores em R$ e as telas do escritório). Vê a gerência e as empresas do próprio cadastro.
+export const FIELD_PDF_PERMISSIONS = ['os_pdf', 'preventive_pdf'];
+export function fieldFixedPermissions(): Record<string, boolean> {
+  return Object.fromEntries(Object.keys(DEFAULT_PERMISSIONS).map((k) => [k, FIELD_PDF_PERMISSIONS.includes(k)]));
+}
+// Perfil de Campo com o conjunto fixo aplicado (nome, descrição e o resto ficam como estão)
+export function withFieldFixed(profile: AccessProfile): AccessProfile {
+  return { ...profile, unitScope: 'own', units: [], companyScope: 'own', permissions: fieldFixedPermissions(), osSignAs: undefined };
+}
+// O perfil de Campo já está no conjunto fixo? (para ajustar os antigos uma vez só, sem gravar à toa)
+export function isFieldFixed(profile: AccessProfile): boolean {
+  if (profile.kind !== 'execucao') return true;
+  if (profile.unitScope !== 'own' || (profile.units || []).length > 0 || profile.companyScope !== 'own' || profile.osSignAs) return false;
+  const fixed = fieldFixedPermissions();
+  const keys = new Set([...Object.keys(fixed), ...Object.keys(profile.permissions || {})]);
+  return [...keys].every((k) => !!profile.permissions?.[k] === !!fixed[k]);
+}
+
 // Perfil do usuário: o gravado nele ou, se ainda não tiver, o de fábrica equivalente ao tipo antigo
 export function resolveUserProfile(user: HexonUser | null | undefined, profiles: AccessProfile[]): AccessProfile | undefined {
   if (!user) return undefined;
@@ -69,7 +89,9 @@ async function buildSystemProfiles(): Promise<AccessProfile[]> {
     kind,
     unitScope,
     units: [],
-    permissions: kind === 'total' ? Object.fromEntries(Object.keys(matrix).map((k) => [k, true])) : permsOf(legacyPerfilOf(kind)),
+    permissions:
+      kind === 'total' ? Object.fromEntries(Object.keys(matrix).map((k) => [k, true])) : kind === 'execucao' ? fieldFixedPermissions() : permsOf(legacyPerfilOf(kind)),
+    ...(kind === 'execucao' ? { companyScope: 'own' as const } : {}),
     system: true,
     createdAt: now,
     updatedAt: now
@@ -133,6 +155,18 @@ export async function dbSaveProfile(profile: AccessProfile): Promise<void> {
   for (const u of users.filter((x) => x.profileId === toSave.id && x.perfil !== legacy)) {
     await dbSaveUser({ ...u, perfil: legacy });
   }
+}
+
+// U2: perfis de Campo antigos passam para o conjunto fixo — o Super Administrador, ao abrir Perfis de Acesso.
+// 1 gravação por perfil e só se estiver diferente (o tipo de uso não muda, então os usuários não precisam ser regravados).
+export async function dbFixFieldProfiles(profiles: AccessProfile[]): Promise<number> {
+  if (!firebaseActive || !dbInstance) return 0;
+  const toFix = profiles.filter((p) => !isFieldFixed(p));
+  for (const p of toFix) {
+    await setDoc(doc(dbInstance, 'profiles', p.id), cleanUndefined({ ...withFieldFixed(p), updatedAt: new Date().toISOString() }));
+  }
+  if (toFix.length > 0) cacheProfiles = null;
+  return toFix.length;
 }
 
 // Exclui só perfis criados pelo usuário e sem ninguém usando

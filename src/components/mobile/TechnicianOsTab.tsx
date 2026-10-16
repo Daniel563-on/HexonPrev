@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarRange, CheckCircle2, ClipboardCheck, FileDown, MapPin } from 'lucide-react';
+import { CalendarRange, CheckCircle2, ChevronRight, ClipboardCheck, FileDown, MapPin } from 'lucide-react';
 import { HexonUser, WorkOrder } from '../../types';
 import { dbDismissClientSigned, dbSyncOsValidation, osStatusLabel } from '../../db/firebase';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
@@ -11,6 +11,7 @@ import { STATUS_STYLE, dayBR, isOverdue } from '../os/OsAnswersView';
 // Botões "Em aberto" e "Contestadas" (Fase 8A): as contestadas pelo cliente ficam em destaque para o técnico responder.
 // "Assinadas pelo cliente" (ajustes da etapa 8): assinadas pelo cliente (link ou celular); ficam aqui (PDF e OK) até o OK
 // ou até o engenheiro assinar. As duas listas vêm em tempo real do TechnicianMobileView (trocar de aba é instantâneo).
+// U2 (16/10/2026): tocar na assinada abre a OS inteira em "somente visualizar" (com a linha do tempo); nada se altera.
 
 export default function TechnicianOsTab({
   userProfile,
@@ -30,6 +31,9 @@ export default function TechnicianOsTab({
   canPdf?: boolean; // "Baixar PDF da OS": botão PDF na OS
 }) {
   const [open, setOpen] = useState<WorkOrder | null>(null);
+  // Assinada pelo cliente aberta só para ver: a versão mais nova da lista (tempo real); se sair da lista, fica a última
+  const [openSigned, setOpenSigned] = useState<WorkOrder | null>(null);
+  const signedLive = openSigned ? signed.find((o) => o.id === openSigned.id) || openSigned : null;
   type View = 'open' | 'pending' | 'contested' | 'signed';
   const [view, setView] = useState<View>('open');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -99,28 +103,34 @@ export default function TechnicianOsTab({
       {view === 'signed' && (
         <>
           <p className="text-[11px] text-slate-500">
-            O cliente assinou (no celular ou pelo link). Sai daqui sozinha quando o engenheiro assinar. {canPdf ? 'Baixe o PDF com a validação do cliente se precisar e toque em OK.' : 'Toque em OK para tirar da lista.'}
+            O cliente assinou (no celular ou pelo link). Sai daqui sozinha quando o engenheiro assinar. Toque na OS para ver tudo (só visualizar).{' '}
+            {canPdf ? 'Baixe o PDF com a validação do cliente se precisar e toque em OK.' : 'Toque em OK para tirar da lista.'}
           </p>
           {!loading && signed.length === 0 && <p className="text-xs text-slate-500 py-6 text-center">Nenhuma OS assinada pelo cliente para ver.</p>}
           {signed.map((o) => {
             const cli = o.signatures?.cliente;
             return (
               <div key={o.id} className={`p-4 rounded-2xl border shadow-2xs space-y-1.5 ${card}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-sm font-black text-indigo-600 flex items-center gap-1.5">
-                    <ClipboardCheck className="w-4 h-4" /> {o.number}
-                  </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
-                </div>
-                <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
-                <p className="text-[11px] text-slate-500 flex items-start gap-1">
-                  <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {o.execAddressText} · {o.comarca}
-                </p>
-                {cli && (
-                  <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> {cli.via === 'link' ? 'Validada' : 'Assinada'} por {cli.name} em {new Date(cli.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                <button type="button" onClick={() => setOpenSigned(o)} aria-label={`Ver a OS ${o.number}`} className="w-full text-left space-y-1.5 cursor-pointer">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-black text-indigo-600 flex items-center gap-1.5">
+                      <ClipboardCheck className="w-4 h-4" /> {o.number}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
+                  </div>
+                  <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
+                  <p className="text-[11px] text-slate-500 flex items-start gap-1">
+                    <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {o.execAddressText} · {o.comarca}
                   </p>
-                )}
+                  {cli && (
+                    <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> {cli.via === 'link' ? 'Validada' : 'Assinada'} por {cli.name} em {new Date(cli.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  )}
+                  <p className="text-[11px] font-black text-indigo-700 flex items-center gap-0.5">
+                    Ver a OS (só visualizar) <ChevronRight className="w-3.5 h-3.5" />
+                  </p>
+                </button>
                 <div className="flex gap-2 pt-1">
                   {canPdf && (
                     <button
@@ -197,6 +207,16 @@ export default function TechnicianOsTab({
           canPdf={canPdf}
           onClose={() => setOpen(null)}
           onChanged={(u) => setOpen(u)}
+        />
+      )}
+      {signedLive && (
+        <OsExecutionForm
+          order={signedLive}
+          userProfile={userProfile}
+          canPdf={canPdf}
+          viewOnly
+          onClose={() => setOpenSigned(null)}
+          onChanged={() => {}}
         />
       )}
     </main>

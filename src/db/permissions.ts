@@ -12,7 +12,7 @@ import {
 // CATÁLOGO DE PERMISSÕES (Hexon 2.0, Fase 2), organizado por área na tela de perfis.
 // Os ids antigos continuam os mesmos (as regras do banco usam view_materials, manage_materials, manage_templates,
 // view_costs, dispatch_orders e delete_templates). "soon" = módulo ainda em construção: aparece na tela, sem efeito.
-// As permissões valem no computador; as que também valem no celular do técnico dizem isso na descrição.
+// As permissões valem no computador. O técnico de campo tem permissões fixas (U2: profiles.ts › fieldFixedPermissions).
 export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_service_orders: {
     id: 'view_service_orders',
@@ -49,7 +49,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   preventive_pdf: {
     id: 'preventive_pdf',
     name: 'Baixar PDF da preventiva',
-    description: 'Computador e celular: botão PDF da preventiva — o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão (checklist, execução e assinatura). Sem valores em R$.',
+    description: 'Computador: botão PDF da preventiva — o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão (checklist, execução e assinatura). Sem valores em R$. No celular, o técnico de campo sempre pode.',
     category: 'Ações',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': true }
@@ -137,7 +137,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_client_link: {
     id: 'os_client_link',
     name: 'Enviar link de validação ao cliente',
-    description: 'Computador e celular: gerar, copiar e enviar por e-mail o link para o cliente validar ou contestar a OS (quem não tem não vê o link). Assinar no celular do técnico não depende desta permissão.',
+    description: 'Computador: gerar, copiar e enviar por e-mail o link para o cliente validar ou contestar a OS (quem não tem não vê o link). O técnico de campo não vê o link; assinar no celular do técnico não depende desta permissão.',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -169,7 +169,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   os_pdf: {
     id: 'os_pdf',
     name: 'Baixar PDF da OS',
-    description: 'Computador (ficha da OS) e celular do técnico (botão PDF na OS): o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão. Sem valores em R$.',
+    description: 'Computador (ficha da OS): o PDF mapeado do modelo ou, se o modelo não tiver, o PDF padrão. Sem valores em R$. No celular, o técnico de campo sempre pode.',
     category: 'Ações',
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
@@ -314,7 +314,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_costs: {
     id: 'view_costs',
     name: 'Ver valores em R$',
-    description: 'Computador e celular: ver valores em reais (homem-hora, hora extra, pernoite, materiais e insumos) nas telas e relatórios. Sem ela, o técnico não vê o custo da preventiva no celular.',
+    description: 'Computador: ver valores em reais (homem-hora, hora extra, pernoite, materiais e insumos) nas telas e relatórios. O técnico de campo nunca vê valores no celular.',
     category: 'Ações',
     area: 'valores',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
