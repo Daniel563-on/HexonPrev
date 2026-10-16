@@ -118,6 +118,15 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
     area: 'os',
     roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
   },
+  // U3 (16/10/2026): escritório que às vezes vai a campo (encarregado, engenheiro) — só OS, não preventivas
+  os_field_exec: {
+    id: 'os_field_exec',
+    name: 'Executar OS atribuídas a mim',
+    description: 'Para quem é do escritório e às vezes vai a campo (encarregado, engenheiro): aparece na lista de técnicos ao emitir ou atribuir OS e, na ficha da OS que está com ele, tem o botão "Executar a OS" (preencher, Pendente, Acompanhamento, concluir assinando como técnico e colher a assinatura do cliente), no computador ou no celular. Lê os materiais das empresas marcadas no cadastro dele. Preventivas continuam só com os técnicos de campo.',
+    category: 'Ações',
+    area: 'os',
+    roles: { 'Super Administrador': true, 'Administrador': false, 'Profissional': false }
+  },
   os_edit: {
     id: 'os_edit',
     name: 'Editar OS',

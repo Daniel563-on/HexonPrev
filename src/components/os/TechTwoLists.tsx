@@ -8,7 +8,7 @@ import { LocalTechOption, localTechGroups, localTechLabel } from '../../lib/loca
 
 interface Props {
   unit: string;
-  unitTechs: { matricula: string; name: string }[];
+  unitTechs: { matricula: string; name: string; perfil?: string; cargo?: string }[]; // perfil "Administrador" = escritório que executa (U3)
   localTechs: LocalTechOption[];
   comarca?: string;
   value: string;
@@ -28,7 +28,7 @@ export default function TechTwoLists({ unit, unitTechs, localTechs, comarca, val
       <option value="">{isLocal ? '—' : unitPlaceholder}</option>
       {unitTechs.map((t) => (
         <option key={t.matricula} value={t.matricula}>
-          {t.name} ({t.matricula})
+          {t.name} ({t.matricula}){t.perfil === 'Administrador' ? ` · ${t.cargo || 'escritório'} (escritório)` : ''}
         </option>
       ))}
     </select>

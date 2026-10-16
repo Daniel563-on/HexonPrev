@@ -51,11 +51,14 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
   const inBlock = !!order.lotId || !!order.scheduledDate;
   const techChanged = tech !== (order.assignedTechnicianMatricula || '');
   // Técnicos da gerência e técnicos locais (Lote 2): para o técnico local só atribui (sem dia e sem pernoite)
-  const unitTechs = techs.filter((x) => x.gerencia === order.unit);
+  // U3: do escritório (quem também executa OS) entra na lista da gerência, mesmo com gerência "Todas"
+  const unitTechs = techs.filter((x) => x.gerencia === order.unit || (x.perfil === 'Administrador' && x.gerencia === 'Todas'));
   const localTechs = order.unit === LOCAL_TECH_UNIT ? [] : localTechOptions(techs.filter((x) => x.gerencia !== order.unit));
   const localChosen = !!tech && localTechs.some((x) => x.matricula === tech);
+  // U3: escritório que executa não entra na Programação (sem dia e sem pernoite; executa pela ficha da OS)
+  const officeChosen = !!tech && unitTechs.some((x) => x.matricula === tech && x.perfil === 'Administrador');
   // Chamado já com dia: mudar o dia é pela Programação; trocar o técnico tira do bloco (como antes) e aí pode programar
-  const canDay = canProgram && !!order.company && (!inBlock || techChanged) && !localChosen;
+  const canDay = canProgram && !!order.company && (!inBlock || techChanged) && !localChosen && !officeChosen;
   useEffect(() => {
     if (!canDay || !withDay) return;
     dbGetCompanies()
@@ -236,6 +239,12 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
       {localChosen && (
         <p className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 text-[11px] text-emerald-900 dark:text-emerald-200">
           <b>Técnico local: sem dia e sem pernoite.</b> Ele recebe no celular e faz dentro do prazo{order.deadline ? ` do chamado (${brDay(order.deadline)})` : ''}. Não entra na Programação da {order.unit}. O material usado sai da {order.unit}.
+        </p>
+      )}
+
+      {officeChosen && (
+        <p className="p-2.5 rounded-lg border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/30 text-[11px] text-indigo-900 dark:text-indigo-200">
+          <b>Do escritório: sem dia e sem pernoite.</b> Ele abre a OS em Ordens de Serviço e executa pelo botão "Executar a OS" (computador ou celular). Não entra na Programação.
         </p>
       )}
 

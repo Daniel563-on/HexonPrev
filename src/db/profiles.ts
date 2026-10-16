@@ -51,6 +51,16 @@ export function resolveUserProfile(user: HexonUser | null | undefined, profiles:
   return byId || profiles.find((p) => p.id === SYSTEM_PROFILE_IDS[kindOfLegacyPerfil(user.perfil)]);
 }
 
+// U3 (16/10/2026): perfil de Escritório com "Executar OS atribuídas a mim" — entra na lista "Técnico da gerência" das OS
+// (corretiva, layout, acompanhamento; não nas preventivas nem na Programação) e executa pela ficha da OS.
+// Acesso total (Super Admin) não entra na lista de técnicos. As regras do banco conferem a execução pela matrícula.
+export const OFFICE_EXEC_PERMISSION = 'os_field_exec';
+export function isOfficeExecutor(user: HexonUser | null | undefined, profiles: AccessProfile[]): boolean {
+  if (!user || user.perfil !== 'Administrador') return false;
+  const profile = resolveUserProfile(user, profiles);
+  return !!profile && profile.kind === 'planejamento' && profilePermission(profile, OFFICE_EXEC_PERMISSION) === true;
+}
+
 // Valor de uma permissão no perfil. Permissão nova ainda não gravada no perfil herda a antiga de onde nasceu
 // (ex.: "Planejar preventivas" herda "Ver execução das preventivas"). undefined = o perfil não define.
 export function profilePermission(profile: AccessProfile, permissionId: string): boolean | undefined {

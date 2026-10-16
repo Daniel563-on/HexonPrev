@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, Pencil, UserMinus, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, Calculator, FileDown, FileSpreadsheet, MessageSquareReply, Pencil, PlayCircle, UserMinus, Wrench, X } from 'lucide-react';
 import { Company, HexonUser, WorkOrder } from '../../types';
 import {
   WorkOrderCost,
@@ -26,6 +27,7 @@ import OsContestReplyModal from './OsContestReplyModal';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
 import OsEmitForm from './OsEmitForm';
+import OsExecutionForm from './OsExecutionForm';
 import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 
 // FICHA DA OS (escritório): cabeçalho, dados da abertura, execução (respostas, equipe, materiais, feriados,
@@ -34,6 +36,8 @@ import OrderSuppliesBlock from '../supplies/OrderSuppliesBlock';
 // Contestada: "Responder contestação" (permissão "Responder contestação de OS" ou o técnico da OS).
 // Etapa especial E4: "Editar OS" enquanto "Nova" (permissão "Editar OS") e "Desatribuir técnico" enquanto o técnico
 // não começou (permissão "Atribuir técnico"): a OS volta para "Nova".
+// U3 (16/10/2026): quem é do escritório e tem "Executar OS atribuídas a mim" vê, na OS que está com ele, o quadro
+// "Esta OS está com você para executar" com o botão que abre a mesma tela de execução do celular do técnico.
 
 interface Props {
   order: WorkOrder;
@@ -47,6 +51,7 @@ interface Props {
   canPdf: boolean;    // "Baixar PDF da OS"
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null; // "Assinar OS como" do perfil (Super Administrador = todos)
+  canFieldExec?: boolean; // U3: "Executar OS atribuídas a mim"
   onClose: () => void;
   onChanged: () => void;
 }
@@ -54,8 +59,15 @@ interface Props {
 const h3 = 'text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
 const fmtDT = (iso?: string) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canEdit = false, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole, onClose, onChanged }: Props) {
+export default function WorkOrderSheet({ order: initial, userProfile, canAssign, canEdit = false, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, canFieldExec = false, mySignRole, onClose, onChanged }: Props) {
   const [o, setO] = useState<WorkOrder>(initial);
+  // U3: a OS está com quem abriu a ficha e ele pode executar (situações em que o técnico ainda age na OS)
+  const [execOpen, setExecOpen] = useState(false);
+  const myExec =
+    canFieldExec &&
+    !!userProfile.matricula &&
+    o.techOpen === userProfile.matricula &&
+    (o.status === 'Em andamento' || o.status === 'Pendente' || (o.status === 'Aguardando assinaturas' && o.nextSigner === 'cliente') || (o.status === 'Contestada' && !o.techSignedAt));
   const [cost, setCost] = useState<WorkOrderCost | null>(null);
   const [costBusy, setCostBusy] = useState(false);
   const [action, setAction] = useState<'pause' | 'cancel' | null>(null);
@@ -201,6 +213,47 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             ))}
           </div>
 
+          {myExec && (
+            <div className="p-3.5 rounded-xl bg-indigo-50 border-2 border-indigo-300 flex flex-wrap items-center justify-between gap-3" aria-label="Executar a OS">
+              <div className="text-xs text-indigo-900 min-w-0 space-y-0.5">
+                <p className="font-black text-sm flex items-center gap-1.5">
+                  <Wrench className="w-4 h-4" /> Esta OS está com você para executar
+                </p>
+                <p>
+                  {o.status === 'Em andamento'
+                    ? 'Preencha a execução, deixe Pendente, anote Acompanhamento ou conclua assinando como técnico.'
+                    : o.status === 'Pendente'
+                    ? 'Está Pendente. Abra para retomar e continuar.'
+                    : o.status === 'Contestada'
+                    ? 'Contestada: corrija e conclua de novo.'
+                    : 'Você já assinou como técnico. Agora o cliente: assina aqui na tela ou recebe o link.'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setExecOpen(true)} className="h-10 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0">
+                <PlayCircle className="w-4 h-4" />
+                {o.status === 'Pendente' ? 'Abrir a execução' : o.status === 'Aguardando assinaturas' ? 'Colher a assinatura do cliente' : 'Executar a OS'}
+              </button>
+            </div>
+          )}
+          {/* A tela de execução fica acima da ficha (portal: a ficha é uma janela fixa) */}
+          {execOpen &&
+            createPortal(
+              <div className="fixed inset-0 z-[1100]">
+                <OsExecutionForm
+                  order={o}
+                  userProfile={userProfile}
+                  canClientLink={canClientLink}
+                  canPdf={canPdf}
+                  onClose={() => {
+                    setExecOpen(false);
+                    dbGetWorkOrder(o.id).then((fresh) => fresh && setO(fresh));
+                    onChanged();
+                  }}
+                  onChanged={(u) => setO(u)}
+                />
+              </div>,
+              document.body
+            )}
           {o.status === 'Contestada' && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-2">
               <p>

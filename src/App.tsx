@@ -57,6 +57,7 @@ import {
   dbGetPermissions,
   dbGetProfiles,
   resolveUserProfile,
+  isOfficeExecutor,
   profilePermission,
   userVisibleUnits,
   userVisibleCompanies,
@@ -1274,6 +1275,7 @@ export default function App() {
               canExport={userHasActionPermission('os_export')}
               canPdf={userHasActionPermission('os_pdf')}
               canViewCosts={userHasActionPermission('view_costs')}
+              canFieldExec={!!userProfile && isOfficeExecutor(userProfile, accessProfiles)}
               mySignRole={
                 userProfile.perfil === 'Super Administrador'
                   ? 'all'

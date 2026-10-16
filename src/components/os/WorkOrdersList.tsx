@@ -19,7 +19,9 @@ import {
   dbCountWorkOrders,
   dbFindWorkOrders,
   dbGetOsCounters,
+  dbGetProfiles,
   dbGetUsers,
+  isOfficeExecutor,
   dbGetWorkOrderCostSummary,
   dbListWorkOrders,
   osMatchesMode,
@@ -65,6 +67,7 @@ interface Props {
   canPdf: boolean;    // "Baixar PDF da OS" (ficha)
   canViewCosts: boolean;
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null;
+  canFieldExec?: boolean; // U3: "Executar OS atribuídas a mim" (botão na ficha da OS que está com a pessoa)
 }
 
 type CostInfo = Awaited<ReturnType<typeof dbGetWorkOrderCostSummary>>;
@@ -73,7 +76,7 @@ const EXPORT_MAX = 2000;
 const field = 'h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white';
 const label = 'block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5';
 
-export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canProgram = false, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole }: Props) {
+export default function WorkOrdersList({ userProfile, unitOptions, canAssign, canProgram = false, canEdit = false, visibleCompanies = null, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, canFieldExec = false, mySignRole }: Props) {
   // Atalho do Início: a lista abre já filtrada (situação, atrasadas ou "Precisam da minha assinatura")
   const [homeLink] = useState(() => peekHomeLink<HomeOsLink>('os-list'));
   useEffect(() => clearHomeLink('os-list'), []);
@@ -267,8 +270,17 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setMode(m);
     loadFirst(m);
     loadCounters();
-    dbGetUsers()
-      .then((users) => setUnitTechs(users.filter((u) => u.perfil === 'Profissional' && (u.gerencia === unit || u.gerencia === 'Todas' || isLocalTech(u)))))
+    // Filtro "Técnico": técnicos de campo e, do escritório, quem também executa OS (U3)
+    Promise.all([dbGetUsers(), dbGetProfiles().catch(() => [])])
+      .then(([users, profiles]) =>
+        setUnitTechs(
+          users.filter(
+            (u) =>
+              (u.perfil === 'Profissional' && (u.gerencia === unit || u.gerencia === 'Todas' || isLocalTech(u))) ||
+              ((u.gerencia === unit || u.gerencia === 'Todas') && isOfficeExecutor(u, profiles))
+          )
+        )
+      )
       .catch(() => setUnitTechs([]));
   }, [unit]);
   // Trocou a empresa: recarrega a lista (mesmos filtros) e os contadores
@@ -381,9 +393,18 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setAssigning(o);
     setAssignMsg(null);
     setError(null);
-    const users = await dbGetUsers().catch(() => []);
-    // Só os técnicos da empresa da OS: da gerência e, em outra lista, os técnicos locais (Lote 2; e os antigos com "Todas")
-    setTechs(users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && (u.gerencia === o.unit || u.gerencia === 'Todas' || isLocalTech(u)) && (!o.company || (u.companies || []).includes(o.company))));
+    const [users, profiles] = await Promise.all([dbGetUsers().catch(() => []), dbGetProfiles().catch(() => [])]);
+    // Só os técnicos da empresa da OS: da gerência e, em outra lista, os técnicos locais (Lote 2; e os antigos com "Todas").
+    // U3: do escritório, quem tem "Executar OS atribuídas a mim" entra na lista da gerência
+    setTechs(
+      users.filter(
+        (u) =>
+          u.status === 'Ativo' &&
+          (!o.company || (u.companies || []).includes(o.company)) &&
+          ((u.perfil === 'Profissional' && (u.gerencia === o.unit || u.gerencia === 'Todas' || isLocalTech(u))) ||
+            ((u.gerencia === o.unit || u.gerencia === 'Todas') && isOfficeExecutor(u, profiles)))
+      )
+    );
   };
   // ===== Planilha da lista filtrada (todas as páginas, até 2.000 OS) =====
   const exportXlsx = async () => {
@@ -756,6 +777,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
           canExport={canExport}
           canPdf={canPdf}
           canViewCosts={canViewCosts}
+          canFieldExec={canFieldExec}
           mySignRole={mySignRole}
           onClose={() => setSelected(null)}
           onChanged={refresh}

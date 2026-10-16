@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Lock } from 'lucide-react';
-import { Address, Company, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
+import { AccessProfile, Address, Company, HexonUser, OsFieldWidth, OsLocationAnswer, OsSystemField, OsTemplate, OsTemplateField, WorkOrder } from '../../types';
 import {
   OS_EMAIL_OK,
   OS_PHONE_OK,
@@ -13,8 +13,10 @@ import {
   dbGetAddresses,
   dbGetOsTemplates,
   dbGetSingleAssetPublic,
+  dbGetProfiles,
   dbGetUsers,
   dbPeekNextOsNumber,
+  isOfficeExecutor,
   osFieldVisible,
   stageItems
 } from '../../db/firebase';
@@ -64,6 +66,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
   );
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [users, setUsers] = useState<HexonUser[]>([]);
+  const [profiles, setProfiles] = useState<AccessProfile[]>([]); // U3: quem do escritório também executa OS
   const [loading, setLoading] = useState(true);
   const [templateId, setTemplateId] = useState(editOrder?.templateId || '');
   const [answers, setAnswers] = useState<Record<string, any>>(() => (editOrder ? { ...editOrder.answers } : {}));
@@ -77,6 +80,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
   useEffect(() => {
     let alive = true;
     dbGetCompanies().then((c) => alive && setCompanies(c)).catch(() => {});
+    if (canAssign) dbGetProfiles().then((p) => alive && setProfiles(p)).catch(() => {});
     Promise.all([isEdit ? Promise.resolve([] as OsTemplate[]) : dbGetOsTemplates(true), dbGetAddresses(), canAssign ? dbGetUsers() : Promise.resolve([] as HexonUser[])])
       .then(([t, a, u]) => {
         if (!alive) return;
@@ -104,7 +108,11 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
   // Técnicos da gerência da OS e, em outra lista, os técnicos locais (Lote 2; e os antigos com gerência "Todas") — só da
   // empresa da OS. Na própria DOM os técnicos locais já são os técnicos da gerência.
   const activeTechs = users.filter((u) => u.perfil === 'Profissional' && u.status === 'Ativo' && !!company && (u.companies || []).includes(company));
-  const unitTechs = unit ? activeTechs.filter((u) => u.gerencia === unit) : [];
+  // U3: do escritório, quem tem "Executar OS atribuídas a mim" (da gerência da OS ou "Todas" e da empresa da OS)
+  const officeExecs = unit
+    ? users.filter((u) => u.status === 'Ativo' && !!company && (u.companies || []).includes(company) && (u.gerencia === unit || u.gerencia === 'Todas') && isOfficeExecutor(u, profiles))
+    : [];
+  const unitTechs = unit ? [...activeTechs.filter((u) => u.gerencia === unit), ...officeExecs] : [];
   const localTechs = unit && unit !== LOCAL_TECH_UNIT ? localTechOptions(activeTechs.filter((u) => u.gerencia !== unit)) : [];
   const technicians: { matricula: string; name: string }[] = [...unitTechs, ...localTechs];
   const assignOn = !!template?.systemFields.find((s) => s.key === 'tecnico' && s.enabled) && canAssign;
@@ -343,6 +351,9 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
             />
             {v && localTechs.some((t) => t.matricula === v) && (
               <p className="text-[10px] font-bold text-emerald-700 mt-1">Técnico local: sem dia e sem pernoite; ele recebe no celular e faz dentro do prazo. O material usado sai da {unit}.</p>
+            )}
+            {v && officeExecs.some((t) => t.matricula === v) && (
+              <p className="text-[10px] font-bold text-indigo-700 mt-1">Do escritório: ele abre a OS em Ordens de Serviço e executa pelo botão "Executar a OS".</p>
             )}
             {!unit && <p className="text-[10px] text-slate-500 mt-1">Escolha a gerência para ver os técnicos.</p>}
             {unit && !company && <p className="text-[10px] text-slate-500 mt-1">Escolha a empresa para ver os técnicos.</p>}

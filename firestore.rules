@@ -289,10 +289,11 @@ service cloud.firestore {
     // O usuário e o perfil são lidos UMA vez e passados (o banco limita as contas por verificação: com perfil de acesso,
     // a versão antiga passava do limite de 1000 e o técnico não conseguia ler a lista)
     // A7: quem aprova pedido de material também lê (vê o saldo de cada almoxarifado na aprovação)
+    // U3: quem é do escritório e tem "Executar OS atribuídas a mim" lê como o técnico (só as empresas do cadastro dele)
     function matReadOk(u, p) {
       return (osSees(u, p)
           && (osPerm(u, p, 'view_materials') || osPerm(u, p, 'view_costs') || osPerm(u, p, 'material_requests_decide')
-              || (u.perfil == 'Profissional' && resource.data.get('company', '') in u.get('companies', []))))
+              || ((u.perfil == 'Profissional' || osPerm(u, p, 'os_field_exec')) && resource.data.get('company', '') in u.get('companies', []))))
         // Técnico local (Lote 2): os da empresa dele, de qualquer gerência (o material sai da gerência da OS)
         || (isLocalTechUser(u) && resource.data.get('company', '') in u.get('companies', []));
     }

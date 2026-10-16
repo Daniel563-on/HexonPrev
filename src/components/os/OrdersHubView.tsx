@@ -18,13 +18,14 @@ interface Props {
   canExport: boolean;
   canPdf: boolean; // "Baixar PDF da OS"
   canViewCosts: boolean;
+  canFieldExec?: boolean; // U3: escritório que também executa OS ("Executar OS atribuídas a mim")
   mySignRole: 'engenheiro' | 'gerente' | 'all' | null;
   preventives: React.ReactNode; // a tela de execução das preventivas (Realização)
 }
 
 type Section = 'os' | 'preventivas';
 
-export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, canProgram = false, canEdit, visibleCompanies, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, mySignRole, preventives }: Props) {
+export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canSeePreventives, canAssign, canProgram = false, canEdit, visibleCompanies, canCancel, canReplyContest, canClientLink, canExport, canPdf, canViewCosts, canFieldExec = false, mySignRole, preventives }: Props) {
   const [section, setSection] = useState<Section>(() => {
     try {
       const saved = localStorage.getItem('hexon_orders_section') as Section | null;
@@ -67,7 +68,7 @@ export default function OrdersHubView({ userProfile, unitOptions, canSeeOs, canS
             <p className="text-xs text-slate-500 mt-1">Corretiva, layout e acompanhamento. Clique num contador para filtrar e na OS para abrir a ficha.</p>
           </div>
           {unitOptions.length > 0 ? (
-            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canProgram={canProgram} canEdit={canEdit} visibleCompanies={visibleCompanies} canCancel={canCancel} canReplyContest={canReplyContest} canClientLink={canClientLink} canExport={canExport} canPdf={canPdf} canViewCosts={canViewCosts} mySignRole={mySignRole} />
+            <WorkOrdersList userProfile={userProfile} unitOptions={unitOptions} canAssign={canAssign} canProgram={canProgram} canEdit={canEdit} visibleCompanies={visibleCompanies} canCancel={canCancel} canReplyContest={canReplyContest} canClientLink={canClientLink} canExport={canExport} canPdf={canPdf} canViewCosts={canViewCosts} canFieldExec={canFieldExec} mySignRole={mySignRole} />
           ) : (
             <p className="text-xs text-slate-500">Seu perfil não tem gerência para ver OS.</p>
           )}
