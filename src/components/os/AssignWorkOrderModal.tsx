@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CalendarDays, Info } from 'lucide-react';
 import { BlockStop, Company, HexonUser, PlanningLot, UsualTeam, WorkOrder } from '../../types';
-import { dbAssignWorkOrder, dbGetCompanies, dbGetUnitPeopleInfo, dbListTeams, dbSaveBlock, localTodayStr, osTechStarted, UnitPersonInfo } from '../../db/firebase';
+import { dbAssignWorkOrder, dbGetCompanies, dbGetUnitPeopleInfo, dbListTeams, dbSaveBlock, dbUnassignWorkOrder, localTodayStr, osTechStarted, UnitPersonInfo } from '../../db/firebase';
 import { localLabel, lotPlace, lotStops } from '../programacao/blockLayout';
 import { addDays, isoWeek, mondayOf, weekDays } from '../programacao/weekDates';
 import { Shell, btn, btnMain } from '../programacao/WeekModals';
 import { teamLabel } from '../programacao/TeamForm';
 import { brDay, crewOf, DaysPicker, dayTxt as dayTxtOf, NightsBox, TechOption, useWeekData } from '../programacao/weekPick';
-import TechTwoLists from './TechTwoLists';
+import TechTwoLists, { NO_TECH } from './TechTwoLists';
 import { osRefText } from '../../lib/osRef';
 import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
 
@@ -50,6 +50,12 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
   const [error, setError] = useState('');
 
   const inBlock = !!order.lotId || !!order.scheduledDate;
+  // U9: "Nenhum técnico" desatribui (mesma regra do botão da ficha: só "Em andamento" e o técnico ainda não começou)
+  const unassign = tech === NO_TECH;
+  const canUnassign = order.status === 'Em andamento' && !osTechStarted(order);
+  const noneOption = order.assignedTechnicianMatricula
+    ? { label: canUnassign ? 'Nenhum técnico (desatribuir)' : 'Nenhum técnico — o técnico já começou, não dá para desatribuir', disabled: !canUnassign }
+    : undefined;
   const techChanged = tech !== (order.assignedTechnicianMatricula || '');
   // Técnicos da gerência e técnicos locais (Lote 2): para o técnico local só atribui (sem dia e sem pernoite)
   // U3: do escritório (quem também executa OS) entra na lista da gerência, mesmo com gerência "Todas"
@@ -59,7 +65,7 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
   // U3: escritório que executa não entra na Programação (sem dia e sem pernoite; executa pela ficha da OS)
   const officeChosen = !!tech && unitTechs.some((x) => x.matricula === tech && x.perfil === 'Administrador');
   // Chamado já com dia: mudar o dia é pela Programação; trocar o técnico tira do bloco (como antes) e aí pode programar
-  const canDay = canProgram && !!order.company && (!inBlock || techChanged) && !localChosen && !officeChosen;
+  const canDay = canProgram && !!order.company && (!inBlock || techChanged) && !localChosen && !officeChosen && !unassign;
   useEffect(() => {
     if (!canDay || !withDay) return;
     dbGetCompanies()
@@ -125,8 +131,20 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
 
   const save = async () => {
     setError('');
-    if (!t) return setError('Escolha o técnico.');
     const by = user.name;
+    if (unassign) {
+      if (!canUnassign) return setError('O técnico já começou: não dá para desatribuir.');
+      setSaving(true);
+      try {
+        await dbUnassignWorkOrder(order, by);
+        onDone(`${osRefText(order)}: técnico desatribuído — a OS voltou para "Nova".`);
+      } catch (err: any) {
+        setSaving(false);
+        setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode desatribuir OS nesta gerência.' : `Não foi possível desatribuir: ${err?.message || err}`);
+      }
+      return;
+    }
+    if (!t) return setError('Escolha o técnico.');
     // Sem dia: como antes (atribuir ou trocar o técnico)
     if (!(canDay && withDay)) {
       if (!techChanged && order.status !== 'Nova') return onClose();
@@ -218,7 +236,7 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
             Cancelar
           </button>
           <button type="button" className={btnMain} onClick={save} disabled={saving}>
-            {saving ? 'Salvando…' : 'Confirmar'}
+            {saving ? 'Salvando…' : unassign ? 'Confirmar: desatribuir' : 'Confirmar'}
           </button>
         </>
       }
@@ -229,13 +247,22 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
         <p className="text-[11px] text-slate-500">A contagem do homem-hora continua desde a primeira atribuição.</p>
       )}
       {localTechs.length > 0 ? (
-        <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={localTechs} comarca={order.comarca} value={tech} onChange={(m) => { setTech(m); setWithDay(false); }} />
+        <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={localTechs} comarca={order.comarca} value={tech} onChange={(m) => { setTech(m); setWithDay(false); }} noneOption={noneOption} />
       ) : (
         <label className="block">
           <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 mb-1">Técnico</span>
-          <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={[]} value={tech} onChange={setTech} />
+          <TechTwoLists unit={order.unit} unitTechs={unitTechs} localTechs={[]} value={tech} onChange={setTech} noneOption={noneOption} />
           {techs.length === 0 && <span className="block mt-1 text-[11px] text-slate-500">Nenhum técnico ativo nesta gerência.</span>}
         </label>
+      )}
+      {unassign && (
+        <p className="p-2.5 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-[11px] text-amber-900 dark:text-amber-200">
+          <b>Desatribuir:</b> a OS volta para "Nova", sai do celular de {order.assignedTechnicianName || 'o técnico'}
+          {inBlock ? ' e do bloco da Programação (perde o dia)' : ''}. Confira e toque em "Confirmar: desatribuir".
+        </p>
+      )}
+      {!canUnassign && order.assignedTechnicianMatricula && (
+        <p className="text-[10px] text-slate-500">Desatribuir só enquanto o técnico ainda não começou a OS (sem execução e sem pendência).</p>
       )}
       {localChosen && (
         <p className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 text-[11px] text-emerald-900 dark:text-emerald-200">

@@ -144,20 +144,28 @@ export default function ExecutionExtras({ unit, editable, executor, materials, p
       <div className="space-y-2">
         <p className={label}>Participantes</p>
         <div className="flex flex-wrap gap-1.5">
-          {executor && (
-            <span className="px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-[11px] font-bold text-indigo-800">
-              {executor.name} (executor)
-            </span>
-          )}
-          {participants.filter((p) => p.matricula !== executor?.matricula).map((p) => (
-            <span key={p.matricula} className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-700 flex items-center gap-1">
+          {/* U5: o técnico (executor) só aparece aqui se ele se marcou; senão vira o atalho "Você" abaixo */}
+          {participants.map((p) => (
+            <span key={p.matricula} className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1 ${p.matricula === executor?.matricula ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
               {p.name}
+              {p.matricula === executor?.matricula && <span className="font-normal">(você)</span>}
               {editable && (
                 <button type="button" onClick={() => onChange({ participants: participants.filter((x) => x.matricula !== p.matricula) })} className="text-rose-500 cursor-pointer" title="Tirar">×</button>
               )}
             </span>
           ))}
         </div>
+        {editable && participants.length === 0 && <p className="text-[11px] font-bold text-amber-700">Ninguém na equipe ainda. Toque em quem executou (você só entra se executou).</p>}
+        {editable && executor && !participants.some((p) => p.matricula === executor.matricula) && (
+          <button
+            type="button"
+            onClick={() => onChange({ participants: [...participants, executor] })}
+            className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 text-left hover:border-indigo-400 cursor-pointer"
+          >
+            <span className="block text-[11px] font-black text-indigo-800 uppercase leading-tight">{executor.name} (você — responsável)</span>
+            <span className="block text-[10px] text-indigo-700/80">Toque para entrar na equipe — só se você executou (conta no homem-hora)</span>
+          </button>
+        )}
         {editable && (
           <div className="relative">
             <input value={personSearch} onChange={(e) => setPersonSearch(e.target.value)} placeholder="Adicionar participante da gerência: nome ou matrícula..." className={field} />

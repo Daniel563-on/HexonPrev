@@ -7,6 +7,7 @@ import SignatureCanvas from '../SignatureCanvas';
 
 // RESPOSTA DE UMA PERGUNTA DO MODELO DE OS (usado em Emitir OS e na execução pelo técnico)
 // Texto, número, data, telefone, e-mail, lista, caixas, liga/desliga, sim/não, assinatura e Local (CRAAI › Comarca › Endereço).
+// U6: "Lista por gerência" mostra só as opções da gerência da OS (sem gerência escolhida ou sem lista, avisa).
 
 export const osInput = 'w-full h-9 px-3 text-xs border border-slate-200 rounded-lg bg-white';
 const input = osInput;
@@ -111,9 +112,13 @@ interface Props {
   onChange: (v: any) => void;
   addresses: Address[];
   signerName?: string;
+  unit?: string; // gerência da OS (pergunta "Lista por gerência")
 }
 
-export default function OsFieldInput({ field: f, value: v, onChange, addresses, signerName }: Props) {
+// Opções de uma "Lista por gerência" para a gerência da OS
+export const unitListOptions = (f: OsTemplateField, unit?: string): string[] => (unit ? (f.optionsByUnit?.[unit] || []).filter(Boolean) : []);
+
+export default function OsFieldInput({ field: f, value: v, onChange, addresses, signerName, unit }: Props) {
   const [signing, setSigning] = useState(false);
   const body = (() => {
       switch (f.type) {
@@ -141,6 +146,20 @@ export default function OsFieldInput({ field: f, value: v, onChange, addresses, 
               ))}
             </select>
           );
+        case 'unitlist': {
+          if (!unit) return <select className={`${input} text-slate-400`} disabled><option>Escolha a gerência primeiro</option></select>;
+          const opts = unitListOptions(f, unit);
+          if (!opts.length)
+            return <p className="text-[11px] font-bold text-rose-600">Nenhuma opção cadastrada para a gerência {unit}. Cadastre em Configurações › Modelos de OS (a OS não é emitida sem ela).</p>;
+          return (
+            <select className={input} value={opts.includes(v) ? v : ''} onChange={(e) => onChange(e.target.value)}>
+              <option value="">Selecione...</option>
+              {opts.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          );
+        }
         case 'multiselect': {
           const list: string[] = Array.isArray(v) ? v : [];
           return (

@@ -899,11 +899,11 @@ export default function App() {
       case 'os-emit':
         return 'Emitir OS (GLPI)';
       case 'pmoc-preventivas':
-        return 'PMOC — Preventivas';
+        return 'Preventivas — Consulta';
       case 'assets':
         return 'Gerenciamento de Ativos';
       case 'templates':
-        return 'PMOC — Modelos e Protocolos';
+        return 'Preventivas — Modelos e Protocolos';
       case 'solicitations':
         return 'Solicitações';
       case 'materials':

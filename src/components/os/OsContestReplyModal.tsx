@@ -124,7 +124,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
                   {open.map((f) => (
                     <div key={f.id}>
                       <span className={label}>{f.label}</span>
-                      <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setAnswers((p) => ({ ...p, [f.id]: v }))} addresses={addresses} signerName={userProfile.name} />
+                      <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setAnswers((p) => ({ ...p, [f.id]: v }))} addresses={addresses} signerName={userProfile.name} unit={order.unit} />
                     </div>
                   ))}
                 </div>

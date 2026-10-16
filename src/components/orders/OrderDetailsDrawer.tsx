@@ -197,14 +197,14 @@ export default function OrderDetailsDrawer({
     try {
       const { result } = await dbStartOrder(selectedOrder, userProfile, isOffline());
       // Participantes já vêm com a equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está
-      // de férias/atestado hoje (Fase 7C). Dá para mudar na OS.
+      // de férias/atestado hoje (Fase 7C). Dá para mudar na OS. U5: o técnico NÃO entra sozinho (é o responsável;
+      // ele se marca se executou).
       // Técnico local (Lote 2) em preventiva de outra gerência: a equipe dele é programada na DOM
       const teamUnit = userProfile.localTech && userProfile.gerencia !== selectedOrder.unit ? userProfile.gerencia : selectedOrder.unit;
       const team = await dbGetDayTeam(teamUnit, selectedOrder.company, localTodayStr(), myMatricula);
-      const me = { matricula: myMatricula, name: userProfile.name, cargo: userProfile.cargo || '' };
       const prefilled: ServiceOrder = {
         ...selectedOrder,
-        participants: [me, ...team],
+        participants: team.filter((p) => p.matricula !== myMatricula),
         materialsUsed: selectedOrder.materialsUsed || []
       };
       setSelectedOrderState(prefilled);
@@ -556,9 +556,9 @@ export default function OrderDetailsDrawer({
     const supplyBlock = supplyBlockMessage(selectedOrder.id);
     if (supplyBlock) return stop(supplyBlock);
 
-    // Quem executa entra sempre como participante
-    const executor = { matricula: myMatricula, name: userProfile?.name || '', cargo: userProfile?.cargo || '' };
-    const participants = [executor, ...(selectedOrder.participants || []).filter((p) => p.matricula !== myMatricula)];
+    // U5: só conta quem está na equipe (o técnico entra se ele mesmo se marcou); precisa de pelo menos 1 pessoa
+    const participants = selectedOrder.participants || [];
+    if (participants.length === 0) return stop('Equipe: inclua pelo menos uma pessoa nos participantes (se você executou, toque no seu nome).');
 
     const completedOrder: ServiceOrder = {
       ...selectedOrder,

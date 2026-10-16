@@ -119,7 +119,8 @@ export function mprjTemplate(by: string): OsTemplate {
       q('f_tel_requerente', 'Telefone do requerente', 'phone', 9, 'criacao', true, { width: 'half' }),
       q('f_email_requerente', 'E-mail do requerente', 'email', 10, 'criacao', true, { width: 'half' }),
       q('f_descricao', 'Descrição do serviço solicitado', 'textarea', 12, 'criacao'),
-      q('f_categoria', 'Categoria', 'select', 13, 'criacao', true, { options: ['ACJ', 'Split', 'Bombas', 'Elevadores', 'Outros'], width: 'half' }),
+      // U6: Categoria = lista por gerência (cada gerência tem a sua; sem lista a OS não é emitida)
+      q('f_categoria', 'Categoria', 'unitlist', 13, 'criacao', true, { optionsByUnit: {}, width: 'half' }),
       q('f_servico_executado', 'Descrição do serviço executado', 'textarea', 10, 'execucao')
     ],
     systemFields: defaultSystemFields(),

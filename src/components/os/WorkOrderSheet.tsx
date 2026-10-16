@@ -306,6 +306,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             <div className="grid md:grid-cols-2 gap-3">
               <div className="p-3 rounded-xl bg-white border border-slate-200">
                 <p className={h3}>Equipe ({members.length})</p>
+                {!exec && <p className="text-[11px] text-slate-500">O técnico lança a equipe ao concluir (o responsável só entra se ele se marcar).</p>}
                 {members.map((p) => (
                   <p key={p.matricula} className="text-xs text-slate-700">{p.name} <span className="text-slate-400">· {p.cargo || 'sem cargo'} · {p.matricula}</span></p>
                 ))}

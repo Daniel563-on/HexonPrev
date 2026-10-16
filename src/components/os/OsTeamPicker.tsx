@@ -4,15 +4,16 @@ import { OrderParticipant } from '../../types';
 import { dbGetDayTeam, dbGetTeamPeople, localTodayStr } from '../../db/firebase';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
-// EQUIPE DA OS (técnico em campo): o técnico atribuído entra sempre; a equipe que o Encarregado deixou pronta
-// aparece como atalho (um toque adiciona) e qualquer pessoa ativa da gerência e da mesma empresa do técnico pode ser buscada.
+// EQUIPE DA OS (técnico em campo): U5 — o técnico atribuído é o responsável e NÃO entra sozinho; ele aparece como
+// atalho ("Você") e só entra se tocar (pode ser só o responsável, sem executar). A equipe que o Encarregado deixou pronta
+// também aparece como atalho e qualquer pessoa ativa da gerência e da mesma empresa do técnico pode ser buscada.
 // Contam no homem-hora, na hora extra e no pernoite só as pessoas adicionadas aqui.
 
 interface Props {
   unit: string;
   company?: string; // empresa da OS: a equipe desta semana vem da Programação dela (Fase 7C-2)
   executor: OrderParticipant;
-  team: OrderParticipant[]; // inclui o executor
+  team: OrderParticipant[]; // o executor só está aqui se ele se marcou (U5)
   editable: boolean;
   onChange: (team: OrderParticipant[]) => void;
   locked?: string[]; // matrículas que não podem sair (resposta à contestação: só acrescenta)
@@ -70,18 +71,31 @@ export default function OsTeamPicker({ unit, company, executor, team, editable, 
           <span key={p.matricula} className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1 ${p.matricula === executor.matricula ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
             {p.name}
             {p.cargo && <span className="font-normal text-slate-500">· {p.cargo}</span>}
-            {p.matricula === executor.matricula ? (
-              <span className="font-normal">{executorTag}</span>
-            ) : (
-              editable && !locked.includes(p.matricula) && (
-                <button type="button" onClick={() => onChange(team.filter((x) => x.matricula !== p.matricula))} className="text-rose-500 cursor-pointer" title="Tirar da OS">
-                  <X className="w-3 h-3" />
-                </button>
-              )
+            {p.matricula === executor.matricula && <span className="font-normal">{executorTag}</span>}
+            {editable && !locked.includes(p.matricula) && (
+              <button type="button" onClick={() => onChange(team.filter((x) => x.matricula !== p.matricula))} className="text-rose-500 cursor-pointer" title="Tirar da OS" aria-label={`Tirar ${p.name} da equipe`}>
+                <X className="w-3 h-3" />
+              </button>
             )}
           </span>
         ))}
       </div>
+
+      {editable && team.length === 0 && <p className="text-[11px] font-bold text-amber-700">Ninguém na equipe ainda. Toque em quem executou (você só entra se executou).</p>}
+
+      {editable && !taken.has(executor.matricula) && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><UserPlus className="w-3 h-3" /> Você (responsável pela OS)</p>
+          <button
+            type="button"
+            onClick={() => add(executor)}
+            className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 text-left hover:border-indigo-400 cursor-pointer"
+          >
+            <span className="block text-[11px] font-black text-indigo-800 uppercase leading-tight">{executor.name} {executorTag}</span>
+            <span className="block text-[10px] text-indigo-700/80">Toque para entrar na equipe — só se você executou (conta no homem-hora)</span>
+          </button>
+        </div>
+      )}
 
       {editable && quick.length > 0 && (
         <div className="space-y-1.5">

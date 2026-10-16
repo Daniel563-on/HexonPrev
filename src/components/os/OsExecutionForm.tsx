@@ -58,13 +58,15 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const me: OrderParticipant = { matricula: userProfile.matricula, name: userProfile.name, cargo: userProfile.cargo || '' };
   // Técnico local (Lote 2) num chamado de outra gerência: equipe da gerência dele; material da gerência e empresa do chamado
   const localHome = userProfile.localTech && userProfile.gerencia !== order.unit ? userProfile.gerencia : undefined;
+  // U5: com o campo "Equipe" no modelo, o técnico NÃO entra sozinho — ele é o responsável e se marca se executou.
+  // Modelo sem o campo "Equipe": continua como antes (quem executa é a equipe).
+  const hasTeamField = (order.templateSystemFields || []).some((s) => s.key === 'equipe' && s.enabled);
   const initial = (): WorkOrderExec => {
     const e = order.exec;
     const team = e?.team?.length ? e.team : [];
     return {
       answers: { ...(e?.answers || {}) },
-      // O técnico atual entra sempre (primeiro da lista)
-      team: [me, ...team.filter((p) => p.matricula !== me.matricula)],
+      team: hasTeamField ? team : [me, ...team.filter((p) => p.matricula !== me.matricula)],
       materials: [...(e?.materials || [])],
       holidays: [...(e?.holidays || [])],
       overtime: e?.overtime ? e.overtime.map((d) => ({ ...d })) : null,
@@ -127,7 +129,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   const setAnswer = (id: string, v: any) => patch({ answers: { ...exec.answers, [id]: v } });
 
   // Execução na ordem do modelo: perguntas em sequência ficam no mesmo cartão; Equipe e Materiais no lugar deles.
-  // Responsável (já entra na equipe), Pendência (botão Pendente) e Homem-hora (calculado) não viram campo.
+  // Responsável (o técnico da OS; só conta no homem-hora se se marcar na Equipe — U5), Pendência (botão Pendente) e Homem-hora (calculado) não viram campo.
   type ExecBlock = { kind: 'fields'; fields: typeof fields } | { kind: 'system'; key: 'equipe' | 'materiais' };
   const execBlocks = useMemo(() => {
     const out: ExecBlock[] = [];
@@ -157,6 +159,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
       if (new Set(dates).size !== dates.length) return fail('Hora extra: o mesmo dia foi lançado duas vezes. Junte as horas num só.');
     }
     if (exec.overnightNights !== null && !(exec.overnightNights > 0)) return fail('Pernoite: informe a quantidade de diárias, ou marque "Não".');
+    if (exec.team.length === 0) return fail('Equipe: inclua pelo menos uma pessoa (se você executou, toque no seu nome).');
     // Respostas de perguntas escondidas não são gravadas
     const answers: Record<string, any> = {};
     fields
@@ -424,7 +427,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
                   <div key={f.id}>
                     <span className={label}>{f.label}{f.required && f.type !== 'toggle' ? ' *' : ''}</span>
                     {editable ? (
-                      <OsFieldInput field={f} value={exec.answers[f.id]} onChange={(v) => setAnswer(f.id, v)} addresses={addresses} signerName={userProfile.name} />
+                      <OsFieldInput field={f} value={exec.answers[f.id]} onChange={(v) => setAnswer(f.id, v)} addresses={addresses} signerName={userProfile.name} unit={order.unit} />
                     ) : (
                       <p className="text-xs text-slate-700 whitespace-pre-wrap">{osAnswerText(f, exec.answers[f.id]) || '—'}</p>
                     )}

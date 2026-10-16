@@ -77,7 +77,7 @@ export default function Sidebar({
     ...(userHasTabPermission('solicitations') ? [{ tab: 'solicitations', label: 'Solicitações', icon: BellRing, badge: pendingSolicitationsCount }] : []),
     ...(userHasTabPermission('assets') ? [{ tab: 'assets', label: 'Gestão de Ativos', icon: Boxes }] : []),
     ...(pmocTabs.length > 0
-      ? [{ tab: 'pmoc', label: 'PMOC', icon: CalendarRange, onClick: () => go(pmocTabs[0]), active: inPmoc }]
+      ? [{ tab: 'pmoc', label: 'Preventivas', icon: CalendarRange, onClick: () => go(pmocTabs[0]), active: inPmoc }] // U8: era "PMOC"
       : []),
     ...(userHasTabPermission('materials') ? [{ tab: 'materials', label: 'Gestão de Materiais', icon: Package }] : []),
     ...(userHasTabPermission('supplies') ? [{ tab: 'supplies', label: 'Gestão de Insumos', icon: PackageOpen }] : []),
@@ -96,7 +96,7 @@ export default function Sidebar({
   ];
 
   const pmocItems: MenuItem[] = [
-    ...(userHasTabPermission('pmoc-preventivas') ? [{ tab: 'pmoc-preventivas', label: 'Preventivas', icon: ClipboardCheck }] : []),
+    ...(userHasTabPermission('pmoc-preventivas') ? [{ tab: 'pmoc-preventivas', label: 'Consulta', icon: ClipboardCheck }] : []),
     ...(userHasTabPermission('templates') ? [{ tab: 'templates', label: 'Modelos e Protocolos', icon: Sliders }] : [])
   ];
 
@@ -160,7 +160,7 @@ export default function Sidebar({
             <div>
               <h1 className="text-2xl font-extrabold text-white tracking-[0.16em] font-brand leading-none">HEXON</h1>
               {inPmoc && (
-                <span className="text-[10px] text-cyan-300/90 font-bold tracking-widest font-mono uppercase block mt-1.5">PMOC</span>
+                <span className="text-[10px] text-cyan-300/90 font-bold tracking-widest font-mono uppercase block mt-1.5">Preventivas</span>
               )}
             </div>
           </div>
@@ -189,7 +189,7 @@ export default function Sidebar({
                 <span className="text-sm font-semibold tracking-tight">Voltar ao Hexon</span>
               </button>
               <div className="px-3 pb-2 pt-1">
-                <span className="text-[10px] font-bold text-cyan-300/70 uppercase tracking-widest block mb-1 font-mono">PMOC</span>
+                <span className="text-[10px] font-bold text-cyan-300/70 uppercase tracking-widest block mb-1 font-mono">Preventivas</span>
               </div>
               {pmocItems.map(renderItem)}
             </>

@@ -24,7 +24,7 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
     <button
       type="button"
       onClick={() => setTab(key)}
-      className={`px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+      className={`px-3 sm:px-5 py-3 text-xs font-bold text-left border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
         tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
       }`}
     >
@@ -45,7 +45,8 @@ export default function SettingsView({ userProfile, darkMode, canEditOsTemplates
         <p className="text-xs text-slate-500 mt-1">Ajustes que valem para o sistema todo.</p>
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1">
+      {/* U7: no celular as abas ficam em 2 colunas (antes era uma linha só e passava da tela) */}
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap border-b border-slate-200 dark:border-slate-800 gap-1">
         {isSuper && tabBtn('system', 'settings_suggest', 'Sistema')}
         {isSuper && tabBtn('audit', 'fact_check', 'Auditoria')}
         {isSuper && tabBtn('companies', 'domain', 'Empresas')}

@@ -110,7 +110,7 @@ export default function ServiceOrdersView({
                 <span className="text-[10px] font-black text-[#3525cd] tracking-widest uppercase">Consulta</span>
               </div>
               <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-snug">
-                PMOC — <span className="text-[#3525cd]">Preventivas</span>
+                Preventivas — <span className="text-[#3525cd]">Consulta</span>
               </h1>
               <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
                 Consulta das preventivas. Programar é na <b>Programação</b> (a semana das equipes) ou em <b>Ordens de Serviço › Preventivas</b> (pela lista).

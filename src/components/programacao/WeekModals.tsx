@@ -385,7 +385,7 @@ export function DayListModal(props: { title: string; sub: string; orders: Servic
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-slate-500">Abrir leva a Ordens de Serviço › Preventivas já buscando pelo número. Trocar técnico ou dia continua no PMOC por enquanto.</p>
+      <p className="text-[11px] text-slate-500">Abrir leva a Ordens de Serviço › Preventivas já buscando pelo número (lá também se troca o técnico ou o dia).</p>
     </Shell>
   );
 }

@@ -101,8 +101,8 @@ export default function AssetImportWizard(props: Props) {
   const typeInfo = (name: string) => {
     if (!name.trim()) return { kind: 'none' as const, label: 'Sem tipo: não gera preventiva' };
     const t = types.find((x) => assetTypeKey(x.name) === assetTypeKey(name));
-    if (!t) return { kind: 'new' as const, label: 'Tipo novo: depois de importar, marque as periodicidades no PMOC' };
-    if (!t.periodicities.length) return { kind: 'noPeriod' as const, label: 'Sem periodicidade no PMOC: ainda não gera preventiva' };
+    if (!t) return { kind: 'new' as const, label: 'Tipo novo: depois de importar, marque as periodicidades em Preventivas › Modelos e Protocolos' };
+    if (!t.periodicities.length) return { kind: 'noPeriod' as const, label: 'Sem periodicidade em Preventivas › Modelos e Protocolos: ainda não gera preventiva' };
     return { kind: 'ok' as const, label: `${t.periodicities.join(' · ')} — gera preventiva` };
   };
 
@@ -196,13 +196,13 @@ export default function AssetImportWizard(props: Props) {
             ...plan.toSave.map(assetType)
           ].filter(Boolean);
           await dbSyncAssetTypes(unit, unitTypeNames, types);
-          typesNote = 'Criados no PMOC sem periodicidade: marque em PMOC › Modelos e Protocolos › Tipos de ativo e ciclo.';
+          typesNote = 'Criados sem periodicidade: marque em Preventivas › Modelos e Protocolos › Tipos de ativo e ciclo.';
         } catch (e) {
           console.warn('Tipos novos não criados no PMOC:', e);
-          typesNote = 'Não foi possível criar os tipos novos no PMOC: use "Atualizar tipos" lá e marque as periodicidades.';
+          typesNote = 'Não foi possível criar os tipos novos: use "Atualizar tipos" em Preventivas › Modelos e Protocolos e marque as periodicidades.';
         }
       } else if (newTypes.length) {
-        typesNote = 'Peça a quem cuida do PMOC para clicar em "Atualizar tipos" e marcar as periodicidades.';
+        typesNote = 'Peça a quem cuida dos modelos de preventiva (Preventivas › Modelos e Protocolos) para clicar em "Atualizar tipos" e marcar as periodicidades.';
       }
       setDone({ saved: plan.toSave.length, retired: plan.toRetire.length, cancelled, movedOrders, newTypes, typesNote });
       await onReloadAssets();
@@ -361,7 +361,7 @@ export default function AssetImportWizard(props: Props) {
             <div className="space-y-3">
               <p className="text-xs text-slate-600 dark:text-slate-300">
                 A planilha tem <b>{groups.length} material(is)</b>. Escolha o <b>tipo de manutenção</b> de cada um (um tipo da {unit} ou digite um novo). O tipo decide a preventiva; a
-                periodicidade fica no PMOC.
+                periodicidade fica no tipo (Preventivas › Modelos e Protocolos).
               </p>
               <datalist id="asset-import-types">
                 {typeNames.map((t) => (

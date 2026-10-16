@@ -20,7 +20,7 @@ import {
   osFieldVisible,
   stageItems
 } from '../../db/firebase';
-import OsFieldInput, { LocationPicker, osInput } from './OsFieldInput';
+import OsFieldInput, { LocationPicker, osInput, unitListOptions } from './OsFieldInput';
 import TechTwoLists from './TechTwoLists';
 import { osRefText } from '../../lib/osRef';
 import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
@@ -169,6 +169,14 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
       const f = it.field;
       const v = answers[f.id];
       if (f.type === 'toggle') continue; // desligado também é resposta
+      // U6: lista por gerência — a gerência da OS precisa ter a lista; a resposta tem que ser uma opção dela
+      if (f.type === 'unitlist') {
+        const opts = unitListOptions(f, unit);
+        if (!opts.length) return setError(`${f.label}: nenhuma opção cadastrada para a gerência ${unit}. Cadastre em Configurações › Modelos de OS antes de emitir.`);
+        if (f.required && (isEmpty(v) || !opts.includes(v))) return setError(`Preencha: ${f.label}`);
+        if (!isEmpty(v) && !opts.includes(v)) return setError(`${f.label}: escolha uma opção da gerência ${unit}.`);
+        continue;
+      }
       if (f.type === 'location') {
         const l = v as OsLocationAnswer | undefined;
         const complete = !!l?.craai && !!l?.comarca && (f.locationDepth === 'comarca' || !!l?.addressId);
@@ -313,7 +321,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
   );
 
   const renderField = (f: OsTemplateField) => (
-    <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setA(f.id, v)} addresses={addresses} signerName={userProfile.name} />
+    <OsFieldInput field={f} value={answers[f.id]} onChange={(v) => setA(f.id, v)} addresses={addresses} signerName={userProfile.name} unit={unit} />
   );
 
   const renderSystem = (s: OsSystemField) => {

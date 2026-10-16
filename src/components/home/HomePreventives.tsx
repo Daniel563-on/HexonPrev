@@ -184,8 +184,8 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
     { label: 'Planejadas', n: loading ? null : open.planejada, tone: 'text-sky-600 dark:text-sky-400', icon: <ClipboardCheck className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'prog' as Target },
     { label: 'Em execução', n: loading ? null : open.execucao, tone: 'text-amber-600 dark:text-amber-400', icon: <Wrench className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'exec' as Target },
     { label: 'Atrasadas', n: loading ? null : open.atrasada, tone: 'text-rose-600 dark:text-rose-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Ordens de Serviço › Preventivas', to: 'atr' as Target },
-    { label: `Concluídas em ${monthName(month)}`, n: stats ? stats.ativos.done + stats.vistorias.done : null, tone: 'text-emerald-600 dark:text-emerald-400', icon: <CheckCircle2 className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target },
-    { label: `Não executadas em ${monthName(month)}`, n: stats ? stats.ativos.notDone + stats.vistorias.notDone : null, tone: 'text-slate-500 dark:text-slate-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'PMOC › Preventivas › Consulta', to: 'consulta' as Target }
+    { label: `Concluídas em ${monthName(month)}`, n: stats ? stats.ativos.done + stats.vistorias.done : null, tone: 'text-emerald-600 dark:text-emerald-400', icon: <CheckCircle2 className="w-4 h-4" />, hint: 'Preventivas › Consulta', to: 'consulta' as Target },
+    { label: `Não executadas em ${monthName(month)}`, n: stats ? stats.ativos.notDone + stats.vistorias.notDone : null, tone: 'text-slate-500 dark:text-slate-400', icon: <AlertTriangle className="w-4 h-4" />, hint: 'Preventivas › Consulta', to: 'consulta' as Target }
   ];
   const arrow = 'p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 disabled:opacity-30 disabled:pointer-events-none cursor-pointer';
 
@@ -260,7 +260,7 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
           </p>
         )}
       </div>
-      <p className="text-[11px] text-slate-500">Abertas = deste mês e de antes, ainda não encerradas (as de meses futuros já disparados ficam no PMOC).</p>
+      <p className="text-[11px] text-slate-500">Abertas = deste mês e de antes, ainda não encerradas (as de meses futuros já disparados ficam em Preventivas › Consulta).</p>
     </section>
   );
 }

@@ -61,11 +61,10 @@ export const osHolidays = (o: WorkOrder): string[] =>
 // Menos de 1 h cobra 1 h; acima disso, proporcional
 export const osBilledHours = (minutes: number) => (minutes < 60 ? 1 : Math.round((minutes / 60) * 100) / 100);
 
-// Colaboradores da OS: os que o técnico lançou; antes disso, só o técnico atribuído
+// Colaboradores da OS: só os que entraram na equipe ao concluir (U5: o técnico atribuído é o responsável e só conta
+// se ele mesmo se marcou na equipe). Antes de concluir a equipe ainda não existe: ninguém conta.
 export function osMembers(o: WorkOrder): OrderParticipant[] {
-  const team = o.exec?.team || [];
-  if (team.length) return team;
-  return o.assignedTechnicianMatricula ? [{ matricula: o.assignedTechnicianMatricula, name: o.assignedTechnicianName || '', cargo: '' }] : [];
+  return o.exec?.team || [];
 }
 
 // Avisos de máximo de hora extra (o técnico vê no celular; a equipe lê as regras, sem valores)

@@ -16,9 +16,13 @@ interface Props {
   unitPlaceholder?: string;
   disabled?: boolean;
   selectClass?: string;
+  noneOption?: { label: string; disabled?: boolean }; // U9: "Nenhum técnico (desatribuir)" no Trocar técnico
 }
 
-export default function TechTwoLists({ unit, unitTechs, localTechs, comarca, value, onChange, unitPlaceholder = 'Selecione o técnico...', disabled, selectClass }: Props) {
+// Valor da opção "Nenhum técnico" (U9)
+export const NO_TECH = '__nenhum__';
+
+export default function TechTwoLists({ unit, unitTechs, localTechs, comarca, value, onChange, unitPlaceholder = 'Selecione o técnico...', disabled, selectClass, noneOption }: Props) {
   const isLocal = !!value && localTechs.some((t) => t.matricula === value) && !unitTechs.some((t) => t.matricula === value);
   const cls = selectClass || 'w-full h-9 px-3 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 font-bold';
   const label = 'block text-[11px] font-black text-slate-700 dark:text-slate-200 mb-1';
@@ -26,6 +30,11 @@ export default function TechTwoLists({ unit, unitTechs, localTechs, comarca, val
   const unitSelect = (
     <select aria-label={`Técnico da ${unit}`} value={isLocal ? '' : value} disabled={disabled} onChange={(ev) => onChange(ev.target.value)} className={`${cls} ${isLocal ? 'text-slate-400' : ''}`}>
       <option value="">{isLocal ? '—' : unitPlaceholder}</option>
+      {noneOption && (
+        <option value={NO_TECH} disabled={noneOption.disabled}>
+          {noneOption.label}
+        </option>
+      )}
       {unitTechs.map((t) => (
         <option key={t.matricula} value={t.matricula}>
           {t.name} ({t.matricula}){t.perfil === 'Administrador' ? ` · ${t.cargo || 'escritório'} (escritório)` : ''}

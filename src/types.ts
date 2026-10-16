@@ -988,6 +988,7 @@ export interface SavedQrTemplate {
 export type OsFieldType =
   | 'text' | 'textarea' | 'number' | 'date' | 'phone' | 'email'
   | 'select' | 'multiselect' | 'toggle' | 'yesno' | 'signature' | 'location'
+  | 'unitlist'  // U6: lista suspensa que depende da gerência da OS (ex.: Categoria)
   | 'checkbox'; // 'checkbox' = Sim/Não da 1ª versão (lido como 'yesno')
 export type OsStage = 'criacao' | 'execucao';
 
@@ -1007,6 +1008,7 @@ export interface OsTemplateField {
   type: OsFieldType;
   required: boolean;
   options?: string[];                     // lista suspensa e caixas de marcar
+  optionsByUnit?: Record<string, string[]>; // U6 "Lista por gerência": opções de cada gerência (sem lista = não emite)
   locationDepth?: 'comarca' | 'endereco'; // Local: até a comarca ou até o endereço
   showIf?: OsShowIf;
   width?: OsFieldWidth;                   // largura na tela (computador); celular = sempre inteira

@@ -129,8 +129,8 @@ export default function AssetForm(p: Props) {
   const typeInfo = (() => {
     if (!f.type.trim()) return { kind: 'none', label: 'Sem tipo: não gera preventiva' };
     const t = types.find((x) => assetTypeKey(x.name) === assetTypeKey(f.type));
-    if (!t) return { kind: 'new', label: 'Tipo novo: depois de salvar, marque as periodicidades no PMOC' };
-    if (!t.periodicities.length) return { kind: 'noPeriod', label: 'Sem periodicidade no PMOC: ainda não gera preventiva' };
+    if (!t) return { kind: 'new', label: 'Tipo novo: depois de salvar, marque as periodicidades em Preventivas › Modelos e Protocolos' };
+    if (!t.periodicities.length) return { kind: 'noPeriod', label: 'Sem periodicidade em Preventivas › Modelos e Protocolos: ainda não gera preventiva' };
     return { kind: 'ok', label: `${t.periodicities.join(' · ')} — gera preventiva` };
   })();
   const chip =
@@ -288,7 +288,7 @@ export default function AssetForm(p: Props) {
               {field('type', 'Tipo (decide a preventiva)', { list: 'af-types', upper: true, ph: 'Escolha ou digite...' })}
               <span className={`px-2 py-1 rounded-md border text-[10px] font-black ${chip}`}>{typeInfo.label}</span>
             </div>
-            <p className="text-[10px] text-slate-500">A periodicidade é do tipo: PMOC › Modelos e Protocolos › Tipos de ativo e ciclo.</p>
+            <p className="text-[10px] text-slate-500">A periodicidade é do tipo: Preventivas › Modelos e Protocolos › Tipos de ativo e ciclo.</p>
           </div>
 
           <div className={sec}>

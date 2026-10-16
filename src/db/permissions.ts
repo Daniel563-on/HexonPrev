@@ -24,8 +24,8 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   },
   view_pmoc_planning: {
     id: 'view_pmoc_planning',
-    name: 'Ver consulta das preventivas (PMOC)',
-    description: 'PMOC › Preventivas: Consulta de OS (só olhar). Programar é na Programação ou em Ordens de Serviço › Preventivas.',
+    name: 'Ver consulta das preventivas',
+    description: 'Preventivas › Consulta: Consulta de OS (só olhar). Programar é na Programação ou em Ordens de Serviço › Preventivas.',
     category: 'Abas',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }
@@ -65,7 +65,7 @@ export const DEFAULT_PERMISSIONS: { [key: string]: SystemPermission } = {
   view_templates: {
     id: 'view_templates',
     name: 'Ver Modelos e Protocolos',
-    description: 'PMOC › Modelos e Protocolos: tipos e ciclo, modelos e disparo (só olhar).',
+    description: 'Preventivas › Modelos e Protocolos: tipos e ciclo, modelos e disparo (só olhar).',
     category: 'Abas',
     area: 'preventiva',
     roles: { 'Super Administrador': true, 'Administrador': true, 'Profissional': false }

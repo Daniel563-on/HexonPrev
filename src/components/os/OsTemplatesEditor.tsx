@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import CloseX from '../CloseX';
 import OsPdfMapper from './OsPdfMapper';
+import UnitListEditor from './UnitListEditor';
 import { ArrowDown, ArrowUp, Copy, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { HexonUser, OsFieldType, OsFieldWidth, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
 import {
@@ -36,7 +37,8 @@ const TYPE_LABEL: Record<Exclude<OsFieldType, 'checkbox'>, string> = {
   toggle: 'Liga / desliga',
   yesno: 'Sim / Não',
   signature: 'Assinatura no celular',
-  location: 'Local (CRAAI › Comarca › Endereço)'
+  location: 'Local (CRAAI › Comarca › Endereço)',
+  unitlist: 'Lista por gerência (ex.: Categoria)'
 };
 // Largura na tela de Emitir OS (no celular fica sempre inteira)
 const WIDTH_LABEL: Record<OsFieldWidth, string> = { full: 'Inteira', half: 'Metade', third: '1/3' };
@@ -199,10 +201,21 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
     const options = hasOptions(fieldForm.type) ? (fieldForm.options || []).map((o) => o.trim()).filter(Boolean) : undefined;
     if (options && options.length === 0) return setError('Informe as opções da lista.');
     if (fieldForm.showIf && !fieldForm.showIf.value) return setError('Escolha a resposta da condição (ou tire a condição).');
+    // U6: lista por gerência — guarda só as gerências com opção (sem repetir, sem vazio)
+    let optionsByUnit: Record<string, string[]> | undefined;
+    if (fieldForm.type === 'unitlist') {
+      optionsByUnit = {};
+      Object.entries(fieldForm.optionsByUnit || {}).forEach(([u, l]: [string, string[]]) => {
+        const list: string[] = Array.from(new Set((l || []).map((o) => o.trim()).filter(Boolean)));
+        if (list.length) optionsByUnit![u] = list;
+      });
+      if (Object.keys(optionsByUnit).length === 0) return setError('Cadastre as opções de pelo menos uma gerência.');
+    }
     const clean: OsTemplateField = {
       ...fieldForm,
       label: fieldForm.label.trim(),
       options,
+      optionsByUnit,
       locationDepth: fieldForm.type === 'location' ? fieldForm.locationDepth || 'endereco' : undefined,
       // Assinatura nunca vale como condição de outra; a própria condição some se a pergunta mudar de etapa
       showIf: fieldForm.showIf || undefined
@@ -331,7 +344,8 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
         <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
           {items.length === 0 && <p className="p-4 text-xs text-slate-400">Nenhuma pergunta nesta etapa.</p>}
           {items.map((it, i) => (
-            <div key={it.kind === 'field' ? it.field.id : it.sys.key} className="p-3 flex items-center gap-3">
+            // U7: no celular o texto da pergunta vem em cima, na largura toda, e os controles embaixo
+            <div key={it.kind === 'field' ? it.field.id : it.sys.key} className="p-3 flex flex-wrap sm:flex-nowrap items-center gap-3">
               {stage === 'criacao' &&
                 widthSelect(it.kind === 'field' ? it.field.width : it.sys.width, (w) =>
                   it.kind === 'field'
@@ -342,7 +356,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 <button type="button" className={btnSm} disabled={i === 0} onClick={() => move(stage, i, -1)}><ArrowUp className="w-3.5 h-3.5" /></button>
                 <button type="button" className={btnSm} disabled={i === items.length - 1} onClick={() => move(stage, i, 1)}><ArrowDown className="w-3.5 h-3.5" /></button>
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-full sm:basis-0 order-first sm:order-none">
                 <p className="text-xs font-black text-slate-800">
                   {it.kind === 'field' ? it.field.label : it.sys.label}
                   {(it.kind === 'field' ? it.field.required : it.sys.required) && (
@@ -355,6 +369,10 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 <p className="text-[10px] text-slate-500">
                   {it.kind === 'field'
                     ? `${typeLabel(it.field)}${it.field.options?.length ? ` · ${it.field.options.join(', ')}` : ''}${
+                        it.field.type === 'unitlist'
+                          ? ` · ${Object.entries(it.field.optionsByUnit || {}).filter(([, l]) => (l as string[]).length).map(([u, l]) => `${u}: ${(l as string[]).join(', ')}`).join(' | ') || 'nenhuma gerência com lista'}`
+                          : ''
+                      }${
                         it.field.showIf ? ` · só quando "${editing.fields.find((f) => f.id === it.field.showIf!.fieldId)?.label || '?'}" = ${it.field.showIf.value}` : ''
                       }`
                     : `${OS_SYSTEM_HINT[it.sys.key]}${it.sys.options?.length ? ` · ${it.sys.options.join(', ')}` : ''}`}
@@ -362,7 +380,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
               </div>
               {it.kind === 'field' ? (
                 <div className="flex gap-1">
-                  <button type="button" className={btnSm} title="Editar" onClick={() => setFieldForm({ ...it.field, options: [...(it.field.options || [])] })}><Pencil className="w-3.5 h-3.5" /></button>
+                  <button type="button" className={btnSm} title="Editar" onClick={() => setFieldForm({ ...it.field, options: [...(it.field.options || [])], ...(it.field.optionsByUnit ? { optionsByUnit: { ...it.field.optionsByUnit } } : {}) })}><Pencil className="w-3.5 h-3.5" /></button>
                   <button
                     type="button"
                     className={btnSm}
@@ -570,6 +588,7 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
                 />
               </label>
             )}
+            {fieldForm.type === 'unitlist' && <UnitListEditor value={fieldForm.optionsByUnit || {}} onChange={(m) => setFieldForm({ ...fieldForm, optionsByUnit: m })} />}
             {fieldForm.type === 'location' && (
               <label className="block">
                 <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Vai até</span>
