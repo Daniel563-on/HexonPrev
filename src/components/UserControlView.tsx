@@ -15,7 +15,6 @@ import {
   dbGetProfiles,
   resolveUserProfile,
   legacyPerfilOf,
-  SYSTEM_PROFILE_IDS,
   dbGetJobRoles,
   dbRemoveImportedPersonForUser,
   dbGetCompanies,
@@ -64,15 +63,23 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
     cargo: '',
     gerencia: '',
     perfil: 'Profissional' as HexonUser['perfil'],
-    profileId: SYSTEM_PROFILE_IDS.execucao as string,
+    profileId: '', // U1 (16/10/2026): sem perfil escolhido de antemão — antes começava no "Técnico" sem mostrar
     status: 'Ativo' as HexonUser['status'],
     senha: '123456',
     companies: [] as string[],
     localTech: false,
     localComarca: ''
   });
+  // Perfil escolhido no formulário (U1: só vale o que existe na lista; nada de "Técnico" escondido como padrão)
+  const formProfile = profiles.find((pr) => pr.id === userForm.profileId);
+  // U1: o tipo de uso do perfil decide se a pessoa abre o escritório (computador) ou o aplicativo do técnico
+  const KIND_USE: Record<AccessProfile['kind'], { label: string; hint: string }> = {
+    total: { label: 'Acesso total', hint: 'administra tudo, no computador' },
+    planejamento: { label: 'Escritório', hint: 'abre o sistema do escritório (computador)' },
+    execucao: { label: 'Campo (técnico)', hint: 'abre o aplicativo do técnico' }
+  };
   // Técnico (perfil escolhido) e técnico local (Lote 2): a gerência fica DOM travada
-  const formIsTech = legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao') === 'Profissional';
+  const formIsTech = formProfile?.kind === 'execucao';
   const localLocked = formIsTech && userForm.localTech;
   const hasLocalUnit = managements.some((m) => m.name === LOCAL_TECH_UNIT);
 
@@ -142,7 +149,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       cargo: '',
       gerencia: managements[0]?.name || '',
       perfil: 'Profissional',
-      profileId: SYSTEM_PROFILE_IDS.execucao,
+      profileId: '',
       status: 'Ativo',
       senha: '123456',
       companies: [],
@@ -163,7 +170,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       cargo: user.cargo,
       gerencia: user.gerencia,
       perfil: user.perfil,
-      profileId: resolveUserProfile(user, profiles)?.id || SYSTEM_PROFILE_IDS.execucao,
+      profileId: resolveUserProfile(user, profiles)?.id || '',
       status: user.status,
       // If password is encrypted hash, keep empty in form unless admin enters a new one
       senha: user.senha?.startsWith('hexon_sha256:') ? '' : (user.senha || ''),
@@ -199,8 +206,13 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       return;
     }
 
+    // U1: o perfil precisa ser escolhido (antes, sem escolher, gravava "Técnico" mesmo com outro perfil aparecendo na caixa)
+    if (!formProfile) {
+      setUserModalError('Escolha o perfil de acesso.');
+      return;
+    }
     // Técnico (Lote 2): sem "Todas"; técnico local = gerência DOM + comarca onde atua (obrigatória)
-    const isTechForm = legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao') === 'Profissional';
+    const isTechForm = formIsTech;
     const localTech = isTechForm && userForm.localTech;
     if (isTechForm && !localTech && userForm.gerencia === 'Todas') {
       setUserModalError('Técnico não tem mais a gerência "Todas": escolha a gerência dele ou marque "Técnico local".');
@@ -217,8 +229,7 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
 
     // Empresa(s): só as que atuam na gerência do usuário; técnico = exatamente 1
     const formCompanies = userForm.companies.filter((id) => companiesOfUnit(companies, userForm.gerencia).some((c) => c.id === id));
-    const formKind = profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao';
-    if (companies.length > 0 && legacyPerfilOf(formKind) === 'Profissional' && formCompanies.length !== 1) {
+    if (companies.length > 0 && isTechForm && formCompanies.length !== 1) {
       setUserModalError('Técnico precisa de exatamente 1 empresa (campo Empresa).');
       return;
     }
@@ -240,8 +251,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
         email: userForm.email.trim(),
         cargo: userForm.cargo.trim(),
         gerencia: userForm.gerencia,
-        perfil: legacyPerfilOf(profiles.find((pr) => pr.id === userForm.profileId)?.kind || 'execucao'),
-        profileId: userForm.profileId,
+        perfil: legacyPerfilOf(formProfile.kind),
+        profileId: formProfile.id,
         status: userForm.status,
         senha: finalSenha,
         companies: formCompanies,
@@ -638,7 +649,14 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                                 u.perfil === 'Super Administrador' ? 'bg-amber-500' :
                                 u.perfil === 'Administrador' ? 'bg-indigo-600' : 'bg-blue-500'
                               }`} />
-                              <span className="font-bold">{resolveUserProfile(u, profiles)?.name || u.perfil}</span>
+                              {/* U1: usuário gravado com um perfil que não existe (ex.: criado como "Técnico" sem escolher) — editar e escolher */}
+                              {resolveUserProfile(u, profiles) || profiles.length === 0 ? (
+                                <span className="font-bold">{resolveUserProfile(u, profiles)?.name || u.perfil}</span>
+                              ) : (
+                                <span className="font-bold text-rose-600" title="Edite o usuário e escolha o perfil de acesso">
+                                  Perfil não encontrado
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -895,16 +913,26 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
                 <div>
                   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Perfil de Acesso (RBAC) *</label>
                   <select
-                    value={userForm.profileId}
+                    aria-label="Perfil de acesso"
+                    value={formProfile ? userForm.profileId : ''}
                     onChange={(e) => setUserForm({...userForm, profileId: e.target.value})}
                     className={`w-full text-xs font-semibold px-3 py-2 border rounded-lg outline-none ${
                       darkMode ? 'bg-[#121b2d] border-slate-800' : 'bg-white border-slate-200'
-                    }`}
+                    } ${formProfile ? '' : 'text-slate-400'}`}
                   >
+                    <option value="" disabled>Selecione o perfil...</option>
                     {profiles.map((pr) => (
-                      <option key={pr.id} value={pr.id}>{pr.name}</option>
+                      <option key={pr.id} value={pr.id}>{pr.name} · {KIND_USE[pr.kind]?.label || pr.kind}</option>
                     ))}
                   </select>
+                  {formProfile && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Tipo de uso: <b>{KIND_USE[formProfile.kind]?.label}</b> — {KIND_USE[formProfile.kind]?.hint}.
+                    </p>
+                  )}
+                  {editingUser && !formProfile && profiles.length > 0 && (
+                    <p className="text-[10px] font-bold text-rose-600 mt-1">O perfil gravado deste usuário não existe na lista: escolha o perfil certo e salve.</p>
+                  )}
                 </div>
 
                 {/* Técnico local (Lote 2): gerência DOM travada + comarca onde atua */}
