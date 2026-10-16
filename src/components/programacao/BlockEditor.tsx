@@ -215,7 +215,8 @@ export default function BlockEditor(props: Props) {
   const freeLocals = localOptions.filter((l) => !keySet.has(l.key));
   const nPrevFree = freeLocals.reduce((n, l) => n + l.count, 0);
   const foundLocals = (term ? freeLocals.filter((l) => localLabel(rawLocal(l.key)).toLowerCase().includes(term)) : freeLocals).slice(0, 40);
-  const freeWos = props.toPlanWos.filter((w) => !(lot && w.lotId === lot.id) && !woPlan.some((x) => x.id === w.id));
+  // os chamados da comarca de um local do bloco já aparecem em "Chamados GLPI" (com a caixa de marcar): saem daqui
+  const freeWos = props.toPlanWos.filter((w) => !woItems.some((x) => x.id === w.id));
   const foundWos = freeWos
     .filter((w) => !term || [w.glpi || '', w.number, w.comarca || '', w.execAddressText || ''].some((v) => v.toLowerCase().includes(term)))
     .sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))

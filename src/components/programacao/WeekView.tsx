@@ -799,14 +799,14 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
               >
                 {lastPub ? (
                   <span>
-                    Publicada <b>Rev. {lastPub.rev}</b> em {new Date(lastPub.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} por {lastPub.by}
+                    Publicada: <b>Rev. {lastPub.rev}</b> em {new Date(lastPub.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} por {lastPub.by}
                     {changesAfter > 0 ? (
                       <>
                         {' '}
-                        · <b>{changesAfter}</b> mudança{changesAfter > 1 ? 's' : ''} depois
+                        · <b>{changesAfter}</b> mudança{changesAfter > 1 ? 's' : ''} depois disso
                       </>
                     ) : (
-                      ' · sem mudança depois'
+                      ' · sem mudança depois disso'
                     )}
                   </span>
                 ) : (
