@@ -134,6 +134,8 @@ export default function CreateTemplateModal({
           <button
             type="button"
             onClick={onClose}
+            title="Fechar"
+            aria-label="Fechar"
             className="text-white hover:opacity-80 p-1 bg-white/10 rounded-full transition-all cursor-pointer"
           >
             <Plus className="w-5 h-5 rotate-45" />

@@ -508,7 +508,8 @@ export async function dbGetSupplyOutputs(units: string[], company: string, fromD
             unit: r.unit,
             company: r.company,
             orderKind: r.orderKind,
-            orderRef: String(r.orderLabel || '').split(' · ')[0] || r.orderId,
+            // U4: o rótulo da OS passou a começar pela GLPI; para OS o id é o próprio Nº da OS
+            orderRef: r.orderKind === 'os' ? r.orderId : String(r.orderLabel || '').split(' · ')[0] || r.orderId,
             orderLabel: r.orderLabel,
             glpi: r.glpi,
             techName: r.techName,

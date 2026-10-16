@@ -23,6 +23,8 @@ import {
 } from '../../db/firebase';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
+import OsRef from './OsRef';
+import { osRefText } from '../../lib/osRef';
 import OsContestReplyModal from './OsContestReplyModal';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
@@ -184,7 +186,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-5 py-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-base font-black text-indigo-700">{o.number}</span>
+              <OsRef o={o} size="lg" />
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
               {isOverdue(o) && <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white">ATRASADA</span>}
             </div>
@@ -394,7 +396,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
             <div className="fixed inset-0 z-[1100] bg-slate-900/60 flex items-center justify-center p-2 md:p-4">
               <div className="w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-2xl bg-slate-50 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-black text-slate-900">Editar OS {o.number}</p>
+                  <p className="text-sm font-black text-slate-900">Editar OS — {osRefText(o)}</p>
                   <button type="button" onClick={() => setEditing(false)} className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer" title="Fechar edição">
                     <X className="w-4 h-4" />
                   </button>

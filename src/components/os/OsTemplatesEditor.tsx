@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import CloseX from '../CloseX';
 import OsPdfMapper from './OsPdfMapper';
 import { ArrowDown, ArrowUp, Copy, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { HexonUser, OsFieldType, OsFieldWidth, OsSignatureRole, OsStage, OsSystemField, OsTemplate, OsTemplateField } from '../../types';
@@ -282,8 +283,9 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
 
         {toDelete && (
           <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-5 space-y-3">
-              <p className="text-sm font-black text-slate-900">Excluir o modelo "{toDelete.name}"?</p>
+            <div className="relative w-full max-w-sm rounded-2xl bg-white p-5 space-y-3">
+              <CloseX onClick={() => setToDelete(null)} />
+              <p className="text-sm font-black text-slate-900 pr-10">Excluir o modelo "{toDelete.name}"?</p>
               <p className="text-xs text-slate-500">As OS já emitidas com ele não mudam. Não será mais possível emitir OS com este modelo.</p>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setToDelete(null)} className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
@@ -535,8 +537,9 @@ export default function OsTemplatesEditor({ userProfile }: { userProfile: HexonU
       {/* Pergunta: criar / editar */}
       {fieldForm && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 space-y-3">
-            <p className="text-sm font-black text-slate-900">{editing.fields.some((f) => f.id === fieldForm.id) ? 'Editar pergunta' : 'Nova pergunta'}</p>
+          <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 space-y-3">
+            <CloseX onClick={() => { setFieldForm(null); setError(null); }} />
+            <p className="text-sm font-black text-slate-900 pr-10">{editing.fields.some((f) => f.id === fieldForm.id) ? 'Editar pergunta' : 'Nova pergunta'}</p>
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Pergunta *</span>
               <input className={input} value={fieldForm.label} onChange={(e) => setFieldForm({ ...fieldForm, label: e.target.value })} autoFocus />

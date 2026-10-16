@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { Asset, AssetPeriodicity, AssetTypeConfig, CycleSetting } from '../../types';
 import {
   addMonths,
@@ -329,8 +330,9 @@ export default function AssetTypesCycleTab({ units, assets, userName, canManage,
 
       {confirmCycle && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-            <h3 className="text-base font-black text-slate-800">{confirmCycle === 'set' ? 'Início do ciclo oficial' : 'Remover início do ciclo'}</h3>
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+            <CloseX onClick={() => setConfirmCycle(null)} />
+            <h3 className="text-base font-black text-slate-800 pr-10">{confirmCycle === 'set' ? 'Início do ciclo oficial' : 'Remover início do ciclo'}</h3>
             <p className="text-xs text-slate-600">
               {confirmCycle === 'set'
                 ? `A gerência ${unit} passa a ter ${monthLabel(cycleInput)} como mês 1 do ciclo. A partir daí, cada mês do disparo segue essa contagem.${cycle ? ' Atenção: alterar o início muda a periodicidade dos meses seguintes.' : ''}`

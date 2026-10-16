@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { Company, HexonUser, Material, Warehouse } from '../../types';
 import {
   CatalogKind,
@@ -413,8 +414,9 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       {toDelete && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-            <h3 className="text-base font-black text-slate-800">{T.deleteItem}</h3>
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+            <CloseX onClick={() => setToDelete(null)} disabled={deleting} />
+            <h3 className="text-base font-black text-slate-800 pr-10">{T.deleteItem}</h3>
             <p className="text-xs text-slate-600">
               Excluir <strong>{toDelete.code} - {toDelete.description}</strong> ({toDelete.unit} • {companyName(toDelete.company)})? Use para corrigir um cadastro errado.
               {' '}{T.keepNote}
@@ -434,8 +436,9 @@ export default function MaterialsView({ userProfile, visibleUnits, visibleCompan
 
       {historyOf && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-            <h3 className="text-base font-black text-slate-800">Histórico de valor — {historyOf.code}</h3>
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+            <CloseX onClick={() => setHistoryOf(null)} />
+            <h3 className="text-base font-black text-slate-800 pr-10">Histórico de valor — {historyOf.code}</h3>
             <ul className="text-xs text-slate-600 space-y-1 max-h-72 overflow-y-auto">
               {[...(historyOf.history || [])].reverse().map((h, i) => (
                 <li key={i}>
@@ -492,8 +495,9 @@ function MaterialFormModal({ kind, material, isNew, units, companies, materials,
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-        <h3 className="text-base font-black text-slate-800">{isNew ? T.newItem : T.editItem}</h3>
+      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+        <CloseX onClick={onClose} disabled={saving} />
+        <h3 className="text-base font-black text-slate-800 pr-10">{isNew ? T.newItem : T.editItem}</h3>
         <label className="block">
           <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Gerência *</span>
           <select value={form.unit} disabled={!isNew} onChange={(e) => setForm({ ...form, unit: e.target.value, company: '' })} className={field}>
@@ -572,8 +576,9 @@ function MaterialCostModal({ kind, material, userName, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-        <h3 className="text-base font-black text-slate-800">Valor — {material.code}</h3>
+      <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+        <CloseX onClick={onClose} disabled={saving} />
+        <h3 className="text-base font-black text-slate-800 pr-10">Valor — {material.code}</h3>
         <p className="text-xs text-slate-500">{material.description} ({material.measureUnit})</p>
         <label className="block">
           <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Valor por {material.measureUnit} (R$)</span>

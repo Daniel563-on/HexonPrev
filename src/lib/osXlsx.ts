@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { OrderSupplies, WorkOrder } from '../types';
+import { osCategory, osRefText } from './osRef';
 import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, orderSupplyEntries, osAnswerText, osFieldVisible, osMembers, osSignOrder, osStatusLabel } from '../db/firebase';
 
 // FICHA DA OS EM PLANILHA (Fase 5C): uma aba com as seções da OS.
@@ -17,17 +18,18 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
   };
   const kv = (k: string, v: string | number | undefined | null) => rows.push([k, v === undefined || v === null || v === '' ? '—' : v]);
 
-  rows.push([`FICHA DA ORDEM DE SERVIÇO ${o.number}`]);
+  rows.push([`FICHA DA ORDEM DE SERVIÇO — ${osRefText(o)}`]);
   rows.push([`Gerada em ${new Date().toLocaleString('pt-BR')}`]);
 
   title('1. Dados gerais');
+  kv('GLPI', o.glpi);
   kv('Nº da OS', o.number);
   kv('Modelo', `${o.templateName} (v${o.templateVersion})`);
   kv('Gerência', o.unit);
   kv('Empresa', companyName || o.company);
   kv('Situação', osStatusLabel(o));
   kv('Intervenção', o.intervencao);
-  kv('GLPI', o.glpi);
+  kv('Categoria', osCategory(o));
   kv('Aberta em', dateTime(o.createdAt));
   kv('Aberta por', `${o.createdByName}${o.createdByMatricula ? ` (${o.createdByMatricula})` : ''}`);
   kv('Prazo limite', day(o.deadline));
@@ -126,15 +128,16 @@ export function exportOsListXlsx(
   companyName: (id?: string) => string = (id) => id || ''
 ): void {
   const today = new Date().toISOString().slice(0, 10);
-  const head = ['Nº da OS', 'GLPI', 'Intervenção', 'Situação', 'Atrasada', 'Gerência', 'Empresa', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
+  const head = ['GLPI', 'Nº da OS', 'Intervenção', 'Categoria', 'Situação', 'Atrasada', 'Gerência', 'Empresa', 'Local da execução', 'Endereço não cadastrado', 'Comarca', 'CRAAI', 'Técnico', 'Matrícula do técnico', 'Aberta em', 'Aberta por', 'Prazo', 'Concluída em', 'Ativo', 'Modelo'];
   if (costs) head.push('Horas cobradas', 'Homem-hora (R$)', 'Hora extra (R$)', 'Pernoite (R$)', 'Materiais (R$)', 'Insumos (R$)', 'Total (R$)', 'Valor');
   const rows: (string | number)[][] = [head];
   orders.forEach((o) => {
     const late = !!o.deadline && !['Concluída', 'Cancelada'].includes(o.status) && o.deadline < today;
     const r: (string | number)[] = [
-      o.number,
       o.glpi || '',
+      o.number,
       o.intervencao || '',
+      osCategory(o),
       osStatusLabel(o),
       late ? 'Sim' : 'Não',
       o.unit,

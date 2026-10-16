@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import CloseX from '../CloseX';
 import { Network, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Management } from '../../types';
 import { dbAddAuditLog, dbDeleteManagement, dbGetAssets, dbGetManagements, dbGetProfiles, dbGetUsers, dbSaveManagement } from '../../db/firebase';
@@ -227,8 +228,9 @@ export default function ManagementsTab({ userName, userMatricula, darkMode }: { 
 
       {toDelete && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className={`w-full max-w-sm rounded-2xl p-5 space-y-4 ${modal}`}>
-            <p className="text-sm font-black">Excluir a gerência {toDelete.name}?</p>
+          <div className={`relative w-full max-w-sm rounded-2xl p-5 space-y-4 ${modal}`}>
+            <CloseX onClick={() => setToDelete(null)} />
+            <p className="text-sm font-black pr-10">Excluir a gerência {toDelete.name}?</p>
             <p className={`text-xs ${muted}`}>Nenhum usuário, ativo ou perfil usa esta gerência. A exclusão não pode ser desfeita.</p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setToDelete(null)} className="h-9 px-4 rounded-lg border border-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>

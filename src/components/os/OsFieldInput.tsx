@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { PenTool } from 'lucide-react';
 import { Address, OsLocationAnswer, OsTemplateField } from '../../types';
 import { OS_EMAIL_OK } from '../../db/firebase';
@@ -198,8 +199,9 @@ export default function OsFieldInput({ field: f, value: v, onChange, addresses, 
       {body}
       {signing && (
         <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4">
-            <p className="text-sm font-black text-slate-900 mb-2">{f.label}</p>
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-4">
+            <CloseX onClick={() => setSigning(false)} />
+            <p className="text-sm font-black text-slate-900 mb-2 pr-10">{f.label}</p>
             <SignatureCanvas
               defaultName={signerName}
               onSave={(img) => {

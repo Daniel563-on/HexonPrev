@@ -4,6 +4,7 @@ import { HexonUser, WorkOrder } from '../../types';
 import { OS_SIGN_COLOR, OS_SIGN_LABEL, dbGetSignQueue, dbSignAsRole } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import { dayBR } from './OsAnswersView';
+import { osRefText } from '../../lib/osRef';
 
 // "PRECISAM DA MINHA ASSINATURA": OS esperando o engenheiro ou o gerente nas gerências do usuário.
 // Marca uma ou várias, desenha a assinatura uma vez e ela vale para todas (cada OS com o carimbo e a hora dela).
@@ -94,8 +95,9 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
                   onChange={(e) => setSel(e.target.checked ? new Set(list.map((o) => o.id)) : new Set())}
                 />
               </th>
-              <th className="p-2.5">Número</th>
-              <th className="p-2.5">Tipo</th>
+              <th className="p-2.5">GLPI</th>
+              <th className="p-2.5">Nº da OS</th>
+              <th className="p-2.5">Intervenção</th>
               <th className="p-2.5">Gerência</th>
               <th className="p-2.5">Local</th>
               <th className="p-2.5">Técnico</th>
@@ -106,9 +108,10 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
             {list.map((o) => (
               <tr key={o.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="p-2.5">
-                  <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} aria-label={`Marcar ${o.number}`} />
+                  <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} aria-label={`Marcar ${osRefText(o)}`} />
                 </td>
-                <td className="p-2.5 font-mono font-bold text-indigo-700 cursor-pointer underline" onClick={() => onOpen(o)}>{o.number}</td>
+                <td className="p-2.5 font-mono text-sm font-black text-indigo-700 cursor-pointer underline whitespace-nowrap" onClick={() => onOpen(o)}>{o.glpi || '—'}</td>
+                <td className="p-2.5 font-mono text-[11px] text-slate-500 cursor-pointer whitespace-nowrap" onClick={() => onOpen(o)}>{o.number}</td>
                 <td className="p-2.5">{o.intervencao || '—'}</td>
                 <td className="p-2.5">{o.unit}</td>
                 <td className="p-2.5">{o.execAddressText}</td>
@@ -118,7 +121,7 @@ export default function OsSignQueue({ userProfile, units, mySignRole, onOpen }: 
             ))}
             {!loading && list.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-6 text-center text-slate-400">Nenhuma OS esperando a sua assinatura.</td>
+                <td colSpan={8} className="p-6 text-center text-slate-400">Nenhuma OS esperando a sua assinatura.</td>
               </tr>
             )}
           </tbody>

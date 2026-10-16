@@ -1,4 +1,5 @@
 // UserControlView.tsx - Hexon RBAC User & Logs Console
+import CloseX from './CloseX';
 import React, { useState, useEffect } from 'react';
 import { 
   dbGetUsers, 
@@ -1113,7 +1114,8 @@ export default function UserControlView({ currentUserProfile, darkMode }: UserCo
       {/* REUSABLE CUSTOM DIALOG MODAL (Prevents window.confirm iFrame restriction crashes in modern browsers) */}
       {genericConfirm.show && (
         <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/60 backdrop-blur-xs font-sans p-4">
-          <div className={`w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-slate-800 text-center animate-fade-in ${darkMode ? 'bg-[#0b1c30] text-slate-100' : 'bg-white text-slate-900'}`}>
+          <div className={`relative w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-slate-800 text-center animate-fade-in ${darkMode ? 'bg-[#0b1c30] text-slate-100' : 'bg-white text-slate-900'}`}>
+            <CloseX onClick={() => setGenericConfirm({ ...genericConfirm, show: false })} />
             <div className="w-12 h-12 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-550/10 animate-bounce">
               <span className="material-symbols-outlined text-2xl">warning</span>
             </div>

@@ -4,6 +4,7 @@ import { Address, HexonUser, OrderParticipant, UsedMaterial, WorkOrder, WorkOrde
 import { dbGetAddresses, dbReplyContest, osFieldVisible, supplyBlockMessage } from '../../db/firebase';
 import OsFieldInput from './OsFieldInput';
 import OsTeamPicker from './OsTeamPicker';
+import { osRefText } from '../../lib/osRef';
 import OsFieldExtras from './OsFieldExtras';
 import ExecutionExtras from '../orders/execution/ExecutionExtras';
 
@@ -84,7 +85,7 @@ export default function OsContestReplyModal({ order, userProfile, onClose, onDon
       <div className="w-full max-w-2xl max-h-full flex flex-col bg-slate-50 rounded-2xl shadow-2xl overflow-hidden">
         <div className="shrink-0 px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between gap-2" style={{ borderTop: '4px solid #e11d48' }}>
           <div className="min-w-0">
-            <p className="text-sm font-black text-slate-900">Responder contestação — {order.number}</p>
+            <p className="text-sm font-black text-slate-900">Responder contestação — {osRefText(order)}</p>
             <p className="text-[11px] text-slate-500">O que já está na OS não muda; aqui só se acrescenta.</p>
           </div>
           <button type="button" onClick={onClose} className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer shrink-0" title="Fechar">

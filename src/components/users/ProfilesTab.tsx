@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import CloseX from '../CloseX';
 import { AccessProfile, HexonUser, Management, ProfileKind } from '../../types';
 import {
   DEFAULT_PERMISSIONS,
@@ -242,8 +243,9 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className={`text-base font-black ${strong}`}>{profiles.some((p) => p.id === editing.id) ? 'Editar perfil' : 'Novo perfil'}</h3>
+          <div className={`relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+            <CloseX onClick={() => setEditing(null)} disabled={saving} />
+            <h3 className={`text-base font-black pr-10 ${strong}`}>{profiles.some((p) => p.id === editing.id) ? 'Editar perfil' : 'Novo perfil'}</h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="block">
@@ -445,8 +447,9 @@ export default function ProfilesTab({ profiles, managements, users, darkMode, on
 
       {toDelete && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className={`text-base font-black ${strong}`}>Excluir perfil</h3>
+          <div className={`relative w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+            <CloseX onClick={() => setToDelete(null)} disabled={deletingBusy} />
+            <h3 className={`text-base font-black pr-10 ${strong}`}>Excluir perfil</h3>
             <p className={`text-xs ${muted}`}>Deseja excluir o perfil "{toDelete.name}"? Esta ação não pode ser desfeita.</p>
             {deleteError && <p className="text-xs font-bold text-rose-600">{deleteError}</p>}
             <div className="flex justify-end gap-2">

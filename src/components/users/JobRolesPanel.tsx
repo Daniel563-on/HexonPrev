@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import CloseX from '../CloseX';
 import { Company, JobRole, OvernightRateSetting, OvertimeRules } from '../../types';
 import OvertimeRulesModal from './OvertimeRulesModal';
 import {
@@ -430,8 +431,9 @@ export default function JobRolesPanel({ roles: baseRoles, cargoNames, activeCoun
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className={`text-base font-black ${strong}`}>Valor da hora — {editing.name} · {companyName}</h3>
+          <div className={`relative w-full max-w-sm rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+            <CloseX onClick={() => setEditing(null)} />
+            <h3 className={`text-base font-black pr-10 ${strong}`}>Valor da hora — {editing.name} · {companyName}</h3>
             <label className="block">
               <span className="block text-[10px] font-black uppercase tracking-wider mb-1 text-slate-500">Valor da hora (R$)</span>
               <input

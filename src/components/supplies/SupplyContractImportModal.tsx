@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from '../CloseX';
 import * as XLSX from 'xlsx';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Material } from '../../types';
@@ -175,8 +176,9 @@ export default function SupplyContractImportModal({ company, companyName, contra
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl text-slate-800 overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-200">
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl text-slate-800 overflow-hidden">
+        <CloseX onClick={onClose} disabled={busy} />
+        <div className="px-5 py-3 pr-14 border-b border-slate-200">
           <p className="text-sm font-black">
             {first ? 'Importar contrato' : 'Importar aditivo'} — {companyName}
           </p>

@@ -12,6 +12,7 @@ import { MARK_LABEL, Shell, btn, btnMain, input } from './WeekModals';
 // Salvar = o mesmo que o lote do PMOC (Planejada, técnico e dias); desmarcar = volta para "Novo".
 // Fase 7C-2: chamados GLPI da comarca do bloco — sem técnico passam para o responsável; com ele ganham o dia; de outro
 // técnico que ainda não começou podem ser trazidos; desmarcado perde o dia e continua com o técnico.
+// U4: o "A programar nesta semana" (antes ao lado da grade) fica aqui dentro, com Preventivas e Corretivas (chamados).
 // Fase 7C-3: vários locais no bloco (roteiro). Cada local tem os seus dias seguidos dentro do bloco (padrão: todos);
 // a preventiva fica programada nos dias do seu local (o prazo é conferido com eles) e o chamado nos dias do local da
 // sua comarca. Tirar um local = as preventivas dele voltam para "Novo" e os chamados perdem o dia.
@@ -19,6 +20,7 @@ import { MARK_LABEL, Shell, btn, btnMain, input } from './WeekModals';
 export interface LocalOption {
   key: string;
   count: number;
+  minEnd?: string; // prazo mais curto das preventivas do local (AAAA-MM-DD)
 }
 interface Props {
   user: HexonUser;
@@ -35,6 +37,8 @@ interface Props {
   workOrders: WorkOrder[]; // chamados abertos da gerência e empresa (Fase 7C-2)
   initialWos?: string[]; // chamados já marcados ao abrir (veio do "A programar")
   localOptions: LocalOption[]; // locais com preventivas a programar nesta semana
+  toPlanWos: WorkOrder[]; // chamados a programar: sem técnico, ou com técnico sem dia (U4)
+  notYet: number; // preventivas cujo prazo só começa na semana que vem
   dayMarks: Record<string, { kind: DayMarkKind; text: string }>;
   teamPeople: (resp: string, s: string, e: string) => { matricula: string; name: string; absent: boolean }[];
   costTracking: boolean;
@@ -85,7 +89,7 @@ export default function BlockEditor(props: Props) {
 
   const [team, setTeam] = useState(lot?.technicianMatricula || props.initialTeam || '');
   const [stops, setStops] = useState<StopEdit[]>(initialStops);
-  const [adding, setAdding] = useState(false);
+  const [pickTab, setPickTab] = useState<'prev' | 'ch'>('prev');
   const [stopAnchor, setStopAnchor] = useState<{ key: string; d: string } | null>(null);
   const [fold, setFold] = useState<Record<string, boolean>>({});
   const [s, setS] = useState(lot ? lot.periodStart : props.initialDays?.[0] || '');
@@ -205,8 +209,18 @@ export default function BlockEditor(props: Props) {
   const usedNights = nights.filter((n) => possibleNights.includes(n)).sort();
   const peopleN = Number(people || crew.filter((c) => !c.absent).length);
   const sameComarca = localOptions.filter((l) => !keySet.has(l.key) && comarcas.includes(rawLocal(l.key).comarca)).slice(0, 6);
+  // U4: A programar nesta semana — Preventivas (locais, prazo mais curto primeiro) e Corretivas (chamados sem dia)
+  const weekLast = days[days.length - 1];
+  const term = findLocal.trim().toLowerCase();
   const freeLocals = localOptions.filter((l) => !keySet.has(l.key));
-  const foundLocals = findLocal.trim() ? freeLocals.filter((l) => localLabel(rawLocal(l.key)).toLowerCase().includes(findLocal.trim().toLowerCase())).slice(0, 8) : freeLocals.slice(0, 8);
+  const nPrevFree = freeLocals.reduce((n, l) => n + l.count, 0);
+  const foundLocals = (term ? freeLocals.filter((l) => localLabel(rawLocal(l.key)).toLowerCase().includes(term)) : freeLocals).slice(0, 40);
+  const freeWos = props.toPlanWos.filter((w) => !(lot && w.lotId === lot.id) && !woPlan.some((x) => x.id === w.id));
+  const foundWos = freeWos
+    .filter((w) => !term || [w.glpi || '', w.number, w.comarca || '', w.execAddressText || ''].some((v) => v.toLowerCase().includes(term)))
+    .sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
+    .slice(0, 40);
+  const pickTabCls = (on: boolean) => `h-8 rounded-md text-[11px] font-black cursor-pointer ${on ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`;
   const placeTxt = stops.length === 1 ? localLabel(rawLocal(stops[0].key)) : `${stops.length} locais`;
   // O que fica preso ao local (não dá para tirar): preventiva em execução/concluída ou chamado começado
   const stopLocked = (k: string) =>
@@ -217,7 +231,6 @@ export default function BlockEditor(props: Props) {
     const from = started && today > s && today <= e ? today : '';
     setStops((p) => [...p, { key: k, from, to: from ? e : '', pdfText: '' }]);
     setFindLocal('');
-    setAdding(false);
   };
   const removeStop = (k: string) => setStops((p) => p.filter((x) => x.key !== k));
   const setStopText = (k: string, text: string) => setStops((p) => p.map((x) => (x.key === k ? { ...x, pdfText: text } : x)));
@@ -631,43 +644,110 @@ export default function BlockEditor(props: Props) {
               ))}
             </div>
           )}
-          {!readOnly &&
-            (adding || stops.length === 0 ? (
-              <div className="space-y-1 p-2 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20">
-                <label className="relative block">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                  <input value={findLocal} onChange={(ev) => setFindLocal(ev.target.value)} placeholder="Buscar comarca ou endereço..." className={`${input} pl-8`} />
-                </label>
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  {foundLocals.map((l) => (
-                    <button
-                      key={l.key}
-                      type="button"
-                      onClick={() => addStop(l.key)}
-                      className="w-full text-left px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-400 text-[11px] font-bold cursor-pointer"
-                    >
-                      {localLabel(rawLocal(l.key))} <span className="text-emerald-700">· {l.count} a programar</span>
-                    </button>
-                  ))}
-                  {foundLocals.length === 0 && <p className="text-[11px] text-slate-500">Nenhum outro local com preventiva ou chamado a programar nesta semana.</p>}
-                </div>
-                {stops.length > 0 && (
-                  <button type="button" onClick={() => setAdding(false)} className="text-[10px] font-black text-slate-500 cursor-pointer">
-                    fechar a busca
-                  </button>
+          {!readOnly && (
+            <div className="space-y-2 p-2 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/40 dark:bg-indigo-950/20">
+              <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300">A programar nesta semana</p>
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <button type="button" onClick={() => setPickTab('prev')} className={pickTabCls(pickTab === 'prev')}>
+                  Preventivas ({nPrevFree})
+                </button>
+                <button type="button" onClick={() => setPickTab('ch')} className={pickTabCls(pickTab === 'ch')}>
+                  Corretivas — chamados ({freeWos.length})
+                </button>
+              </div>
+              <label className="relative block">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <input
+                  value={findLocal}
+                  onChange={(ev) => setFindLocal(ev.target.value)}
+                  placeholder={pickTab === 'prev' ? 'Buscar comarca ou endereço...' : 'Buscar GLPI, comarca ou endereço...'}
+                  className={`${input} pl-8`}
+                />
+              </label>
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {pickTab === 'prev' ? (
+                  <>
+                    {foundLocals.map((l) => {
+                      const hot = !!l.minEnd && l.minEnd <= weekLast;
+                      return (
+                        <div
+                          key={l.key}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border ${hot ? 'border-rose-300 bg-rose-50 dark:bg-rose-950/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'}`}
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="flex-1 min-w-0 text-[11px] font-bold text-slate-800 dark:text-slate-100">
+                            {localLabel(rawLocal(l.key))}
+                            <span className="block text-[10px] font-medium">
+                              <b className="text-emerald-700">
+                                {l.count} preventiva{l.count > 1 ? 's' : ''}
+                              </b>
+                              {l.minEnd ? <span className={hot ? 'text-rose-700 font-black' : 'text-slate-500'}> · prazo até {br(l.minEnd)}{hot ? ' (vence nesta semana)' : ''}</span> : null}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => addStop(l.key)}
+                            disabled={stops.length >= MAX_STOPS}
+                            className="h-7 px-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black cursor-pointer disabled:opacity-40 shrink-0"
+                          >
+                            + Adicionar
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {foundLocals.length === 0 && <p className="text-[11px] text-slate-500">Nenhuma preventiva a programar nesta semana{term ? ' com essa busca' : ''}.</p>}
+                    {props.notYet > 0 && (
+                      <p className="text-[10px] text-slate-500 flex gap-1">
+                        <Lock className="w-3 h-3 shrink-0 mt-px" />
+                        Ainda não podem (o prazo começa na semana que vem): <b>{props.notYet}</b> preventiva{props.notYet > 1 ? 's' : ''}.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {foundWos.map((w) => {
+                      const hot = !!w.deadline && w.deadline <= weekLast;
+                      const cantAdd = stops.length >= MAX_STOPS && !comarcas.includes(w.comarca || '');
+                      return (
+                        <div
+                          key={w.id}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border ${hot ? 'border-rose-300 bg-rose-50 dark:bg-rose-950/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'}`}
+                        >
+                          <Wrench className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span className="flex-1 min-w-0 text-[11px] text-slate-700 dark:text-slate-200">
+                            <b className="font-mono text-xs font-black text-indigo-700 dark:text-indigo-300">GLPI {w.glpi || '—'}</b>
+                            <span className="font-mono text-[10px] text-slate-400"> {w.number}</span>
+                            {w.intervencao ? ` · ${w.intervencao}` : ''}
+                            <span className="block text-[10px] text-slate-500">
+                              {w.comarca || 'Sem comarca'}
+                              {w.execAddressText ? ` · ${w.execAddressText}` : ''} · {w.assignedTechnicianMatricula ? `com ${techLabel(w.assignedTechnicianMatricula, w.assignedTechnicianName)}` : 'sem técnico'}
+                              {w.status === 'Pendente' ? ' (pendente)' : ''}
+                            </span>
+                            <span className={`block text-[10px] ${hot ? 'text-rose-700 font-black' : 'text-slate-500'}`}>
+                              {w.deadline ? `prazo até ${br(w.deadline)}${hot ? (w.deadline < today ? ' (atrasado)' : ' (vence nesta semana)') : ''}` : 'sem prazo'}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              addStop(`${w.comarca || ''}|${w.execAddressText || ''}`);
+                              toggleWo(w.id, true);
+                            }}
+                            disabled={cantAdd}
+                            className="h-7 px-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black cursor-pointer disabled:opacity-40 shrink-0"
+                          >
+                            + Adicionar
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {foundWos.length === 0 && <p className="text-[11px] text-slate-500">Nenhum chamado esperando dia{term ? ' com essa busca' : ''}.</p>}
+                  </>
                 )}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                disabled={stops.length >= MAX_STOPS}
-                className="h-8 px-3 rounded-lg border border-dashed border-indigo-400 text-indigo-700 dark:text-indigo-300 text-[11px] font-black flex items-center gap-1 cursor-pointer disabled:opacity-40"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {stops.length >= MAX_STOPS ? `Máximo de ${MAX_STOPS} locais` : 'Adicionar local'}
-              </button>
-            ))}
+              {stops.length >= MAX_STOPS && <p className="text-[10px] font-bold text-amber-700">Máximo de {MAX_STOPS} locais no bloco.</p>}
+            </div>
+          )}
         </div>
 
         <div className={`${box} space-y-2`}>
@@ -746,9 +826,9 @@ export default function BlockEditor(props: Props) {
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-800 dark:text-slate-100">
-                    <span className="font-mono font-black text-indigo-700 dark:text-indigo-300">{w.number || w.id}</span>
+                    <span className="font-mono text-xs font-black text-indigo-700 dark:text-indigo-300">GLPI {w.glpi || '—'}</span>
+                    <span className="font-mono text-[10px] text-slate-400"> {w.number || w.id}</span>
                     {w.intervencao ? ` · ${w.intervencao}` : ''}
-                    {w.glpi ? ` · GLPI ${w.glpi}` : ''}
                     {w.deadline ? (
                       <span className={lateDeadline ? 'text-rose-600 font-bold' : ''}>
                         {' '}

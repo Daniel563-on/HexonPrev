@@ -108,7 +108,7 @@ export default function TechnicianMaterialRequests({
         id: o.id,
         unit: o.unit,
         company: o.company!,
-        label: `${o.number}${o.glpi ? ` · GLPI ${o.glpi}` : ''} · ${o.intervencao || 'OS'}`
+        label: `${o.glpi ? `GLPI ${o.glpi} · ${o.number}` : o.number} · ${o.intervencao || 'OS'}`
       }));
     return [...os, ...prev];
   }, [preventives, workOrders, mpCompanies]);

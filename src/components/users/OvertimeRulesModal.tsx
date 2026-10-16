@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { JobRole, OvertimeDayKey, OvertimeDayRule, OvertimeRules } from '../../types';
 import {
   OVERTIME_DAYS,
@@ -108,9 +109,10 @@ export default function OvertimeRulesModal({ role, baseRole, company, companyNam
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className={`w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+      <div className={`relative w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${darkMode ? 'bg-[#0b1220] border-slate-800' : 'bg-white border-slate-200'}`}>
+        <CloseX onClick={onClose} disabled={saving} />
         <div>
-          <h3 className={`text-base font-black ${strong}`}>Hora extra — {role.name} · {companyName}</h3>
+          <h3 className={`text-base font-black pr-10 ${strong}`}>Hora extra — {role.name} · {companyName}</h3>
           <p className="text-xs text-slate-500 mt-1">
             Para cada dia: as primeiras horas recebem um adicional e as demais outro. Acima do máximo do dia, o técnico vê um aviso e o excesso não é pago.
             Feriado marcado pelo técnico conta como domingo.

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from '../CloseX';
 import { AlertCircle, Scan } from 'lucide-react';
 import CameraQrScanner from '../CameraQrScanner';
 import { Asset, Management } from '../../types';
@@ -43,13 +44,7 @@ export const AssetScannerModal: React.FC<AssetScannerModalProps> = ({
             <Scan className="w-4 h-4 text-[#3525cd]" />
             Buscar Ativo via QR Code
           </h3>
-          <button 
-            type="button"
-            onClick={handleClose}
-            className="text-gray-400 hover:text-rose-600 font-extrabold text-sm cursor-pointer p-1"
-          >
-            ✕
-          </button>
+          <CloseX onClick={handleClose} className="" />
         </div>
 
         {/* TAB TOGGLES FOR REAL CAMERA OR SIMULATOR */}
@@ -184,13 +179,7 @@ export const AssetDeleteModal: React.FC<AssetDeleteModalProps> = ({
             <AlertCircle className="w-4 h-4 text-rose-600" />
             Excluir Ativo
           </h3>
-          <button 
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-rose-600 font-extrabold text-sm cursor-pointer p-1"
-          >
-            ✕
-          </button>
+          <CloseX onClick={onClose} className="" />
         </div>
 
         <div className="space-y-4">
@@ -285,13 +274,7 @@ export const AssetSectorDeleteModal: React.FC<AssetSectorDeleteModalProps> = ({
             <AlertCircle className="w-4 h-4 text-rose-600" />
             Excluir Itens por Setor
           </h3>
-          <button 
-            type="button"
-            onClick={handleClose}
-            className="text-gray-400 hover:text-rose-600 font-extrabold text-sm cursor-pointer p-1"
-          >
-            ✕
-          </button>
+          <CloseX onClick={handleClose} className="" />
         </div>
 
         <div className="space-y-4">

@@ -35,6 +35,8 @@ import WorkOrderSheet from './WorkOrderSheet';
 import OsSignQueue from './OsSignQueue';
 import AssignWorkOrderModal from './AssignWorkOrderModal';
 import ChooseCompanyModal from './ChooseCompanyModal';
+import OsRef from './OsRef';
+import { osCategory } from '../../lib/osRef';
 import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
@@ -661,13 +663,14 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
 
           {/* Computador: tabela */}
           <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <table className="w-full text-xs min-w-[960px]">
+            <table className="w-full text-xs min-w-[1040px]">
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                  <th className="p-2.5">Número</th>
-                  <th className="p-2.5">Empresa</th>
-                  <th className="p-2.5">Tipo</th>
                   <th className="p-2.5">GLPI</th>
+                  <th className="p-2.5">Empresa</th>
+                  <th className="p-2.5">Intervenção</th>
+                  <th className="p-2.5">Categoria</th>
+                  <th className="p-2.5">Nº da OS</th>
                   <th className="p-2.5">Local de execução</th>
                   <th className="p-2.5">Técnico</th>
                   <th className="p-2.5">Abertura</th>
@@ -680,10 +683,11 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
               <tbody>
                 {items.map((o) => (
                   <tr key={o.id} className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => setSelected(o)}>
-                    <td className="p-2.5 font-mono font-bold text-indigo-700 whitespace-nowrap">{o.number}</td>
+                    <td className="p-2.5 whitespace-nowrap font-mono text-sm font-black text-indigo-700">{o.glpi || '—'}</td>
                     <td className="p-2.5 font-bold text-slate-700">{companyCell(o)}</td>
                     <td className="p-2.5">{o.intervencao || '—'}</td>
-                    <td className="p-2.5 font-mono">{o.glpi || '—'}</td>
+                    <td className="p-2.5">{osCategory(o) || '—'}</td>
+                    <td className="p-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">{o.number}</td>
                     <td className="p-2.5">
                       <span className="font-bold text-slate-800">{o.execAddressText}</span>
                       {manualBadge(o)}
@@ -707,7 +711,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 ))}
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={canViewCosts ? 11 : 10} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
+                    <td colSpan={canViewCosts ? 12 : 11} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
                   </tr>
                 )}
               </tbody>
@@ -731,10 +735,10 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                 className="w-full text-left p-3 rounded-xl border border-slate-200 bg-white space-y-1 cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-black text-indigo-700">{o.number}</span>
+                  <OsRef o={o} />
                   <span>{statusBadge(o)}</span>
                 </div>
-                <p className="text-xs font-bold text-slate-800">{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
+                <p className="text-xs font-bold text-slate-800">{o.intervencao || 'OS'}{osCategory(o) ? ` · ${osCategory(o)}` : ''}</p>
                 <p className="text-[10px] font-black uppercase tracking-wide text-blue-700">Empresa: {companyCell(o)}</p>
                 <p className="text-[11px] text-slate-600">{o.execAddressText}{manualBadge(o)} · {o.comarca}</p>
                 <p className="text-[11px] text-slate-500">

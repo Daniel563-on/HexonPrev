@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { Company, WorkOrder } from '../../types';
 import { companiesOfUnit, dbChangeWorkOrderCompany } from '../../db/firebase';
 import { dayBR } from './OsAnswersView';
+import { osRefText } from '../../lib/osRef';
 
 // ESCOLHER EMPRESA (ajuste A5-B, só o Super Administrador): chamado em aberto de empresa inativa recebe uma empresa
 // ativa da gerência. Se estava num bloco da Programação, sai dele (perde o dia) e continua com o técnico.
@@ -33,7 +34,7 @@ export default function ChooseCompanyModal({
     try {
       await dbChangeWorkOrderCompany(order, to, { from: nameOf(order.company), to: nameOf(to) }, userName);
       const { scheduledDate: _s, scheduledEndDate: _e, lotId: _l, ...rest } = order;
-      onSaved({ ...(inBlock ? rest : order), company: to } as WorkOrder, `${order.number}: empresa ${nameOf(to)} gravada.`);
+      onSaved({ ...(inBlock ? rest : order), company: to } as WorkOrder, `${osRefText(order)}: empresa ${nameOf(to)} gravada.`);
     } catch (e: any) {
       setError(e?.code === 'permission-denied' ? 'O banco recusou: só o Super Administrador escolhe a empresa, e a empresa nova precisa estar ativa e atuar na gerência.' : `Não foi possível salvar: ${e?.message || e}`);
     } finally {
@@ -45,7 +46,7 @@ export default function ChooseCompanyModal({
     <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-3" role="dialog" aria-label="Escolher empresa" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-black text-slate-900">Escolher empresa — {order.number}</p>
+          <p className="text-sm font-black text-slate-900">Escolher empresa — {osRefText(order)}</p>
           <button type="button" onClick={onClose} className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 flex items-center justify-center cursor-pointer" title="Fechar">
             <X className="w-4 h-4" />
           </button>

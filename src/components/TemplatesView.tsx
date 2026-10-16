@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import CloseX from './CloseX';
 import {
   Trash2,
   ListChecks,
@@ -314,7 +315,8 @@ export default function TemplatesView({ onTemplatesUpdated, userProfile, visible
       {/* CUSTOM DELETE CONFIRMATION MODAL */}
       {templateToDeleteId && (
         <div className="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border border-gray-150 transform transition-all animate-in fade-in zoom-in-95 duration-150 text-left">
+          <div className="relative bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border border-gray-150 transform transition-all animate-in fade-in zoom-in-95 duration-150 text-left">
+            <CloseX onClick={() => setTemplateToDeleteId(null)} />
             <div className="flex items-center gap-3 text-rose-600 mb-4">
               <div className="bg-rose-50 p-2.5 rounded-full border border-rose-100">
                 <Trash2 className="w-5 h-5 text-rose-600" />

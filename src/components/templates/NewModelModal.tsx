@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { Address, AssetTypeConfig, ChecklistTemplateItem, MaintenanceTemplate } from '../../types';
 import { dbSaveTemplate } from '../../db/firebase';
 import { isNewFormat, missingPeriodicities, newChecklistItem, preventiveModelId, SURVEY_PERIODICITIES } from './modelUtils';
@@ -102,8 +103,9 @@ export default function NewModelModal({ unit, isSurveyUnit, assetTypes, template
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-        <h3 className="text-base font-black text-slate-800">{preset?.copyFrom ? `Duplicar "${preset.copyFrom.name}"` : 'Novo modelo'} — {unit}</h3>
+      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+        <CloseX onClick={onClose} disabled={saving} />
+        <h3 className="text-base font-black text-slate-800 pr-10">{preset?.copyFrom ? `Duplicar "${preset.copyFrom.name}"` : 'Novo modelo'} — {unit}</h3>
 
         {!preset?.copyFrom && (
           <div className="flex gap-2">

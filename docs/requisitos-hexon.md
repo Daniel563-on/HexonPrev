@@ -677,7 +677,7 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 | `src/db/orderStarts.ts` | Iniciar/desfazer/concluir (offline) |
 | `src/db/dispatch.ts`, `dispatchIndex.ts` | Disparo das OS |
 | `src/db/historyPages.ts` | Histórico em páginas de 12 |
-| `src/db/teams.ts`, `src/db/weekPlans.ts`, `src/db/blocks.ts`, `src/components/programacao/*` | Programação (Fase 7): equipes = equipe habitual do responsável (`usualTeams`); semana (`weekPlans`: dias marcados, equipe da semana, acompanhar, histórico) e ausências (`absences`); blocos = lotes (`planningLots`, `source:'programacao'`; `BlockEditor`, `ToPlanPanel`, `blockLayout`); `ProgramacaoView` (Semana/Equipes), `TeamsView`, `TeamForm`, `WeekView`, `WeekModals`, `weekDates` |
+| `src/db/teams.ts`, `src/db/weekPlans.ts`, `src/db/blocks.ts`, `src/components/programacao/*` | Programação (Fase 7): equipes = equipe habitual do responsável (`usualTeams`); semana (`weekPlans`: dias marcados, equipe da semana, acompanhar, histórico) e ausências (`absences`); blocos = lotes (`planningLots`, `source:'programacao'`; `BlockEditor` — desde o U4 com o "A programar nesta semana" dentro (abas Preventivas / Corretivas — chamados; o `ToPlanPanel` do lado da grade foi apagado) —, `blockLayout`); `ProgramacaoView` (Semana/Equipes), `TeamsView`, `TeamForm`, `WeekView`, `WeekModals`, `weekDates` |
 | `src/db/appControl.ts` | Forçar atualização e manutenção (fora do disjuntor de propósito) |
 | `src/db/branding.ts`, `src/components/BrandLogo.tsx`, `src/components/users/BrandingCard.tsx` | Logo do sistema (identidade visual) |
 | `src/db/manHours.ts` | Tempo, homem-hora e custo da OS |
@@ -701,6 +701,8 @@ Apagados em 01/10/2026: `status`, `status+endDate`, `status+scheduledDate`, `uni
 | `src/lib/osPdf.ts`, `osXlsx.ts`, `preventivePdf.ts` | PDF mapeado/padrão e ficha XLSX dos chamados; PDF padrão da preventiva |
 | `src/components/os/*` | Emitir OS, modelos de OS, lista (`WorkOrdersList`), ficha (`WorkOrderSheet`), execução no celular (`OsExecutionForm`), assinatura (`OsSignaturePad`) |
 | `src/components/mobile/TechnicianOsTab.tsx` | Aba "Minhas OS" do celular (Em aberto, Pendentes, Contestadas, Assinadas pelo cliente) |
+| `src/lib/osRef.ts`, `src/components/os/OsRef.tsx` | U4: GLPI em destaque — `osRefText` ("GLPI 123 · OS-…", sem GLPI só o número) para títulos, avisos, e-mails, PDF e planilha; `osCategory` (resposta da pergunta "Categoria" da etapa Criação); `OsRef` = GLPI grande + Nº da OS pequeno (tabelas, cartões, fichas) |
+| `src/components/CloseX.tsx` | U4: o "X" no canto de cima das janelas (nome "Fechar"; faz o mesmo que o Cancelar da janela e fica travado enquanto grava) |
 | `src/db/notices.ts`, `src/lib/noticeSeen.ts`, `src/components/notices/*` | Quadro de Avisos (9A): escuta só dos avisos que valem, foto e PDF à parte, ciente, "novos" e urgentes por aparelho |
 | `src/db/glpiPanel.ts`, `src/components/GlpiPanelView.tsx` | Histórico GLPI (9B): painel HTML em pedaços compactados, mostrado em moldura isolada |
 | `src/db/weekPublish.ts`, `src/lib/weekPdf.ts` | Programação › Publicar (7D): PDF da semana no formato PSS e aviso no Quadro (revisões) |

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import CloseX from '../CloseX';
 import { Building2, Pencil, Plus, X } from 'lucide-react';
 import { Company, Management } from '../../types';
 import { CompanyImpact, companyIdOf, dbCompanyImpact, dbGetCompanies, dbGetManagements, dbInactivateCompany, dbSaveCompany } from '../../db/firebase';
@@ -246,8 +247,9 @@ export default function CompaniesTab({ userName, userMatricula, darkMode }: { us
       )}
       {impact && (
         <div className="fixed inset-0 z-[1001] bg-slate-900/60 flex items-center justify-center p-4">
-          <div className={`w-full max-w-xl rounded-2xl p-5 space-y-3 max-h-[92vh] overflow-y-auto ${darkMode ? 'bg-[#0b1426] text-slate-100' : 'bg-white'}`} role="dialog" aria-label="Inativar empresa">
-            <p className="text-sm font-black">Inativar a empresa {impact.company.name}?</p>
+          <div className={`relative w-full max-w-xl rounded-2xl p-5 space-y-3 max-h-[92vh] overflow-y-auto ${darkMode ? 'bg-[#0b1426] text-slate-100' : 'bg-white'}`} role="dialog" aria-label="Inativar empresa">
+            <CloseX onClick={() => setImpact(null)} disabled={saving} />
+            <p className="text-sm font-black pr-10">Inativar a empresa {impact.company.name}?</p>
             <p className={`text-xs ${muted}`}>
               Tudo isto fica <b className="text-amber-700">sem empresa (pendente)</b> até alguém escolher a empresa nova:
             </p>

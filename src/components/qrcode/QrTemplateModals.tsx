@@ -1,4 +1,5 @@
 import React from 'react';
+import CloseX from '../CloseX';
 import {
   Save,
   X,
@@ -140,7 +141,8 @@ export default function QrTemplateModals({
       {/* MODAL: CONFIRMAR EXCLUSÃO DE MODELO */}
       {templateToDelete && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+          <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <CloseX onClick={onCloseDeleteModal} />
             <div className="flex items-start gap-3">
               <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 shrink-0">
                 <Trash2 className="w-6 h-6" />

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { ChevronDown, ChevronRight, Info, Pencil, Search, Trash2, Upload } from 'lucide-react';
 import { Company, HexonUser, Material, SupplyBalance } from '../../types';
 import {
@@ -388,8 +389,9 @@ export default function SuppliesView({ userProfile, visibleUnits, visibleCompani
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 space-y-4 text-slate-800">
-            <div>
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 space-y-4 text-slate-800">
+            <CloseX onClick={() => setEditing(null)} disabled={busy} />
+            <div className="pr-10">
               <p className="text-sm font-black">Editar item {editing.code}</p>
               <p className="text-[11px] text-slate-500">Só a descrição e a unidade. Quantidade e preço mudam pela importação do aditivo.</p>
             </div>
@@ -420,8 +422,9 @@ export default function SuppliesView({ userProfile, visibleUnits, visibleCompani
 
       {toDelete && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-4 text-slate-800">
-            <p className="text-sm font-black">Excluir o item {toDelete.code} do contrato?</p>
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-4 text-slate-800">
+            <CloseX onClick={() => setToDelete(null)} disabled={busy} />
+            <p className="text-sm font-black pr-10">Excluir o item {toDelete.code} do contrato?</p>
             <p className="text-xs text-slate-600">
               {toDelete.description}. Só para corrigir erro de importação: o item nunca foi aprovado nem fornecido. Os técnicos deixam de vê-lo.
             </p>

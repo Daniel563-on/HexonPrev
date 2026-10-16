@@ -30,13 +30,12 @@ import { isOrderOfTechnician } from '../orders/planning/planningUtils';
 import { teamLabel } from './TeamForm';
 import { DAY_LABEL, addDays, isoWeek, mondayOf, weekDays } from './weekDates';
 import { AbsenceForm, DayListModal, DayMarkModal, MARK_LABEL, PublishModal, TeamWeekModal, VisitModal, WeekHistoryModal } from './WeekModals';
-import BlockEditor from './BlockEditor';
-import ToPlanPanel, { ToPlanGroup } from './ToPlanPanel';
+import BlockEditor, { LocalOption } from './BlockEditor';
 import { GridItem, Placed, blockItems, coversDay, localKey, localLabel, looseItems, lotPlace, lotStops, placeLanes, stopKey } from './blockLayout';
 
 // PROGRAMAÇÃO › SEMANA (Fase 7B ver e organizar; 7C-1 blocos de preventivas; 7C-2 chamados nos blocos). Etapa de junção:
 // planilha semanal (PSS) + lote do PMOC + atribuição de chamados do Hexon principal. Linhas = equipes; cada bloco = local em
-// dias seguidos com as preventivas, os chamados e o pernoite. "A programar" ao lado; histórico da semana.
+// dias seguidos com as preventivas, os chamados e o pernoite. "A programar" dentro do bloco (U4); histórico da semana.
 // Fase 7D: "Ver PDF" (formato da PSS) e "Publicar Rev. N" (PDF no Quadro de Avisos; a revisão anterior sai do quadro).
 
 interface Props {
@@ -240,7 +239,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
 
   // A programar: preventivas "Novo" cujo prazo cobre algum dia da semana a partir de hoje
   const fromDay = today && today > weekStart ? today : weekStart;
-  const toPlan = useMemo<ToPlanGroup[]>(() => {
+  const toPlan = useMemo<{ key: string; orders: ServiceOrder[]; minEnd: string }[]>(() => {
     const m = new Map<string, ServiceOrder[]>();
     unitOrders
       .filter((o) => o.status === 'Novo' && (!o.startDate || o.startDate.slice(0, 10) <= weekEnd) && (!o.endDate || o.endDate.slice(0, 10) >= fromDay))
@@ -250,18 +249,10 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
       .sort((a, b) => (a.minEnd || '9999').localeCompare(b.minEnd || '9999') || a.key.localeCompare(b.key));
   }, [unitOrders, weekEnd, fromDay]);
   const notYet = unitOrders.filter((o) => o.status === 'Novo' && !!o.startDate && o.startDate.slice(0, 10) > weekEnd && o.startDate.slice(0, 10) <= addDays(weekEnd, 7)).length;
-  // Locais para um bloco novo: os das preventivas a programar e os dos chamados sem dia
-  const localOptions = (() => {
-    const m = new Map<string, number>();
-    toPlan.forEach((g) => m.set(g.key, g.orders.length));
-    [...wosNew, ...wosNoDay].forEach((w) => {
-      const k = `${w.comarca || ''}|${w.execAddressText || ''}`;
-      m.set(k, (m.get(k) || 0) + 1);
-    });
-    return Array.from(m.entries())
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => a.key.localeCompare(b.key));
-  })();
+  // U4: "A programar nesta semana" dentro do bloco — Preventivas = locais com preventivas a programar (prazo mais curto
+  // primeiro); Corretivas = chamados sem técnico ou com técnico sem dia
+  const localOptions: LocalOption[] = toPlan.map((g) => ({ key: g.key, count: g.orders.length, minEnd: g.minEnd }));
+  const toPlanWos = [...wosNew, ...wosNoDay];
 
   // Onde cada pessoa está nesta semana
   const placeInWeek = (mat: string, except: string): { label: string; resp: boolean } | null => {
@@ -740,103 +731,129 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setWeekStart(addDays(weekStart, -7))} className={`${sel} w-9 flex items-center justify-center cursor-pointer`} title="Semana anterior">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <div className={`${sel} px-4 flex items-center gap-2`}>
-            <CalendarRange className="w-4 h-4 text-indigo-600" />
-            <span className="text-sm font-black text-slate-900 dark:text-white">Semana {isoWeek(weekStart)}</span>
-            <span className="text-xs font-medium text-slate-500">
-              {br(weekStart)} a {br(weekEnd)}/{weekEnd.slice(0, 4)}
-            </span>
+      {/* U4: barra em duas linhas — semana e filtros em cima; publicação, ausências e "Novo bloco" embaixo */}
+      <div className={`${card} p-3 space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => setWeekStart(addDays(weekStart, -7))} className={`${sel} w-9 flex items-center justify-center cursor-pointer`} title="Semana anterior" aria-label="Semana anterior">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="h-9 px-4 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/30 flex items-center gap-2">
+              <CalendarRange className="w-4 h-4 text-indigo-600" />
+              <span className="text-sm font-black text-indigo-900 dark:text-indigo-200">Semana {isoWeek(weekStart)}</span>
+              <span className="text-xs font-medium text-indigo-700/80 dark:text-indigo-300/80">
+                {br(weekStart)} a {br(weekEnd)}/{weekEnd.slice(0, 4)}
+              </span>
+            </div>
+            <button type="button" onClick={() => setWeekStart(addDays(weekStart, 7))} className={`${sel} w-9 flex items-center justify-center cursor-pointer`} title="Próxima semana" aria-label="Próxima semana">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={() => setWeekStart(mondayOf(new Date()))} className={`${sel} px-3 cursor-pointer`}>
+              Hoje
+            </button>
           </div>
-          <button type="button" onClick={() => setWeekStart(addDays(weekStart, 7))} className={`${sel} w-9 flex items-center justify-center cursor-pointer`} title="Próxima semana">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button type="button" onClick={() => setWeekStart(mondayOf(new Date()))} className={`${sel} px-3 cursor-pointer`}>
-            Hoje
-          </button>
-          {unitOptions.length > 1 && (
-            <select value={unit} onChange={(e) => setUnit(e.target.value)} className={sel}>
-              {unitOptions.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-          )}
-          <select value={company} onChange={(e) => setCompany(e.target.value)} className={sel} disabled={unitCompanies.length === 0}>
-            {unitCompanies.length === 0 && <option value="">Sem empresa nesta gerência</option>}
-            {unitCompanies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              loadUnit();
-              loadWeek();
-            }}
-            disabled={loading}
-            className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer`}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Atualizar
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {unitOptions.length > 1 && (
+              <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                Gerência
+                <select value={unit} onChange={(e) => setUnit(e.target.value)} className={sel}>
+                  {unitOptions.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Empresa
+              <select value={company} onChange={(e) => setCompany(e.target.value)} className={sel} disabled={unitCompanies.length === 0}>
+                {unitCompanies.length === 0 && <option value="">Sem empresa nesta gerência</option>}
+                {unitCompanies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                loadUnit();
+                loadWeek();
+              }}
+              disabled={loading}
+              className={`${sel} w-9 flex items-center justify-center cursor-pointer`}
+              title="Atualizar"
+              aria-label="Atualizar"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
         {company && (
-          <div className="flex flex-wrap gap-2">
-            <span
-              className={`h-9 px-2.5 rounded-lg border text-[11px] font-bold flex items-center ${lastPub && changesAfter > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
-            >
-              {lastPub ? (
-                <span>
-                  Publicada: <b>Rev. {lastPub.rev}</b> em {new Date(lastPub.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} por {lastPub.by}
-                  {changesAfter > 0 ? (
-                    <>
-                      {' '}
-                      · <b>{changesAfter}</b> mudança{changesAfter > 1 ? 's' : ''} depois disso
-                    </>
-                  ) : (
-                    ' · sem mudança depois disso'
-                  )}
-                </span>
-              ) : (
-                'Ainda não publicada'
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`h-9 px-3 rounded-lg border text-[11px] font-bold flex items-center ${lastPub && changesAfter > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'}`}
+              >
+                {lastPub ? (
+                  <span>
+                    Publicada <b>Rev. {lastPub.rev}</b> em {new Date(lastPub.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} por {lastPub.by}
+                    {changesAfter > 0 ? (
+                      <>
+                        {' '}
+                        · <b>{changesAfter}</b> mudança{changesAfter > 1 ? 's' : ''} depois
+                      </>
+                    ) : (
+                      ' · sem mudança depois'
+                    )}
+                  </span>
+                ) : (
+                  'Ainda não publicada'
+                )}
+              </span>
+              <button type="button" onClick={() => setModal({ kind: 'history' })} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer`}>
+                <History className="w-4 h-4" />
+                Histórico
+              </button>
+              <button type="button" onClick={viewPdf} disabled={pdfBusy || loading} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer disabled:opacity-50`}>
+                <FileDown className="w-4 h-4" />
+                {pdfBusy ? 'Montando…' : 'Ver PDF'}
+              </button>
+              {publishOk && (
+                <button
+                  type="button"
+                  onClick={() => setModal({ kind: 'publish' })}
+                  disabled={loading}
+                  className="h-9 px-4 rounded-lg border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  Publicar Rev. {nextRev}
+                </button>
               )}
-            </span>
-            <button type="button" onClick={() => setModal({ kind: 'history' })} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer`}>
-              <History className="w-4 h-4" />
-              Histórico
-            </button>
-            <button type="button" onClick={viewPdf} disabled={pdfBusy || loading} className={`${sel} px-3 flex items-center gap-1.5 cursor-pointer disabled:opacity-50`}>
-              <FileDown className="w-4 h-4" />
-              {pdfBusy ? 'Montando…' : 'Ver PDF'}
-            </button>
-            {publishOk && (
-              <button
-                type="button"
-                onClick={() => setModal({ kind: 'publish' })}
-                disabled={loading}
-                className="h-9 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <Send className="w-4 h-4" />
-                Publicar Rev. {nextRev}
-              </button>
-            )}
+            </div>
             {!readOnly && (
-              <button
-                type="button"
-                onClick={() => setModal({ kind: 'absence', absence: null })}
-                className="h-9 px-4 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Lançar férias ou atestado
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModal({ kind: 'absence', absence: null })}
+                  className="h-9 px-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Férias ou atestado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModal({ kind: 'block', lot: null })}
+                  disabled={techTeams.length === 0}
+                  title={techTeams.length === 0 ? 'Monte as equipes (com técnico responsável) na aba Equipes' : 'Novo bloco: escolha a equipe, os dias e os locais'}
+                  className="h-9 px-4 rounded-lg text-white text-xs font-black flex items-center gap-1.5 cursor-pointer bg-gradient-to-r from-violet-600 via-blue-600 to-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-4 h-4" />
+                  Novo bloco
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -893,7 +910,7 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
 
       {company && (
         <>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
             {stat('Efetivo', efetivo)}
             {stat('Disponível', efetivo - absentInTeams)}
             {stat('Equipes', here.length)}
@@ -908,7 +925,8 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
             <p className={`${card} p-6 text-center text-sm text-slate-500`}>Nenhuma equipe da {companyName} ainda. Monte as equipes na aba Equipes: elas viram as linhas da semana.</p>
           )}
 
-          <div className={`grid grid-cols-1 ${!pastWeek ? '2xl:grid-cols-[minmax(0,1fr)_300px]' : ''} gap-4 items-start`}>
+          {/* U4: o quadro ocupa a tela toda; o "A programar nesta semana" fica dentro do bloco (Novo bloco) */}
+          <div className="grid grid-cols-1 gap-4 items-start">
             <div className={`${card} overflow-x-auto`}>
               <div className="min-w-[1080px]">
                 <div className="grid border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900" style={{ gridTemplateColumns: COLS }}>
@@ -1086,27 +1104,6 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
                 })}
               </div>
             </div>
-            {!pastWeek && (
-              <ToPlanPanel
-                groups={toPlan}
-                weekEnd={weekEnd}
-                notYet={notYet}
-                canProgram={canProgram && techTeams.length > 0}
-                onProgram={(key) => setModal({ kind: 'block', lot: null, local: key })}
-                wosNew={wosNew}
-                wosNoDay={wosNoDay}
-                techName={(mat) => (mat ? respNameOf(mat) : '')}
-                onProgramWo={(w) =>
-                  setModal({
-                    kind: 'block',
-                    lot: null,
-                    local: `${w.comarca || ''}|${w.execAddressText || ''}`,
-                    wos: [w.id],
-                    team: techTeams.some((t) => t.matricula === w.assignedTechnicianMatricula) ? w.assignedTechnicianMatricula : undefined
-                  })
-                }
-              />
-            )}
           </div>
 
           <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 text-[11px] text-indigo-900 dark:text-indigo-200 flex gap-2">
@@ -1169,6 +1166,8 @@ export default function WeekView({ user, unitOptions, visibleCompanies, canEdit,
           workOrders={companyWos}
           initialWos={modal.wos}
           localOptions={localOptions}
+          toPlanWos={toPlanWos}
+          notYet={notYet}
           dayMarks={plan?.days || {}}
           teamPeople={teamPeople}
           costTracking={!!companyObj?.costTracking}

@@ -22,6 +22,7 @@ import {
 } from '../../db/firebase';
 import OsFieldInput, { LocationPicker, osInput } from './OsFieldInput';
 import TechTwoLists from './TechTwoLists';
+import { osRefText } from '../../lib/osRef';
 import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
 
 // EMITIR OS (GLPI): a tela mostra exatamente as perguntas da etapa Criação do modelo escolhido
@@ -425,7 +426,7 @@ export default function OsEmitForm({ userProfile, unitOptions, canAssign, visibl
     return (
       <div className="max-w-xl mx-auto p-5 rounded-2xl border border-emerald-200 bg-emerald-50 space-y-3">
         <p className="flex items-center gap-2 text-sm font-black text-emerald-900">
-          <CheckCircle2 className="w-5 h-5" /> OS emitida: {done.number}
+          <CheckCircle2 className="w-5 h-5" /> OS emitida: {osRefText(done)}
         </p>
         <p className="text-xs text-emerald-900">
           Gerência <b>{done.unit}</b> · Situação: <b>{done.status}</b>

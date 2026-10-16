@@ -15,6 +15,7 @@ import {
   osStatusLabel
 } from '../db/firebase';
 import { deliverBytes, deliverFile } from './fileDelivery';
+import { osRefText } from './osRef';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
 // o PDF mapeado (PDF oficial do modelo + caixas) e o PDF padrão (quando o modelo não tem PDF).
@@ -357,7 +358,8 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
   };
 
   // Cabeçalho
-  page.drawText(safe(`ORDEM DE SERVIÇO ${o.number}`, bold), { x: M, y: y - 16, size: 16, font: bold, color: ink });
+  // U4: a GLPI em destaque no título; o Nº da OS vai logo abaixo
+  page.drawText(safe(o.glpi ? `ORDEM DE SERVIÇO · GLPI ${o.glpi}` : `ORDEM DE SERVIÇO ${o.number}`, bold), { x: M, y: y - 16, size: 16, font: bold, color: ink });
   y -= 22;
   text(`${o.intervencao || 'OS'} · modelo ${o.templateName} · gerência ${o.unit}${d.companyName ? ` · empresa ${d.companyName}` : ''} · situação: ${osStatusLabel(o)}`, M, 9, regular, soft);
   y -= 4;
@@ -365,6 +367,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
   section('Dados da OS');
   const v = (k: string) => osPdfValue(`sys:${k}`, null, d).text || '';
   kv('GLPI', v('glpi'));
+  kv('Nº da OS', o.number);
   kv('Aberta em', v('aberturaHora'));
   kv('Aberta por', v('abertoPor'));
   kv('Prazo limite', v('prazo'));
@@ -428,7 +431,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
   // Rodapé com página
   const pages = pdf.getPages();
   pages.forEach((p, i) =>
-    p.drawText(safe(`${o.number} · gerado em ${new Date().toLocaleString('pt-BR')} · página ${i + 1} de ${pages.length}`, regular), { x: M, y: 20, size: 7, font: regular, color: soft })
+    p.drawText(safe(`${osRefText(o)} · gerado em ${new Date().toLocaleString('pt-BR')} · página ${i + 1} de ${pages.length}`, regular), { x: M, y: 20, size: 7, font: regular, color: soft })
   );
   return pdf.save();
 }

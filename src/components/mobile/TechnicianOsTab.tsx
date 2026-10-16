@@ -4,6 +4,8 @@ import { HexonUser, WorkOrder } from '../../types';
 import { dbDismissClientSigned, dbSyncOsValidation, osStatusLabel } from '../../db/firebase';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import OsExecutionForm from '../os/OsExecutionForm';
+import OsRef from '../os/OsRef';
+import { osRefText } from '../../lib/osRef';
 import { STATUS_STYLE, dayBR, isOverdue } from '../os/OsAnswersView';
 
 // MINHAS OS (técnico): as OS de corretiva, layout e acompanhamento que estão com ele agora.
@@ -111,14 +113,14 @@ export default function TechnicianOsTab({
             const cli = o.signatures?.cliente;
             return (
               <div key={o.id} className={`p-4 rounded-2xl border shadow-2xs space-y-1.5 ${card}`}>
-                <button type="button" onClick={() => setOpenSigned(o)} aria-label={`Ver a OS ${o.number}`} className="w-full text-left space-y-1.5 cursor-pointer">
+                <button type="button" onClick={() => setOpenSigned(o)} aria-label={`Ver a OS ${osRefText(o)}`} className="w-full text-left space-y-1.5 cursor-pointer">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm font-black text-indigo-600 flex items-center gap-1.5">
-                      <ClipboardCheck className="w-4 h-4" /> {o.number}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <ClipboardCheck className="w-4 h-4 text-indigo-600 shrink-0" /> <OsRef o={o} />
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
                   </div>
-                  <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
+                  <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}</p>
                   <p className="text-[11px] text-slate-500 flex items-start gap-1">
                     <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {o.execAddressText} · {o.comarca}
                   </p>
@@ -179,12 +181,12 @@ export default function TechnicianOsTab({
       {shown.map((o) => (
         <button key={o.id} type="button" onClick={() => setOpen(o)} className={`w-full text-left p-4 rounded-2xl border shadow-2xs space-y-1.5 cursor-pointer ${card}`}>
           <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-sm font-black text-indigo-600 flex items-center gap-1.5">
-              <ClipboardCheck className="w-4 h-4" /> {o.number}
+            <span className="flex items-center gap-1.5 min-w-0">
+              <ClipboardCheck className="w-4 h-4 text-indigo-600 shrink-0" /> <OsRef o={o} />
             </span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
           </div>
-          <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}{o.glpi ? ` · GLPI ${o.glpi}` : ''}</p>
+          <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{o.intervencao || 'OS'}</p>
           <p className="text-[11px] text-slate-500 flex items-start gap-1">
             <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {o.execAddressText} · {o.comarca}
           </p>

@@ -1107,7 +1107,7 @@ export default function TechnicianMobileView({
                   </div>
                   <div>
                     <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">
-                      {w.number} • {w.intervencao || 'OS'}{w.glpi ? ` • GLPI ${w.glpi}` : ''}
+                      {w.glpi ? `GLPI ${w.glpi}` : w.number} • {w.intervencao || 'OS'}{w.glpi ? <span className="ml-1 font-mono text-[10px] font-bold text-slate-400">{w.number}</span> : null}
                     </h4>
                     <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{w.execAddressText}</p>
                   </div>

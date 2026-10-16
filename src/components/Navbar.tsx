@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from './CloseX';
 import { createPortal } from 'react-dom';
 import { Bell, Moon, Sun, LogOut, Menu, Type, Lock } from 'lucide-react';
 import { signOutHexon } from '../db/firebase';
@@ -184,7 +185,8 @@ export default function Navbar({
           }}
           className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md font-sans p-4 animate-in fade-in duration-200"
         >
-          <div className="bg-white dark:bg-[#08122b] p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800/80 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative bg-white dark:bg-[#08122b] p-6 rounded-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800/80 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
+            <CloseX onClick={() => setShowLogoutConfirm(false)} />
             <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100 dark:border-rose-900/20">
               <LogOut className="w-5 h-5" />
             </div>

@@ -191,9 +191,9 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
 
   return (
     <section className="space-y-3" aria-label="Preventivas">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className={homeTitle}>Preventivas e vistorias</h3>
-        {canSeePast && (
+      {/* U4: o mês fica em cima dos cartões; "Preventivas e vistorias" com o cumprimento vem logo abaixo */}
+      {canSeePast && (
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5">
             <button type="button" className={arrow} onClick={() => setMonth(shiftMonth(month, -1))} disabled={month <= shiftMonth(current, -12)} aria-label="Mês anterior">
               <ChevronLeft className="w-4 h-4" />
@@ -205,11 +205,30 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        )}
+        </div>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {openCards.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            onClick={() => props.onOpen(c.to)}
+            className={`${homeCard} text-left p-4 hover:border-indigo-300 dark:hover:border-indigo-700 cursor-pointer flex flex-col gap-1.5`}
+          >
+            <span className={`flex items-center gap-2 text-xs font-bold ${c.tone}`}>
+              {c.icon}
+              {c.label}
+            </span>
+            <span className="text-3xl font-black tabular-nums text-slate-900 dark:text-white">{c.n ?? '…'}</span>
+            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+              {c.hint}
+              <ChevronRight className="w-3 h-3" />
+            </span>
+          </button>
+        ))}
       </div>
-      {/* Em tela larga: cumprimento à esquerda, cartões à direita */}
-      <div className="grid grid-cols-1 2xl:grid-cols-5 gap-3 items-start">
-      <div className={`${homeCard} p-4 space-y-5 2xl:col-span-3`}>
+      <h3 className={`${homeTitle} pt-2`}>Preventivas e vistorias</h3>
+      <div className={`${homeCard} p-4 space-y-5`}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-black text-slate-900 dark:text-white">Cumprimento de {monthName(month)}</p>
           {isCurrent && (
@@ -240,27 +259,6 @@ export default function HomePreventives(props: { orders: ServiceOrder[]; units: 
             {prev.vistorias.total > 0 && ` vistorias ${pctOf(prev.vistorias.done, prev.vistorias.total)}% feitas`}
           </p>
         )}
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 2xl:col-span-2">
-        {openCards.map((c) => (
-          <button
-            key={c.label}
-            type="button"
-            onClick={() => props.onOpen(c.to)}
-            className={`${homeCard} text-left p-4 hover:border-indigo-300 dark:hover:border-indigo-700 cursor-pointer flex flex-col gap-1.5`}
-          >
-            <span className={`flex items-center gap-2 text-xs font-bold ${c.tone}`}>
-              {c.icon}
-              {c.label}
-            </span>
-            <span className="text-3xl font-black tabular-nums text-slate-900 dark:text-white">{c.n ?? '…'}</span>
-            <span className="flex items-center gap-1 text-[11px] text-slate-500">
-              {c.hint}
-              <ChevronRight className="w-3 h-3" />
-            </span>
-          </button>
-        ))}
-      </div>
       </div>
       <p className="text-[11px] text-slate-500">Abertas = deste mês e de antes, ainda não encerradas (as de meses futuros já disparados ficam no PMOC).</p>
     </section>

@@ -31,13 +31,13 @@ export default function HomeNeeds({ items }: { items: HomeNeed[] }) {
           </div>
         </div>
       ) : (
-        <div className={`${homeCard} grid grid-cols-1 ${rows.length > 1 ? 'lg:grid-cols-2' : ''} divide-y lg:divide-y-0 divide-slate-100 dark:divide-slate-800`}>
-          {rows.map((r, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {rows.map((r) => (
             <button
               key={r.key}
               type="button"
               onClick={r.onOpen}
-              className={`text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer ${i >= 2 && rows.length > 1 ? 'lg:border-t lg:border-slate-100 lg:dark:border-slate-800' : ''}`}
+              className={`${homeCard} text-left px-4 py-3 flex items-center gap-3 hover:border-indigo-300 cursor-pointer`}
             >
               <span className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center ${r.tone}`}>{r.icon}</span>
               <span className="flex-1 min-w-0">

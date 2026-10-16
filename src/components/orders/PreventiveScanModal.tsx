@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from '../CloseX';
 import { QrCode } from 'lucide-react';
 import { Asset } from '../../types';
 import CameraQrScanner from '../CameraQrScanner';
@@ -67,16 +68,13 @@ export default function PreventiveScanModal({
             <QrCode className="w-4 h-4 text-[#3525cd]" />
             Encontrar Preventiva via QR Code
           </h3>
-          <button
-            type="button"
+          <CloseX
             onClick={() => {
               onClose();
               setSimulatedPreventiveScanCode('');
             }}
-            className="text-gray-400 hover:text-rose-600 font-extrabold text-sm cursor-pointer"
-          >
-            ✕
-          </button>
+            className=""
+          />
         </div>
 
         {/* TAB TOGGLES */}

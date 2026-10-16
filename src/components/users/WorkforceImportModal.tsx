@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from '../CloseX';
 import * as XLSX from 'xlsx';
 import { Company, HexonUser, WorkforcePerson } from '../../types';
 import {
@@ -95,7 +96,8 @@ export default function WorkforceImportModal({ companies, existing, users, unitN
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${box}`}>
+      <div className={`relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl p-6 space-y-4 ${box}`}>
+        <CloseX onClick={onClose} disabled={saving} />
         <div>
           <h3 className="text-base font-black">Importar efetivo por planilha</h3>
           <p className="text-xs text-slate-500 mt-1">

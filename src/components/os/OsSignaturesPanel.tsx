@@ -12,6 +12,7 @@ import {
   osValidationLink
 } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
+import { osRefText } from '../../lib/osRef';
 
 // ASSINATURAS NA FICHA DA OS: cartões na ordem (Técnico → Cliente → Engenheiro → Gerente), cada um com a sua cor.
 // Cadeado até chegar a vez. Engenheiro/Gerente assinam aqui (perfil "Assinar OS como"); o Super Administrador assina qualquer um.
@@ -83,8 +84,8 @@ export default function OsSignaturesPanel({ order: o, userProfile, mySignRole, c
   };
   const link = o.validationToken ? osValidationLink(o.validationToken) : '';
   const mailto = link
-    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${o.number}`)}&body=${encodeURIComponent(
-        `Olá,\n\nPor favor, confira o atendimento da ${o.number}${o.glpi ? ` (GLPI ${o.glpi})` : ''} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
+    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${osRefText(o)}`)}&body=${encodeURIComponent(
+        `Olá,\n\nPor favor, confira o atendimento ${o.glpi ? `do chamado GLPI ${o.glpi} (${o.number})` : `da ${o.number}`} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
       )}`
     : '';
 
@@ -183,7 +184,7 @@ export default function OsSignaturesPanel({ order: o, userProfile, mySignRole, c
         <OsSignaturePad
           role={signing}
           signer={{ name: userProfile.name, matricula: userProfile.matricula, cargo: userProfile.cargo || OS_SIGN_LABEL[signing] }}
-          title={`Assinar ${o.number} — ${OS_SIGN_LABEL[signing]}`}
+          title={`Assinar ${osRefText(o)} — ${OS_SIGN_LABEL[signing]}`}
           onConfirm={onSigned}
           onCancel={() => setSigning(null)}
         />

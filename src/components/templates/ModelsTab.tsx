@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { Plus, Trash2 } from 'lucide-react';
 import { Address, AssetTypeConfig, MaintenanceTemplate } from '../../types';
 import { assetTypeKey, ASSET_PERIODICITIES, dbDeleteTemplate, dbGetAssetTypes } from '../../db/firebase';
@@ -240,8 +241,9 @@ export default function ModelsTab({ units, templates, addresses, userName, canMa
 
       {toDelete && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
-            <h3 className="text-base font-black text-slate-800">Excluir modelo</h3>
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-3">
+            <CloseX onClick={() => setToDelete(null)} disabled={deleting} />
+            <h3 className="text-base font-black text-slate-800 pr-10">Excluir modelo</h3>
             <p className="text-xs text-slate-600">
               Excluir <strong>{toDelete.name}</strong>? As OS já criadas continuam como estão; os próximos disparos deixam de usar este modelo.
             </p>

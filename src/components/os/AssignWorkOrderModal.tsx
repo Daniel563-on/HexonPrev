@@ -8,6 +8,7 @@ import { Shell, btn, btnMain } from '../programacao/WeekModals';
 import { teamLabel } from '../programacao/TeamForm';
 import { brDay, crewOf, DaysPicker, dayTxt as dayTxtOf, NightsBox, TechOption, useWeekData } from '../programacao/weekPick';
 import TechTwoLists from './TechTwoLists';
+import { osRefText } from '../../lib/osRef';
 import { LOCAL_TECH_UNIT, localTechOptions } from '../../lib/localTech';
 
 // ATRIBUIR TÉCNICO DO CHAMADO (Fase 7E-2; etapa de junção: "Atribuir técnico" do Hexon principal + bloco da Programação).
@@ -132,7 +133,7 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
       setSaving(true);
       try {
         await dbAssignWorkOrder(order, { matricula: t.matricula, name: t.name }, by);
-        onDone(`${order.number}: ${order.assignedTechnicianMatricula ? 'técnico trocado para' : 'atribuído a'} ${t.name}.`);
+        onDone(`${osRefText(order)}: ${order.assignedTechnicianMatricula ? 'técnico trocado para' : 'atribuído a'} ${t.name}.`);
       } catch (err: any) {
         setSaving(false);
         setError(err?.code === 'permission-denied' ? 'O banco recusou: seu perfil não pode atribuir OS nesta gerência.' : `Não foi possível atribuir: ${err?.message || err}`);
@@ -172,9 +173,9 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
           woFixedIds: (joinLot.woIds || []).filter((id) => id !== order.id),
           woDrop: [],
           by,
-          logText: `Chamado ${order.number} entrou no bloco ${label} · ${lotPlace(joinLot)} pelo "Atribuir técnico" (${dayTxt(stop.from, stop.to)})`
+          logText: `Chamado ${osRefText(order)} entrou no bloco ${label} · ${lotPlace(joinLot)} pelo "Atribuir técnico" (${dayTxt(stop.from, stop.to)})`
         });
-        onDone(`${order.number}: ${t.name}, ${dayTxt(stop.from, stop.to)}, no bloco de ${lotPlace(joinLot)} (semana ${isoWeek(joinLot.weekStart || weekStart)}).`);
+        onDone(`${osRefText(order)}: ${t.name}, ${dayTxt(stop.from, stop.to)}, no bloco de ${lotPlace(joinLot)} (semana ${isoWeek(joinLot.weekStart || weekStart)}).`);
       } else {
         const stop: BlockStop = { comarca: order.comarca || '', address: order.execAddressText || '', from: s, to: e, pdfText: '' };
         const pern = usedNights.length ? `, ${usedNights.length} noite(s) × ${peopleN} pessoa(s)` : '';
@@ -195,9 +196,9 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
           woFixedIds: [],
           woDrop: [],
           by,
-          logText: `Criou o bloco ${label} · ${localLabel(stop)} (${dayTxt(s, e)}) pelo "Atribuir técnico" do chamado ${order.number}${pern}`
+          logText: `Criou o bloco ${label} · ${localLabel(stop)} (${dayTxt(s, e)}) pelo "Atribuir técnico" do chamado ${osRefText(order)}${pern}`
         });
-        onDone(`${order.number}: ${t.name}, ${dayTxt(s, e)}${pern}. Está na Programação da semana ${isoWeek(weekStart)}.`);
+        onDone(`${osRefText(order)}: ${t.name}, ${dayTxt(s, e)}${pern}. Está na Programação da semana ${isoWeek(weekStart)}.`);
       }
     } catch (err: any) {
       setSaving(false);
@@ -207,7 +208,7 @@ export default function AssignWorkOrderModal({ order, techs, user, canProgram, o
 
   return (
     <Shell
-      title={`${order.assignedTechnicianMatricula ? 'Trocar técnico' : 'Atribuir técnico'} — ${order.number}`}
+      title={`${order.assignedTechnicianMatricula ? 'Trocar técnico' : 'Atribuir técnico'} — ${osRefText(order)}`}
       sub={`${order.intervencao || 'Chamado'} · ${[order.comarca, order.execAddressText].filter(Boolean).join(' · ') || '—'}${order.deadline ? ` · prazo do chamado ${brDay(order.deadline)}` : ''}`}
       width="max-w-xl"
       onClose={onClose}

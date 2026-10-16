@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CloseX from '../CloseX';
 import * as XLSX from 'xlsx';
 import { Company, Material } from '../../types';
 import { CatalogKind, companiesOfUnit, dbApplyMaterialImport, MaterialImportPlan, MaterialImportRow, planMaterialImport } from '../../db/firebase';
@@ -117,9 +118,10 @@ export default function MaterialImportModal({ kind = 'materials', units, compani
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-4 text-slate-800">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl p-6 space-y-4 text-slate-800">
+        <CloseX onClick={onClose} disabled={saving} />
         <div>
-          <h3 className="text-base font-black">Importar {plural}</h3>
+          <h3 className="text-base font-black pr-10">Importar {plural}</h3>
           <p className="text-xs text-slate-500 mt-1">
             A importação é por gerência + empresa (cada empresa tem a sua lista e os seus preços). Código novo entra; código existente é atualizado; quem sair da planilha fica na lista com valor
             R$ 0,00 (o técnico não pode usar). Sem coluna de valor, os valores atuais são mantidos.

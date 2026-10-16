@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import CloseX from '../CloseX';
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Copy, Eye, FileDown, Link2, Mail, MessageSquarePlus, MessageSquareReply, PauseCircle, PenTool, PlayCircle } from 'lucide-react';
 import { Address, HexonUser, OrderParticipant, WorkOrder, WorkOrderExec } from '../../types';
 import {
@@ -20,6 +21,8 @@ import {
 } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import OsFieldInput from './OsFieldInput';
+import OsRef from './OsRef';
+import { osRefText } from '../../lib/osRef';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsTeamPicker from './OsTeamPicker';
 import OsFieldExtras from './OsFieldExtras';
@@ -260,8 +263,8 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
   };
   const link = order.validationToken ? osValidationLink(order.validationToken) : '';
   const mailto = link
-    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${order.number}`)}&body=${encodeURIComponent(
-        `Olá,\n\nPor favor, confira o atendimento da ${order.number}${order.glpi ? ` (GLPI ${order.glpi})` : ''} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
+    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${osRefText(order)}`)}&body=${encodeURIComponent(
+        `Olá,\n\nPor favor, confira o atendimento ${order.glpi ? `do chamado GLPI ${order.glpi} (${order.number})` : `da ${order.number}`} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
       )}`
     : '';
 
@@ -296,7 +299,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           </button>
           {/* U2: o status fica numa linha própria (o texto longo, ex.: "Aguardando assinatura do engenheiro", cortava o número) */}
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-sm font-black text-indigo-700">{order.number}</p>
+            <OsRef o={order} />
             <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel(order)}</span>
             <p className="text-[11px] text-slate-500 truncate">{order.intervencao || 'OS'} · {order.execAddressText}</p>
           </div>
@@ -534,7 +537,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           role={signing}
           client={signing === 'cliente'}
           signer={{ name: userProfile.name, matricula: userProfile.matricula, cargo: userProfile.cargo || 'Técnico' }}
-          title={signing === 'cliente' ? `Assinatura do cliente — ${order.number}` : `Concluir ${order.number} — assinatura do técnico`}
+          title={signing === 'cliente' ? `Assinatura do cliente — ${osRefText(order)}` : `Concluir ${osRefText(order)} — assinatura do técnico`}
           onConfirm={onSigned}
           onCancel={() => setSigning(null)}
         />
@@ -542,8 +545,9 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
 
       {dialog && (
         <div className="fixed inset-0 z-[70] bg-slate-900/50 flex items-center justify-center p-4">
-          <div role="dialog" aria-label={dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'} className="w-full max-w-md rounded-2xl bg-white p-4 space-y-3 shadow-2xl">
-            <p className="text-sm font-black text-slate-900">{dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'}</p>
+          <div role="dialog" aria-label={dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'} className="relative w-full max-w-md rounded-2xl bg-white p-4 space-y-3 shadow-2xl">
+            <CloseX onClick={() => setDialog(null)} disabled={busy} />
+            <p className="text-sm font-black text-slate-900 pr-10">{dialog === 'pendente' ? 'Deixar a OS pendente' : 'Acompanhamento'}</p>
             <p className="text-[11px] text-slate-500">
               {dialog === 'pendente'
                 ? 'A contagem do custo da OS para até você retomar. Informe o motivo.'
@@ -576,7 +580,8 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
 
       {done && (
         <div className="fixed inset-0 z-[70] bg-slate-900/50 flex items-center justify-center p-4">
-          <div role="dialog" aria-label="Salvo" className="w-full max-w-sm rounded-2xl bg-white p-5 space-y-3 text-center shadow-2xl">
+          <div role="dialog" aria-label="Salvo" className="relative w-full max-w-sm rounded-2xl bg-white p-5 space-y-3 text-center shadow-2xl">
+            <CloseX onClick={onClose} />
             <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
             <p className="text-sm font-black text-slate-900">Salvo</p>
             <p className="text-xs text-slate-600">{done}</p>
