@@ -24,6 +24,7 @@ import {
   isOfficeExecutor,
   dbGetWorkOrderCostSummary,
   dbListWorkOrders,
+  dbSyncOsValidation,
   osMatchesMode,
   subscribeWorkOrderChanges,
   markOsCountsStale,
@@ -198,6 +199,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       .catch(() => !quiet && setCounters(null));
   };
   const refresh = () => {
+    linkChecked.current.clear();
+    setLinkRound((r) => r + 1);
     loadFirst(mode, true);
     markOsCountsStale(unit); // "Atualizar": conta de novo, sem usar o que está guardado na sessão
     loadCounters();
@@ -239,7 +242,9 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
         const enter = mine.filter((o) => !shown.has(o.id) && osMatchesMode(o, m, cs));
         return prev.map((p, i) => {
           let items = patchList(p.items).filter((o) => !byId.has(o.id) || osMatchesMode(o, m, cs));
-          if (i === 0 && enter.length) items = [...items, ...enter].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          // (no cartão "Link enviado" a ordem é a do vencimento)
+          if (i === 0 && enter.length)
+            items = [...items, ...enter].sort((a, b) => (m.kind === 'filter' && m.status === 'link' ? (a.linkExp || '').localeCompare(b.linkExp || '') : b.createdAt.localeCompare(a.createdAt)));
           return { ...p, items };
         });
       });
@@ -376,6 +381,24 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   const baseItems = found ?? page?.items ?? [];
   const intervOptions = useMemo(() => Array.from(new Set(baseItems.map((o) => o.intervencao).filter(Boolean) as string[])).sort(), [baseItems]);
   const items = baseItems.filter((o) => (!interv || o.intervencao === interv) && (!onlyLate || isOverdue(o)));
+  // U16: cartão "Link enviado ao cliente"
+  const linkView = !found && mode.kind === 'filter' && mode.status === 'link';
+  // U16: ao abrir o cartão "Link enviado" (e no "Atualizar"), traz a resposta do cliente das OS da página (1 leitura do
+  // link por OS): a validada segue para o engenheiro e a contestada para "Contestada" — saem do cartão pela escuta de mudanças
+  const linkChecked = useRef(new Set<string>());
+  const [linkRound, setLinkRound] = useState(0);
+  useEffect(() => {
+    if (!linkView) {
+      linkChecked.current.clear();
+      return;
+    }
+    items
+      .filter((o) => o.validationToken && !linkChecked.current.has(`${o.id}|${o.validationToken}`))
+      .forEach((o) => {
+        linkChecked.current.add(`${o.id}|${o.validationToken}`);
+        dbSyncOsValidation(o, userProfile.name).catch(() => null);
+      });
+  }, [linkView, linkRound, items.map((o) => `${o.id}|${o.validationToken || ''}`).join(',')]);
 
   // Valores das OS que aparecem (concluída: custo gravado; em aberto: parcial). Um cálculo por OS de cada vez; o que
   // está em andamento não é cancelado (com as mudanças em tempo real ele recomeçaria sem parar). Se a OS mudou durante o
@@ -487,7 +510,6 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     </>
   );
   // U16: cartão "Link enviado ao cliente": quando enviou, quando vence e os botões copiar / e-mail
-  const linkView = !found && mode.kind === 'filter' && mode.status === 'link';
   const dueText = (o: WorkOrder) => {
     const d = linkDue(o);
     return d ? <span className={`block text-[10px] font-black ${d.tone === 'late' ? 'text-rose-600' : d.tone === 'soon' ? 'text-amber-600' : 'text-teal-700'}`}>{d.text}</span> : null;
@@ -728,11 +750,12 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   <th className="p-2.5">Nº da OS</th>
                   <th className="p-2.5">Local de execução</th>
                   <th className="p-2.5">Técnico</th>
-                  <th className="p-2.5">Abertura</th>
-                  <th className="p-2.5">Prazo</th>
+                  {/* U16: no cartão "Link enviado" a tabela é enxuta — sai Abertura, Prazo e Situação (todas são "Link enviado"), entram o envio e o vencimento */}
+                  {!linkView && <th className="p-2.5">Abertura</th>}
+                  {!linkView && <th className="p-2.5">Prazo</th>}
                   {linkView && <th className="p-2.5">Link enviado</th>}
                   {linkView && <th className="p-2.5">Vence o link</th>}
-                  <th className="p-2.5">Situação</th>
+                  {!linkView && <th className="p-2.5">Situação</th>}
                   {canViewCosts && <th className="p-2.5 text-right">Valor</th>}
                   <th className="p-2.5"></th>
                 </tr>
@@ -759,18 +782,18 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                         </span>
                       )}
                     </td>
-                    <td className="p-2.5 whitespace-nowrap">{dayBR(o.createdAt)}</td>
-                    <td className="p-2.5 whitespace-nowrap">{dayBR(o.deadline)}</td>
+                    {!linkView && <td className="p-2.5 whitespace-nowrap">{dayBR(o.createdAt)}</td>}
+                    {!linkView && <td className="p-2.5 whitespace-nowrap">{dayBR(o.deadline)}</td>}
                     {linkView && <td className="p-2.5 whitespace-nowrap">{sentCell(o)}</td>}
                     {linkView && <td className="p-2.5 whitespace-nowrap">{dueCell(o)}</td>}
-                    <td className="p-2.5">{statusBadge(o)}</td>
+                    {!linkView && <td className="p-2.5">{statusBadge(o)}</td>}
                     {canViewCosts && <td className="p-2.5 text-right whitespace-nowrap">{costCell(o)}</td>}
                     <td className="p-2.5 text-right whitespace-nowrap">{chooseBtn(o) || assignBtn(o) || (linkView && linkBtns(o))}</td>
                   </tr>
                 ))}
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={(canViewCosts ? 12 : 11) + (linkView ? 2 : 0)} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
+                    <td colSpan={(canViewCosts ? 12 : 11) - (linkView ? 1 : 0)} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
                   </tr>
                 )}
               </tbody>

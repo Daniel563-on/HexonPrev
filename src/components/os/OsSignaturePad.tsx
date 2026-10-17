@@ -20,6 +20,7 @@ export interface StampInfo {
   cargo?: string;
   rating?: number;
   at: string; // ISO
+  via?: string; // U17: 'link' = validado pelo link — só o carimbo com os dados, sem desenho (PDF)
 }
 
 const W = 720;
@@ -47,7 +48,10 @@ function drawStamp(ctx: CanvasRenderingContext2D, s: StampInfo) {
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const title = s.role === 'cliente' ? 'VALIDAÇÃO DE ACEITE DO CLIENTE' : `VALIDAÇÃO DE ASSINATURA ELETRÔNICA — ${OS_SIGN_LABEL[s.role].toUpperCase()}`;
+  const title =
+    s.role === 'cliente'
+      ? `VALIDAÇÃO DE ACEITE DO CLIENTE${s.via === 'link' ? ' — PELO LINK' : ''}`
+      : `VALIDAÇÃO DE ASSINATURA ELETRÔNICA — ${OS_SIGN_LABEL[s.role].toUpperCase()}${s.via === 'link' ? ' — PELO LINK' : ''}`;
   ctx.fillText(title, x + sw / 2, y + 15, sw - 16);
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'left';

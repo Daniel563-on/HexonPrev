@@ -6,6 +6,7 @@ import BrandLogo from './BrandLogo';
 
 // PÁGINA DO LINK DE VALIDAÇÃO (sem login): o cliente confere o atendimento e APROVA (nome, matrícula, estrelas)
 // ou CONTESTA (motivo). Uma resposta só e dentro do prazo do link (o banco garante). Sem valores.
+// U19: o chamado aparece pelo GLPI (também na tela final); o nº da OS só pequeno embaixo do GLPI no atendimento.
 
 const card = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs';
 const input = 'w-full h-11 px-3 rounded-xl bg-white border border-slate-300 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-violet-500';
@@ -81,7 +82,7 @@ export default function PublicOsValidationView({ token }: { token: string }) {
         {st === 'aprovada' ? <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" /> : <XCircle className="w-10 h-10 mx-auto text-rose-500" />}
         <p className="text-base font-black">{st === 'aprovada' ? 'Atendimento validado' : 'Contestação registrada'}</p>
         <p className="text-xs text-slate-500">
-          {done ? 'Obrigado! A equipe técnica já pode ver a sua resposta.' : 'Este link já foi respondido.'} OS {v.number}.
+          {done ? 'Obrigado! A equipe técnica já pode ver a sua resposta.' : 'Este link já foi respondido.'} {v.glpi ? `GLPI ${v.glpi}` : `OS ${v.number}`}.
         </p>
       </div>
     );

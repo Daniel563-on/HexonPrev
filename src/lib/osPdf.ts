@@ -15,6 +15,7 @@ import {
   osStatusLabel
 } from '../db/firebase';
 import { deliverBytes, deliverFile } from './fileDelivery';
+import { renderOsSignature } from '../components/os/OsSignaturePad';
 import { osRefText } from './osRef';
 
 // PDF DA OS (Fase 5C): campos que podem ir para o PDF mapeado, o valor de cada um e os dois geradores:
@@ -105,7 +106,7 @@ const qty = (n: number) => String(n).replace('.', ',');
 const hm = (min: number) => `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
 
 // Valor de um campo na OS (texto ou imagem)
-export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | null, d: OsPdfData): { text?: string; image?: string } {
+export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | null, d: OsPdfData): { text?: string; image?: string; stars?: number } {
   const o = d.order;
   const exec = o.exec;
   if (field === 'fixed') return { text: pin?.fixedText || '' };
@@ -126,7 +127,8 @@ export function osPdfValue(field: string, pin: Pick<OsPdfPin, 'fixedText'> | nul
   if (kind === 'signame') return { text: meta?.name || '' };
   if (kind === 'sigmat') return { text: meta?.matricula || '' };
   if (kind === 'sigat') return { text: dateTime(meta?.at) };
-  if (kind === 'sigrating') return { text: meta?.rating ? `${meta.rating} de 5 estrelas` : '' };
+  // U18: as estrelas são desenhadas (a letra padrão do PDF não tem o símbolo de estrela)
+  if (kind === 'sigrating') return meta?.rating ? { stars: Math.max(1, Math.min(5, Math.round(meta.rating))) } : { text: '' };
   switch (key) {
     case 'numero':
       return { text: o.number };
@@ -254,6 +256,20 @@ async function embedImage(pdf: PDFDocument, dataUrl: string) {
   return dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg') ? pdf.embedJpg(bytes) : pdf.embedPng(bytes);
 }
 
+// U18: estrela de 5 pontas (caixa 100×100, y para baixo) — drawSvgPath põe o canto de cima à esquerda em (x, y)
+const STAR_PATH = (() => {
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const a = ((-90 + i * 36) * Math.PI) / 180;
+    const r = i % 2 ? 19.1 : 50;
+    return `${(50 + r * Math.cos(a)).toFixed(1)} ${(53 + r * Math.sin(a)).toFixed(1)}`;
+  });
+  return `M ${pts.join(' L ')} Z`;
+})();
+function drawStars(page: any, n: number, x: number, yTop: number, size: number) {
+  for (let i = 0; i < n; i++)
+    page.drawSvgPath(STAR_PATH, { x: x + i * size * 1.25, y: yTop, scale: size / 100, color: rgb(0.96, 0.62, 0.04), borderColor: rgb(0.85, 0.47, 0.02), borderWidth: 0.4 });
+}
+
 // ===== PDF mapeado =====
 export async function generateOsMappedPdf(pdfBase64: string, pins: OsPdfPin[], d: OsPdfData): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(b64ToBytes(pdfBase64));
@@ -278,6 +294,15 @@ export async function generateOsMappedPdf(pdfBase64: string, pins: OsPdfPin[], d
       // Imagem: sem escolha vertical fica ao meio (como antes)
       const iy = pin.valign === 'top' ? top - ih : pin.valign === 'bottom' ? top - bh : top - bh + (bh - ih) / 2;
       page.drawImage(img, { x: ix, y: iy, width: iw, height: ih });
+      continue;
+    }
+    if (v.stars) {
+      // U18: N estrelas do tamanho da letra da caixa (diminui se não couber)
+      const s = Math.min((pin.fontSize || 10) * 1.2, bh, bw / (v.stars * 1.25));
+      const total = v.stars * s + (v.stars - 1) * s * 0.25;
+      const sx = pin.align === 'center' ? bx + (bw - total) / 2 : pin.align === 'right' ? bx + bw - total : bx;
+      const sy = pin.valign === 'middle' ? top - (bh - s) / 2 : pin.valign === 'bottom' ? top - bh + s : top;
+      drawStars(page, v.stars, sx, sy, s);
       continue;
     }
     if (!v.text) continue;
@@ -421,9 +446,12 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
         page.drawImage(em, { x: x + (colW - em.width * s) / 2, y: y - 18 - em.height * s, width: em.width * s, height: em.height * s });
       }
       const info = meta
-        ? `${meta.name}${meta.matricula ? ` · Mat. ${meta.matricula}` : ''} · ${dateTime(meta.at)}${meta.via === 'link' ? ' · validado pelo link' : ''}${meta.rating ? ` · ${meta.rating}/5` : ''}`
+        ? `${meta.name}${meta.matricula ? ` · Mat. ${meta.matricula}` : ''} · ${dateTime(meta.at)}${meta.via === 'link' ? ' · validado pelo link' : ''}`
         : 'Pendente';
-      page.drawText(safe(info, regular).slice(0, 90), { x: x + 6, y: y - boxH + 8, size: 7.5, font: regular, color: meta ? ink : soft });
+      const infoText = safe(info, regular).slice(0, 80);
+      page.drawText(infoText, { x: x + 6, y: y - boxH + 8, size: 7.5, font: regular, color: meta ? ink : soft });
+      // U18: estrelas desenhadas depois do texto
+      if (meta?.rating) drawStars(page, Math.max(1, Math.min(5, Math.round(meta.rating))), x + 6 + regular.widthOfTextAtSize(infoText, 7.5) + 4, y - boxH + 8 + 7, 7);
     }
     y -= boxH + 8;
   }
@@ -437,13 +465,19 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
 }
 
 // PDF de uma OS (mapeado do modelo, se tiver; senão o padrão), com as imagens das assinaturas feitas.
+// U17: a validação pelo link não tem desenho — vai o carimbo com os dados (nome, matrícula, avaliação, data/hora).
 // "layouts" guarda o modelo de PDF já lido (exportação de várias OS lê cada modelo uma vez só).
 export async function buildOsPdfBytes(o: WorkOrder, layouts?: Map<string, { layout: OsPdfLayout; file: string } | null>): Promise<Uint8Array> {
   const signatures: Partial<Record<OsSignatureRole, string>> = {};
   await Promise.all(
     (Object.keys(o.signatures || {}) as OsSignatureRole[])
-      .filter((r) => o.signatures?.[r]?.via !== 'link')
       .map(async (r) => {
+        const m = o.signatures![r]!;
+        if (m.via === 'link') {
+          signatures[r] = await renderOsSignature([], { role: r, name: m.name, matricula: m.matricula, cargo: m.cargo, rating: m.rating, at: m.at, via: 'link' }).catch(() => '');
+          if (!signatures[r]) delete signatures[r];
+          return;
+        }
         const img = await dbGetOsSignatureImage(o.id, r);
         if (img) signatures[r] = img;
       })

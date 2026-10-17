@@ -664,16 +664,18 @@ service cloud.firestore {
           && osChanged().hasOnly(['status', 'signatures', 'nextSigner', 'signQueue', 'validationToken', 'linkAt', 'linkBy', 'linkExp', 'closedAt', 'techOpen', 'updatedAt', 'timeline', 'pauses', 'contestReason', 'contestedAt', 'contests', 'cliSigned'])
           && request.resource.data.get('cliSigned', resource.data.get('assignedTechnicianMatricula', '')) == resource.data.get('assignedTechnicianMatricula', '')
           && ((osSameStatus() && osChanged().hasOnly(['validationToken', 'linkAt', 'linkBy', 'linkExp', 'updatedAt', 'timeline'])
+               // U16: envio e vencimento só mudam junto com um link novo
+               && (!osChanged().hasAny(['linkAt', 'linkBy', 'linkExp']) || osChanged().hasAll(['validationToken', 'linkExp']))
                && osPerm(u, p, 'os_client_link') && osSees(u, p))
               || ('cliente' in request.resource.data.signatures && request.resource.data.status in ['Aguardando assinaturas', 'Concluída'])
               || (request.resource.data.status == 'Contestada' && !('signatures' in osChanged())
                   && get(/databases/$(database)/documents/osValidations/$(resource.data.validationToken)).data.status == 'contestada'))
           && (osTech(u) || ((osPerm(u, p, 'os_assign') || osPerm(u, p, 'os_contest_reply') || p.get('osSignAs', 'none') in ['engenheiro', 'gerente']) && osSees(u, p))))
         // U16: acerto único das OS que já tinham link antes do cartão "Link enviado ao cliente" — envio e vencimento
-        // tirados da linha do tempo; só preenche (quem enxerga a OS), nada mais muda
+        // tirados da linha do tempo; só preenche (escritório que enxerga a OS), nada mais muda
         || (resource.data.status == 'Aguardando assinaturas' && resource.data.get('nextSigner', '') == 'cliente'
           && resource.data.get('validationToken', '') != '' && !('linkExp' in resource.data)
-          && osChanged().hasOnly(['linkAt', 'linkBy', 'linkExp']) && osSees(u, p))
+          && osChanged().hasOnly(['linkAt', 'linkBy', 'linkExp']) && u.perfil != 'Profissional' && osSees(u, p))
         // RESPONDER CONTESTAÇÃO (o que foi resolvido + acréscimos): volta para a vez do cliente.
         // Técnico da OS ou "Responder contestação de OS"; a equipe e os materiais só crescem
         || (resource.data.status == 'Contestada' && resource.data.get('techSignedAt', '') != ''
