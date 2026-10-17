@@ -27,33 +27,34 @@ const W = 720;
 const H = 270;
 const INK = '#0f172a';
 
+// U23: o carimbo ocupa quase o quadro todo (borda fina de 10 px), no quadro de assinatura e na imagem gravada
 function drawStamp(ctx: CanvasRenderingContext2D, s: StampInfo) {
   const color = OS_SIGN_COLOR[s.role];
-  const sw = 520;
-  const sh = 150;
-  const x = (W - sw) / 2;
-  const y = (H - sh) / 2;
+  const x = 10;
+  const y = 10;
+  const sw = W - 2 * x;
+  const sh = H - 2 * y;
   ctx.save();
   ctx.globalAlpha = 0.85;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.2;
   ctx.strokeRect(x, y, sw, sh);
-  ctx.lineWidth = 0.8;
-  ctx.strokeRect(x + 3, y + 3, sw - 6, sh - 6);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 4, y + 4, sw - 8, sh - 8);
   ctx.beginPath();
-  ctx.moveTo(x + 3, y + 30);
-  ctx.lineTo(x + sw - 3, y + 30);
+  ctx.moveTo(x + 4, y + 42);
+  ctx.lineTo(x + sw - 4, y + 42);
   ctx.stroke();
-  ctx.font = 'bold 12px sans-serif';
+  ctx.font = 'bold 19px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const title =
     s.role === 'cliente'
       ? `VALIDAÇÃO DE ACEITE DO CLIENTE${s.via === 'link' ? ' — PELO LINK' : ''}`
       : `VALIDAÇÃO DE ASSINATURA ELETRÔNICA — ${OS_SIGN_LABEL[s.role].toUpperCase()}${s.via === 'link' ? ' — PELO LINK' : ''}`;
-  ctx.fillText(title, x + sw / 2, y + 15, sw - 16);
-  ctx.font = 'bold 11px monospace';
+  ctx.fillText(title, x + sw / 2, y + 23, sw - 24);
+  ctx.font = 'bold 17px monospace';
   ctx.textAlign = 'left';
   const when = new Date(s.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
   const lines =
@@ -65,7 +66,7 @@ function drawStamp(ctx: CanvasRenderingContext2D, s: StampInfo) {
           `DATA/HORA: ${when}`
         ]
       : [`NOME: ${(s.name || '').toUpperCase()}`, `MATRÍCULA: ${s.matricula || '—'}`, `CARGO: ${(s.cargo || OS_SIGN_LABEL[s.role]).toUpperCase()}`, `DATA/HORA: ${when}`];
-  lines.forEach((l, i) => ctx.fillText(l, x + 16, y + 30 + 18 + i * 26, sw - 32));
+  lines.forEach((l, i) => ctx.fillText(l, x + 22, y + 42 + 34 + i * 48, sw - 44));
   ctx.restore();
 }
 
