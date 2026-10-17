@@ -89,7 +89,7 @@
 - **U3** (16/10/2026) — Perfil de Escritório que também executa OS (permissão "Executar OS atribuídas a mim", botão na ficha, regra dos materiais `matReadOk`). **No `main` `c59ad40`** (regra mudou; texto enviado ao usuário para publicar).
 - **U4** (16/10/2026) — Layout: X nas janelas, Início no modelo do usuário, Programação com o "A programar" dentro do bloco, GLPI em destaque em todo o sistema. **No `main` `48fa99c`.**
 - **U5** (16/10/2026) — Equipe da OS e da preventiva: o técnico atribuído é o responsável e só entra na equipe se tocar no próprio nome; concluir sem ninguém é bloqueado. **No `main` `4517bcf`.**
-- **U6** (16/10/2026) — Emitir OS: Categoria pela gerência (pergunta "Lista por gerência" no modelo de OS; gerência sem lista não emite). **No `main` `4517bcf`.** Falta o usuário trocar a Categoria do modelo "MPRJ OS" para o tipo novo e cadastrar as listas.
+- **U6** (16/10/2026) — Emitir OS: Categoria pela gerência (pergunta "Lista por gerência" no modelo de OS; gerência sem lista não emite). **No `main` `4517bcf`.** Categoria do modelo "MPRJ OS" trocada pelo usuário para "Lista por gerência" e testada (17/10/2026: "Já testei e tá ok").
 - **U7** (16/10/2026) — Configurações no celular: abas em 2 colunas; linhas do editor de modelos empilhadas. **No `main` `4517bcf`.**
 - **U8** (16/10/2026) — Menu "PMOC" passa a "Preventivas" (Consulta, Modelos e Protocolos). **No `main` `4517bcf`.**
 - **U9** (16/10/2026) — Chamados GLPI: "Nenhum técnico (desatribuir)" no "Trocar" (apagado se o técnico já começou). **No `main` `4517bcf`.**
@@ -103,6 +103,8 @@
 - **U17** (17/10/2026) — PDF da OS: quando o cliente valida pelo link, o carimbo aparece com os dados (sem a assinatura desenhada). **No `main` `f2050db` (17/10/2026, "Autorizo").**
 - **U18** (17/10/2026) — PDF da OS: avaliação do cliente com as estrelas desenhadas (5 estrelas = 5, 4 = 4…) no lugar de "5 de 5 estrelas". **No `main` `f2050db` (17/10/2026, "Autorizo").**
 - **U19** (17/10/2026) — Página do link de validação do cliente: mostrar o GLPI no lugar do nº "OS-…" (também na tela final). **No `main` `f2050db` (17/10/2026, "Autorizo").**
+- **U20** (17/10/2026) — iPhone: ao tocar num campo para digitar, a tela dá zoom sozinha (o usuário quer que não aconteça, sem mudar nada no sistema, só nos celulares iOS). **Em desenho.**
+- **U21** (17/10/2026) — PDF dos chamados (OS): o nome do arquivo tem que ser o GLPI (hoje vem o nº "OS-…"); o da preventiva fica como está. **Em desenho.**
 
 **Pendências abertas (16/10/2026)**
 - **A1 — excluir preventivas em lote** (aberto; detalhes no diário, `docs/historico/diario.md`, lista A1–A8): `DeleteOrderModal` ainda exclui tudo de uma vez (`runBulk(() => Promise.all(...))`) — uma recusa interrompe e o disjuntor pode desarmar. Proposta: pacotes, sem parar no 1º erro, contar "já excluídas", tirar da cópia a OS que não existe mais. **Fantasmas:** a OS excluída pode voltar na cópia do aparelho porque o ponto das exclusões recebidas (`orderSync`, chave `hexon_orders_deletions_v1_*`) é gravado na hora e a lista das OS depois — **desde o Lote 5 a lista é gravada no máximo a cada 15 s** (e na hora ao ir para segundo plano, ao trocar de gerência e ao sair), então a janela ficou maior que o 1 s de antes; só pega se o navegador for fechado à força nesse intervalo. Correção recomendada (pequena, entra junto com o A1): gravar a lista da gerência **antes** de gravar o ponto das exclusões.
