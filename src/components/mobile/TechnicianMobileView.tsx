@@ -27,14 +27,15 @@ import {
   RotateCcw,
   Play,
   AlertTriangle,
-  BellRing
+  BellRing,
+  CheckCircle
 } from 'lucide-react';
 import { ServiceOrder, Asset, HexonUser, WorkOrder, MaterialRequest, SupplyRequest, Notice, formatDateBR } from '../../types';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { formatOrderNumber, preventiveRequestLabel } from '../../utils/orderNumber';
 import {
   OrderStart, subscribeMyActiveStart,
   dbGetMaterials, dbGetUnitPeople, dbGetUsualTeam, localTodayStr, SUSPICIOUS_MIN, fmtMinutes,
-  subscribeTechnicianSolicitations, requestedItems, dbGetMyWorkOrders, subscribeMyWorkOrders, subscribeClientSignedOrders, dbDismissClientSignedMany, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
+  subscribeTechnicianSolicitations, requestedItems, dbAckSolicitation, dbGetMyWorkOrders, subscribeMyWorkOrders, subscribeClientSignedOrders, dbDismissClientSignedMany, dbGetCompanies, companyNames, subscribeMyMaterialRequests, subscribeMySupplyRequests
 } from '../../db/firebase';
 import CorrectiveDecisionNote from '../orders/execution/CorrectiveDecisionNote';
 import TechnicianMaterialRequests from './TechnicianMaterialRequests';
@@ -48,7 +49,6 @@ import TechnicianOsTab from './TechnicianOsTab';
 import OsExecutionForm from '../os/OsExecutionForm';
 import { parseScannedQrCode } from '../../utils/qrUtils';
 import BrandLogo from '../BrandLogo';
-import LoadTimesCard from './LoadTimesCard';
 import InstallAppButton from '../InstallAppButton';
 import MobileNotices from './MobileNotices';
 
@@ -251,8 +251,11 @@ export default function TechnicianMobileView({
   const [myStart, setMyStart] = useState<OrderStart | null>(null);
   useEffect(() => subscribeMyActiveStart((userProfile.matricula || '').trim(), (s) => setMyStart(s)), [userProfile.matricula]);
 
-  // Solicitações de corretiva das preventivas dele (Etapa 8): ficam aqui até todos os itens terem decisão
+  // Solicitações de corretiva das preventivas dele (Etapa 8): ficam aqui até todos os itens terem decisão.
+  // U10: depois da decisão continuam aqui com a resposta, até ele tocar em "Ciente"
   const [mySolicitations, setMySolicitations] = useState<ServiceOrder[]>([]);
+  const [solAckBusy, setSolAckBusy] = useState<string | null>(null);
+  const [solAckMsg, setSolAckMsg] = useState<string | null>(null);
   useEffect(() => {
     const mat = (userProfile.matricula || '').trim();
     if (!mat) {
@@ -1240,9 +1243,6 @@ export default function TechnicianMobileView({
             </div>
           )}
 
-          {/* Diagnóstico: quanto cada carga demorou neste aparelho */}
-          <LoadTimesCard darkMode={darkMode} />
-
           {/* Section: Visual & Acessibilidade */}
           <div className="space-y-1.5">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
@@ -1376,7 +1376,8 @@ export default function TechnicianMobileView({
             <h2 className={`text-base font-black ${darkMode ? 'text-white' : 'text-slate-900'}`}>Solicitações</h2>
             <p className="text-[11px] text-slate-500">Acompanhe os seus pedidos.</p>
           </div>
-          <div className="flex gap-2">
+          {/* U15: os botões dividem a largura toda */}
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${1 + (showMaterial ? 1 : 0) + (showSupplies ? 1 : 0)}, minmax(0, 1fr))` }}>
             {(['corretivas', 'material', 'insumos'] as const)
               .filter((k) => k === 'corretivas' || (k === 'material' ? showMaterial : showSupplies))
               .map((k) => (
@@ -1384,7 +1385,7 @@ export default function TechnicianMobileView({
                   key={k}
                   type="button"
                   onClick={() => setSolSection(k)}
-                  className={`px-3 py-2 rounded-xl text-xs font-black cursor-pointer ${
+                  className={`w-full px-2 py-2.5 rounded-xl text-xs font-black text-center cursor-pointer ${
                     solSection === k
                       ? 'bg-indigo-600 text-white'
                       : darkMode
@@ -1418,30 +1419,63 @@ export default function TechnicianMobileView({
             />
           ) : (
             <div className="space-y-3">
+              {solAckMsg && <p className="text-xs font-bold text-rose-600">{solAckMsg}</p>}
               {mySolicitations.length === 0 ? (
                 <div className={`p-6 rounded-2xl border text-center text-sm font-bold ${darkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'}`}>
-                  Nenhuma solicitação de corretiva aguardando decisão.
+                  Nenhuma solicitação de corretiva.
                 </div>
               ) : (
-                mySolicitations.map((o) => (
-                  <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-mono text-[11px] font-black text-rose-600">OS #{formatOrderNumber(o.id)}</span>
-                      <span className="text-[11px] text-slate-400">Concluída em {formatDateBR(o.signedAt || o.completedAt)}</span>
-                    </div>
-                    <p className="text-sm font-bold leading-snug">{o.assetName || o.title}</p>
-                    {o.checklistPending ? (
-                      <p className="text-xs text-slate-400">Carregando...</p>
-                    ) : (
-                      requestedItems(o).map((item) => (
-                        <div key={item.id} className="space-y-1">
-                          <p className="text-xs font-semibold">• {item.task}</p>
-                          <CorrectiveDecisionNote item={item} />
+                mySolicitations.map((o) => {
+                  // U10: respondida (todos os itens decididos) = mostra a resposta e o "Ciente"
+                  const answered = o.solicitationStatus !== 'Pendente';
+                  return (
+                    <div key={o.id} className={`rounded-2xl border overflow-hidden flex ${darkMode ? 'bg-slate-900/90 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
+                      <span className={`w-1.5 shrink-0 ${answered ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                      <div className="flex-1 min-w-0 p-3.5 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black leading-snug">{preventiveRequestLabel(o)}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{o.assetName || o.title}</p>
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-black whitespace-nowrap ${answered ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {answered ? 'Respondida' : 'Aguardando decisão'}
+                          </span>
                         </div>
-                      ))
-                    )}
-                  </div>
-                ))
+                        <p className="text-[11px] text-slate-400">Preventiva concluída em {formatDateBR(o.signedAt || o.completedAt)}</p>
+                        {o.checklistPending ? (
+                          <p className="text-xs text-slate-400">Carregando...</p>
+                        ) : (
+                          requestedItems(o).map((item) => (
+                            <div key={item.id} className="space-y-1">
+                              <p className="text-xs font-semibold">• {item.task}</p>
+                              <CorrectiveDecisionNote item={item} />
+                            </div>
+                          ))
+                        )}
+                        {answered && (
+                          <button
+                            type="button"
+                            disabled={solAckBusy === o.id}
+                            onClick={async () => {
+                              setSolAckBusy(o.id);
+                              setSolAckMsg(null);
+                              try {
+                                await dbAckSolicitation(o.id);
+                              } catch (e: any) {
+                                setSolAckMsg(`Não foi possível dar ciente: ${e?.message || e}`);
+                              } finally {
+                                setSolAckBusy(null);
+                              }
+                            }}
+                            className="w-full h-11 rounded-xl bg-emerald-600 text-white text-sm font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle className="w-4 h-4" /> {solAckBusy === o.id ? 'Gravando...' : 'Ciente'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}

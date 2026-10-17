@@ -7,7 +7,8 @@ import { deleteField } from './guard';
 //   openEnd    = fim do prazo, enquanto aberta                  -> rotina das 00:00 (prazo vencido)
 //   plannedEnd = último dia programado, enquanto "Planejada"    -> rotina das 00:00 (atrasadas)
 //   techOpen   = matrícula do técnico, enquanto aberta          -> lista do técnico
-//   techSol    = matrícula do técnico, com solicitação pendente -> aba Solicitações do técnico
+//   techSol    = matrícula do técnico, com solicitação pendente ou respondida e ainda sem o "Ciente" dele (U10)
+//                -> aba Solicitações do técnico
 //   solAt      = data da última alteração, se tem solicitação   -> Solicitações (decididas, mais recentes primeiro)
 //   addrEnd    = fim do prazo, se é vistoria de endereço        -> histórico de vistorias do endereço
 
@@ -22,6 +23,7 @@ interface ControlSource {
   scheduledEndDate?: string;
   assignedTechnicianMatricula?: string;
   solicitationStatus?: string;
+  solNotice?: string;
   updatedAt?: string;
   addressId?: string;
 }
@@ -38,7 +40,7 @@ export function orderControlValues(o: ControlSource): Record<string, string | un
     openEnd: open && text(o.endDate) ? text(o.endDate) : undefined,
     plannedEnd: o.status === 'Planejada' && planned ? planned : undefined,
     techOpen: open && mat ? mat : undefined,
-    techSol: o.solicitationStatus === 'Pendente' && mat ? mat : undefined,
+    techSol: mat && (o.solicitationStatus === 'Pendente' || (!!o.solicitationStatus && !!text(o.solNotice))) ? mat : undefined,
     solAt: o.solicitationStatus ? text(o.updatedAt) || undefined : undefined,
     addrEnd: text(o.addressId) && text(o.endDate) ? text(o.endDate) : undefined
   };

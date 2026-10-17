@@ -17,3 +17,13 @@ export function formatOrderNumber(id: string | null | undefined): string {
   const periodLabel = SHORT_PERIOD_CODES.has(periodCode) ? `${day}/${month}` : `${month}/${year.slice(2)}`;
   return `${shortKey} · ${periodCode} ${periodLabel}`;
 }
+
+// U12: rótulo da preventiva na escolha da OS dos pedidos de material e de insumos (celular): a periodicidade,
+// o patrimônio e o período, sem o nome do equipamento. Vistoria de endereço (sem patrimônio) mostra o local.
+//   "Preventiva Mensal · Patrimônio 004512 · 10/26"   |   "Vistoria Mensal · Fórum de Maricá · 10/26"
+export function preventiveRequestLabel(o: { id: string; periodicity?: string; assetCode?: string; isSurvey?: boolean; title?: string }): string {
+  const period = (formatOrderNumber(o.id).split(' · ')[1] || '').replace(/^[A-Z]{2,4} /, '');
+  const kind = o.isSurvey || !o.assetCode || o.assetCode === 'PE-VISTORIA' ? 'Vistoria' : 'Preventiva';
+  const what = kind === 'Vistoria' ? (o.title || '').split(' - ').slice(1).join(' - ') : `Patrimônio ${o.assetCode}`;
+  return [`${kind}${o.periodicity ? ` ${o.periodicity}` : ''}`, what, period].filter(Boolean).join(' · ');
+}

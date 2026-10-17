@@ -14,7 +14,7 @@ import {
   SR_STATUS_LABEL,
   supplyContractSyncStatus
 } from '../../db/firebase';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { preventiveRequestLabel } from '../../utils/orderNumber';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // PEDIDO DE INSUMOS (Fase 8C-2) — aba Solicitações do celular, seção "Insumos".
@@ -107,7 +107,7 @@ export default function TechnicianSupplyRequests({
         id: o.id,
         unit: o.unit!,
         company: o.company!,
-        label: `Preventiva #${formatOrderNumber(o.id)} · ${o.assetName || o.title}`,
+        label: preventiveRequestLabel(o),
         glpi: ''
       }));
     const os = workOrders

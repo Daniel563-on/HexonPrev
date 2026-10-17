@@ -8,9 +8,11 @@ import {
   FileSignature,
   Download,
   Lock,
-  X
+  X,
+  Loader2,
+  WifiOff
 } from 'lucide-react';
-import { ServiceOrder, Asset, formatDateBR, HexonUser, localDateTimeStr, isCorrectiveRequested } from '../../types';
+import { ServiceOrder, OrderParticipant, Asset, formatDateBR, HexonUser, localDateTimeStr, isCorrectiveRequested } from '../../types';
 import { formatOrderNumber } from '../../utils/orderNumber';
 import {
   dbSaveServiceOrder, dbRevertOrderToNew, dbGetOrderSignature, hydrateOrder, loadChecklistVersion, versionIdOf, localTodayStr,
@@ -83,17 +85,23 @@ export default function OrderDetailsDrawer({
     }
   }, [order, initialOpenSignature]);
 
-  // Checklist enxuto: a versão do modelo ainda não estava no aparelho — baixa e monta o checklist
+  // Checklist enxuto: a versão do modelo ainda não estava no aparelho — baixa e monta o checklist.
+  // U11: enquanto baixa, a tela fica embaçada com "Carregando"; se não vier (sem internet), avisa e deixa tentar de novo
+  const [versionFailed, setVersionFailed] = useState(false);
+  const [versionTry, setVersionTry] = useState(0);
   useEffect(() => {
+    setVersionFailed(false);
     if (!order?.checklistPending || !order.templateId || !order.templateVersion) return;
     let alive = true;
     loadChecklistVersion(versionIdOf(order.templateId, order.templateVersion)).then((v) => {
-      if (alive && v) setSelectedOrderState((cur) => (cur && cur.id === order.id ? applyExecutionDraft(hydrateOrder({ ...cur, checklistPending: undefined })) : cur));
+      if (!alive) return;
+      if (v) setSelectedOrderState((cur) => (cur && cur.id === order.id ? applyExecutionDraft(hydrateOrder({ ...cur, checklistPending: undefined })) : cur));
+      else setVersionFailed(true);
     });
     return () => {
       alive = false;
     };
-  }, [order?.id, order?.checklistPending]);
+  }, [order?.id, order?.checklistPending, versionTry]);
 
   const setSelectedOrder = (updated: ServiceOrder | null) => {
     setSelectedOrderState(updated);
@@ -131,6 +139,8 @@ export default function OrderDetailsDrawer({
   const [execMsg, setExecMsg] = useState<{ type: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [execBusy, setExecBusy] = useState(false);
+  // U11: iniciando = tela embaçada até gravar o início e trazer a equipe do dia (nada é marcado antes disso)
+  const [starting, setStarting] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
   const myMatricula = (userProfile?.matricula || '').trim();
   useEffect(() => {
@@ -193,26 +203,42 @@ export default function OrderDetailsDrawer({
   const handleStart = async () => {
     if (!userProfile || startBlockReason) return;
     setExecBusy(true);
+    setStarting(true);
     setExecMsg(null);
     try {
-      const { result } = await dbStartOrder(selectedOrder, userProfile, isOffline());
+      const offline = isOffline();
+      const { result } = await dbStartOrder(selectedOrder, userProfile, offline);
       // Participantes já vêm com a equipe do dia: a desta semana na Programação (ou a cadastrada), sem quem está
       // de férias/atestado hoje (Fase 7C). Dá para mudar na OS. U5: o técnico NÃO entra sozinho (é o responsável;
       // ele se marca se executou).
       // Técnico local (Lote 2) em preventiva de outra gerência: a equipe dele é programada na DOM
       const teamUnit = userProfile.localTech && userProfile.gerencia !== selectedOrder.unit ? userProfile.gerencia : selectedOrder.unit;
-      const team = await dbGetDayTeam(teamUnit, selectedOrder.company, localTodayStr(), myMatricula);
-      const prefilled: ServiceOrder = {
-        ...selectedOrder,
-        participants: team.filter((p) => p.matricula !== myMatricula),
-        materialsUsed: selectedOrder.materialsUsed || []
-      };
-      setSelectedOrderState(prefilled);
-      saveExecutionDraft(prefilled);
-      setExecMsg({ type: 'ok', text: `Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.${result === 'queued' ? OFFLINE_NOTE : ''}` });
+      // U11: a equipe do dia tem no máximo 8 s (internet fraca); sem ela, a lista começa vazia e o técnico inclui as pessoas
+      let teamLate = false;
+      const team = await Promise.race([
+        dbGetDayTeam(teamUnit, selectedOrder.company, localTodayStr(), myMatricula).catch(() => []),
+        new Promise<OrderParticipant[]>((resolve) => setTimeout(() => {
+          teamLate = true;
+          resolve([]);
+        }, offline ? 2500 : 8000))
+      ]);
+      // U11: junta a equipe ao que já está na tela (nunca volta para a cópia de antes do início)
+      setSelectedOrderState((cur) => {
+        if (!cur || cur.id !== selectedOrder.id) return cur;
+        const prefilled: ServiceOrder = {
+          ...cur,
+          participants: cur.participants?.length ? cur.participants : team.filter((p) => p.matricula !== myMatricula),
+          materialsUsed: cur.materialsUsed || []
+        };
+        saveExecutionDraft(prefilled);
+        return prefilled;
+      });
+      const teamNote = teamLate ? ' A equipe do dia não carregou: inclua as pessoas na lista de participantes.' : '';
+      setExecMsg({ type: 'ok', text: `Preventiva iniciada. O preenchimento fica salvo neste aparelho até a assinatura.${result === 'queued' ? OFFLINE_NOTE : ''}${teamNote}` });
     } catch (err: any) {
       setExecMsg({ type: 'error', text: err?.message || 'Não foi possível iniciar.' });
     } finally {
+      setStarting(false);
       setExecBusy(false);
     }
   };
@@ -674,6 +700,15 @@ export default function OrderDetailsDrawer({
 
             {/* Scrollable execution items */}
             <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-6">
+              {/* U11: sem internet o técnico continua — tudo fica no celular e sobe sozinho quando a internet voltar */}
+              {isOpenOrder && isAssignedToCurrentUser && isOffline() && (
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900">
+                  <WifiOff className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="text-[11px] font-bold leading-snug">
+                    Sem internet: pode fazer a preventiva normalmente. Tudo fica salvo neste celular e vai para o banco sozinho quando a internet voltar.
+                  </p>
+                </div>
+              )}
               {!isAssignedToCurrentUser && (
                 <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center gap-2.5 text-amber-900 text-xs font-bold shadow-2xs">
                   <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600" />
@@ -1528,6 +1563,39 @@ export default function OrderDetailsDrawer({
               )}
 
             </div>
+
+            {/* U11: carregando (abrir ou iniciar) — tela embaçada, nada responde até terminar; sem o checklist e sem internet, avisa */}
+            {(starting || selectedOrder.checklistPending) && (
+              <div className="absolute inset-0 z-30 bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center" role="status" aria-live="polite">
+                {starting || !versionFailed ? (
+                  <>
+                    <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                    <p className="text-sm font-black text-slate-800">{starting ? 'Iniciando a preventiva…' : 'Carregando a preventiva…'}</p>
+                    <p className="text-xs text-slate-600 max-w-xs">
+                      {starting ? 'Aguarde: gravando o início e buscando a equipe do dia.' : 'Aguarde: na primeira vez o checklist é baixado; depois fica guardado neste celular.'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-10 h-10 text-rose-600" />
+                    <p className="text-sm font-black text-slate-800">{isOffline() ? 'Sem internet' : 'Não foi possível abrir'}</p>
+                    <p className="text-xs text-slate-600 max-w-xs">
+                      {isOffline()
+                        ? 'O checklist desta preventiva ainda não está neste celular. Conecte-se à internet uma vez para abrir; depois ela funciona sem internet.'
+                        : 'O checklist não foi baixado. Verifique a internet e tente de novo.'}
+                    </p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setVersionTry((n) => n + 1)} className="h-10 px-4 rounded-xl bg-indigo-600 text-white text-xs font-black cursor-pointer">
+                        Tentar de novo
+                      </button>
+                      <button type="button" onClick={onClose} className="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-black cursor-pointer">
+                        Voltar
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* FLOATING SIGNATURE PAD INNER DRAWER POPUP */}
             {showSignaturePad && (

@@ -1,5 +1,7 @@
 import { ChecklistItem, ServiceOrder, isCorrectiveRequested } from '../types';
 import { dbSaveServiceOrder } from './serviceOrders';
+import { deleteField, doc, updateDoc } from './guard';
+import { awaitWrite, dbInstance, firebaseActive } from './core';
 
 // SOLICITAÇÕES DE CORRETIVA (Etapa 8): decisão do planejador por item.
 // "Abrir corretiva" = chamado aberto no GLPI (nº obrigatório); "Não abrir" = justificativa obrigatória.
@@ -37,8 +39,18 @@ export async function dbDecideCorrective(order: ServiceOrder, itemId: string, de
       correctiveAt: new Date().toISOString()
     };
   });
-  await dbSaveServiceOrder(updated, {}, { skipHistory: true });
-  return updated;
+  // U10: decidido o último item, o técnico passa a ver a resposta na aba Solicitações até tocar em "Ciente"
+  const mat = (updated.assignedTechnicianMatricula || '').trim();
+  const done = !requestedItems(updated).some(isItemPending);
+  const notified: ServiceOrder = done && mat ? { ...updated, solNotice: mat } : updated;
+  await dbSaveServiceOrder(notified, {}, { skipHistory: true });
+  return notified;
+}
+
+// U10: "Ciente" do técnico na resposta do pedido de corretiva — sai da aba Solicitações dele (só os 2 campos mudam)
+export async function dbAckSolicitation(orderId: string): Promise<'saved' | 'queued'> {
+  if (!firebaseActive || !dbInstance) throw new Error('Banco de dados indisponível');
+  return awaitWrite(updateDoc(doc(dbInstance, 'serviceOrders', orderId), { solNotice: deleteField(), techSol: deleteField() }));
 }
 
 // Corrige o nº do GLPI ou a justificativa de um item já decidido (a decisão continua a mesma)

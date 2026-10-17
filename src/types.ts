@@ -89,6 +89,7 @@ export interface ServiceOrder {
   comarca?: string;              // comarca do ativo (ou da vistoria), gravada no disparo
   craai?: string;                // CRAAI do ativo (ou da comarca da vistoria), gravado no disparo
   solicitationStatus?: 'Pendente' | 'Resolvido' | 'Cancelado'; // situação da solicitação de corretiva (itens "Sim"); vazio se não houver
+  solNotice?: string;            // U10: matrícula do técnico que ainda não viu a resposta do pedido de corretiva (some no "Ciente")
   cancelReason?: string; // motivo do cancelamento (ex.: ativo baixado na importação)
   cancelledAt?: string;
   addressId?: string;            // endereço cadastrado (rondas da DOM geradas por endereço)

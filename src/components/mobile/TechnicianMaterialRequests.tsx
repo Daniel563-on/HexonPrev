@@ -16,7 +16,7 @@ import {
   MR_STATUS_LABEL,
   parseQty
 } from '../../db/firebase';
-import { formatOrderNumber } from '../../utils/orderNumber';
+import { preventiveRequestLabel } from '../../utils/orderNumber';
 import { useSyncVersion } from '../../utils/useSyncVersion';
 
 // PEDIDO DE MATERIAL DO MP (Fase 8B) — aba Solicitações do celular, seção "Material".
@@ -98,7 +98,7 @@ export default function TechnicianMaterialRequests({
         id: o.id,
         unit: o.unit!,
         company: o.company!,
-        label: `Preventiva #${formatOrderNumber(o.id)} · ${o.assetName || o.title}`
+        label: preventiveRequestLabel(o)
       }));
     const os = workOrders
       .filter((o) => !!o.company && mpCompanies.includes(o.company))

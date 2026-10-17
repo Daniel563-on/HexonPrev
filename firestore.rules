@@ -110,6 +110,7 @@ service cloud.firestore {
       allow create: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && (seesAllUnits() || request.resource.data.unit in myUnits());
       // A data de criação nunca muda: um disparo que tente regravar uma OS existente é recusado
+      // Concluída: só a decisão das solicitações de corretiva e o aviso ao técnico (U10: solNotice some no "Ciente")
       allow update: if isStaff() && request.resource.data.keys().hasAll(['status', 'title'])
         && request.resource.data.get('createdAt', '') == resource.data.get('createdAt', '')
         && (seesAllUnits() || (resource.data.unit in myUnits() && request.resource.data.unit in myUnits())
@@ -117,7 +118,7 @@ service cloud.firestore {
             || (isLocalTechUser(me()) && request.resource.data.unit == resource.data.unit
                 && (resource.data.get('techOpen', '') == me().matricula || resource.data.get('techSol', '') == me().matricula)))
         && (resource.data.status != 'Concluída'
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd', 'solNotice'])
             || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
       allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
     }
