@@ -303,7 +303,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
           {/* U2: o status fica numa linha própria (o texto longo, ex.: "Aguardando assinatura do engenheiro", cortava o número) */}
           <div className="min-w-0 flex-1">
             <OsRef o={order} />
-            <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel(order)}</span>
+            <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[order.status] || ''}`}>{osStatusLabel({ status: order.status, nextSigner: order.nextSigner })}</span>
             <p className="text-[11px] text-slate-500 truncate">{order.intervencao || 'OS'} · {order.execAddressText}</p>
           </div>
           {canPdf && (

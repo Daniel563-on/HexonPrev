@@ -13,6 +13,7 @@ import {
 } from '../../db/firebase';
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import { osRefText } from '../../lib/osRef';
+import { linkDue, osValidationMailto } from '../../lib/osLink';
 
 // ASSINATURAS NA FICHA DA OS: cartões na ordem (Técnico → Cliente → Engenheiro → Gerente), cada um com a sua cor.
 // Cadeado até chegar a vez. Engenheiro/Gerente assinam aqui (perfil "Assinar OS como"); o Super Administrador assina qualquer um.
@@ -83,11 +84,21 @@ export default function OsSignaturesPanel({ order: o, userProfile, mySignRole, c
     }
   };
   const link = o.validationToken ? osValidationLink(o.validationToken) : '';
-  const mailto = link
-    ? `mailto:?subject=${encodeURIComponent(`Validação do atendimento — ${osRefText(o)}`)}&body=${encodeURIComponent(
-        `Olá,\n\nPor favor, confira o atendimento ${o.glpi ? `do chamado GLPI ${o.glpi} (${o.number})` : `da ${o.number}`} e valide ou conteste pelo link:\n${link}\n\nObrigado.`
-      )}`
-    : '';
+  const mailto = osValidationMailto(o);
+  // U16: vencido = pode gerar outro (o cartão "Link enviado" mostra em vermelho até o cliente responder ou sair um novo)
+  const expired = !!link && (linkDue(o)?.tone === 'late' || (!!validation?.until && Date.parse(validation.until) < Date.now()));
+  const newLink = (label: string) => (
+    <div className="flex flex-wrap gap-2">
+      <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-9 px-2 text-xs border border-emerald-300 rounded-lg bg-white" aria-label="Validade do link">
+        {[3, 7, 15, 30, 60].map((d) => (
+          <option key={d} value={d}>Vale {d} dias</option>
+        ))}
+      </select>
+      <button type="button" onClick={makeLink} disabled={busy} className="h-9 px-3 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+        <Link2 className="w-4 h-4" /> {label}
+      </button>
+    </div>
+  );
 
   const reached = (r: OsSignatureRole) => !!o.signatures?.[r];
 
@@ -152,29 +163,33 @@ export default function OsSignaturesPanel({ order: o, userProfile, mySignRole, c
           {link ? (
             <>
               <p className="text-[11px] text-slate-600 break-all">{link}</p>
+              {o.linkAt && (
+                <p className="text-[11px] text-slate-600">
+                  Enviado em {fmtDT(o.linkAt)}{o.linkBy ? ` por ${o.linkBy}` : ''} · vence em {fmtDT(o.linkExp)}
+                  {linkDue(o) && <span className={`ml-1 font-black ${expired ? 'text-rose-600' : linkDue(o)!.tone === 'soon' ? 'text-amber-600' : 'text-teal-700'}`}>({linkDue(o)!.text})</span>}
+                </p>
+              )}
               <p className="text-[11px] text-slate-500">
-                {validation?.status === 'pendente' ? `Aguardando resposta do cliente${validation.until ? ` (vale até ${fmtDT(validation.until)})` : ''}.` : validation ? `Respondido: ${validation.status}. Atualize a ficha.` : ''}
+                {validation?.status === 'pendente'
+                  ? expired
+                    ? 'O link venceu sem resposta do cliente: gere outro ou colha a assinatura no celular do técnico.'
+                    : `Aguardando resposta do cliente${validation.until && !o.linkAt ? ` (vale até ${fmtDT(validation.until)})` : ''}.`
+                  : validation
+                    ? `Respondido: ${validation.status}. Atualize a ficha.`
+                    : ''}
               </p>
-              <div className="flex flex-wrap gap-2">
+              {expired && validation?.status === 'pendente' && newLink('Gerar novo link')}
+              {!expired && <div className="flex flex-wrap gap-2">
                 <a href={mailto} className="h-9 px-3 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5">
                   <Mail className="w-4 h-4" /> Enviar por e-mail
                 </a>
                 <button type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => setMsg('Link copiado.'))} className="h-9 px-3 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5 cursor-pointer">
                   <Copy className="w-4 h-4" /> Copiar link
                 </button>
-              </div>
+              </div>}
             </>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-9 px-2 text-xs border border-emerald-300 rounded-lg bg-white" aria-label="Validade do link">
-                {[3, 7, 15, 30, 60].map((d) => (
-                  <option key={d} value={d}>Vale {d} dias</option>
-                ))}
-              </select>
-              <button type="button" onClick={makeLink} disabled={busy} className="h-9 px-3 rounded-lg border border-emerald-300 text-emerald-800 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-                <Link2 className="w-4 h-4" /> Gerar link para o cliente
-              </button>
-            </div>
+            newLink('Gerar link para o cliente')
           )}
         </div>
       )}

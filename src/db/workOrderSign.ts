@@ -36,7 +36,9 @@ export const OS_SIGN_COLOR: Record<OsSignatureRole, string> = {
 
 // Papéis exigidos, na ordem (o técnico sempre primeiro)
 // Situação para mostrar: "Aguardando assinaturas" diz de quem é a vez (cliente, engenheiro ou gerente)
-export function osStatusLabel(o: { status: string; nextSigner?: string | null }): string {
+export function osStatusLabel(o: { status: string; nextSigner?: string | null; linkExp?: string }): string {
+  // U16: vez do cliente com o link enviado (ficha, lista, planilha e PDF; o celular do técnico continua "Aguardando cliente")
+  if (o.status === 'Aguardando assinaturas' && o.nextSigner === 'cliente' && o.linkExp) return 'Link enviado ao cliente';
   const who = o.status === 'Aguardando assinaturas' && o.nextSigner ? OS_SIGN_LABEL[o.nextSigner as OsSignatureRole] : '';
   return who ? `Aguardando assinatura do ${who.toLowerCase()}` : o.status;
 }
@@ -141,6 +143,7 @@ export async function dbSignClient(o: WorkOrder, meta: OsSignatureMeta, image: s
     signatures: { ...(o.signatures || {}), cliente: cleanUndefined(meta) },
     ...(o.assignedTechnicianMatricula ? { cliSigned: o.assignedTechnicianMatricula } : {}),
     validationToken: deleteField(),
+    ...LINK_CLEAR,
     updatedAt: now,
     timeline: arrayUnion(ev(by, meta.via === 'link' ? 'Validada pelo cliente (link)' : 'Assinada pelo cliente', `${meta.name}${meta.rating ? ` · ${meta.rating} estrela(s)` : ''}`))
   };
@@ -151,7 +154,7 @@ export async function dbSignClient(o: WorkOrder, meta: OsSignatureMeta, image: s
   }
   batch.update(doc(dbInstance, 'workOrders', o.id), updates);
   await batch.commit();
-  return { ...o, signatures: { ...(o.signatures || {}), cliente: meta }, cliSigned: o.assignedTechnicianMatricula || o.cliSigned, validationToken: undefined, nextSigner: next || undefined, status: next ? o.status : 'Concluída' };
+  return { ...o, signatures: { ...(o.signatures || {}), cliente: meta }, cliSigned: o.assignedTechnicianMatricula || o.cliSigned, validationToken: undefined, linkAt: undefined, linkBy: undefined, linkExp: undefined, nextSigner: next || undefined, status: next ? o.status : 'Concluída' };
 }
 
 // ENGENHEIRO / GERENTE: assina uma ou várias OS de uma vez (mesmo desenho; carimbo com a hora de cada uma)
@@ -236,6 +239,9 @@ const newToken = () => {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 };
+// U16: o link saiu da OS (assinada, validada ou contestada) → saem também o envio e o vencimento
+const LINK_CLEAR = { linkAt: deleteField(), linkBy: deleteField(), linkExp: deleteField() };
+
 export const osValidationLink = (token: string) => `${window.location.origin}${window.location.pathname}?validar=${token}`;
 
 // Cria o link (vale por "days" dias) e guarda o código na OS
@@ -271,8 +277,12 @@ export async function dbCreateOsValidation(o: WorkOrder, days: number, by: strin
   const batch = writeBatch(dbInstance);
   // A data de validade vai como Timestamp do banco (cleanUndefined a transformaria em objeto comum)
   batch.set(doc(dbInstance, 'osValidations', token), { ...cleanUndefined({ ...v, expiresAt: null }), expiresAt: v.expiresAt });
+  // U16: envio e vencimento também na OS (cartão "Link enviado ao cliente" sem ler o link de cada uma)
   batch.update(doc(dbInstance, 'workOrders', o.id), {
     validationToken: token,
+    linkAt: now.toISOString(),
+    linkBy: by,
+    linkExp: v.expiresAt.toDate().toISOString(),
     updatedAt: now.toISOString(),
     timeline: arrayUnion(ev(by, 'Link de validação gerado para o cliente', `vale ${days} dia(s)`))
   });
@@ -347,6 +357,7 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
       const updates: any = {
         signatures: { ...(cur.signatures || {}), cliente: meta },
         validationToken: deleteField(),
+        ...LINK_CLEAR,
         updatedAt: now,
         timeline: arrayUnion(ev(by, 'Validada pelo cliente (link)', `${meta.name}${meta.rating ? ` · ${meta.rating} estrela(s)` : ''}`))
       };
@@ -358,7 +369,7 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
         if (cur.assetId) tx.set(doc(dbInstance!, 'histories', `os_${cur.id}`), historyDoc(cur, now));
       }
       tx.update(ref, updates);
-      return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída', cliSigned: cur.assignedTechnicianMatricula || undefined } as WorkOrder;
+      return { ...cur, signatures: { ...(cur.signatures || {}), cliente: meta }, validationToken: undefined, linkAt: undefined, linkBy: undefined, linkExp: undefined, nextSigner: next || undefined, signQueue: qk || undefined, status: next ? cur.status : 'Concluída', cliSigned: cur.assignedTechnicianMatricula || undefined } as WorkOrder;
     }
     // Contestada (a pausa vai do fim do trabalho — assinatura do técnico ou última resposta — até a contestação)
     const pauses: WorkOrderPause[] = [
@@ -375,11 +386,12 @@ async function syncOsValidation(o: WorkOrder, by: string): Promise<WorkOrder | n
       pauses,
       nextSigner: deleteField(),
       validationToken: deleteField(),
+      ...LINK_CLEAR,
       signQueue: deleteField(),
       updatedAt: now,
       timeline: arrayUnion(ev(r.name || 'Cliente', 'Contestada pelo cliente (link)', r.reason))
     });
-    return { ...cur, status: 'Contestada', contestReason: r.reason, contestedAt: r.at, contests, pauses, nextSigner: undefined, validationToken: undefined, signQueue: undefined } as WorkOrder;
+    return { ...cur, status: 'Contestada', contestReason: r.reason, contestedAt: r.at, contests, pauses, nextSigner: undefined, validationToken: undefined, linkAt: undefined, linkBy: undefined, linkExp: undefined, signQueue: undefined } as WorkOrder;
   }).catch((err: any) => {
     checkQuotaException(err);
     throw err;

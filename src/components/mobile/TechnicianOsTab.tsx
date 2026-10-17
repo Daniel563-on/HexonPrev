@@ -15,7 +15,7 @@ const STRIPE: Record<string, string> = {
   'Aguardando assinaturas': 'bg-indigo-500',
   Contestada: 'bg-rose-500'
 };
-const shortStatus = (o: WorkOrder) => osStatusLabel(o).replace(/^Aguardando assinatura d[oa] /, 'Aguardando ');
+const shortStatus = (o: WorkOrder) => osStatusLabel({ status: o.status, nextSigner: o.nextSigner }).replace(/^Aguardando assinatura d[oa] /, 'Aguardando ');
 
 function OsCard({ o, darkMode, onOpen, footer, label, hint }: { key?: React.Key; o: WorkOrder; darkMode: boolean; onOpen: () => void; footer?: React.ReactNode; label?: string; hint?: string }) {
   const late = isOverdue(o);

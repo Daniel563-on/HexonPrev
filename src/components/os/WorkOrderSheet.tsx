@@ -21,7 +21,7 @@ import {
   osMembers,
   osStatusLabel
 } from '../../db/firebase';
-import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
+import OsAnswersView, { dayBR, isOverdue, osStatusStyle } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
 import OsRef from './OsRef';
 import { osRefText } from '../../lib/osRef';
@@ -187,7 +187,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <OsRef o={o} size="lg" />
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || ''}`}>{osStatusLabel(o)}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${osStatusStyle(o)}`}>{osStatusLabel(o)}</span>
               {isOverdue(o) && <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white">ATRASADA</span>}
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">

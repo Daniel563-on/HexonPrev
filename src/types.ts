@@ -1208,6 +1208,10 @@ export interface WorkOrder {
   techSignedAt?: string;         // assinatura do técnico: o homem-hora para aqui
   signQueue?: string;            // "GERÊNCIA|engenheiro" ou "GERÊNCIA|gerente" enquanto espera (índice esparso: fila)
   validationToken?: string;      // link de validação do cliente em aberto
+  // U16: link enviado ao cliente — só existem enquanto o link está em aberto (linkExp = índice esparso do cartão "Link enviado")
+  linkAt?: string;               // quando o link foi gerado
+  linkBy?: string;               // quem gerou
+  linkExp?: string;              // quando vence (ISO)
   contestReason?: string;        // última contestação (as anteriores ficam em "contests")
   contestedAt?: string;
   contests?: OsContest[];        // cada contestação do cliente e a resposta dada

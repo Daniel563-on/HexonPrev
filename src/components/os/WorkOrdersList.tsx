@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, PenTool, RefreshCw, Search, UserPlus, X } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, Link2, Mail, PenTool, RefreshCw, Search, UserPlus, X } from 'lucide-react';
 import { Company, HexonUser, WorkOrder, WorkOrderStatus } from '../../types';
 import {
   companiesOfUnit,
@@ -28,6 +28,7 @@ import {
   subscribeWorkOrderChanges,
   markOsCountsStale,
   monthStartStr,
+  osValidationLink,
   runBulk,
   todayStr
 } from '../../db/firebase';
@@ -37,12 +38,13 @@ import AssignWorkOrderModal from './AssignWorkOrderModal';
 import ChooseCompanyModal from './ChooseCompanyModal';
 import OsRef from './OsRef';
 import { osCategory } from '../../lib/osRef';
-import { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
+import { dayBR, isOverdue, osStatusStyle } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
 import { ZipBuilder } from '../../lib/zip';
 import { HomeOsLink, clearHomeLink, peekHomeLink } from '../../lib/homeLinks';
 import { isLocalTech } from '../../lib/localTech';
+import { dateTimeBR, linkDue, osValidationMailto } from '../../lib/osLink';
 
 // ORDENS DE SERVIÇO › CORRETIVAS (Fase 6): painel de acompanhamento (contadores), busca por nº da OS ou GLPI,
 // filtros (gerência + situação OU técnico + período; intervenção e "só atrasadas" filtram o que já veio),
@@ -122,6 +124,7 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
   const [assignMsg, setAssignMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [copied, setCopied] = useState(''); // U16: "Copiado" no botão do link
   const [zipOpen, setZipOpen] = useState(false);
   const current = useRef('');
   // Empresa
@@ -172,6 +175,11 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
     setLoading(true);
     dbListWorkOrders(unit, m, null, undefined, cos)
       .then((p) => {
+        // U16: OS de link antigo foram para "Link enviado": a lista guardada dele e os números ficaram velhos
+        if (p.fixed) {
+          pageCache.current.clear();
+          loadCounters(true);
+        }
         pageCache.current.set(key, p);
         if (current.current === key) setPages([p]);
       })
@@ -469,12 +477,59 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
       </span>
     );
   };
+  // U16: vez do cliente com link enviado = "Link enviado ao cliente" (verde-água); vencido = etiqueta vermelha
+  const withLink = (o: WorkOrder) => o.status === 'Aguardando assinaturas' && o.nextSigner === 'cliente' && !!o.linkExp;
   const statusBadge = (o: WorkOrder) => (
     <>
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${STATUS_STYLE[o.status] || 'bg-slate-100'}`}>{osStatusLabel(o)}</span>
+      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${osStatusStyle(o) || 'bg-slate-100'}`}>{osStatusLabel(o)}</span>
+      {withLink(o) && linkDue(o)?.tone === 'late' && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-600 text-white">LINK VENCIDO</span>}
       {isOverdue(o) && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-600 text-white">ATRASADA</span>}
     </>
   );
+  // U16: cartão "Link enviado ao cliente": quando enviou, quando vence e os botões copiar / e-mail
+  const linkView = !found && mode.kind === 'filter' && mode.status === 'link';
+  const dueText = (o: WorkOrder) => {
+    const d = linkDue(o);
+    return d ? <span className={`block text-[10px] font-black ${d.tone === 'late' ? 'text-rose-600' : d.tone === 'soon' ? 'text-amber-600' : 'text-teal-700'}`}>{d.text}</span> : null;
+  };
+  const sentCell = (o: WorkOrder) => (
+    <>
+      {dateTimeBR(o.linkAt)}
+      {o.linkBy && <span className="block text-[10px] text-slate-500">por {o.linkBy}</span>}
+    </>
+  );
+  const dueCell = (o: WorkOrder) => (
+    <>
+      {dateTimeBR(o.linkExp)}
+      {dueText(o)}
+    </>
+  );
+  const linkBtns = (o: WorkOrder) =>
+    linkDue(o)?.tone === 'late' ? (
+      // vencido: o novo link sai da ficha (escolhe a validade lá)
+      <button type="button" data-link-acts onClick={(e) => { e.stopPropagation(); setSelected(o); }} className="h-7 px-2 rounded-md border border-rose-200 bg-rose-50 text-rose-700 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer">
+        <Link2 className="w-3 h-3" /> Gerar novo link
+      </button>
+    ) : o.validationToken ? (
+      <span data-link-acts className="inline-flex gap-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            navigator.clipboard?.writeText(osValidationLink(o.validationToken!)).then(() => {
+              setCopied(o.id);
+              setTimeout(() => setCopied((c) => (c === o.id ? '' : c)), 2000);
+            });
+          }}
+          className="h-7 px-2 rounded-md border border-teal-200 bg-teal-50 text-teal-800 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer"
+        >
+          <Copy className="w-3 h-3" /> {copied === o.id ? 'Copiado' : 'Copiar link'}
+        </button>
+        <a href={osValidationMailto(o)} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md border border-teal-200 bg-teal-50 text-teal-800 text-[10px] font-black inline-flex items-center gap-1">
+          <Mail className="w-3 h-3" /> E-mail
+        </a>
+      </span>
+    ) : null;
   const manualBadge = (o: WorkOrder) =>
     o.execAddressManual ? <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black" title="Endereço digitado na emissão: não está no cadastro de Endereços e não gera histórico do endereço">NÃO CADASTRADO</span> : null;
   const assignBtn = (o: WorkOrder) =>
@@ -675,6 +730,8 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   <th className="p-2.5">Técnico</th>
                   <th className="p-2.5">Abertura</th>
                   <th className="p-2.5">Prazo</th>
+                  {linkView && <th className="p-2.5">Link enviado</th>}
+                  {linkView && <th className="p-2.5">Vence o link</th>}
                   <th className="p-2.5">Situação</th>
                   {canViewCosts && <th className="p-2.5 text-right">Valor</th>}
                   <th className="p-2.5"></th>
@@ -704,14 +761,16 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                     </td>
                     <td className="p-2.5 whitespace-nowrap">{dayBR(o.createdAt)}</td>
                     <td className="p-2.5 whitespace-nowrap">{dayBR(o.deadline)}</td>
+                    {linkView && <td className="p-2.5 whitespace-nowrap">{sentCell(o)}</td>}
+                    {linkView && <td className="p-2.5 whitespace-nowrap">{dueCell(o)}</td>}
                     <td className="p-2.5">{statusBadge(o)}</td>
                     {canViewCosts && <td className="p-2.5 text-right whitespace-nowrap">{costCell(o)}</td>}
-                    <td className="p-2.5 text-right whitespace-nowrap">{chooseBtn(o) || assignBtn(o)}</td>
+                    <td className="p-2.5 text-right whitespace-nowrap">{chooseBtn(o) || assignBtn(o) || (linkView && linkBtns(o))}</td>
                   </tr>
                 ))}
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={canViewCosts ? 12 : 11} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
+                    <td colSpan={(canViewCosts ? 12 : 11) + (linkView ? 2 : 0)} className="p-6 text-center text-slate-400">Nenhuma OS encontrada.</td>
                   </tr>
                 )}
               </tbody>
@@ -745,9 +804,15 @@ export default function WorkOrdersList({ userProfile, unitOptions, canAssign, ca
                   {o.assignedTechnicianName || 'Em aberto'} · aberta {dayBR(o.createdAt)} · prazo {dayBR(o.deadline)}
                   {o.scheduledDate ? ` · programada ${dayBR(o.scheduledDate)}${o.scheduledEndDate && o.scheduledEndDate !== o.scheduledDate ? ` a ${dayBR(o.scheduledEndDate)}` : ''}` : ''}
                 </p>
+                {withLink(o) && (
+                  <div className="text-[11px] text-slate-600">
+                    Link enviado {dateTimeBR(o.linkAt)}{o.linkBy ? ` por ${o.linkBy}` : ''} · vence {dateTimeBR(o.linkExp)}
+                    {dueText(o)}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   {canViewCosts ? <span className="text-xs">{costCell(o)}</span> : <span />}
-                  {chooseBtn(o) || assignBtn(o)}
+                  {chooseBtn(o) || assignBtn(o) || (linkView && linkBtns(o))}
                 </div>
               </div>
             ))}

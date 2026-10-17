@@ -1,18 +1,20 @@
 import React from 'react';
-import { AlertTriangle, PauseCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, Link2, PauseCircle, XCircle } from 'lucide-react';
 import { HomeOsCounts } from '../../db/homeCounts';
 import { homeCard, homeTitle } from './HomeNeeds';
 
 // INÍCIO › "CHAMADOS GLPI AGORA": os números do painel da lista de OS (qualquer mês) + atrasadas.
 // Cada cartão abre a lista já filtrada. Assinaturas na cor de cada papel (cliente verde, engenheiro roxo, gerente laranja).
 
+// U16: 9 cartões em 3 colunas, na ordem do caminho da OS (aberta → execução → assinaturas → problemas)
 const CARDS: { key: string; label: string; color: string; icon?: React.ReactNode; note?: string }[] = [
   { key: 'Nova', label: 'Novas', color: '#475569' },
   { key: 'Em andamento', label: 'Em andamento', color: '#1d4ed8' },
+  { key: 'Pendente', label: 'Pendentes', color: '#b45309', icon: <PauseCircle className="w-3.5 h-3.5" /> },
+  { key: 'sign:cliente', label: 'Aguardando assinatura do cliente', color: '#047857', note: 'link ainda não enviado' },
+  { key: 'link', label: 'Link enviado ao cliente', color: '#0f766e', icon: <Link2 className="w-3.5 h-3.5" />, note: 'aguardando o cliente validar' },
   { key: 'sign:engenheiro', label: 'Aguardando assinatura do engenheiro', color: '#6d28d9' },
   { key: 'sign:gerente', label: 'Aguardando assinatura do gerente', color: '#c2410c' },
-  { key: 'Pendente', label: 'Pendentes', color: '#b45309', icon: <PauseCircle className="w-3.5 h-3.5" /> },
-  { key: 'sign:cliente', label: 'Aguardando assinatura do cliente', color: '#047857' },
   { key: 'Contestada', label: 'Contestadas', color: '#be123c', icon: <XCircle className="w-3.5 h-3.5" /> },
   { key: 'late', label: 'Atrasadas', color: '#e11d48', icon: <AlertTriangle className="w-3.5 h-3.5" />, note: 'técnico ainda não assinou' }
 ];
@@ -25,7 +27,7 @@ export default function HomeOsNow({ counts, onOpen }: { counts: HomeOsCounts | n
         <h3 className={homeTitle}>Chamados GLPI agora</h3>
         <span className="text-[11px] text-slate-500">Atualiza sozinho · toque para abrir a lista já filtrada</span>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {CARDS.map((c) => (
           <button
             key={c.key}

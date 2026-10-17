@@ -14,6 +14,8 @@ export const STATUS_STYLE: Record<string, string> = {
   'Concluída': 'bg-emerald-100 text-emerald-800',
   Cancelada: 'bg-rose-100 text-rose-700'
 };
+// U16: vez do cliente com o link enviado = verde-água
+export const osStatusStyle = (o: WorkOrder) => (o.status === 'Aguardando assinaturas' && o.nextSigner === 'cliente' && o.linkExp ? 'bg-teal-100 text-teal-800' : STATUS_STYLE[o.status] || '');
 export const dayBR = (s?: string) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—');
 
 // Atrasada: passou do prazo e ainda não foi concluída nem cancelada

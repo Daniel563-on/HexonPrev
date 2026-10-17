@@ -1,4 +1,4 @@
-import { QueryDocumentSnapshot, collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from './guard';
+import { QueryDocumentSnapshot, collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where } from './guard';
 import { OsSignatureRole, WorkOrder, WorkOrderStatus } from '../types';
 import { osStatusLabel } from './workOrderSign';
 import { firebaseActive, dbInstance, checkQuotaException } from './core';
@@ -16,11 +16,13 @@ export const OS_OPEN_STATUSES: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pen
 export const OS_ALL_STATUSES: WorkOrderStatus[] = ['Nova', 'Em andamento', 'Pendente', 'Aguardando assinaturas', 'Contestada', 'Concluída', 'Cancelada'];
 // Filtro de situação: "Aguardando assinaturas" separada por quem falta assinar (campo nextSigner, que só existe
 // enquanto a OS espera assinatura). Índices: unit+nextSigner+createdAt e unit+company+nextSigner+createdAt (esparsos).
-export type OsStatusFilter = WorkOrderStatus | `sign:${OsSignatureRole}`;
-export const OS_SIGN_FILTERS: OsStatusFilter[] = ['sign:cliente', 'sign:engenheiro', 'sign:gerente'];
+// U16: "link" = vez do cliente COM link enviado (campo linkExp, esparso; índices unit+linkExp e unit+company+linkExp);
+// "sign:cliente" passa a ser só a vez do cliente SEM link (contagem = vez do cliente − com link)
+export type OsStatusFilter = WorkOrderStatus | `sign:${OsSignatureRole}` | 'link';
+export const OS_SIGN_FILTERS: OsStatusFilter[] = ['sign:cliente', 'link', 'sign:engenheiro', 'sign:gerente'];
 export const OS_FILTER_STATUSES: OsStatusFilter[] = ['Nova', 'Em andamento', 'Pendente', ...OS_SIGN_FILTERS, 'Contestada', 'Concluída', 'Cancelada'];
 export const osFilterLabel = (s: OsStatusFilter): string =>
-  s.startsWith('sign:') ? osStatusLabel({ status: 'Aguardando assinaturas', nextSigner: s.slice(5) }) : s;
+  s === 'link' ? 'Link enviado ao cliente' : s.startsWith('sign:') ? osStatusLabel({ status: 'Aguardando assinaturas', nextSigner: s.slice(5) }) : s;
 
 export type OsListMode =
   | { kind: 'filter'; status?: OsStatusFilter; tech?: string; from?: string; to?: string } // datas AAAA-MM-DD (abertura)
@@ -32,6 +34,7 @@ export interface OsListPage {
   items: WorkOrder[];
   cursor: QueryDocumentSnapshot | null;
   hasMore: boolean;
+  fixed?: number; // U16: OS de link antigo acertadas nesta leitura (a tela reconta)
 }
 
 const startOf = (d: string) => new Date(`${d}T00:00:00`).toISOString();
@@ -53,6 +56,9 @@ function parts(unit: string, mode: OsListMode, cos: string[] | null): any[] {
     p.push(where('status', 'in', OS_OPEN_STATUSES), orderBy('createdAt', 'desc'));
   } else if (mode.kind === 'closed') {
     p.push(where('status', '==', 'Concluída'), where('closedAt', '>=', startOf(mode.from)), where('closedAt', '<=', endOf(mode.to)), orderBy('closedAt', 'desc'));
+  } else if (mode.status === 'link') {
+    // U16: link enviado — os que vencem primeiro em cima (sem filtro de datas de abertura)
+    p.push(where('linkExp', '>=', ''), orderBy('linkExp', 'asc'));
   } else {
     if (mode.status?.startsWith('sign:')) p.push(where('nextSigner', '==', mode.status.slice(5)));
     else if (mode.status) p.push(where('status', '==', mode.status));
@@ -71,8 +77,10 @@ export function osMatchesMode(o: WorkOrder, mode: OsListMode, cos: string[] | nu
   if (mode.kind === 'late') return OS_OPEN_STATUSES.includes(o.status) && !!o.deadline && o.deadline < todayStr();
   if (mode.kind === 'pending') return OS_OPEN_STATUSES.includes(o.status);
   if (mode.kind === 'closed') return o.status === 'Concluída' && !!o.closedAt && o.closedAt >= startOf(mode.from) && o.closedAt <= endOf(mode.to);
+  if (mode.status === 'link') return o.status === 'Aguardando assinaturas' && !!o.linkExp;
   if (mode.status?.startsWith('sign:')) {
     if (o.nextSigner !== mode.status.slice(5)) return false;
+    if (mode.status === 'sign:cliente' && o.linkExp) return false;
   } else if (mode.status) {
     if (o.status !== mode.status) return false;
   } else if (mode.tech && o.assignedTechnicianMatricula !== mode.tech) return false;
@@ -84,12 +92,33 @@ export function osMatchesMode(o: WorkOrder, mode: OsListMode, cos: string[] | nu
 export async function dbListWorkOrders(unit: string, mode: OsListMode, after: QueryDocumentSnapshot | null, size = OS_LIST_PAGE, cos: string[] | null = null): Promise<OsListPage> {
   if (!unit || !firebaseActive || !dbInstance || (cos && cos.length === 0)) return { items: [], cursor: null, hasMore: false };
   try {
-    const q = [...parts(unit, mode, cos)];
-    if (after) q.push(startAfter(after));
-    q.push(limit(size + 1));
-    const snap = await getDocs(query(collection(dbInstance, 'workOrders'), ...q));
-    const docs = snap.docs.slice(0, size);
-    return { items: docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id })), cursor: docs[docs.length - 1] || null, hasMore: snap.docs.length > size };
+    const read = async (from: QueryDocumentSnapshot | null) => {
+      const q = [...parts(unit, mode, cos)];
+      if (from) q.push(startAfter(from));
+      q.push(limit(size + 1));
+      const snap = await getDocs(query(collection(dbInstance!, 'workOrders'), ...q));
+      const docs = snap.docs.slice(0, size);
+      return { items: docs.map((d) => ({ ...(d.data() as WorkOrder), id: d.id })), cursor: docs[docs.length - 1] || null, hasMore: snap.docs.length > size };
+    };
+    let page = await read(after);
+    // U16: na vez do cliente, as que têm link vão para o cartão "Link enviado" (as antigas, sem as datas, são acertadas
+    // uma vez pela linha do tempo e saem daqui); se a página ficou curta, lê a seguinte (até 5 vezes)
+    if (mode.kind === 'filter' && mode.status === 'sign:cliente') {
+      let fixedCount = 0;
+      const keep = async (list: WorkOrder[]) => {
+        const fixed = new Set(await dbFillLinkDates(list.filter((o) => o.validationToken && !o.linkExp)));
+        if (fixed.size) markOsCountsStale(unit);
+        fixedCount += fixed.size;
+        return list.filter((o) => !o.linkExp && !fixed.has(o.id));
+      };
+      let items = await keep(page.items);
+      for (let i = 0; i < 4 && items.length < size && page.hasMore; i++) {
+        page = await read(page.cursor);
+        items = [...items, ...(await keep(page.items))];
+      }
+      return { ...page, items, ...(fixedCount ? { fixed: fixedCount } : {}) };
+    }
+    return page;
   } catch (err: any) {
     checkQuotaException(err);
     throw err;
@@ -101,7 +130,37 @@ export async function dbCountWorkOrders(unit: string, mode: OsListMode, cos: str
   if (!unit || !firebaseActive || !dbInstance || (cos && cos.length === 0)) return 0;
   const q = parts(unit, mode, cos).filter((c) => c.type !== 'orderBy');
   const snap = await getCountFromServer(query(collection(dbInstance, 'workOrders'), ...q));
+  // U16: "Aguardando assinatura do cliente" = vez do cliente − com link enviado
+  if (mode.kind === 'filter' && mode.status === 'sign:cliente') {
+    const withLink = await dbCountWorkOrdersCached(unit, { kind: 'filter', status: 'link' }, cos); // a mesma contagem do cartão "Link enviado"
+    return Math.max(0, snap.data().count - withLink);
+  }
   return snap.data().count;
+}
+
+// U16: OS que já tinham link antes do cartão "Link enviado": envio, quem gerou e vencimento tirados do último
+// "Link de validação gerado para o cliente · vale N dia(s)" da linha do tempo. Devolve as que foram acertadas.
+export function linkDatesFromTimeline(o: WorkOrder): { linkAt: string; linkBy: string; linkExp: string } | null {
+  const ev = [...(o.timeline || [])].reverse().find((e) => e.action === 'Link de validação gerado para o cliente');
+  const days = Number(/vale (\d+)/.exec(ev?.note || '')?.[1] || 0);
+  if (!ev?.at || !days) return null;
+  return { linkAt: ev.at, linkBy: ev.by || '', linkExp: new Date(Date.parse(ev.at) + days * 86400000).toISOString() };
+}
+export async function dbFillLinkDates(orders: WorkOrder[]): Promise<string[]> {
+  if (!firebaseActive || !dbInstance || orders.length === 0) return [];
+  const done: string[] = [];
+  for (const o of orders.slice(0, 20)) {
+    const d = linkDatesFromTimeline(o);
+    if (!d) continue;
+    try {
+      await updateDoc(doc(dbInstance, 'workOrders', o.id), d);
+      done.push(o.id);
+    } catch (err: any) {
+      console.warn('Não foi possível acertar as datas do link da OS', o.id, err);
+      checkQuotaException(err);
+    }
+  }
+  return done;
 }
 
 // Ajuste S10 (Lote 5): as contagens do painel (Início e Ordens de Serviço) ficam guardadas na sessão por gerência +
