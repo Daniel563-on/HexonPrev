@@ -93,6 +93,12 @@
 - **U7** (16/10/2026) — Configurações no celular: abas em 2 colunas; linhas do editor de modelos empilhadas. **No `main` `4517bcf`.**
 - **U8** (16/10/2026) — Menu "PMOC" passa a "Preventivas" (Consulta, Modelos e Protocolos). **No `main` `4517bcf`.**
 - **U9** (16/10/2026) — Chamados GLPI: "Nenhum técnico (desatribuir)" no "Trocar" (apagado se o técnico já começou). **No `main` `4517bcf`.**
+- **U10** (17/10/2026) — Celular › Solicitações › Corretivas: depois que o escritório decide o pedido de corretiva feito na preventiva ("Não atestado"), o técnico vê a resposta (corretiva aberta com o nº do GLPI, ou "não abrir" com a justificativa) e só tem "Ciente", que tira o pedido da lista. **Em desenho.**
+- **U11** (17/10/2026) — Celular › Preventivas: ao abrir e ao iniciar, tela embaçada com "carregando" até terminar (não deixa preencher antes); sem internet, libera com aviso e grava quando a internet voltar (como hoje). **Em desenho.** Achado: ao iniciar, o que o técnico marca enquanto a equipe do dia carrega é apagado.
+- **U12** (17/10/2026) — Celular › pedido de material e de insumos: na escolha da OS, a preventiva aparece com o nome dela e o patrimônio, sem o nome do equipamento. **Em desenho.**
+- **U13** (17/10/2026) — Celular › Meu Perfil: tirar o quadro "Tempo de carregamento". **Em desenho.**
+- **U14** (17/10/2026) — Celular › Minhas OS: melhorar o layout dos cartões da lista. **Em desenho.**
+- **U15** (17/10/2026) — Celular › Solicitações: os botões Corretivas / Material / Insumos ocupam a largura toda (hoje sobra espaço ao lado de Insumos). **Em desenho.**
 
 **Pendências abertas (16/10/2026)**
 - **A1 — excluir preventivas em lote** (aberto; detalhes no diário, `docs/historico/diario.md`, lista A1–A8): `DeleteOrderModal` ainda exclui tudo de uma vez (`runBulk(() => Promise.all(...))`) — uma recusa interrompe e o disjuntor pode desarmar. Proposta: pacotes, sem parar no 1º erro, contar "já excluídas", tirar da cópia a OS que não existe mais. **Fantasmas:** a OS excluída pode voltar na cópia do aparelho porque o ponto das exclusões recebidas (`orderSync`, chave `hexon_orders_deletions_v1_*`) é gravado na hora e a lista das OS depois — **desde o Lote 5 a lista é gravada no máximo a cada 15 s** (e na hora ao ir para segundo plano, ao trocar de gerência e ao sair), então a janela ficou maior que o 1 s de antes; só pega se o navegador for fechado à força nesse intervalo. Correção recomendada (pequena, entra junto com o A1): gravar a lista da gerência **antes** de gravar o ponto das exclusões.
