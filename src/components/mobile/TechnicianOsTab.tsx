@@ -17,7 +17,7 @@ const STRIPE: Record<string, string> = {
 };
 const shortStatus = (o: WorkOrder) => osStatusLabel(o).replace(/^Aguardando assinatura d[oa] /, 'Aguardando ');
 
-function OsCard({ o, darkMode, onOpen, footer, label }: { key?: React.Key; o: WorkOrder; darkMode: boolean; onOpen: () => void; footer?: React.ReactNode; label?: string }) {
+function OsCard({ o, darkMode, onOpen, footer, label, hint }: { key?: React.Key; o: WorkOrder; darkMode: boolean; onOpen: () => void; footer?: React.ReactNode; label?: string; hint?: string }) {
   const late = isOverdue(o);
   return (
     <div className={`rounded-2xl border shadow-2xs overflow-hidden flex ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
@@ -40,6 +40,7 @@ function OsCard({ o, darkMode, onOpen, footer, label }: { key?: React.Key; o: Wo
               {o.comarca && <span className="block text-[11px] font-bold text-slate-500">{o.comarca}</span>}
             </span>
           </p>
+          {hint && <p className="text-[11px] font-black text-indigo-700 dark:text-indigo-300">{hint}</p>}
           <div className={`flex items-center gap-3 pt-2 border-t ${darkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <span className={`text-[11px] font-bold flex items-center gap-1 ${late ? 'text-rose-600' : 'text-slate-500'}`}>
               <Clock className="w-3.5 h-3.5" /> Prazo {dayBR(o.deadline)}
@@ -169,6 +170,7 @@ export default function TechnicianOsTab({
                 darkMode={darkMode}
                 onOpen={() => setOpenSigned(o)}
                 label={`Ver a OS ${osRefText(o)}`}
+                hint="Ver a OS (só visualizar)"
                 footer={
                   <div className="px-3.5 pb-3.5 space-y-2">
                   {cli && (
