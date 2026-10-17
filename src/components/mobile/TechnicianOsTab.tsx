@@ -4,7 +4,7 @@ import { HexonUser, WorkOrder } from '../../types';
 import { dbDismissClientSigned, dbSyncOsValidation, osStatusLabel } from '../../db/firebase';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import OsExecutionForm from '../os/OsExecutionForm';
-import { osRefText } from '../../lib/osRef';
+import { osFileBase, osRefText } from '../../lib/osRef';
 import { STATUS_STYLE, dayBR, isOverdue } from '../os/OsAnswersView';
 
 // U14: cartão da OS no celular — faixa colorida pela situação, GLPI em destaque, situação curta numa linha só,
@@ -187,7 +187,7 @@ export default function TechnicianOsTab({
                         setBusyId(o.id);
                         setNotice(null);
                         try {
-                          downloadBytes(await buildOsPdfBytes(o), `${o.number}.pdf`);
+                          downloadBytes(await buildOsPdfBytes(o), `${osFileBase(o)}.pdf`);
                         } catch (e: any) {
                           setNotice({ ok: false, text: `Não foi possível gerar o PDF: ${e?.message || e}` });
                         } finally {

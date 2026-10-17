@@ -22,7 +22,7 @@ import {
 import OsSignaturePad, { Stroke, renderOsSignature } from './OsSignaturePad';
 import OsFieldInput from './OsFieldInput';
 import OsRef from './OsRef';
-import { osRefText } from '../../lib/osRef';
+import { osFileBase, osRefText } from '../../lib/osRef';
 import OsAnswersView, { STATUS_STYLE, dayBR, isOverdue } from './OsAnswersView';
 import OsTeamPicker from './OsTeamPicker';
 import OsFieldExtras from './OsFieldExtras';
@@ -285,7 +285,7 @@ export default function OsExecutionForm({ order, userProfile, onClose, onChanged
     setPdfBusy(true);
     setMsg(null);
     try {
-      downloadBytes(await buildOsPdfBytes(order), `${order.number}.pdf`);
+      downloadBytes(await buildOsPdfBytes(order), `${osFileBase(order)}.pdf`);
     } catch (err: any) {
       setMsg({ ok: false, text: `Não foi possível gerar o PDF: ${err?.message || err}` });
     } finally {

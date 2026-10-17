@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { OrderSupplies, WorkOrder } from '../types';
-import { osCategory, osRefText } from './osRef';
+import { osCategory, osFileBase, osRefText } from './osRef';
 import { OS_SIGN_LABEL, WorkOrderCost, brl, fmtMinutes, orderSupplyEntries, osAnswerText, osFieldVisible, osMembers, osSignOrder, osStatusLabel } from '../db/firebase';
 
 // FICHA DA OS EM PLANILHA (Fase 5C): uma aba com as seções da OS.
@@ -116,7 +116,7 @@ export function exportOsXlsx(o: WorkOrder, cost: WorkOrderCost | null, companyNa
   ws['!cols'] = [{ wch: 34 }, { wch: 48 }, { wch: 28 }, { wch: 22 }, { wch: 18 }, { wch: 12 }, { wch: 30 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, o.number.slice(0, 31));
-  XLSX.writeFile(wb, `Ficha_${o.number}.xlsx`);
+  XLSX.writeFile(wb, `${osFileBase(o)}.xlsx`);
 }
 
 // PLANILHA DA LISTA (Fase 6): uma linha por OS, na ordem da lista filtrada.

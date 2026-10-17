@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // U20: só no iPhone/iPad — o Safari não dá mais zoom sozinho ao tocar num campo (letra < 16 px); o zoom com dois
+      // dedos continua (o iOS ignora o limite para o gesto). Android e computador ficam como estão.
+      (function () {
+        var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var m = document.querySelector('meta[name=viewport]');
+        if (ios && m) m.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
+      })();
+    </script>
     <title>Hexon</title>
     <!-- App instalável (PWA): ícone, nome e tela cheia ao abrir pelo ícone -->
     <link rel="manifest" href="/manifest.webmanifest" />

@@ -24,7 +24,7 @@ import {
 import OsAnswersView, { dayBR, isOverdue, osStatusStyle } from './OsAnswersView';
 import OsSignaturesPanel from './OsSignaturesPanel';
 import OsRef from './OsRef';
-import { osRefText } from '../../lib/osRef';
+import { osFileBase, osRefText } from '../../lib/osRef';
 import OsContestReplyModal from './OsContestReplyModal';
 import { buildOsPdfBytes, downloadBytes } from '../../lib/osPdf';
 import { exportOsXlsx } from '../../lib/osXlsx';
@@ -92,7 +92,7 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
     setMsg(null);
     try {
       const bytes = await buildOsPdfBytes(o);
-      downloadBytes(bytes, `${o.number}.pdf`);
+      downloadBytes(bytes, `${osFileBase(o)}.pdf`);
     } catch (err: any) {
       setMsg(`Não foi possível gerar o PDF: ${err?.message || err}`);
     } finally {
@@ -181,7 +181,8 @@ export default function WorkOrderSheet({ order: initial, userProfile, canAssign,
 
   return (
     <div className="fixed inset-0 z-[1000] bg-slate-900/60 flex items-center justify-center p-2 md:p-4">
-      <div className="w-full max-w-4xl max-h-[94vh] overflow-y-auto rounded-2xl bg-slate-50">
+      {/* U22: o sistema não deixa selecionar texto (select-none na tela toda); dentro da ficha da OS dá para selecionar e copiar */}
+      <div className="w-full max-w-4xl max-h-[94vh] overflow-y-auto rounded-2xl bg-slate-50 select-text">
         {/* Cabeçalho */}
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-5 py-3 flex items-start justify-between gap-3">
           <div className="min-w-0">

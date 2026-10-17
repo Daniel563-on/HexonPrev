@@ -256,6 +256,46 @@ async function embedImage(pdf: PDFDocument, dataUrl: string) {
   return dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg') ? pdf.embedJpg(bytes) : pdf.embedPng(bytes);
 }
 
+// U23: carimbo grande no PDF — a imagem da assinatura (carimbo + desenho) tem margem branca em volta; corta a margem
+// (vale para as assinaturas já feitas) e a imagem ocupa a caixa quase toda, com uma borda fina
+async function trimSignature(dataUrl: string): Promise<string> {
+  try {
+    const img = new Image();
+    img.src = dataUrl;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++)
+      for (let x = 0; x < c.width; x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i + 3] > 16 && (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235)) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    if (x1 < 0) return dataUrl;
+    const pad = 3;
+    x0 = Math.max(0, x0 - pad);
+    y0 = Math.max(0, y0 - pad);
+    x1 = Math.min(c.width - 1, x1 + pad);
+    y1 = Math.min(c.height - 1, y1 + pad);
+    const out = document.createElement('canvas');
+    out.width = x1 - x0 + 1;
+    out.height = y1 - y0 + 1;
+    out.getContext('2d')!.drawImage(c, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
+  } catch {
+    return dataUrl;
+  }
+}
+
 // U18: estrela de 5 pontas (caixa 100×100, y para baixo) — drawSvgPath põe o canto de cima à esquerda em (x, y)
 const STAR_PATH = (() => {
   const pts = Array.from({ length: 10 }, (_, i) => {
@@ -286,13 +326,16 @@ export async function generateOsMappedPdf(pdfBase64: string, pins: OsPdfPin[], d
     const top = H - (pin.y / 100) * H;
     const v = osPdfValue(pin.field, pin, d);
     if (v.image) {
-      const img = await embedImage(pdf, v.image);
-      const scale = Math.min(bw / img.width, bh / img.height);
+      // U23: assinatura sem a margem branca, com uma borda fina dentro da caixa
+      const sig = pin.field.startsWith('sig:');
+      const img = await embedImage(pdf, sig ? await trimSignature(v.image) : v.image);
+      const m = sig ? Math.min(2.5, Math.min(bw, bh) * 0.05) : 0;
+      const scale = Math.min((bw - 2 * m) / img.width, (bh - 2 * m) / img.height);
       const iw = img.width * scale;
       const ih = img.height * scale;
-      const ix = pin.align === 'left' ? bx : pin.align === 'right' ? bx + bw - iw : bx + (bw - iw) / 2;
+      const ix = pin.align === 'left' ? bx + m : pin.align === 'right' ? bx + bw - m - iw : bx + (bw - iw) / 2;
       // Imagem: sem escolha vertical fica ao meio (como antes)
-      const iy = pin.valign === 'top' ? top - ih : pin.valign === 'bottom' ? top - bh : top - bh + (bh - ih) / 2;
+      const iy = pin.valign === 'top' ? top - m - ih : pin.valign === 'bottom' ? top - bh + m : top - bh + (bh - ih) / 2;
       page.drawImage(img, { x: ix, y: iy, width: iw, height: ih });
       continue;
     }
@@ -441,7 +484,7 @@ export async function generateOsStandardPdf(d: OsPdfData): Promise<Uint8Array> {
       page.drawText(safe(OS_SIGN_LABEL[r].toUpperCase(), bold), { x: x + 6, y: y - 12, size: 8, font: bold, color: soft });
       const img = d.signatures[r];
       if (img) {
-        const em = await embedImage(pdf, img);
+        const em = await embedImage(pdf, await trimSignature(img)); // U23: sem a margem branca
         const s = Math.min((colW - 12) / em.width, 62 / em.height);
         page.drawImage(em, { x: x + (colW - em.width * s) / 2, y: y - 18 - em.height * s, width: em.width * s, height: em.height * s });
       }

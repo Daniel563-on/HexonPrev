@@ -38,7 +38,7 @@ import OsSignQueue from './OsSignQueue';
 import AssignWorkOrderModal from './AssignWorkOrderModal';
 import ChooseCompanyModal from './ChooseCompanyModal';
 import OsRef from './OsRef';
-import { osCategory } from '../../lib/osRef';
+import { osCategory, osFileBase } from '../../lib/osRef';
 import { dayBR, isOverdue, osStatusStyle } from './OsAnswersView';
 import { buildOsPdfBytes, downloadBlob } from '../../lib/osPdf';
 import { exportOsListXlsx } from '../../lib/osXlsx';
@@ -956,12 +956,16 @@ function ZipBackupModal({ unit, cos, label: companyLabel, onClose }: { unit: str
         const zip = new ZipBuilder();
         const layouts = new Map();
         const pad = (n: number) => String(n).padStart(2, '0');
+        const used = new Set<string>(); // U21: mesmo GLPI na mesma pasta → "GLPI_123 (2).pdf"
         setProgress({ done: 0, total: list.length });
         for (let i = 0; i < list.length; i++) {
           const o = list[i];
           const closed = new Date(o.closedAt || o.createdAt);
           const folder = `${closed.getFullYear()}-${pad(closed.getMonth() + 1)}`;
-          zip.add(`${folder}/${o.number}.pdf`, await buildOsPdfBytes(o, layouts), closed);
+          let name = `${folder}/${osFileBase(o)}`;
+          for (let n = 2; used.has(name); n++) name = `${folder}/${osFileBase(o)} (${n})`;
+          used.add(name);
+          zip.add(`${name}.pdf`, await buildOsPdfBytes(o, layouts), closed);
           setProgress({ done: i + 1, total: list.length });
         }
         downloadBlob(zip.build(), `Backup_OS_${unit}_${from}_a_${to}.zip`);
