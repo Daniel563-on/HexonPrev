@@ -1,6 +1,6 @@
 import { ChecklistItem, ServiceOrder, isCorrectiveRequested } from '../types';
 import { dbSaveServiceOrder } from './serviceOrders';
-import { deleteField, doc, updateDoc } from './guard';
+import { deleteField, doc, getDoc, updateDoc } from './guard';
 import { awaitWrite, dbInstance, firebaseActive } from './core';
 
 // SOLICITAÇÕES DE CORRETIVA (Etapa 8): decisão do planejador por item.
@@ -68,6 +68,14 @@ export async function dbFixCorrective(order: ServiceOrder, itemId: string, text:
       correctiveEditedAt: new Date().toISOString()
     };
   });
-  await dbSaveServiceOrder(updated, {}, { skipHistory: true });
-  return updated;
+  // U10: a correção não avisa o técnico de novo — o aviso só continua se ele ainda não deu "Ciente" (vale o que está no banco)
+  let fixed: ServiceOrder = updated;
+  if (updated.solNotice && firebaseActive && dbInstance) {
+    const still = await getDoc(doc(dbInstance, 'serviceOrders', order.id))
+      .then((snap) => !!snap.data()?.solNotice)
+      .catch(() => true);
+    if (!still) fixed = { ...updated, solNotice: undefined };
+  }
+  await dbSaveServiceOrder(fixed, {}, { skipHistory: true });
+  return fixed;
 }

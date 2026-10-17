@@ -223,7 +223,7 @@ export default function SolicitationsView({ pendingOrders, pendingState = 'ok', 
           <h1 className="text-xl font-black text-slate-800 tracking-tight">Solicitações de corretiva</h1>
           <p className="text-xs text-slate-500 mt-1">
             Itens que o técnico marcou "Não conforme" em perguntas que geram solicitação. Decida cada item: "Abrir corretiva" (informe o nº do
-            chamado GLPI) ou "Não abrir" (informe a justificativa). A preventiva continua concluída; o técnico acompanha pelo celular até todos os itens terem decisão.
+            chamado GLPI) ou "Não abrir" (informe a justificativa). A preventiva continua concluída; o técnico acompanha pelo celular e, decidido o último item, vê a resposta até tocar em "Ciente".
           </p>
         </div>
       </section>

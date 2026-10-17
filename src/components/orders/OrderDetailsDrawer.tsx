@@ -1574,6 +1574,11 @@ export default function OrderDetailsDrawer({
                     <p className="text-xs text-slate-600 max-w-xs">
                       {starting ? 'Aguarde: gravando o início e buscando a equipe do dia.' : 'Aguarde: na primeira vez o checklist é baixado; depois fica guardado neste celular.'}
                     </p>
+                    {!starting && (
+                      <button type="button" onClick={onClose} className="text-xs font-black text-slate-500 underline cursor-pointer">
+                        Voltar
+                      </button>
+                    )}
                   </>
                 ) : (
                   <>

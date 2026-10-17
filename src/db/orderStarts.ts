@@ -67,7 +67,10 @@ export async function dbStartOrder(order: ServiceOrder, user: HexonUser, offline
   const matricula = (user.matricula || '').trim();
   if (!matricula) throw new Error('Seu cadastro está sem matrícula. Procure o administrador.');
   const mineQuery = query(collection(dbInstance, 'orderStarts'), where('matricula', '==', matricula));
-  const mine = await (offline ? getDocsFromCache(mineQuery) : getDocs(mineQuery));
+  // U11: com internet fraca, espera o banco no máximo 5 s e usa a cópia do aparelho
+  const mine = await (offline
+    ? getDocsFromCache(mineQuery)
+    : Promise.race([getDocs(mineQuery), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('tempo')), 5000))]).catch(() => getDocsFromCache(mineQuery)));
   const other = mine.docs.find((d) => d.id !== order.id);
   if (other) throw new Error(`Você já tem a OS #${other.id} em execução. Conclua ou desfaça o início dela antes de iniciar outra.`);
   const start: OrderStart = {
