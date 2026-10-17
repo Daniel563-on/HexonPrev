@@ -68,13 +68,14 @@ export async function dbFixCorrective(order: ServiceOrder, itemId: string, text:
       correctiveEditedAt: new Date().toISOString()
     };
   });
-  // U10: a correção não avisa o técnico de novo — o aviso só continua se ele ainda não deu "Ciente" (vale o que está no banco)
+  // U10: a correção não mexe no aviso ao técnico — vale o que está no banco (se ele já deu "Ciente", não volta;
+  // se ainda não deu, continua), mesmo com a tela aberta numa cópia antiga
   let fixed: ServiceOrder = updated;
-  if (updated.solNotice && firebaseActive && dbInstance) {
-    const still = await getDoc(doc(dbInstance, 'serviceOrders', order.id))
-      .then((snap) => !!snap.data()?.solNotice)
-      .catch(() => true);
-    if (!still) fixed = { ...updated, solNotice: undefined };
+  if (firebaseActive && dbInstance) {
+    const current = await getDoc(doc(dbInstance, 'serviceOrders', order.id))
+      .then((snap) => (snap.exists() ? String(snap.data()?.solNotice || '') : null))
+      .catch(() => null);
+    if (current !== null) fixed = { ...updated, solNotice: current || undefined };
   }
   await dbSaveServiceOrder(fixed, {}, { skipHistory: true });
   return fixed;

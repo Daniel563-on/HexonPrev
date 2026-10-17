@@ -119,7 +119,11 @@ service cloud.firestore {
                 && (resource.data.get('techOpen', '') == me().matricula || resource.data.get('techSol', '') == me().matricula)))
         && (resource.data.status != 'Concluída'
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checklist', 'answers', 'solicitationStatus', 'updatedAt', 'syncAt', 'techSol', 'solAt', 'addrEnd', 'solNotice'])
-            || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])));
+            || (isSuperAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit', 'craai', 'comarca', 'closedMonth', 'syncAt'])))
+        // U10: o aviso da resposta (solNotice) só é gravado para o técnico da OS e só ele apaga (o "Ciente")
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['solNotice'])
+            || request.resource.data.get('solNotice', '') == resource.data.get('assignedTechnicianMatricula', '')
+            || resource.data.get('solNotice', '') == me().matricula);
       allow delete: if isSuperAdmin() && resource.data.status == 'Novo';
     }
 
